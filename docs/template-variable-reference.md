@@ -76,6 +76,7 @@ Use this while filling out the Railway template composer.
 | --- | --- | --- | --- |
 | `PORT` | `3030` | Port the Codex Runtime service listens on. | No |
 | `NODE_ENV` | `production` | Runtime environment for Codex Runtime. | No |
+| `CODEX_BIN` | `/app/node_modules/.bin/codex` | Path to the Codex CLI binary inside the runtime image. | No |
 | `CODEX_HOME` | `/data/codex` | Mounted Codex home directory for auth and thread state. | No |
 | `CODEX_RUNTIME_TIMEOUT_MS` | `600000` | Maximum Codex execution timeout in milliseconds. | No |
 | `CODEX_WORKSPACE_ROOT` | `/app` | Default workspace root for Codex execution. | No |
