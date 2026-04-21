@@ -1,0 +1,38 @@
+import { LockKeyhole } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+
+export function LoginCard({ error }: { error?: string }) {
+  return (
+    <div className="mx-auto flex min-h-screen w-full max-w-md items-center px-6 py-16">
+      <Card className="w-full border-border/60 bg-card/95 backdrop-blur">
+        <CardHeader className="space-y-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/12 text-primary">
+            <LockKeyhole className="h-5 w-5" />
+          </div>
+          <CardTitle className="text-2xl">Admin Access</CardTitle>
+          <CardDescription>
+            Use the shared admin password. The site stores it in a cookie and forwards it to the API as
+            <code className="ml-1 rounded bg-muted px-1.5 py-0.5 text-xs">x-admin-password</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action="/admin/login" method="post" className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="password">
+                Password
+              </label>
+              <Input id="password" name="password" type="password" placeholder="Shared admin password" required />
+            </div>
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            <Button className="w-full" type="submit">
+              Enter board
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}

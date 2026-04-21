@@ -1,0 +1,1052 @@
+{
+  "sync_source": "RG-handbook-nextra",
+  "source_repo": "https://github.com/dekanbro/RG-handbook-nextra",
+  "generated_at": "2026-04-15T18:13:49.288Z",
+  "entry_count": 30,
+  "entries": [
+    {
+      "filename": "raidguild-handbook-dao-operations-dao-roles.md",
+      "content": "# DAO Roles (Hats)\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/dao-operations/dao-roles/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/dao-operations/dao-roles/page.mdx\nIn order to make operations more efficient and reduce the coordination needed at the share holder level, we've elected to create some discreet roles and give them budgets and other decision-making authorities during their appointment.\n\nThese roles are generally appointed by motivated individuals but elections can be facilitated if there are multiple Raiders interested in a role for the same term. These roles are created and appointed by the full community and can be removed/unwound in a similar fashion. We're continuing to use other good principal-agent hygiene by using quarterly budgets or streams in longer cases. Streams can be canceled with a proposal since the funds are flowing from the DAO itself.\n\nThe roles here are powered by Hats Protocol. Skip to the RG Hats Tree section to learn more about RaidGuild Hats Tree and proposing a role.\n\n## Current Roles\n\n_loosely ordered by permanence/value shown so far_\n\n  Create a new Role via a proposal, read more about Proposing a Role.\n\n### Ganggang - Quality assurance delegates\n\nThe _Ganggang_ role acts as a trusted delegate for the DAO and while they can provide several interim functionalities for interacting with the outside world, the primary function is being the releaser for escrowed Raid Guild Improvement Proposals (RIPs). Currently the process is largely manual, but RIP members should request release of milestones from the #Ganggang thread or #ops channel in Discord, please tag the `@Ganggang` role also.\n\nThe _Ganggang_ safe lives at `0xCFFF4a6EB44bA088EEa89A84Dd113eCfDEDA9641` on several chains, however, only on Gnosis is it a Hat-gated Safe. The others _will_ use a bridge module to be controlled from Gnosis.\n\n- Gnosis\n- Optimism\n- Mainnet\n- Base\n\nThe _Ganggang_ role is executing 1-2 transactions per month and is currently an unpaid role. This role is effectively perpetual since the expectations are fairly minimal and members can renounce if they are looking to become inactive.\n\nThere are a couple of temporary budgets also being escrowed by _Ganggang_\n\n- Temporary Cookie Jar\n- RIP 188: Legal Formation team budget\n\n#### Claiming the _Ganggang_ role\n\nThe _Ganggang_ role requires holding two other roles in order to claim:\n\n- _RaidGuild Member_\n- _Healer (Operations)_\n- Then claim the _Ganggang_ role and associated Safe signing authority\n\nCurrently the _Ganggang_ multisig (Safe) authority exists as a 3/7, so up to 7 Guild Members can hold the _Ganggang_ role at one time and it will require 3 to confirm a transaction. If a member needs to be rotated we can raise a proposal to transfer the role from an existing holder(s) to the new appointee(s). A member of _Ganggang_ can also renounce their role (and signing authority) at any time, if needed.\n\n### Infrastructure Maestro - Holders of the devops keys\n\nThe _Infrastructure Maestro(s)_ are responsible for making sure the infrastructure accounts are secured and pipelines are deploying when other members push updates. Since these SaaS services tend to charge per seat, we've elected to consolidate these permissions to a couple of representatives acting as backups for each other.\n\nThe _Infrastructure Maestro (IM)_ role also has its own multisig (Safe) for receiving ongoing resources for these SaaS services that keep the Guild running. There is an active stream running from the Guild to the IM Safe and this stream can be deactivated at any time with a proposal from the Guild. The Safe is configured as a 1/1 with either of the current wearers able to claim the signing authority.\n\nCurrent services handled by _Infrastructure Maestro_:\n\n- Vercel\n- Pinata\n- TheGraph\n- Railway\n- Heroku\n\nIf you need to deploy new infra, reach out to one of the IM for updating.\n\n  ~2k per year\n\n#### Claiming the _Infrastructure Maestro_ role\n\nThe _Infrastructure Maestro_ role requires holding two other roles in order to claim:\n\n1. _RaidGuild Member_\n2. _Healer (Operations)_\n3. Claim the _Infrastructure Maestro_ role and associated Safe signing authority\n\n### Brand Steward - Unifying our shared aesthetic and persona\n\nThe _Brand Steward_ is responsible for providing a cohesive brand across the feel & aesthetic of the Guild's digital domains. Several resources are offered to provide guidance to Guild members applying the brand to their project or implementation.\n\n- Raid Guild design system (to be converted to Tailwind theme/Shadcn components)\n- Raid Guild Design System Figma\n- #brand and #dot-org Discord channels\n\nThe _Brand Steward_ requests a regular budget where needed to ensure the project and maintenance are advanced. The Steward will document goals for the current budget and provide regular updates throughout the duration of the epoch.\n\n  ~6k per year\n\n_It's expected that a majority of the budget is allocated to completing the actual execution/implementation tasks. Roughly, up to a third of the budget should be used for Steward coordination responsibilities and planning._\n\n#### Claiming the _Brand Steward_ role\n\nTo claim the _Brand Steward_ role a member will need to claim two other roles:\n\n1. _RaidGuild Member_\n2. _Archer (Design)_\n3. The _Brand Steward_ role is appointed by the _Ganggang_ role via offchain consensus\n   - Claim the _Brand Steward_ role\n\n### Handbook Steward - Keeping our knowledge maintained\n\nThe _Handbook Steward_ is responsible for budgeting and directing maintenance of this Handbook. The main resources for the Steward are the Handbook repo and the #handbook Discord channel.\n\nThe _Handbook Steward_ requests a regular budget where needed to ensure the project and maintenance are advanced. The Steward will document goals for the current budget and provide regular updates throughout the duration of the epoch.\n\n  ~6k per year\n\n_It's expected that a majority of the budget is allocated to completing the actual execution/implementation tasks. Roughly, up to a third of the budget should be used for Steward coordination responsibilities and planning._\n\n#### Claiming the _Handbook Steward_ role\n\nTo claim the _Handbook Steward_ role a member will need to claim two other roles:\n\n1. _RaidGuild Member_\n2. _Scribe (Content)_\n3. The _Handbook Steward_ role is appointed by _Ganggang_ via offchain consensus\n4. Claim the _Handbook Steward_ role\n\n### Sync Guild - Coordinating the synchronous layer\n\nThe _Sync Guild_ is responsible for coordinating the Guild's synchronous meetings so they are efficient and useful to members and attendees. As a part of the Sync Guild there are 3 roles activated to spread the burden for this role across a small group.\n\nSync Guild Roles\n\n- **_Sync Steward_** - _Sync Steward_ coordinates with other members of the Sync Guild and wider Guild to make sure topics to be discussed are relevant. They also encourage members to pick up the other roles for meetings in which they'll be in attendance.\n- **_Jester_** - _Sync Jesters_ are responsible for emceeing the synchronous gatherings. They can leverage known topics and field topics that are relevant to current goals of the Guild.\n- **_Scribe_** - _Sync Scribes_ are responsible for recording meeting notes and sharing insights with the wider Guild\n\n#### Sync Steward\n\nThe Sync Steward is responsible for coordinating with other members of the Sync Guild and wider Guild to make sure topics to be discussed are relevant. They also encourage members to pick up the other roles for meetings in which they'll be in attendance.\n\nThe Steward requests a regular budget where needed to ensure the members are incentivized to participate. The Steward will document goals for the current budget and provide regular updates throughout the duration of the epoch.\n\n  ~3k per quarter\n\n_It's expected that a majority of the budget is allocated to completing the actual execution/implementation tasks. Roughly, up to a third of the budget should be used for Steward coordination responsibilities and planning._\n\n#### Claiming a Sync Guild role\n\nTo claim a Sync Guild role a member will need to claim two other roles:\n\n1. _RaidGuild Member_\n2. _Tavern Keeper (Community)_\n3. The _Sync Steward_ role is appointed by the _Ganggang_ role via offchain consensus\n   - Claim the _Sync Steward_ role\n4. The _Jester_ and _Scribe_ roles are appointed by the _Sync Steward_ role via offchain consensus\n   - Claim the _Jester_ or _Scribe_ role\n\n## Roles Chart (Hats Tree)\n\n`app.hatsprotocol.xyz/trees/100/92`\n\n### Overview\n\n#### Top (Root) Hat\n\nThe top (root) hat is the parent of all the other hats. It is held by the DAO itself and can manage all the other hats via DAO proposal.\n\n#### Auto Admin\n\nThe Autonomous Admin hat is a helper hat that allows members to claim hats where they are eligible rather than require them being assigned directly. This is a contract that has the limited ability to assign hats to members.\n\n#### RaidGuild Member\n\nThe RaidGuild Member role is the foundation of all the roles that are part of the Guild. It is a requirement to claim most other roles. It can be claimed by having at least 100 DAO voting shares.\n\n### Proposing a Role\n\nTo propose a new role, head over to the Hats App and view the RaidGuild Hats Tree.\n\n1. Switch to Edit Mode in the top left corner\n2. Find the role that will be the parent of the new role\n3. From the parent role, click the `+` button to create a new child role\n4. Complete the new role details and Return to the roles list\n5. You're now ready to deploy the changes for this new role\n   - Since you likely aren't a wearer of the parent role, you'll need to make a proposal to deploy the changes\n   - If you are a wearer of the parent role, you hit the deploy button to deploy the changes directly\n6. Get the necessary data for the proposal\n   - Open the Transaction Call data section of the roles list\n   - Copy the Hats contract address and use as the target of the transaction for this proposal\n   - Copy the Hats transaction calldata and use as the calldata of the transaction for this proposal\n7. Submit the proposal",
+      "metadata": {
+        "title": "DAO Roles (Hats)",
+        "slug": "raidguild-handbook-dao-operations-dao-roles",
+        "kind": "reference",
+        "summary": "In order to make operations more efficient and reduce the coordination needed at the share holder level, we've elected to create some discreet roles and give them budgets and other decision-making authorities during their appointment.",
+        "tags": [
+          "knowledge",
+          "operations",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "DAO",
+          "Escrow",
+          "Optimism"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-dao-operations"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/dao-operations/dao-roles/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/dao-operations/dao-roles/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-dao-operations-dao-tokens.md",
+      "content": "# DAO Tokens Guide\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/dao-operations/dao-tokens/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/dao-operations/dao-tokens/page.mdx\nIn RaidGuild, tokens such as xDAI, wxDAI, and RAID are essential for governance, funding, and participation within the DAO. This guide will help you acquire and manage these tokens, including detailed instructions on how to wrap xDAI into wxDAI and swap xDAI for RAID.\n\n---\n\nRaidGuild operates on DAOhaus, a DAO management platform that uses the Gnosis Chain (formerly xDAI Chain) for inexpensive transaction fees on DAO activities.\n\n- xDAI is the native stable token on Gnosis Chain.\n- You can wrap xDAI to obtain wxDAI for use with RaidGuild’s DAO.\n- xDAI can also be swapped for RaidGuild’s own RAID token.\n\n## How to Get xDAI\n\n1. **Set up the Gnosis Chain network in MetaMask**\n2. **Purchase xDAI directly**\n3. **Bridge to xDAI from DAI on another network**\n\n### 1. Set up the Gnosis Chain Network in MetaMask\n\nGnosis Chain, previously known as xDai Chain, still uses the xDAI token for transactions. For more details on Gnosis Chain basics, refer to the official website.\n\n* Open MetaMask, click **Add Network** or go to **Settings > Networks**.\n* Enter the following network information:\n\n| Field                 | Value                                      |\n| --------------------- | ------------------------------------------ |\n| Network name          | Gnosis Chain                               |\n| New RPC URL           | https://rpc.gnosischain.com/               |\n| Chain ID              | 100                                        |\n| Symbol                | xDAI                                       |\n| Block Explorer URL    | https://blockscout.com/xdai/mainnet/       |\n\n    Add Network option in MetaMask.\n\n    Example of filled network form.\n\n#### Additional Tips for Gnosis Chain\n\n* Always verify the latest Gnosis Chain network settings and RPC URLs.\n* Quick setup: You can add Gnosis Chain directly to MetaMask via chainlist.org:\n  * Connect your wallet on chainlist.org.\n  * Search for Gnosis Chain.\n  * Click **Add to MetaMask**.\n\n---\n\n### 2. Purchase xDAI Directly\n\nBuying xDAI directly is an efficient option that avoids any bridging or swapping steps. For a full list of direct purchase options, see the Gnosis Chain website.\n\nOptions include:\n- **Ramp Network**: Requires some KYC (check KYC limits and supported countries).\n- **Mt. Pelerin**: Minimal KYC requirements for small purchases; unavailable to US residents (see list of supported countries).\n\n    Send the xDAI to your wallet address after purchase.\n\n---\n\n### 3. Bridge DAI to xDAI from Another Network\n\nFor users holding DAI on other chains, bridging DAI over to xDAI is a cost-effective option, especially when bridging from L2 networks or sidechains. Below is an example process using the Polygon network.\n\n#### 3.1 Set up Polygon Mainnet in MetaMask\n\n1. In MetaMask, click **Add Network** or go to **Settings > Networks**.\n2. Enter the following details for Polygon:\n\n| Field                 | Value                                      |\n| --------------------- | ------------------------------------------ |\n| Network name          | Polygon Mainnet                            |\n| New RPC URL           | https://polygon-rpc.com/                   |\n| Chain ID              | 137                                        |\n| Symbol                | MATIC                                      |\n| Block Explorer URL    | https://polygonscan.com/                   |\n\nFor updates, refer to the Polygon setup guide.\n\n---\n\n#### 3.2 Buy MATIC and Send to MetaMask\n\nMATIC is the native token of Polygon. To get started, buy some MATIC and send it to your MetaMask wallet.\n\n  **Tip**: Leave enough MATIC for gas fees. Avoid swapping 100% of your MATIC to ensure your transactions can go through.\n\n    Transfer MATIC to your MetaMask wallet.\n\n---\n\n#### 3.3 Add the DAI Token to Polygon in MetaMask\n\n1. Copy the Polygon DAI contract address.\n2. In MetaMask, click **Import Tokens** and paste the address.\n\n| Field                       | Value                                      |\n| --------------------------- | ------------------------------------------ |\n| DAI Stable Coin (PoS)       | 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063 |\n\n    Import tokens and Swap highlighted in MetaMask.\n\n---\n\n#### 3.4 Swap MATIC for DAI\n\nThe easiest way to swap MATIC for DAI is within MetaMask, although using a DEX like Honeyswap may provide lower fees.\n\n**Swap MATIC to DAI in MetaMask**\n\n1. Click the **Swap** icon in MetaMask.\n2. Choose MATIC as the input and DAI as the output, specifying the amount.\n3. Confirm the swap.\n\n    Swapping MATIC to DAI in MetaMask.\n\n**Swap on Honeyswap**\n\n1. Go to Honeyswap, connect your wallet, and approve the connection.\n2. Select MATIC to swap from, then DAI to swap to.\n3. Confirm the swap and approve it in MetaMask.\n\n    Honeyswap swap form with transaction details.\n\n---\n\n#### 3.5 Bridge DAI to xDAI\n\nTo bridge DAI to xDAI, use a reliable bridge like Connext, which allows transfers from Polygon to Gnosis Chain. The process typically involves several approvals in MetaMask.\n\n1. Visit Connext Bridge and connect your wallet.\n2. Enter the DAI amount and approve the transfer steps in MetaMask.\n\n    Approve DAI bridging on Connext.\n\n---\n\n# Wrapping xDAI to wxDAI\n\nRaidGuild uses wxDAI for various DAO functions. You can wrap xDAI to wxDAI on Wrap Eth or Sushiswap.\n\n## 1. Add wxDAI to MetaMask\n\n| Field | Value                                      |\n| ------| ------------------------------------------ |\n| wxDAI token address | 0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d |\n\n## 2. Wrap xDAI Using Wrap Eth or Sushiswap\n\n### Using Wrap Eth\n\n1. Go to Wrap Eth, connect your wallet, and select Gnosis Chain.\n2. Enter the xDAI amount to wrap, confirm, and approve the transaction.\n\n    Wrap xDAI using Wrap Eth.\n\n### Using Sushiswap\n\n1. Go to Sushiswap, connect your wallet, and select\n\n Gnosis Chain.\n2. Choose xDAI as the input and wxDAI as the output, then confirm.\n\n    Swap options in Sushiswap for xDAI to wxDAI.\n\n---\n\n# Getting RAID Tokens\n\nRAID tokens can be acquired by swapping xDAI on Honeyswap.\n\n### 1. Add RAID Token to MetaMask\n\n| Field | Value                                      |\n| ------| ------------------------------------------ |\n| RAID Token Contract Address | 0x18E9262e68Cc6c6004dB93105cc7c001BB103e49 |\n\n### 2. Swap xDAI for RAID on Honeyswap\n\n1. Go to Honeyswap and connect your wallet.\n2. Select xDAI to swap from and RAID as the token to receive.\n3. Confirm and approve the swap in MetaMask.\n\n    Select the RAID token in Honeyswap.\n\n--- \n\n## More about $RAID\n\n* RAID token explainer on the Raid Guild Medium blog\n* Contract details and supply on the Blockscout website\n* RAID price in USD on the CoinGecko website\n* RAID/WETH pair info on the Honeyswap Analytics website",
+      "metadata": {
+        "title": "DAO Tokens Guide",
+        "slug": "raidguild-handbook-dao-operations-dao-tokens",
+        "kind": "reference",
+        "summary": "In RaidGuild, tokens such as xDAI, wxDAI, and RAID are essential for governance, funding, and participation within the DAO. This guide will help you acquire and manage these tokens, including detailed instructions on how to wrap xDAI into wxDAI and swap xDAI for RAID.",
+        "tags": [
+          "knowledge",
+          "operations",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "DAO"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-dao-operations"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/dao-operations/dao-tokens/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/dao-operations/dao-tokens/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-dao-operations-design-system.md",
+      "content": "# Design System: Collaborating in Figma\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/dao-operations/design-system/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/dao-operations/design-system/page.mdx\nThe **Figma Design System** file is a central library of design components and elements, essential for building consistent RaidGuild applications and ensuring smooth collaboration between designers and developers.\n\n### Quick Access Links\n- RaidGuild Figma Design System?type=design&node-id=0%3A1&mode=design&t=pKFUSTHMd3A38pKS-1)\n- Storybook Components\n\nThe design elements in Figma are connected to Storybook, providing developers with live references and ensuring design consistency across projects.\n\n---\n\n## How to Contribute to the Design System\n\nThere are two primary ways guild members can contribute to the design system, depending on their access to the RaidGuild Figma team.\n\n### 1. Contributing Within the RaidGuild Figma Team\nWhen the design system is published, it’s available to all members of the RaidGuild Figma team for use across RaidGuild applications, ensuring uniformity and brand consistency. \n\nIf you have **edit** access, you can:\n- Update existing components\n- Add new components\n- Publish updates to make them available across the team\n\n> **Tip**: It’s best practice to duplicate the component artboard before making changes. After edits are reviewed and approved by a team manager, the changes can be applied to the original component and published.\n\n### 2. Contributing Outside the Figma Team\nFor new or external contributors, follow these steps:\n\n1. Access the Figma Design System file?type=design&node-id=0%3A1&mode=design&t=pKFUSTHMd3A38pKS-1)\n2. Create a duplicate of the file\n3. Make your component edits or additions\n4. Submit the file for review, with details about the changes\n5. Upon approval, the updated components will be integrated into the main file and published\n\n---\n\n## Using the RaidGuild Design Library in Your Projects\n\nAs a RaidGuild Figma team member, you’ll have direct access to the published design library. You’ll receive prompts when updates are available, ensuring your project library remains up-to-date.\n\nTo pull the design library into your project file:\n\n1. In Figma, go to the **Assets** panel and select the **Team Library** icon.\n\n2. From the pop-up, choose the **Raid Guild design library** and toggle it on to enable access in your file.\n\n3. All design elements and components will then be accessible in your **Assets** panel.\n\n### For Non-Team Members\n\nIf you’re working outside the RG Figma team, here’s how to enable the design library:\n\n1. Duplicate the main design system file to your **Drafts**.\n2. Create a new Figma team project (requires a Figma paid plan).\n3. Move your duplicate file into the team project.\n4. Go to **Assets** > **Team Library** icon > **Publish Library**.\n\n5. Once published, open or create a Figma file to work in.\n6. Go to **Assets** > **Team Library** icon > Select the RG design system library > Toggle it on.\n\nYou’re now set to use the RaidGuild Design System in your projects!\n\n---\n\n## Testing Design Components in Figma\n\nThe latest Figma Dev Mode allows for live testing of components in a playground, viewing dev resources, and even inspecting code.\n\n1. Select the component you want to test\n2. Enable **Dev Mode**\n3. Choose **Open in Playground** to explore\n\nRefer to this tutorial for details on using Figma Dev Mode:",
+      "metadata": {
+        "title": "Design System: Collaborating in Figma",
+        "slug": "raidguild-handbook-dao-operations-design-system",
+        "kind": "reference",
+        "summary": "The **Figma Design System** file is a central library of design components and elements, essential for building consistent RaidGuild applications and ensuring smooth collaboration between designers and developers.",
+        "tags": [
+          "knowledge",
+          "operations",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "DAO"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-dao-operations"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/dao-operations/design-system/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/dao-operations/design-system/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-dao-operations.md",
+      "content": "# DAO Proposals and DAOhaus Guide\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/dao-operations/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/dao-operations/page.mdx\nRaidGuild operates through member-driven proposals that support both the Guild and broader web3 projects. Using the DAOhaus platform and Moloch v3 DAO contracts, members can create, sponsor, vote on, and process various proposal types, shaping the Guild’s direction and projects in a decentralized way. This guide outlines both the types of proposals you can make and how to navigate DAOhaus to get involved.\n\n---\n\n## Types of Proposals\n\nGuild members can submit different proposals based on their goals:\n\n- **DAO Token Swap**: Swap tokens to join the DAO by tributing capital in exchange for shares.\n- **ERC-20 Token Transfer**: Request funds for internal projects or improvements.\n- **Remove Member**: Request the removal of a member due to malicious activity.\n- **Multicall Proposal Builder**: Execute multiple transactions in one proposal, such as asset swaps within the War Chest.\n- **Update Governance Settings**: Change parameters like voting period or quorum requirements.\n- **Add Shaman**: Grant specific permissions to an external contract for governance or project work.\n\n## Making a Proposal\n\nTo submit a proposal in DAOhaus:\n\n1. **Navigate to Proposals**: Go to the RaidGuild DAO, select “Proposals,” and click “New Proposal.”\n2. **Choose Proposal Type**: Select the appropriate proposal type from the list and fill in each field thoughtfully:\n   - **Title**: Include a clear, concise title. Example: “New Member – Igor Bogdanoff”\n   - **Description**: Briefly outline what and why, keeping it to the essential details.\n   - **Link**: Provide context or resources for members to review.\n   - **Applicant**: Specify the recipient or address for funding proposals.\n   - **Payment Requested**: Specify the amount (shares or funds) required. Members can request up to 100 shares (500 wxDAI) for new membership proposals.\n   - **Request Shares**: Request voting shares in the DAO, up to 20% of the total requested amount for funding proposals.\n   - **Request Loot**: Request non-voting shares (Loot), which can be Ragequit for a claim on DAO assets but do not carry voting power.\n   - **Give Tribute**: Specify the capital amount you commit to the War Chest for membership or funding proposals.\n\n### Sponsorship\n\nAfter submission, your proposal will be placed in **Unsponsored Proposals**. Sponsorship by a current member is needed to move it to a vote. Although you can sponsor your own proposal as a member, having another member sponsor it ensures all requirements are met and strengthens its chances of approval.\n\n### Voting and Processing\n\n1. **Queued Proposals**: Sponsored proposals enter the Queue, which controls the voting flow.\n2. **Voting Period**: Proposals enter a 72-hour voting period during which members cast votes. A simple majority of “Yes” over “No” is required for passage.\n3. **Grace Period**: Once voting ends, a 48-hour grace period begins, allowing members to Ragequit if they disagree with the outcome.\n4. **Processing**: Approved proposals are timestamped on-chain, executing all specified outcomes. Completed proposals can be reviewed in your Member Profile.\n\n---\n\n### Additional Resources\n\n- **Moloch V3 Overview**: Explore the Moloch V3 framework, which features ERC-20 governance tokens and streamlined treasury management.\n- **Proposal Documentation**: For more details, see the DAOhaus guide.\n\nDAO proposals in RaidGuild empower members to contribute ideas, manage funding, and refine operations. By following these guidelines, members can navigate the proposal process smoothly, helping shape the Guild’s future with every vote. \n\n---\n\n### Contract Addresses\n\n| Name                    | xDAI Address                               | Mainnet Address (deprecated)               | Optimism Address                          |\n| ----------------------- | ------------------------------------------ | ------------------------------------------ | ------------------------------------------ |\n| DAO                     | 0xf02fd4286917270cb94fbc13a0f4e1ed76f7e986 | 0xbeb3e32355a933501c247e2dbde6e6ca2489bf3d | 0xf4f65a5c6590fbc15b3869510e5f1e7114041c53 |\n| ENS Subdomain Registrar | TBD                                        | 0x5Cb634C351A03FF2BfB59C73dB8B429FFdFBbB62 | TBD                                        |\n| ETH Registry            | TBD                                        | 0x57f1887a8bf19b14fc0df6fd9b2acc9af147ea85 | TBD                                        |\n| Multisig                | TBD                                        | 0x3C3692681cD1c0F42FA68A2521719Cc24CEc3AF3 | TBD                                        |\n| Minion                  | TBD                                        | 0x17405148473E521b62cBCf8eBd929E8A30C4D3aA | TBD                                        |\n| NFT Certificates        | TBD                                        | 0x7b408ad9019c20c5a1222Bf7f7e58A6Fa00A086a | TBD                                        |\n| NFT Badges              | TBD                                        | 0xAA65E7c8BBf3F2C6d2d8634Fc830F050a55BBbF9 | TBD                                        |\n| NFT Sale Trading Cards  | TBD                                        | 0x3480a5E2E8A381F200F2e547f5aE6c3042e67449 | TBD                                        |\n| Public Resolver         | TBD                                        | 0xDaaF96c344f63131acadD0Ea35170E7892d3dfBA | TBD                                        |\n| Spoils Manager          | TBD                                        | N/A                                        | 0x9aFA71188fC0cd4445AbC4e671B466C2ea405130 |",
+      "metadata": {
+        "title": "DAO Proposals and DAOhaus Guide",
+        "slug": "raidguild-handbook-dao-operations",
+        "kind": "guide",
+        "summary": "RaidGuild operates through member-driven proposals that support both the Guild and broader web3 projects. Using the DAOhaus platform and Moloch v3 DAO contracts, members can create, sponsor, vote on, and process various proposal types, shaping the Guild’s direction and projects i",
+        "tags": [
+          "knowledge",
+          "operations",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "DAO",
+          "Optimism",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/dao-operations/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/dao-operations/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-dao-operations-rips.md",
+      "content": "# RaidGuild Improvement Proposals (RIPs)\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/dao-operations/rips/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/dao-operations/rips/page.mdx\nRaidGuild Improvement Proposals, or **RIPs**, are essential for keeping the Guild operating at full potential. While RIPs primarily focus on internal operations, some proposals have resulted in open-source tools that benefit the entire web3 community. **Smart Invoice**, a payment escrow tool, is one example that began as a Guild project and is now widely used outside of our DAO.\n\n---\n\n## Requesting Funding for an RIP\n\nTo secure funding for a RIP, it’s recommended to start by gaining soft consensus from the DAO before submitting an official proposal on-chain. Here’s the process:\n\n1. **Create an Issue**: Open a new issue in the RIPs Repository describing the proposal’s value to the DAO and the planned approach.\n2. **Add to RIP Requests**: Add the issue to the RIP Requests Project or request a Keeper’s assistance.\n3. **Engage in Discord**: Share the issue link in the #rip-discussion channel in Discord to invite feedback and ideas.\n\nIf your RIP requires additional expertise, post a brief description and link in the #who-is-available channel to recruit team members. Present your proposal at the weekly Roundtable to refine it further.\n\n### Making a Funding Proposal\n\nOnce your team is ready, follow the steps outlined in Proposal Types to submit a formal request for DAO funding to bring your RIP to life.\n\n---\n\n## Deliverables and Accountability\n\nTo improve transparency and accountability, we use an escrow system where the DAO approves the final deliverables before payment is released. To align expectations, clearly outline all expected deliverables in your proposal.\n\n---\n\n## Escrow Options\n\nFor RIP projects, we leverage SmartInvoice from within Dungeon Master. The recommended solution is to have Ganggang be the client (or release address)\n\n- DAO co-signature for fund releases\n- DAO control over funds, with the ability to withdraw if needed\n\n### Escrow Process\n\n1. **Proposal Acceptance**: Upon RIP approval, include escrow details (such as a shared minion address) in your proposal.\n2. **Fund Transfer**: Once accepted, funds are transferred to the chosen escrow.\n3. **RIP Execution**: The RIP party completes the project work.\n4. **Review Status**: The RIP moves to “Review” status and is discussed during the Roundtable.\n5. **Proposal for Fund Release**: After review, a proposal is submitted for DAO approval to release the funds.\n6. **DAO Approval and Payment**: The DAO votes to approve the release, transferring funds upon successful completion.\n\n### Dispute Resolution\n\nIn cases of dispute, the process will depend on the escrow method. For example, a shared minion escrow could involve a resolution flow with LexDAO if necessary.\n\n> **Note**: As we continue to refine the escrow process, alternative escrow setups can be proposed for DAO consideration.\n\n---\n\nRIPs are a cornerstone of Raid Guild’s evolution, and by carefully planning, funding, and executing these proposals, you contribute to our collective success and sustainability. Let’s build, improve, and strengthen the Guild together!",
+      "metadata": {
+        "title": "RaidGuild Improvement Proposals (RIPs)",
+        "slug": "raidguild-handbook-dao-operations-rips",
+        "kind": "reference",
+        "summary": "RaidGuild Improvement Proposals, or **RIPs**, are essential for keeping the Guild operating at full potential. While RIPs primarily focus on internal operations, some proposals have resulted in open-source tools that benefit the entire web3 community. **Smart Invoice**, a payment",
+        "tags": [
+          "knowledge",
+          "operations",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "DAO",
+          "Escrow",
+          "Smart Invoice",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-dao-operations"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/dao-operations/rips/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/dao-operations/rips/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-discord-bots.md",
+      "content": "# Discord Bots: Tools of the Guild\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/discord/bots/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/discord/bots/page.mdx\nWithin the Guild, we rely on several bots to streamline tasks, coordinate events, and verify members. These bots help keep the Guild hall running smoothly, allowing you to focus on what matters: your high quality contributions to the Web3 ecosystem. Here’s a quick guide to the bots you’ll encounter and how to interact with each.\n\n---\n\n### **Guild.XYZ**\n\nThe Guild.XYZ bot grants roles and permissions by verifying your membership using your wallet. Guild members and Apprentices can unlock additional server access by linking their Discord account to their wallet.\n\n#### Steps to Verify with Guild.XYZ:\n\n1. Unlock your wallet and set it to the Gnosis Chain network.\n2. Head to #🔓 validate-membership in our Discord server and click **Verify your member shares**\n3. Follow the linked page's instructions for how to connect your wallet and meet requirements.\n4. After completing the requirements on Guild.XYZ's page, return to Discord and click **Join RaidGuild**.\n\n---\n\n### **DungeonMaster Worker**\n\nThe DungeonMaster Worker manages two different RaidGuild Discord bots: DungeonMaster and RaidGuild Guard.\n\nThe DungeonMaster bot handles the answering queries about DungeonMaster CRM data. It also interacts with CharacterSheets by allowing props tipping, cleric tipping, jester tipping, and attendance recording.\n\nRaidGuild Guard welcomes everyone who joins the Discord server who is not a bot, and informs them to go to #unlock-channels to view public channels. If newcomers do not verify their account within a certain period of time, they are booted. RaidGuild Guard also handles vairious channel manipulation commands, such as allowing non-members to enter a private channel or sending a stale channel to Valhalla (our channel archives).\n\nRead more about the Sentry bots for full functionality and commands. Props to Saimano#0272 for their creation!\n\n---\n\nWith these bots at your service, you’ll have the tools you need to navigate the Guild, communicate effectively, and stay in sync with fellow Raiders.",
+      "metadata": {
+        "title": "Discord Bots: Tools of the Guild",
+        "slug": "raidguild-handbook-discord-bots",
+        "kind": "reference",
+        "summary": "Within the Guild, we rely on several bots to streamline tasks, coordinate events, and verify members. These bots help keep the Guild hall running smoothly, allowing you to focus on what matters: your high quality contributions to the Web3 ecosystem. Here’s a quick guide to the bo",
+        "tags": [
+          "knowledge",
+          "onboarding"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-discord"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/discord/bots/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/discord/bots/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-discord-etiquette.md",
+      "content": "# Discord Etiquette: Navigating the Citadel\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/discord/etiquette/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/discord/etiquette/page.mdx\nWelcome to the RaidGuild Discord, our bustling citadel and central hub for collaboration, planning, and discussion. To keep our space constructive and welcoming for all members, we follow a few key guidelines. By observing these, you’ll help maintain an environment that is efficient, respectful, and enjoyable for everyone.\n\nHere’s what to keep in mind when joining the conversation:\n\n1. **Avoid Spamming Channels**  \n   Refrain from posting the same message in multiple channels. Keep your posts relevant and purposeful, and ensure each message adds value to the conversation.\n\n2. **Limit Member Mentions**  \n   Use `@RaidGuildMember` tags sparingly—limit to once per week unless an urgent need arises. This ensures our notifications stay meaningful and our members remain focused.\n\n3. **Respect Member-Only Meetings**  \n   Only join private, member-only meetings if you’ve been explicitly invited. Respecting these boundaries helps keep our gatherings efficient and organized.\n\n4. **Post in Relevant Channels**  \n   Take a moment to ensure your post lands in the most suitable channel. This keeps information organized and makes it easier for everyone to find what they’re looking for.\n\n5. **Engage Constructively and Respectfully**  \n   Approach every conversation with respect and an open mind. Debate and differing opinions are part of healthy collaboration—focus on solutions and constructive feedback, even when you disagree.\n\nBy following these guidelines, you’ll be contributing to a positive, productive Discord environment where everyone can do their best work.",
+      "metadata": {
+        "title": "Discord Etiquette: Navigating the Citadel",
+        "slug": "raidguild-handbook-discord-etiquette",
+        "kind": "guide",
+        "summary": "Welcome to the RaidGuild Discord, our bustling citadel and central hub for collaboration, planning, and discussion. To keep our space constructive and welcoming for all members, we follow a few key guidelines. By observing these, you’ll help maintain an environment that is effici",
+        "tags": [
+          "knowledge",
+          "onboarding"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-discord"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/discord/etiquette/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/discord/etiquette/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-discord-meetings.md",
+      "content": "# Discord Meetings: Staying Connected with the Guild\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/discord/meetings/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/discord/meetings/page.mdx\nRegular meetings are essential to RaidGuild’s operations, keeping members aligned, informed, and engaged. Here’s a breakdown of our recurring community meetings, along with tools and best practices for hosting and coordinating them.\n\n---\n\n### Regular Community Meetings\n\n| **Meeting Name**         | **Who Attends?**                               | **Purpose**                          | **Schedule**                                              |\n|--------------------------|-----------------------------------------------|--------------------------------------|-----------------------------------------------------------|\n| **Raider Roundup**       | Full members and past cohort members           | Raid coordination and management     | Weekly, Tuesdays6pm UTC          |\n| **Round Table**          | Full members only                              | Open forum for coordination          | Weekly, Thursdays4pm UTC         |\n| **Token Talk**           | Full members and past cohort members           | Discuss the $RAID token and usage    | Weekly, Thursdays10:30pm UTC|\n| **Cohort Community Call**| Open to past cohort members                    | Community support and membership     | Weekly, Wednesdays7pm UTC        |\n\n---\n\n### Roles in Meeting Coordination\n\nTwo key roles keep our meetings organized and productive:\n\n- **Stewards**: Stewards look after particular aspects of Guild knowledge. They are often tapped to provide updates on their realm, which provides important structure for our knowledge sharing.\n\n- **Jesters**: Jesters serve as emcees, leading discussions and keeping conversations engaging. The Sync Steward rotates this role to keep each meeting dynamic and focused.\n\nTogether, Stewards and Jesters help maintain a productive meeting environment, ensuring that conversations stay on track and goals are achieved.\n\n---\n\n### Essential Meeting Tools\n\n- **LettuceMeet**: Find group availability and schedule meetings. Syncing with Google Calendar is recommended for seamless scheduling.\n\n- **World Time Buddy**: Easily convert time zones to accommodate members from around the world.\n\n- **Sesh Bot**: Use `!list` in Discord to view upcoming events. Sesh Bot also offers RSVP and reminder functions to keep meetings organized. Learn more here.\n\n---\n\n### Hosting Resources\n\nFor guidance on hosting effective meetings, refer to our meeting hosting guide. This resource covers best practices, from setting agendas to handling follow-ups, ensuring that each meeting supports progress and collaboration.\n\n---\n\nThese gatherings and resources help us stay connected and focused on our Guild’s mission. See you at the next Roundup!",
+      "metadata": {
+        "title": "Discord Meetings: Staying Connected with the Guild",
+        "slug": "raidguild-handbook-discord-meetings",
+        "kind": "guide",
+        "summary": "Regular meetings are essential to RaidGuild’s operations, keeping members aligned, informed, and engaged. Here’s a breakdown of our recurring community meetings, along with tools and best practices for hosting and coordinating them.",
+        "tags": [
+          "knowledge",
+          "meetings",
+          "onboarding"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-discord"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/discord/meetings/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/discord/meetings/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-discord-navigation.md",
+      "content": "# Discord Navigation\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/discord/navigation/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/discord/navigation/page.mdx\n**Your Guide to the Guild’s Channels**\n\nWelcome to the RaidGuild Discord server, where Guilders gather, plan, and share in all things Web3. Our server is divided into channels for different purposes, from casual conversations to mission-critical projects. Here’s a guide to help you find your way and connect with the right Guilders.\n\nIf you’re ever unsure about where to post, simply ask in **#tavern** (for Apprentices) or **#general** (for Guild Members). For additional guidance, tag `@Tavern Keeper` for support.\n\n---\n\n### Server Categories and Key Channels\n\nOur server is organized into several categories, each with channels that serve specific functions. Below is a breakdown of these categories and what you’ll find in each.\n\n---\n\n#### **Public Channels**\nAccessible to all members, these channels foster connection, creativity, and conversation between Guilders and Apprentices.\n\n#### **Village**\nA collaborative area for brainstorming, resources, and sharing projects.\n\n#### **Cohort Seasons (n)**\nSeasons are structured onboarding cohorts, helping new Apprentices integrate and learn together.\n\n#### **Guild Commons**\nReserved for member-exclusive conversations about Guild strategy, treasury, and community growth.\n\n#### **Guild HQ**\nThis is the heart of RaidGuild operations, where Guilders discuss internal improvements, client projects, and raid coordination.\n\n#### **Internal Services**\nFor managing and improving internal tools, resources, and processes.\n\n#### **House of Memes**\nFocused on RaidGuild’s external presence, marketing, and shilling strategies.\n\n#### **Machine Shop**\nHome to our Discord bots, including tools for member availability and server maintenance.\n\n#### **Active Raids/RIPs**\nDedicated channels for each live Raid and RIP (Raid Improvement Proposal), marked by `#raid-project` or `#rip-project`. Each raid has a pinned message explaining its scope.\n\nIf you’re interested in contributing to a Raid, visit the specific channel and introduce yourself, offering any skills that could add value.\n\n---\n\n#### **Client Chats**\nTemporary channels for client discussions while scoping a project. These spaces allow you to get to know the client’s needs and preferences. Respect client confidentiality, as misuse of this information can lead to removal from the Guild.\n\n---\n\n#### **Valhalla Closed Raids**\nWhere completed and archived Raids are sent once shipped. For more on closing Raids, see the **Ship a Raid** section.",
+      "metadata": {
+        "title": "Discord Navigation",
+        "slug": "raidguild-handbook-discord-navigation",
+        "kind": "guide",
+        "summary": "**Your Guide to the Guild’s Channels**",
+        "tags": [
+          "knowledge",
+          "onboarding"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-discord"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/discord/navigation/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/discord/navigation/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-discord-onboarding.md",
+      "content": "# Discord Onboarding\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/discord/onboarding/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/discord/onboarding/page.mdx\n**A Step-by-Step Guide to Joining RaidGuild’s Server**\n\nTo embark on your journey with RaidGuild, the first step is to join our Discord server, where Guild members gather, plan, and share knowledge. Follow this simple onboarding process to get started:\n\n### Step 1: Accept the Invite\n\n- **Receive your Invite Link**  \n  To join RaidGuild’s Discord, you’ll need an invite link. New members and collaborators typically receive this link directly from a Guild member or through official Guild channels. If you’re an incoming Apprentice or have been granted access, check your email or DMs for the link.\n\n- **Click the Link**  \n  Once you have the invite, click on the link to enter the Guild’s Discord server. Make sure you’re logged into Discord or create an account if you’re new to the platform.\n\n### Step 2: Verify Your Account\n\n- **Complete Verification**  \n  When you join, you’ll be prompted to verify your account. Follow the instructions to complete this step. This helps us maintain a secure and bot-free server.\n\n### Step 3: Introduce Yourself\n\n- **Head to #tavern**  \n  Now that you’ve got the basics, introduce yourself! Share a bit about who you are, your skills, and what brings you to RaidGuild. This is a great way to start connecting with other Guild members and let us know how you’d like to contribute.\n\n### Step 4: Set Up Notifications\n\n- **Customize Your Notifications**  \n  To keep your notifications manageable, adjust your settings in each channel as needed. Most members choose to set alerts for key channels like #announcements while muting others until they’re actively participating.\n\n### Step 5: Explore Channels and Get Involved\n\n- **Navigate the Server**  \n  Familiarize yourself with our various channels, each dedicated to different areas of Guild operations. Some key channels to explore include:\n  - **#tavern** for casual discussion and community building\n  - **#client-arena** a general chat for all RaidGuild Clients\n  - **#product-support** for Raid Guild-owned products only (not products built for clients). Smart Invoice, WrapETH, etc...\n\n- **Ask Questions in #help**  \n  If you’re unsure about anything, head to the #help channel. Guild members and moderators are ready to assist with any questions about the server or Guild processes.\n\n### Step 6: Sync with Your Guild Role\n\n- **Gain Access to Apprentice or Member Channels**  \n  If you’re an Apprentice or have an official Guild role, a moderator will help you gain access to specific channels related to your role. Keep an eye out for a message from a Guild leader or moderator to finalize your role setup.",
+      "metadata": {
+        "title": "Discord Onboarding",
+        "slug": "raidguild-handbook-discord-onboarding",
+        "kind": "guide",
+        "summary": "To embark on your journey with RaidGuild, the first step is to join our Discord server, where Guild members gather, plan, and share knowledge. Follow this simple onboarding process to get started:",
+        "tags": [
+          "knowledge",
+          "onboarding"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "Smart Invoice"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-discord"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/discord/onboarding/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/discord/onboarding/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-escrow-create-an-escrow.md",
+      "content": "# Creating an Escrow\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/escrow/create-an-escrow/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/escrow/create-an-escrow/page.mdx\n### Prerequisites\n\nThe raid party lead (e.g. Cleric or Monk) will want to create an escrow for the raid (or RIP).\n\n  <thead\n    style={{ backgroundColor: \"#a6b1e1\", color: \"black\", fontWeight: 800 }}\n\n    Info\n    Description\n\n    **Raid party addresses**\n    Addresses for all raid party members or a Safe address\n\n    **The client's address**\n\n      The address where the client can release the funds and lock the escrow.\n\n    **Milestone amounts**\n\n      From the milestone amounts we'll calculate the total payment for the raid.\n      Milestone amounts are flexible. All milestones must use the same token\n\n    **Safety valve withdrawal date**\n\n      This is the date past which the client can withdraw any remaining funds in\n      escrow, on the assumption that the raid has not delivered on its promise.\n\n       This does not affect the ability of the client to release\n      milestones as normal.\n\n    For Raids, the associated **Raid ID**\n\n      You can find this in Dungeon Master from the Raid page. Also selecting\n      \"Create Escrow\" from the Raid Detail page will handle this automatically\n      for you.\n\n  **Client address** doesn't need to be the address funding the escrow. Funds can be sent directly to the escrow contract.\n\n### Raid or RIP?\n\nThe easiest way to create an escrow is to use the Escrow Zap which will walk you through the process and handle creating a Safe and any necessary Splits in a single transaction.\n\nWhen you first go to create an escrow you'll need to either find the Raid ID so the escrow can be linked to the Raid, or you can create an escrow for a RIP which will be handled manually for now.\n\n- For Raids, enter the Raid ID here and you'll able to advance to the next step\n- For RIPs, select \"I don't have one\"\n\n  &ast;_below you can substitute RIP party for any instance of \"raid party\"_\n\nLinks to escrows in RIP requests is recommended.\n\n### 1. For RIPs, provide the project details\n\nHigh-level details for the project can be included or filled with dummy or reference values. These values are public (pinned on IPFS), so we'll generally use the raid ID as the only reference on Raids.\n\nThe project details we can include are\n\n- Name\n- Description\n- Link - can be an `ipfs://` or `https://` link\n- Start Date\n- End Date\n\nOnce we have the project details, we can move on to the onchain escrow details.\n\n### 2. Enter escrow details\n\nBoth escrow types will require some additional details. This includes:\n\n- the `Client`'s address\n- an **optional** `Raid Party Address`, _if not creating a raid party split_\n- the `Safety Valve Date`\n\nFor #RIPs, the client will be provided automatically and set to the Ganggang multi-sig.\n\n  **Safety Valve Date** should be 1 - 2 months after the expected delivery date. The escrow will function normally after this date, but the client can withdraw the funds at anytime.\n\n**Arbitration provider** will be handle automatically for both escrow types:\n\n- Raids will, generally, use LexDAO for arbitration\n  {\" \"}\n\n  👉 _learn more about arbitration in In Case of Dispute_\n- RIPs will use RaidGuild DAO for arbitration\n\n### 3. Handle Split details\n\nIf you opted to create a raid (or RIP) party split in the previous step, you'll be asked to provide percentage splits for the first milestone to be released along with the raid party member addresses for each split percentage.\n\nRaids will have a secondary split created (regardless of opting for a raid party split) to handle the DAO spoils for the Raid.\n\n  **Splits** will need to be updated between milestone releases to account for member participation in each milestone. It is recommended to handle this after each release for the next milestone. The controller will be set so the raid party multi-sig can update it.\n\n_Optionally_, you can provide a Safe address which will be used as the controller for the created Split.\n\nAfter setting up the Split allocations, we can add the payments for the escrow milestones.\n\n### 4. Enter milestone payments\n\nMilestones allow us the opportunity to check-in with the client (or Guild) and ensure the final deliverable for the project is on track and meeting expectations.\n\n**Each milestone will need to use the same payment token**, but can be flexible in size for the needs of the project. Enter each milestone's payment amount and add more with the `+ Add` button below the current milestones.\n\nFinally, we can confirm the details and get the escrow deployed.\n\n### 5. Confirm & Deploy\n\n  If you are raiding on Optimism, make sure you are connected to the Optimism chain before you deploy the escrow.\n\nWith all the steps for creating an escrow complete, _review what will be deployed and **confirm the transaction**_.\n\nOnce the escrow is created we can work on getting it funded.\n\n### Next: Get the escrow funded\n\nHead over to **Funding an Escrow** for a breakdown on how you can get your escrow funded by a client or the guild. There are several easy options for getting your escrow funded.",
+      "metadata": {
+        "title": "Creating an Escrow",
+        "slug": "raidguild-handbook-escrow-create-an-escrow",
+        "kind": "guide",
+        "summary": "The raid party lead (e.g. Cleric or Monk) will want to create an escrow for the raid (or RIP).",
+        "tags": [
+          "knowledge",
+          "operations",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "DAO",
+          "Escrow",
+          "Optimism"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-escrow"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/escrow/create-an-escrow/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/escrow/create-an-escrow/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-escrow-funding-an-escrow.md",
+      "content": "# Funding an Escrow\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/escrow/funding-an-escrow/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/escrow/funding-an-escrow/page.mdx\nBefore sending any funds to an escrow ensure that the client address can call the proper functions to `release` and `lock`\n\nThe Raid party lead is responsible for working with the client to help them make their deposit into the escrow. The following deposit instructions can be shared to ensure that the client is able to make their deposit successfully.\n\n## Paying with an Externally Owned Account (e.g. MetaMask, Rainbow)\n\nIf you are funding an escrow from an EOA like MetaMask, follow these instructions:\n\n1. Go to `https://dm.raidguild.org/escrow/[RaidID]`\n   _(**Cleric note:** replace [RaidID] with the Raid ID from Dungeon Master)_\n2. Connect your MetaMask or WalletConnect wallet\n3. Follow the instructions to deposit, there will be 2 transactions\n   - the first transaction is to approve the Raid Guid Escrow contract to transfer your tokens\n   - the second on is to actually transfer the tokens to the escrow contract\n4. Refresh to verify that the deposit has been made (you may need to reconnect your wallet).\n\nThe Escrow is also accessible directly in SmartInvoice, so once you get the escrow address, you can provide the SmartInvoice link which may be more client friendly. A handy link to SmartInvoice is provided on the Raid's escrow page.\n\n  Only whitelisted tokens will be accessible as escrow tokens! Only send tokens to an escrow you're sure are whitelisted. _Additional tokens cannot be whitelisted after creation._\n\n## [Legacy] Gnosis Safe instructions\n\nConnecting via WalletConnect or the Safe Apps should allow you to follow the same process as above for EOAs.\n\nIf you are paying Raid Guild from a Gnosis Safe, follow the below instructions to generate the correct transaction from the Gnosis Safe itself. Alternatively, you can use the WalletConnect app in the Gnosis Safe to interact with the Raid Guild Escrow app directly (e.g., as if you were using Metamask).\n\n  Using the transaction builder used to be necessary. Now you should be able to use WalletConnect or connect to a safe via Safe Apps so this **should\\\\* no longer be needed.**\n\n### Step 1: Approve the escrow contract to transfer the token\n\n  If you are raiding on Optimism, you are only able to pay with native USDC (`0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85`).\n\n1. Go to your Gnosis Safe interface\n2. Click New Transaction\n3. Click Contract Interaction\n4. In the Recipient field, paste the address of the token you're paying with\n   - wxDAI: `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d`\n   - WETH: `0x36c06Cb8EE68D632bDEfeb969b4751F73c67d891`\n5. The ABI field will auto-populate and a dropdown menu will appear underneath\n6. From the dropdown menu, select the Approve function. Two new fields will appear underneath\n7. In the first field (`usr` for DAI or `guy` for WETH), paste the address of the Raid Guild Escrow contract on Gnosis\n8. In the second field (`wad`), enter the amount of tokens to deposit, multiplied by 10^18.\n   - If your payment does not have any decimals (e.g. 10 DAI, not 10.5 DAI), then multiplying by 10^18 is equivalent to adding 18 zeroes to the end.\n   - You can copy/paste 18 zeroes from here: `000000000000000000`\n9. Click Review\n10. Check that everything matches the correct inputs, and then click Submit\n11. Process the transaction as you would any other Gnosis Safe transaction\n\n### Step 2: Transfer or deposit tokens into the escrow\n\n1. Click New Transaction again\n2. Click Contract Interaction\n3. In the Recipient field, paste the address of the Raid Guild Escrow contract\n4. The ABI field will auto-populate and a dropdown menu will appear underneath\n5. From the dropdown menu, select the `deposit` function. Two new fields will appear underneath\n6. In the first field (`token`), enter the payment token address.\n7. In the second field (`amount`), enter the amount in wei\n   - If your payment does not have any decimals (e.g. 10 DAI, not 10.5 DAI), then multiplying by 10^18 is equivalent to adding 18 zeroes to the end.\n   - You can copy/paste 18 zeroes from here: `000000000000000000`\n8. Click Review\n9. Check that everything matches the correct inputs, and then click Submit\n10. Process the transaction as you would any other Gnosis Safe transaction\n\nFinally, check with RaidGuild to confirm that the deposit was successful.",
+      "metadata": {
+        "title": "Funding an Escrow",
+        "slug": "raidguild-handbook-escrow-funding-an-escrow",
+        "kind": "guide",
+        "summary": "Before sending any funds to an escrow ensure that the client address can call the proper functions to release and lock",
+        "tags": [
+          "knowledge",
+          "operations",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Escrow",
+          "Smart Invoice",
+          "Optimism"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-escrow"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/escrow/funding-an-escrow/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/escrow/funding-an-escrow/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-escrow-intro-to-smartinvoice.md",
+      "content": "# Introduction to Smart Invoice\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/escrow/intro-to-smartinvoice/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/escrow/intro-to-smartinvoice/page.mdx\nRaidGuild has partnered with SmartInvoice to facilitate Escrow services, ensuring secure and transparent transactions. SmartInvoice, originally created within the guild, has since grown to become an independent tool, supporting both clients and guild members in maintaining trust throughout their projects.\n\n### Benefits of Using SmartInvoice\n\n- **Assured Client Funds**: Clients deposit funds up-front, guaranteeing the raid party is covered upon project completion.\n- **Client Protection**: Clients retain funds until each milestone is met, offering security if expectations aren’t met.\n- **Milestone-Based Progress**: Milestones are used to break down deliverables, giving both parties clear checkpoints.\n- **Flexibility for Long Projects**: Milestones can be added as needed, accommodating extended project timelines.\n\n### Key Features of Escrow with SmartInvoice\n\nSmartInvoice escrows provide four primary functions for projects:\n\n1. **Register**: Creates a new escrow account, generally set up by the raid party.\n2. **Deposit**: Allows clients to fund the escrow, providing the financial backing for milestones.\n3. **Release**: Permits clients to release funds as each milestone is successfully completed.\n4. **Lock**: Initiates a dispute by freezing the remaining funds, preventing further releases until resolved (available to both clients and raid party).\n\n### Escrow Zap and Spoils Management\n\n- **Escrow Zap**: A tool that automates guild payouts through Splits, coordinates raider payments, and simplifies transactions.\n- **Spoils Manager**: Manages the DAO’s share, setting a percentage for the treasury, which is enforced through the Split contract on every release.\n\n### Escrow Interaction Guide\n\n#### Getting Started\n\n- **Avoid Centralized Addresses**: Client addresses should not be from centralized exchanges to ensure they can interact with the necessary functions.\n- **Smart Contract Accounts**: Clients using DAOs or multisigs should verify they can interact with SmartInvoice, commonly through Aragon Agent, Moloch Minion, or Gnosis Safe.\n- **Using SmartInvoice App**: All escrow actions can be managed through SmartInvoice if Dungeon Master lacks a required function.\n\n#### Core Actions for Escrow\n\n- **Deposit**: When ready, the client (or anyone) can fund the escrow by selecting the number of milestones. Funds can come from any source, directly transferring tokens to the escrow.\n- **Release**: Only the client may release funds upon reaching each milestone, ensuring the project stays on track.\n- **Lock**: Either party can freeze funds by locking the escrow, enabling arbitration. This must occur before the safety valve date.\n- **Resolve**: If locked, the resolver steps in to decide fund distribution based on the dispute.\n- **Withdraw**: Should the provider not deliver by the safety valve date, the client may withdraw remaining funds.\n\n### Dispute Resolution\n\nWhen a dispute arises, either party can initiate a `Lock` on the escrow, prompting arbitration through LexDAO or the chosen provider. This arbitration assesses the situation, determining the rightful distribution of funds.\n\n### The Flow of Escrow Zap\n\nThe Escrow Zap merges several processes into a streamlined transaction flow, creating necessary contracts in one go:\n\n1. Safe + DAO Split + Raid Party Split + Escrow\n2. Safe + DAO Split + Escrow\n3. Safe + Raid Party Split + Escrow\n4. Safe + Escrow only\n\n### Important Notes\n\nThe Spoils Manager contract allows the DAO to update the treasury address and set a raid spoils percentage, ensuring spoils are properly distributed. On the Optimism chain, a distinct Spoils Manager contract handles these values.\n\n---\n\n### Testing and Auditing\n\nWhile SmartInvoice contracts are thoroughly tested, they have not been formally audited. The contract involves minimal risk, as it does not directly hold funds, leveraging established tools within the ecosystem.\n\n**Proceed with caution and use at your own risk.**",
+      "metadata": {
+        "title": "Introduction to Smart Invoice",
+        "slug": "raidguild-handbook-escrow-intro-to-smartinvoice",
+        "kind": "guide",
+        "summary": "RaidGuild has partnered with SmartInvoice to facilitate Escrow services, ensuring secure and transparent transactions. SmartInvoice, originally created within the guild, has since grown to become an independent tool, supporting both clients and guild members in maintaining trust ",
+        "tags": [
+          "knowledge",
+          "operations",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "DAO",
+          "Escrow",
+          "Smart Invoice",
+          "Optimism"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-escrow"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/escrow/intro-to-smartinvoice/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/escrow/intro-to-smartinvoice/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-membership-become-a-member.md",
+      "content": "# Become a Member\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/membership/become-a-member/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/membership/become-a-member/page.mdx\nTo advance from Apprentice to full RaidGuild Member, you must complete your cohort journey and secure the support of a Champion within the Guild. Your Champion will stake $RAID tokens on your behalf, signaling their confidence in your readiness. For details on how this sponsorship works, see Champion a New Member.\n\nOnce you’ve completed the Champion process and met membership requirements, you’re eligible to ascend to Member status and receive 100 shares in the Raid Guild DAO. Here’s how to proceed:\n\n## Meeting Membership Expectations\n\nTo ensure your Champion’s stake is returned, complete the following within your first **60 days** as a member (starting from when your membership proposal is processed):\n\n1. **Participate in at Least One Raid or RIP**: Join and actively contribute to at least one Raid or RIP. Projects can be ongoing or completed within this timeframe, provided you are in good standing.\n2. **Attend Guild Meetings**: Participate in at least two Guild meetings, including Roundtables or Raider Rallies, to stay engaged with the community.\n3. **Show Alignment with Guild Values**: Demonstrate your commitment to the Guild’s principles and values, as evaluated by the DAO.\n\n## Steps to Membership\n\n1. **Submit a Membership Proposal**: Follow the Proposal Process to submit a Membership Proposal. Request enough shares to reach the 100-share cap in the Raid Guild DAO.\n2. **Include Stake Verification**: In your proposal description, provide a link to the Blockscout transaction showing your Champion’s $RAID stake. This link is essential for the DAO to confirm the staking.\n\n  **Note**: All new members are capped at 100 Shares, requiring 500 wxDAI.\n\nOnce your proposal passes and is finalized, you’ll officially hold 100 shares, marking your full membership in Raid Guild!\n\n## Final Steps: Discord Access\n\nTo join member-exclusive channels, follow the instructions on the Discord Bots page. Now, you’re ready to join a Raid!",
+      "metadata": {
+        "title": "Become a Member",
+        "slug": "raidguild-handbook-membership-become-a-member",
+        "kind": "guide",
+        "summary": "To advance from Apprentice to full RaidGuild Member, you must complete your cohort journey and secure the support of a Champion within the Guild. Your Champion will stake $RAID tokens on your behalf, signaling their confidence in your readiness. For details on how this sponsorshi",
+        "tags": [
+          "knowledge",
+          "onboarding",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "DAO"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-membership"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/membership/become-a-member/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/membership/become-a-member/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-membership-become-an-apprentice.md",
+      "content": "# Become an Apprentice\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/membership/become-an-apprentice/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/membership/become-an-apprentice/page.mdx\nEmbarking on the path to becoming a RaidGuild apprentice is no ordinary journey—it’s a trial of skill, resilience, and the will to learn. Your apprenticeship is a critical first step to contributing to the Guild and ultimately, earning your place as a RaidGuild member. Here’s your guide to understanding the apprentice journey, so you’re well-prepared to make the most of your time.\n\n## What Awaits You on This Journey\n\n### Setting Your Purpose\n\nThe apprentice program is an opportunity to:\n1. Gain experience in a decentralized autonomous organization (DAO).\n2. Work on real projects, known as **Raids**, and contribute meaningfully to the Guild.\n3. Build connections with other aspiring Guild members and mentors.\n4. Learn the skills needed to thrive in web3 development and DAO operations.\n5. Work toward full membership, where you can shape and benefit from the Guild directly.\n\nTo succeed in this environment, set a clear objective for yourself. Ask why you’re here, what you aim to learn, and how you can best contribute to the Guild’s success. Whether your goal is to assess if this path aligns with your skills, or to gain a strong foothold in the web3 space, defining your purpose will keep you focused amid the organized chaos of the DAO world.\n\n### Preparing for the Journey\n\n- **Apply for Onboarding**: Begin by applying to join an upcoming apprentice cohort on the Guild’s main website. Cohorts are scheduled sporadically, and the path to membership requires active participation in one.\n- **Set Up in Discord**: Select your roles in the Guild’s start-here channel, identify your skills in the skills channel, and introduce yourself to your fellow cohort members and mentors.\n- **Familiarize Yourself with Guild Resources**:\n  - Explore our GitHub for ongoing projects.\n  - Add the Raid Guild Calendar to stay updated on cohort events.\n\n## What to Expect on the Path\n\nApprenticeship is structured yet flexible, allowing each member to forge their own journey. The cohort experience isn’t always linear; the Guild encourages exploration, adaptation, and proactive involvement. By participating in Raids and tasks, you’ll have opportunities to demonstrate your skills and problem-solving abilities, and in turn, the Guild will observe your potential for membership.\n\nDuring your cohort journey, you may end up:\n1. As a full-fledged RaidGuild member, ready to take on more responsibility.\n2. Contributing to Guild projects while deciding on full membership.\n3. Waiting for a future cohort if the timing or readiness isn’t right for you.\n4. Choosing a different path if Guild life isn’t what you seek.\n\n### Key Milestones\n\n1. **Start Participating**: Engage actively in cohort meetings, events, and any tasks available. Seek opportunities to contribute to ongoing projects and connect with other Guild members to learn about their work.\n2. **Map Out the Chaos**: Get comfortable with the flexible structure of the Guild. There are no strict instructions or predefined roles, so you’ll need to carve out your path by identifying where you can add value.\n3. **Secure a Champion**: As you progress, identify a Guild member who can vouch for your readiness and willingness to contribute. Champions are key to advancing from apprentice to full member.\n4. **Become Part of the DAO**: Once you’ve made it through, pledge your support to the Guild’s cohort DAO and start voting on proposals. Membership brings more responsibility, but also more influence within the Guild.\n\n## Equipping Yourself for Success\n\nRaidGuild’s apprenticeship may feel like “drinking from a waterfall\" as you get accustomed to the fast-paced, decentralized environment. To make the most of this journey:\n\n- Review resources like the Code of Conduct.\n- Familiarize yourself with the Raid Guild Tool Shed for essential tools.\n- Connect with your cohort on Discord; the community is welcoming and ready to support you as you navigate this new world.\n- Be proactive in finding answers and understanding RaidGuild’s mission and values by checking out the Raid Guild Origin Stories and past client work in the Raid Guild Portfolio.\n\n## Sealing the Deal\n\nYour cohort journey will culminate with a chance to pledge your allegiance to RaidGuild as a full member. If you’ve demonstrated skill, adaptability, and initiative, you’ll be ready to cast your first vote within the Guild and take on a more significant role.",
+      "metadata": {
+        "title": "Become an Apprentice",
+        "slug": "raidguild-handbook-membership-become-an-apprentice",
+        "kind": "guide",
+        "summary": "Embarking on the path to becoming a RaidGuild apprentice is no ordinary journey—it’s a trial of skill, resilience, and the will to learn. Your apprenticeship is a critical first step to contributing to the Guild and ultimately, earning your place as a RaidGuild member. Here’s you",
+        "tags": [
+          "knowledge",
+          "onboarding",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "DAO",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-membership"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/membership/become-an-apprentice/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/membership/become-an-apprentice/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-membership-champion-a-member.md",
+      "content": "# Champion a New Member\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/membership/champion-a-member/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/membership/champion-a-member/page.mdx\nRaidGuild’s growth relies on its members' judgment to recognize and champion apprentices who are a strong fit for the Guild. Championing is a mix of endorsement, mentorship, and staking $RAID tokens, ensuring that only the most promising new members advance to full membership. To encourage this mentorship, successful Champions receive a $RAID reward.\n\n## Championing and $RAID Staking\n\nTo champion a new member, a Guild Champion must stake $RAID. The stake amount varies by applicant type:\n\n- **25,000 $RAID** for applicants who have completed a Raid Guild cohort.\n- **50,000 $RAID** for those who haven’t completed a cohort or if the Champion belongs to the same cohort season as the applicant.\n\nThe Champion’s stake will be returned if the apprentice meets the success criteria outlined below. Upon staking, the applicant gains the `Apprentice` role, which includes access to the necessary permissions for them to meet these criteria.\n\n## Champion Rewards\n\nChampions earn a **12,500 $RAID reward** once their apprentice successfully achieves the new member success criteria (previously 25,000 $RAID).\n\n## Success Criteria for New Members\n\nNew members must show they contribute meaningfully to the Guild, bring value, and actively engage. Within **60 to 120 days** of starting their apprenticeship, an applicant may be considered for full membership if they achieve the following:\n\n1. **Engage in at Least One Raid or RIP**: Join and contribute actively to a Raid or RIP. Ongoing projects count as long as the apprentice remains in good standing.\n2. **Attend Two Guild Meetings**: Participate in at least two Guild gatherings, such as the Round Table or Raider Roundup.\n3. **Align with Guild Values**: Demonstrate Guild values, as assessed by the DAO.\n\n## Championing Steps\n\n1. **Stake $RAID**: Transfer the required $RAID to the `New Member Championing` minion at `0xd6343fde84e9a2197faa2ae1d6affdb46675856d`.\n2. **Open a Championship Issue**: Create an issue on the RIP repository using the `Championships` issue type. Track the applicant’s progress on the Champion Board.\n3. **Submit Staking Transaction Details**: Add the Blockscout transaction link and any relevant details about the applicant in the Championship issue.\n4. **Mentor and Track Progress**: Guide the applicant as they complete activities and Guild engagement.\n5. **Assist with Membership Proposal**: When the applicant meets the success criteria, help them submit a membership proposal to the DAO, including evidence of their progress.\n6. **Claim Your Stake and Reward**: After the applicant is approved as a member, submit a proposal (within two weeks) to retrieve your $RAID stake and Champion reward. Include a link to the successful member proposal.\n\n## Key Deadlines\n\nTo ensure a timely process:\n\n1. **Apprenticeship Duration**: Apprentices must apply for membership within **60 to 120 days** of their start, allowing time for development without delays.\n2. **Champion Reward Deadline**: Champions have **two weeks** following the member proposal’s approval to request their stake and reward.\n\n## References\n\n- Review the original proposal that launched the Championing program.\n- Read the update RIP for improvements to this process.\n- See the proposal on funding refresh and updates to reward structure.\n\n--- \n\nThis Championing process both empowers new members and enriches the Guild by ensuring its values and standards are passed down with care. Step forward, Champion, and bring forth the next generation of Raiders!",
+      "metadata": {
+        "title": "Champion a New Member",
+        "slug": "raidguild-handbook-membership-champion-a-member",
+        "kind": "guide",
+        "summary": "RaidGuild’s growth relies on its members' judgment to recognize and champion apprentices who are a strong fit for the Guild. Championing is a mix of endorsement, mentorship, and staking $RAID tokens, ensuring that only the most promising new members advance to full membership. To",
+        "tags": [
+          "knowledge",
+          "onboarding",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "DAO"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-membership"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/membership/champion-a-member/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/membership/champion-a-member/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-membership-join-the-guild.md",
+      "content": "# Join the Guild\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/membership/join-the-guild/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/membership/join-the-guild/page.mdx\nWelcome, future Raider! Embarking on the path to become a RaidGuild member involves completing an **Apprentice Cohort** process, where you’ll gain the skills, connections, and guidance needed to thrive in the guild. This page provides the steps and resources to prepare you for joining a cohort, followed by a path to full membership within RaidGuild.\n\n---\n\n## Steps to Start Your Journey\n\n1. **Introduce Yourself**  \n   Head to the #tavern channel in our Discord to say hello! Share your skills, background, and interests with fellow guild members and apprentices. This step is essential to connect with the community and begin your journey.\n\n2. **Add the Guild Calendar**  \n   Sync the Raid Guild Google Calendar to stay informed about key events, cohort sessions, and meetings.\n\n3. **Explore the Guild’s Codebase and Resources**  \n   Visit our Raid Guild GitHub to explore the guild’s projects, repositories, and resources. Familiarizing yourself with our codebase will prepare you for technical contributions and give you insights into our work.\n\n4. **Check Out the Guild’s DAOHaus**  \n   Our financial decisions, proposals, and treasury are managed on the Raid Guild DAOHaus. Familiarize yourself with this tool as it will become essential for your guild operations and contributions.\n\n5. **(For Graduates) Use the Dungeon Master Dashboard**  \n   Once you complete the cohort process, the Dungeon Master dashboard is where you can view active Raids, track members, and manage projects. It’s a central resource for coordinating raids and guild activities.\n\n---\n\n## Essential Resources for Newcomers\n\nTo make the most of your apprenticeship and gain full membership, use these resources in the following order:\n\n### 1. **Discord: The Guild’s Core Hub**\n\nMost guild interactions take place on Discord. Join the RaidGuild server here and familiarize yourself with our channel guides. While apprentices have limited access, your participation will open more opportunities within the guild.\n\n> **Important:** Please follow our Discord Etiquette to maintain a positive, respectful environment.\n\n### 2. **Become an Apprentice**\n\nThe first official step to joining the guild is to apply for a cohort. As an apprentice, you’ll complete tasks, prove your skills, and gain exposure to real-world projects. To learn more, visit the Become an Apprentice page for details on what to expect and how to apply.\n\n### 3. **Prove Yourself in Raids and RIPs**\n\nDuring your apprenticeship, you’ll have the chance to work on both Raids (client projects) and RIPs (internal improvement projects). These tasks help demonstrate your abilities and contribute to the guild’s mission.\n\n- Learn how to Join a Raid and see how your work can have a tangible impact.\n- Explore opportunities in RIPs to assist with internal guild projects, showcasing your dedication and skills.\n\n### 4. **Find a Champion**\n\nTo move from apprentice to full member, you’ll need a current member to champion your entry. Champions vouch for apprentices who’ve proven their dedication and skills. Read more about this process on the Champion a Member page.\n\n### 5. **Get Paid and Use DAOhaus**\n\nGuild members are compensated through DAOhaus. Once you begin contributing to guild projects, you’ll use DAOhaus to request and receive payments. Familiarize yourself with DAOhaus to manage your earnings and vote on guild decisions.\n\n### 6. **Participate in Guild Governance**\n\nAs a member, you’ll have a voice in guild matters. Learn about Proposal Types to understand how decisions are made and how you can submit proposals for funding, new projects, or changes in the guild.\n\n### 7. **Access Tools and Resources**\n\nThe Raid Guild Tool Shed is your library of essential resources and tools, from development to project management. Explore these tools early on—they will be valuable in completing tasks and excelling in your cohort.\n\n---\n\n## Next Steps: Becoming an Apprentice\n\nReady to dive in? Head over to the Becoming an Apprentice page to learn about the cohort application process and begin your journey toward full RaidGuild membership. Each step brings you closer to joining the ranks of the guild—may your journey be rewarding and your contributions impactful!",
+      "metadata": {
+        "title": "Join the Guild",
+        "slug": "raidguild-handbook-membership-join-the-guild",
+        "kind": "guide",
+        "summary": "Welcome, future Raider! Embarking on the path to become a RaidGuild member involves completing an **Apprentice Cohort** process, where you’ll gain the skills, connections, and guidance needed to thrive in the guild. This page provides the steps and resources to prepare you for jo",
+        "tags": [
+          "knowledge",
+          "onboarding",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "DAO"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-membership"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/membership/join-the-guild/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/membership/join-the-guild/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-membership-raid-guild-shares.md",
+      "content": "# Raid Guild Shares\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/membership/raid-guild-shares/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/membership/raid-guild-shares/page.mdx\nIn the RaidGuild DAO, shares are non-transferable and specific to this Guild alone. Each share grants its holder a proportional claim on the Guild’s collective capital pool, along with one vote in Guild governance. At any time, members may “Ragequit” to exchange their shares for a corresponding portion of the Guild’s treasury.\n\n- **Issue Rate**: New shares are issued at a rate of **5 wxDAI per share**.\n- **New Member Cap**: New members can request up to **100 shares** upon joining.\n\n### Non-Voting Shares (Loot)\n\n**Loot** refers to non-voting shares that, like regular shares, can be “Ragequit” to claim a proportional amount of the Guild’s assets held in the War Chest. Loot is often requested as compensation for completed work, providing members with wxDAI without adding voting rights.\n\n--- \n\nThis structure allows for flexibility in rewards and compensation, while maintaining clear roles and voting power among active Guild members.",
+      "metadata": {
+        "title": "Raid Guild Shares",
+        "slug": "raidguild-handbook-membership-raid-guild-shares",
+        "kind": "guide",
+        "summary": "In the RaidGuild DAO, shares are non-transferable and specific to this Guild alone. Each share grants its holder a proportional claim on the Guild’s collective capital pool, along with one vote in Guild governance. At any time, members may “Ragequit” to exchange their shares for ",
+        "tags": [
+          "knowledge",
+          "onboarding",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "DAO"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-membership"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/membership/raid-guild-shares/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/membership/raid-guild-shares/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-membership-skills-roles.md",
+      "content": "# Skills & Roles in the Guild\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/membership/skills-roles/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/membership/skills-roles/page.mdx\nSkills in RaidGuild help showcase each member’s skill set and expertise, making it easy to assemble the right team for any Raid. Assign a role only if you’re prepared to contribute actively in that area.\n\nTo assign yourself a role, go to the #equip-skills channel on Discord. Use the emojis under each role description to automatically add the role to your profile.\n\n---\n\n## Builder (Active Raiding) Skills\n\n| Role                                                                 | Type                   | Description                                                                |\n| -------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------- |\n| Archer                     | Design                 | For specialists in graphic design, illustration, and visual arts.          |\n| Druid                       | Data Science/Analytics | For those skilled in research, SEO, and data analysis.                     |\n| Paladin                   | Backend Dev            | For developers focused on backend languages like Java, Python, or Node.js. |\n| Necromancer           | DevOps                 | For experts in technical configuration and optimization.                   |\n| Ranger                     | UX/User Testing        | For those who specialize in user experience and usability testing.         |\n| Warrior                   | Frontend Dev           | For frontend specialists skilled in React, CSS, HTML, or similar tech.     |\n| Wizard                     | Smart Contracts        | For those skilled in Solidity, Vyper, and other smart contract languages.  |\n| Cleric                     | Account Manager        | For hybrid communicators or project managers.                              |\n| Hunter                     | BizDev                 | For business development and sales strategists.                            |\n| Monk                         | Project Manager        | For managers skilled in budgeting, planning, and documentation.            |\n| Mystic Alchemist | DAO Consultant         | For DAO experts and consultants.                                           |\n\n## Support Skills\n\n| Role                                                           | Type            | Description                                                              |\n| -------------------------------------------------------------- | --------------- | ------------------------------------------------------------------------ |\n| Apprentice       | New Applicants  | For those applying to join the DAO, marking them as apprentices.         |\n| Angry Dwarf     | Treasury        | For those with skills in accounting, finance, and treasury management.   |\n| Bard                   | Marketing       | For members who excel in marketing, social media, and community growth.  |\n| Rogue                 | Legal           | For legal advisors and analysts.                                         |\n| Scribe               | Content Creator | For media creators skilled in writing, podcasting, and video production. |\n| Tavern Keeper | Community       | For those managing community relations and activities.                   |\n| Healer               | Internal Ops    | For internal operations managers focused on Guild logistics.             |\n\n---\n\nCurrently, members holding at least one share can assign themselves any role, but we encourage you to start with no more than five. Choose roles that align with your primary skills, expanding gradually as you find your place within the Guild.\n\nRoles will play a central part in building skill trees that will eventually form part of a web3 profile, enabling your expertise to travel with you across the Metaverse.\n\n---\n\n### Adding New Roles\n\nThink a new role is needed? Propose it in the #ops channel. If there’s soft consensus, it can be added to the roster.",
+      "metadata": {
+        "title": "Skills & Roles in the Guild",
+        "slug": "raidguild-handbook-membership-skills-roles",
+        "kind": "guide",
+        "summary": "Skills in RaidGuild help showcase each member’s skill set and expertise, making it easy to assemble the right team for any Raid. Assign a role only if you’re prepared to contribute actively in that area.",
+        "tags": [
+          "knowledge",
+          "onboarding",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "DAO",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-membership"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/membership/skills-roles/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/membership/skills-roles/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-overview-code-of-conduct.md",
+      "content": "# Code of Conduct\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/overview/code-of-conduct/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/overview/code-of-conduct/page.mdx\nAs members of RaidGuild, we strive to uphold a standard of excellence and integrity that reflects our mission and values in the Web3 world. Each member’s conduct impacts not only our work but also our reputation as a trusted and collaborative force in the Ethereum ecosystem. This Code of Conduct sets forth the principles that guide our behavior and our relationships within the Guild and with the broader community.\n\n### 1. Respect and Integrity\n\nTreat each member, client, and partner with respect. We value diversity of thought, skill, and background, believing that our strength lies in collaboration and the unique perspectives each member brings. Conduct all interactions with professionalism and kindness, fostering a supportive and inclusive environment where everyone can contribute to their fullest.\n\n### 2. Collaboration and Transparency\n\nRaidGuild operates on principles of transparency and open collaboration. When working with others, prioritize clear communication, share relevant information openly, and ensure that everyone involved has the context they need to succeed. We believe in a “no surprises” approach: keep your teammates informed and communicate proactively if challenges arise or if you need help.\n\n### 3. Responsibility and Accountability\n\nEach member is responsible for the commitments they make. Honor deadlines, deliver high-quality work, and keep your word. If unforeseen issues prevent you from fulfilling a commitment, communicate promptly and work collaboratively to find solutions. Taking accountability for one’s actions strengthens our trust in each other and in the Guild as a whole.\n\n### 4. Integrity in Craft and Code\n\nQuality is a hallmark of RaidGuild’s reputation. Approach every task—whether it’s design, development, strategy, or support—with diligence and attention to detail. Follow best practices, test thoroughly, and document clearly. Our commitment to quality reflects our respect for the Guild, our clients, and the greater Web3 community.\n\n### 5. Confidentiality and Security\n\nRespect the privacy of our clients, partners, and fellow Guild members. Do not share any sensitive information or resources outside of authorized channels, and take appropriate measures to protect data security. Our clients entrust us with their ideas and resources; it is our duty to safeguard this trust.\n\n### 6. Constructive Feedback and Continuous Learning\n\nEmbrace feedback as an opportunity to learn and improve. Give and receive feedback constructively, focusing on solutions and shared goals. RaidGuild is a community of growth-minded individuals who are passionate about refining their skills and knowledge. Support one another in learning and adapting as Web3 technology evolves.\n\n### 7. Uphold the Guild’s Reputation\n\nOur reputation is built upon our values, our work, and our conduct. Represent RaidGuild with honor and integrity in all public channels, including social media and external communications. Let your actions reflect the principles we uphold, contributing positively to the Ethereum ecosystem and the wider Web3 community.\n\n---\n\nBy adhering to these principles, we protect and strengthen the Guild, creating a collaborative, productive, and respectful environment for all. These guidelines serve as the foundation for our work together, ensuring that RaidGuild continues to be a leader in excellence and a trusted ally in the pursuit of a decentralized future.",
+      "metadata": {
+        "title": "Code of Conduct",
+        "slug": "raidguild-handbook-overview-code-of-conduct",
+        "kind": "policy",
+        "summary": "As members of RaidGuild, we strive to uphold a standard of excellence and integrity that reflects our mission and values in the Web3 world. Each member’s conduct impacts not only our work but also our reputation as a trusted and collaborative force in the Ethereum ecosystem. This",
+        "tags": [
+          "general",
+          "knowledge"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-overview"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/overview/code-of-conduct/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/overview/code-of-conduct/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-overview-intro.md",
+      "content": "# Introduction to the RaidGuild Handbook\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/overview/intro/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/overview/intro/page.mdx\nWelcome to the RaidGuild Handbook, the essential guide for all who embark on quests within our Guild. This compendium serves as both a map and a manual, laying out the key practices, principles, and protocols that define RaidGuild’s operations. Whether you are a fresh recruit or a seasoned Guild member, this handbook is designed to equip you with the knowledge and skills necessary to contribute effectively to the Guild and uphold its storied legacy.\n\n### What to Expect in the Handbook\n\nEach section of the handbook illuminates a critical aspect of Guild life, from the essentials of joining and contributing to navigating the intricacies of the DAO mechanism itself. As you journey through these pages, you’ll find comprehensive guidance on:\n\n1. **Guild Overview**  \n   Start here to grasp RaidGuild’s mission, values, and foundational principles. Understand what it means to be part of this decentralized alliance and the high standards we uphold across all our endeavors.\n\n2. **Discord: Communication and Coordination**  \n   Learn the ins and outs of our primary communication hub. This section covers etiquette, onboarding, and meeting protocols, ensuring smooth collaboration across all projects and Guild initiatives.\n\n3. **Membership**  \n   This section outlines the path from Apprentice to full Guild Member, detailing roles, responsibilities, and the steps to deepen your commitment to the Guild. Understand how to earn your stripes and contribute meaningfully to our community.\n\n4. **DAO Operations**  \n   Discover how RaidGuild governs itself. This chapter explains decentralized decision-making, resource management, and the technical essentials of using tokens, our governance process, and proposals within our DAO.\n\n5. **Raids: Project Lifecycle and SOPs**  \n   Prepare for battle with our detailed raiding procedures. From assembling Raid parties to delivering results, this section covers the steps to execute a Raid from start to finish, including payment and collaboration with clients.\n\n6. **Escrow and Smart Invoicing**  \n   Understand our financial safeguard systems. Here, you'll learn how we use smart contracts to secure payment, manage escrow, and handle finances on your quests.\n\n7. **Resources for Growth and Mastery**  \n   Delve into our curated resources for Web3 knowledge, technical skill-building, and the RaidGuild glossary. This section is here to support your learning and ensure you have access to the tools needed for continuous growth.\n\n### Using the Handbook as Your Guide\n\nRefer back to this handbook as often as needed to stay aligned with the Guild’s best practices. Each section is designed to provide clarity and structure, allowing you to navigate the Guild with confidence and integrity. As you grow within RaidGuild, this guide will help you master the craft, uphold the Guild’s honor, and make a lasting impact in Web3.\n\nMay this tome serve you well, guiding you in all your RaidGuild endeavors.",
+      "metadata": {
+        "title": "Introduction to the RaidGuild Handbook",
+        "slug": "raidguild-handbook-overview-intro",
+        "kind": "guide",
+        "summary": "Welcome to the RaidGuild Handbook, the essential guide for all who embark on quests within our Guild. This compendium serves as both a map and a manual, laying out the key practices, principles, and protocols that define RaidGuild’s operations. Whether you are a fresh recruit or ",
+        "tags": [
+          "general",
+          "knowledge"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "DAO",
+          "Escrow",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-overview"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/overview/intro/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/overview/intro/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-overview-social-media.md",
+      "content": "# Social Media: Connect with the Guild\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/overview/social-media/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/overview/social-media/page.mdx\nThe Guild extends its presence beyond our digital halls! Follow RaidGuild across the dark forest to stay up-to-date, connect with fellow raiders, and dive into our latest adventures in the Ethereum ecosystem. Here’s where we share updates, insights, and the stories behind our Raids—come join us!\n\n- **Discord**  \n  Step into our official Guild hall! This is where RaidGuild members gather, discuss projects, plan raids, and share knowledge. It’s the best place to connect with the community and get involved.\n\n- **GitHub**  \n  Check out our open-source projects, code, and collaborations.\n\n- **Twitter** - @RaidGuild  \n  Follow us on Twitter for real-time updates, project highlights, and thoughts from the Guild. Jump into the conversation with #RaidGuild and be part of our journey to build a decentralized world.\n\n- **LinkedIn**  \n  Stay connected with RaidGuild’s professional side on LinkedIn. See our latest ventures, client partnerships, and join us in showcasing the power of DAOs in the Web3 industry.\n\n- **Newsletter** - Substack & Medium  \n  Prefer to stay in the loop through storytelling and insights? Our Substack and Medium are home to articles, case studies, and deep dives into the work we do and the principles we stand by.\n\nExplore, follow, and connect! These are your portals to stay engaged with the Guild as we work to shape the decentralized future, one raid at a time.",
+      "metadata": {
+        "title": "Social Media: Connect with the Guild",
+        "slug": "raidguild-handbook-overview-social-media",
+        "kind": "guide",
+        "summary": "The Guild extends its presence beyond our digital halls! Follow RaidGuild across the dark forest to stay up-to-date, connect with fellow raiders, and dive into our latest adventures in the Ethereum ecosystem. Here’s where we share updates, insights, and the stories behind our Rai",
+        "tags": [
+          "general",
+          "knowledge"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "DAO",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-overview"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/overview/social-media/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/overview/social-media/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-overview-what-is-raidguild.md",
+      "content": "# What Is RaidGuild?\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/overview/what-is-raidguild/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/overview/what-is-raidguild/page.mdx\nRaidGuild is a collective of Web3 builders, code warriors, and visionaries united under a shared mission: to create and protect open, decentralized systems in the Ethereum ecosystem. As a community-driven DAO, we work to forge the tools, infrastructure, and experiences that empower a trustless, permissionless future. RaidGuild's strength lies in our members' skills and their dedication to a fairer, decentralized world, and we channel that power through every project, partnership, and initiative.\n\n### Who We Are\n\nWe are a fellowship of designers, developers, strategists, and technologists who thrive on the frontlines of Web3. RaidGuild is a decentralized organization that operates without a single leader, where each member plays a critical role in defining our culture, shaping our strategies, and executing Raids. Our guild model encourages collaboration and self-governance, empowering members to share knowledge and hone their craft.\n\nAt our core, RaidGuild is a meritocratic community. Members advance by proving their skills, learning from one another, and taking on responsibilities that align with their strengths. We embrace a spirit of growth, pushing each member to reach their potential while collectively working towards a fairer, decentralized future.\n\n### What We Do\n\nWe are architects and protectors of the Ethereum ecosystem. RaidGuild provides end-to-end services to Web3 projects—from design and development to strategy and deployment. Our members specialize in building decentralized applications, smart contract systems, DAOs, and supporting Web3 tools. Every project, or “Raid,” is approached with our commitment to quality and collaboration, drawing from a pool of Guild members with complementary expertise.\n\nOur Raids serve both emerging projects and established organizations, helping them to build decentralized systems that prioritize user sovereignty, security, and transparency. Our collective efforts are about more than single projects—they are part of a broader mission to advance the potential of Web3, one Raid at a time.\n\n### What We Believe\n\nRaidGuild’s values are rooted in decentralization, transparency, and fairness. We believe in an Ethereum ecosystem where users have control over their assets and data, projects operate without centralized gatekeepers, and systems are resilient to manipulation. To uphold these ideals, we champion:\n\n- **Open-Source Development**: We believe that knowledge should be shared and accessible, pushing forward innovation for the public good.\n- **User Sovereignty**: Protecting user freedom and privacy is at the core of our mission; we build systems that give users the power to control their data, assets, and digital interactions.\n- **Trustlessness**: We rely on code, not centralized entities, to establish trust, ensuring transparency and security within the ecosystem.\n\nThese principles guide every decision, partnership, and execution at RaidGuild. Through them, we uphold the vision of a decentralized future and contribute to the evolution of Ethereum and Web3.\n\n**RaidGuild is more than a service provider—it’s a movement.** Through our work, we aim to protect, strengthen, and expand the Ethereum ecosystem, transforming Web3 ideals into reality.",
+      "metadata": {
+        "title": "What Is RaidGuild?",
+        "slug": "raidguild-handbook-overview-what-is-raidguild",
+        "kind": "guide",
+        "summary": "RaidGuild is a collective of Web3 builders, code warriors, and visionaries united under a shared mission: to create and protect open, decentralized systems in the Ethereum ecosystem. As a community-driven DAO, we work to forge the tools, infrastructure, and experiences that empow",
+        "tags": [
+          "general",
+          "knowledge"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "DAO",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-overview"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/overview/what-is-raidguild/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/overview/what-is-raidguild/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-home.md",
+      "content": "# RaidGuild Handbook\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/page.mdx\nWelcome to the RaidGuild Handbook, your guide to guild life, raiding practices, and DAO operations.\n\n  This site uses Nextra docs on Next 16 with brand styling from `RG_BRAND_AGENTS.md`.\n\n## Start here\n\n- Explore the Overview for the mission, values, and code of conduct.\n- Jump into Discord to learn the guild communication flow.\n- Review Membership to understand how to join and grow.\n- Reference DAO Operations for proposals, roles, and tokens.\n\n## Run the site locally\n\n```bash\nnpm install\nnpm run dev\n```\n\nOpen `http://localhost:3000` to browse the handbook.\n\n## What's inside\n\n- RaidGuild typography (Mazius Display + EB Garamond) and the Moloch palette.\n- Ordered navigation across every handbook section and a per-page table of contents.\n- Escrow and DAO walkthroughs with screenshots carried over from the legacy docs.",
+      "metadata": {
+        "title": "RaidGuild Handbook",
+        "slug": "raidguild-handbook-home",
+        "kind": "guide",
+        "summary": "Welcome to the RaidGuild Handbook, your guide to guild life, raiding practices, and DAO operations.",
+        "tags": [
+          "general",
+          "knowledge"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "DAO",
+          "Escrow"
+        ],
+        "related_docs": [],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-raids-cleric-sop.md",
+      "content": "# Cleric Standard Operating Procedure (SOP)\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/raids/cleric-sop/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/raids/cleric-sop/page.mdx\nAs a Cleric of RaidGuild, you are the steward of client relationships and the orchestrator of successful Raids, seeing each project through from inception to completion. This detailed guide will walk you through every stage of the Cleric process using the **Dungeon Master** tool, with clear instructions on managing tasks, communication, payments, and final reporting.\n\n### Introduction: The Role of the Cleric\nClerics are pivotal figures within the Guild, acting as Account Managers who maintain client communications, assemble Raid Parties, and ensure smooth project operations. Your responsibilities include assessing client needs, guiding projects through scoping, securing payments, and coordinating team efforts. With the **Dungeon Master** tool, you will manage project statuses and logs, making it simple to keep all Raiders on the same page.\n\n---\n\n## Step 1: Handling New Client Submissions\n\n1. **Monitor New Submissions**: In the **RaidGuild Discord**, watch the **#client-submissions** channel. New clients post their project requests here.\n2. **Claim Projects**: When a project interests you, claim it by reacting to the message with the **RaidGuild crossed swords emoji**. This action marks the project as \"claimed,\" showing your intent to lead it and helping prevent overlap with other Clerics.\n3. **Coordinate with Fellow Clerics**: Chat with other Clerics if multiple submissions come in. Ensure a fair distribution of work, so no one is overburdened.\n\n*Dungeon Master Status*: At this stage, submissions will not yet be in **Dungeon Master**. Once you confirm that you’ll be leading the project after consulting the client, create a new entry for the Raid in **Dungeon Master** and mark it as **New**.\n\n---\n\n## Step 2: Initial Client Communication\n\n1. **Initial Contact**: Use the client’s submission details to introduce yourself and Raid Guild. Clarify that as their assigned Cleric, you’ll be guiding them through the process.\n2. **Needs Assessment**: Discuss the client’s vision, requirements, timeline, and budget to evaluate their project’s fit with the Guild’s capabilities.\n3. **Set Up a Consultation**: Schedule a formal consultation meeting to discuss project specifics in-depth and explain any consultation fees.\n\n*Dungeon Master Status*: After initial contact and client alignment, update the project status in **Dungeon Master** to **Consulting**.\n\n---\n\n## Step 3: Conducting the Consultation Meeting\n\nPrepare a checklist to guide the consultation:\n   - **Problem Description**: Understand the core issue the client needs to resolve.\n   - **Proposed Solution**: If the client has ideas, explore these together to align expectations.\n   - **Required Skill Sets**: Determine the specific skills needed for this project (e.g., design, development, marketing).\n   - **Budget and Timeline**: Aim to clarify as many financial and scheduling details as possible.\n\n*Consultation Fee*: Clients must pay a **500 DAI consultation fee** to Raid Guild, which covers the initial assessment work. This fee goes to compensating the Clerics involved. Collect this payment through **Dungeon Master**, which will automatically track fee receipt.\n\n*Dungeon Master Status*: Update the project to **Consultation Paid** once the fee is received.\n\n---\n\n## Step 4: Post-Consultation Actions\n\n1. **Share Project at Raider Round-Up**: Attend the weekly **Raider Round-up** meeting (Tuesdays, 1 pm EDT / 10 am PST / 6 pm UTC) to provide a project overview. Announce the required roles and whether the Raid will proceed.\n2. **Mark as Recruiting**: If the project moves forward, update its status in **Dungeon Master** to **Recruiting**.\n3. **Post Recruitment Notice**: Share the project’s specifications in **#who-is-available** on Discord. Include role requirements, time commitment, budget, and other essential details.\n\n*Dungeon Master Status*: Ensure the project is updated to **Recruiting** in **Dungeon Master** and list the roles needed for transparency.\n\n---\n\n## Step 5: Setting Up Communication Channels\n\n1. **Move Communications to Public Channels**: Transition all discussions to designated public channels within Raid Guild’s Discord.\n2. **Onboard the Client**: Assist the client in joining the Raid Guild server and brief them on communication channels and procedures.\n3. **Post Project Details**: In the **internal Raid channel**, post an outline of the project specs for easy reference by all Raiders.\n\n*Dungeon Master Status*: At this stage, ensure that internal and client-facing channels in **Dungeon Master** reflect the accurate details and expectations of the project.\n\n---\n\n## Step 6: Assembling the Raid Team\n\n1. **Recruit Team Members**: Confirm that all essential roles are filled by reaching out through **#who-is-available** and tagging specific Raiders with necessary skills (e.g., Archer for design or Paladin for back-end).\n2. **Schedule a Follow-up Meeting**: Arrange a follow-up with the client to introduce the Raid Party and solidify the scope.\n3. **Draft a Scoping Proposal**: Prepare a high-level proposal outlining the project’s problem, possible solutions, required steps, and timelines.\n\n*Escrow Setup*: Guide the client to set up **escrow** for scoping or a design sprint, securing funds in advance. Work with the client to deposit an initial payment in **Dungeon Master’s escrow system**.\n\n*Dungeon Master Status*: Mark the Raid as **Ready to Begin** in **Dungeon Master** once the team is in place, and escrow is confirmed.\n\n---\n\n## Step 7: Creating a Formal Proposal\n\nAfter completing the scoping phase, collaborate with the Raid Party to create a detailed proposal. This document should follow the standard Raid Guild template, including:\n\n- **Problem Space**: Clearly define the challenge the project addresses.\n- **Methodology**: Outline how the Raid Party will approach and solve the problem.\n- **Milestones and Budget**: Provide a breakdown of work phases, deliverables, and payment associated with each milestone.\n\n*Proposal Submission*: Send the proposal to the client along with instructions on how to deposit the necessary funds into **Dungeon Master’s escrow** system.\n\n*Dungeon Master Status*: Update the project status to **Proposal Sent**.\n\n---\n\n## Step 8: Beginning the Work Phase\n\n1. **Confirm Funds**: Begin work only after confirming funds in escrow for the initial milestones.\n2. **Client Declines**: If the client decides not to proceed, note their reasoning and update **Dungeon Master** to mark the Raid as **Lost**.\n\n*Dungeon Master Status*: Update the project to **In Progress** once work begins.\n\n---\n\n## Step 9: Managing the Work Phase\n\n1. **Provide Updates**: Regularly log progress in **Dungeon Master** to keep everyone on track.\n2. **Client Satisfaction**: Act as the main point of contact for client inquiries and feedback.\n3. **Milestone Communication**: Upon reaching each milestone, update the client, and coordinate fund release through **Dungeon Master**’s escrow features.\n\n*Dungeon Master Status*: Move the project through milestones in **Dungeon Master**, marking each as **Milestone Complete** once client approval and payment are confirmed.\n\n---\n\n## Step 10: Project Completion\n\n1. **Final Confirmation**: Verify that the client is satisfied with the completed work.\n2. **Final Payment Release**: Guide the client through releasing the final escrowed payment.\n3. **Distribute Payments**: Use **Dungeon Master** to facilitate payment distribution among all Raiders involved.\n\n*Tribute to War Chest*: Dedicate **10% of the Raid’s revenue** to the Raid Guild War Chest. This tribute can be paid in **wxDAI, WETH**, or other whitelisted tokens, sent directly to the **DAO Treasury (0x181e...63ac)**. Log the transaction hash in **#did-a-thing** for tracking.\n\n*Dungeon Master Status*: Mark the project as **Shipped** to signify completion. Archive project channels on Discord using the **/to-valhalla** command.\n\n---\n\n## Step 11: Documentation & Retrospective\n\n1. **Participate in Retrospective**: Join the retrospective session led by a Monk to reflect on the project’s successes and areas for improvement.\n2. **Document Case Study**: Summarize key learnings in the Guild’s case study format.\n3. **Submit for Portfolio**: Post the completed case study in the **#case-studies** channel to showcase in Raid Guild’s portfolio.\n\nThis detailed Cleric SOP provides a clear roadmap to follow through every phase of a Raid, ensuring consistent client satisfaction, team coordination, and adherence to Guild standards. Following these steps with precision will set you up for successful Raids and contribute to Raid Guild’s legendary reputation.\n\n#### Structuring Raid Spoils\nFor fair compensation, here’s a recommended payout structure:\n\n- **10%** – War Chest Treasury (mandatory)\n- **5%** – Hunter (Business Development)\n- **10%** – Cleric (Account Manager)\n- **15%** – Monk (Project Manager)\n- **60%** – Project Team (roles such as Wizard, Paladin, Archer, etc.)\n\nThis is a flexible framework, and Raid payouts may vary. However, we require that **10% of the Raid’s revenue be tributed to the War Chest** upon completion.\n\nWith these guidelines, you’re well-prepared to lead your Raid Party to victory.",
+      "metadata": {
+        "title": "Cleric Standard Operating Procedure (SOP)",
+        "slug": "raidguild-handbook-raids-cleric-sop",
+        "kind": "guide",
+        "summary": "As a Cleric of RaidGuild, you are the steward of client relationships and the orchestrator of successful Raids, seeing each project through from inception to completion. This detailed guide will walk you through every stage of the Cleric process using the **Dungeon Master** tool,",
+        "tags": [
+          "knowledge",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "DAO",
+          "Escrow"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-raids"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/raids/cleric-sop/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/raids/cleric-sop/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-raids-getting-paid.md",
+      "content": "# Getting Paid for Raids or RIPs\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/raids/getting-paid/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/raids/getting-paid/page.mdx\nAs a Raider completing work for a Raid or RIP, securing payment follows a structured process to ensure transparency and fairness. Here’s how to request your payment, manage Guild spoils, and optionally purchase shares to increase your stake in RaidGuild.\n\n---\n\n## Requesting Payment\n\nTo receive payment for a completed Raid or RIP, submit a **funding proposal** to RaidGuild DAO. This proposal should specify the amount requested, based on the terms agreed upon by the Raid Party.\n\nYou may elect to receive up to **20% of your payment in voting shares**, with the remaining amount provided in **Loot** or another approved token, such as **wxDAI**.\n\n---\n\n## Spoils and Shares\n\n### Guild Spoils Contribution (10%)\n\nFor each payment made to a Raid Party, **10% of the total invoice** is contributed to RaidGuild as Guild spoils. This tribute supports the Guild’s infrastructure, covering resources and the network that helped bring in the client.\n\n- **Example**: If a milestone payment from a client is 1,000 DAI, 100 DAI will be allocated to the Guild as spoils, leaving 900 DAI for distribution among Raid Party members.\n\nThis contribution ensures that RaidGuild’s ecosystem thrives and continues to provide opportunities for all members.\n\n### Member Share Purchase (Optional, Up to 20%)\n\nTo strengthen their involvement within RaidGuild, members can use **up to 20% of their earnings** from any Raid to purchase voting shares as proof of contribution.\n\n- **Share Cost**: Shares are valued at **5 wxDAI per share**.\n- **Example**: If a member receives 1,000 DAI for their work, they can allocate up to 200 DAI to purchase shares, acquiring up to 40 voting shares.\n\nThis option allows members to increase their ownership within RaidGuild without diluting existing shares, as shares are purchased rather than issued for free. The 20% cap maintains balance and prevents excessive accumulation of shares in the Guild.\n\n--- \n\nFollowing these steps and understanding the Guild’s payment structure will ensure timely compensation and provide pathways for increased involvement and influence within RaidGuild.",
+      "metadata": {
+        "title": "Getting Paid for Raids or RIPs",
+        "slug": "raidguild-handbook-raids-getting-paid",
+        "kind": "guide",
+        "summary": "As a Raider completing work for a Raid or RIP, securing payment follows a structured process to ensure transparency and fairness. Here’s how to request your payment, manage Guild spoils, and optionally purchase shares to increase your stake in RaidGuild.",
+        "tags": [
+          "knowledge",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "DAO"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-raids"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/raids/getting-paid/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/raids/getting-paid/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-raids-intro-to-raiding.md",
+      "content": "# Introduction to Raiding\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/raids/intro-to-raiding/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/raids/intro-to-raiding/page.mdx\nRaiding is more than just executing work for a client; it's a disciplined and collaborative quest that unites skilled guild members to tackle high-stakes challenges and deliver solutions that make an impact in the Web3 world. Whether developing cutting-edge dApps, crafting compelling brand identities, or consulting on blockchain strategies, each raid offers the chance to showcase the guild’s expertise, build alliances, and gain renown.\n\n### The Spirit of Raiding\n\nRaiding is central to RaidGuild’s vision—a powerful blend of skill, purpose, and teamwork. Each raid assembles a team, or \"party,\" of specialists who combine their talents to overcome challenges, align on objectives, and achieve extraordinary results. Every raid is a collective journey, with roles, expectations, and rewards that bring out the best in each member.\n\n### What to Expect from a Raid\n\nEach raid is structured to maintain clarity, ensure high standards, and provide fair compensation for contributors. As a RaidGuild member, you can expect:\n\n- **Clear Roles and Responsibilities**: Each raid party consists of members with specific roles, like Clerics (account managers), Monks (project managers), Warriors (developers), Archers (designers), and Rangers (researchers). Every member is accountable for their part in the quest.\n\n- **Defined Objectives and Milestones**: Raids are mapped out with goals, timelines, and milestones, ensuring that every party member understands the mission’s purpose and progression. These checkpoints help us stay aligned with client needs while allowing room for iterative improvements.\n\n- **Reward and Recognition**: Raiding brings rewards in multiple forms. Members are compensated in alignment with the project’s scope, and successful raids contribute to each member’s standing and reputation within the guild.\n\n- **Client Collaboration**: The client is considered a valued ally, integral to the mission’s success. By maintaining open communication and alignment, we aim to exceed client expectations throughout the journey and form long lasting alliances against Moloch!\n\n### Types of Raids\n\nRaidGuild embarks on a variety of raids, each focused on specific expertise:\n\n- **Development Raids**: Building dApps, smart contracts, and blockchain infrastructure.\n- **Design Raids**: Creating brand identities, UI/UX, and interactive prototypes.\n- **Consulting Raids**: Advising on strategy, tokenomics, and project architecture.\n\nThere is no limit to the size or style of quest!\n\n### The Path to Joining a Raid\n\nAll RaidGuild members have opportunities to join raids based on their expertise and availability. New raid opportunities are posted in the **#client-submissions** channel on Discord. If a raid aligns with your skills, you can express interest, contact the Cleric, and potentially become part of the raid party. \n\nRaids in RaidGuild are a testament to our collective commitment, skill, and creativity, contributing to the guild's legendary reputation across Web3 realms.",
+      "metadata": {
+        "title": "Introduction to Raiding",
+        "slug": "raidguild-handbook-raids-intro-to-raiding",
+        "kind": "guide",
+        "summary": "Raiding is more than just executing work for a client; it's a disciplined and collaborative quest that unites skilled guild members to tackle high-stakes challenges and deliver solutions that make an impact in the Web3 world. Whether developing cutting-edge dApps, crafting compel",
+        "tags": [
+          "knowledge",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-raids"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/raids/intro-to-raiding/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/raids/intro-to-raiding/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-raids-raiding-on-optimism-chain.md",
+      "content": "# Raiding on Optimism Chain\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/raids/raiding-on-optimism-chain/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/raids/raiding-on-optimism-chain/page.mdx\n## Why Raid on Optimism?\n\nRaidGuild has lived on Gnosis chain for over 3 years, so why change chains now? There are medium-sized reasons: Optimism has better on/off-ramps, more liquidity, more third-party providers and tooling, a bigger builder community, and a stronger and more aligned vision. By simply considering the user experience for members and clients on Optimism vs Gnosis, the benefit of switching seems obvious. However, there is a larger reason why members should consider raiding on Optimism: **it is being used to fund a new and clearer legal structure for our DAO.**\n\nAs part of a long-term RIP to improve RaidGuild's legal standing, a DAO has been created on Optimism specifically for collecting spoils from Optimism raids and using that revenue to fund the formation of much needed financial and legal web2 interfaces. This could include a new umbrella non-profit entity, a tradfi bank account, product-focused spin-off entities, web2 billing rails, or anything else that comes up in the future. The reason for keeping this funding on a separate chain and in a separate DAO is to keep bookkeeping separate, and to keep the initiative opt-in.\n\nBy raiding on Optimism, you are supporting an initiative for RaidGuild to play nicer with web2 institutions. This means we can receive grant money with greater ease, provide legal resources and protection for all members, create clearer and stronger agreements with other members and the guild, and start spinning off product DAOs that can give back to the guild without legal ambiguity.\n\nWhile the funding (via raids) of this initiative begins now, the bulk of the initiative will unfold throughout the begining of 2025. At any point, if raiding on Optimism or forming a new legal entity no longer makes sense, the RIP with be spun-down and completely reverted.\n\n## The Optimism DAO\n\n- Optimism DAO: 0xf4f65a5c6590fbc15b3869510e5f1e7114041c53\n- Spoils Manager: 0x9aFA71188fC0cd4445AbC4e671B466C2ea405130\n\n### Membership Requirements\n\n1. You must already be a member of the Gnosis DAO (with 100 or more shares)\n2. You must have completed at least 1 raid that is using smart escrow on Optimism\n3. Although the goal is to not require KYC for the eventual legal entity, members joining the Optimism DAO should be prepared to do so if need be.\n\nTo view all addresses associated with Smart Escrow on Optimism, visit the references page.\n\n## How to Raid on Optimism\n\nStarting a raid on Optimism is just as easy as starting one on Gnosis! Here are the steps for raiding on Optimism and joining the Optimism DAO afterwards:\n\n1. Use Smart Escrow while connected to Optimism\n   - If you don't know how to use Smart Escrow, start here.\n2. Ensure the client understands that all transactions will be made through Optimism\n   - For the time-being, all payments must be made in native USDC (`0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85`)\n3. Ship the raid!\n4. When releases are made from the escrow, 10% spoils will be sent to the Optimism DAO automatically. Once spoils land in the DAO and the raid is shipped, you are eligible to join the Optimism DAO.\n   - Ensure that you also meet the \"Memebership Requirements\" mentioned here.\n5. Request 1 voting share via DAO proposal\n   - Provide evidence in the proposal of Gnosis safe membership, and Optimism raid shipped\n   - Note that this share does not grant you rage-quit rights to any of the DAO funds (it is only for voting). This is in order to keep a clear \"non-profit\" status for the DAO until a legal entity is formed.",
+      "metadata": {
+        "title": "Raiding on Optimism Chain",
+        "slug": "raidguild-handbook-raids-raiding-on-optimism-chain",
+        "kind": "guide",
+        "summary": "RaidGuild has lived on Gnosis chain for over 3 years, so why change chains now? There are medium-sized reasons: Optimism has better on/off-ramps, more liquidity, more third-party providers and tooling, a bigger builder community, and a stronger and more aligned vision. By simply ",
+        "tags": [
+          "knowledge",
+          "workflow"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "DAO",
+          "Escrow",
+          "Optimism"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-raids"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/raids/raiding-on-optimism-chain/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/raids/raiding-on-optimism-chain/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-resources-glossary.md",
+      "content": "# Glossary\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/resources/glossary/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/resources/glossary/page.mdx\nAn evolving archive of RaidGuild terminology and key concepts. This lexicon adapts with the guild, reflecting our practices, tools, and shared values.\n\n---\n\n#### 1. **Apprentice**\nAn *Apprentice* is an individual in RaidGuild’s onboarding phase, training to become a full Guild member. Apprentices participate in projects under the guidance of more experienced members to build skills, demonstrate abilities, and contribute meaningfully. To complete the apprenticeship, individuals must show commitment, teamwork, and a readiness to handle complex projects. The apprenticeship program also provides opportunities to gain a reputation within the Guild, often culminating in a formal evaluation and potential promotion to full membership.\n\n---\n\n#### 2. **Archer**\nAn *Archer* is a RaidGuild role focused on design, particularly in user interface (UI). Archers are often responsible for visual aspects of projects, including layout, branding, and aesthetics, ensuring that each project aligns with the client’s vision and is intuitive for users.\n\n---\n\n#### 3. **async**\nThe term *async* refers to asynchronous communication—a key mode of collaboration within RaidGuild. In async communication, messages are exchanged without the need for real-time responses, allowing team members to respond when convenient. This approach is ideal for decentralized teams spread across different time zones, as it provides flexibility while maintaining continuous project progress. Async communication often takes place in our Discord channels, project management tools, and the Dungeon Master platform.\n\n---\n\n#### 4. **Bard**\nIn RaidGuild, a *Bard* is a creative storyteller, often responsible marketing and public communications. Bards craft project narratives, brand messages, and help convey the Guild’s values and project achievements to clients and the public. Their work may include writing case studies, proposals, strategy, social media content, and updates on project progress to engage the broader Web3 community and potential clients.\n\n---\n\n#### 5. **Biz Dev (Business Development)**\n*Biz Dev*, short for Business Development, involves identifying new client opportunities, nurturing relationships, and managing the growth pipeline for RaidGuild. Biz Dev professionals, referred to as Hunters, focus on networking, outreach, and promoting the Guild’s services to attract potential clients. This role is critical for generating new projects, establishing partnerships, and maintaining the Guild’s reputation within the Web3 ecosystem. Compensation for Biz Dev members may include a commission from successful deals, as outlined in the commission model.\n\n---\n\n#### 6. **Champion**\nA *Champion* in RaidGuild is a senior member who supports and sponsors new apprentices or projects, providing mentorship, guidance, and advocacy. Champions ensure that new members or projects align with the Guild’s standards and values. For an apprentice, having a Champion can be a critical part of the journey to full membership, as they help apprentices navigate the Guild’s culture, participate in Raids, and demonstrate readiness for advancement. Champions also play a role in sponsoring projects through proposal processes within the DAO.\n\n---\n\n#### 7. **Cleric**\nA *Cleric* is a RaidGuild role similar to an account manager, overseeing client consultations, managing communications, and ensuring projects run smoothly. Clerics handle the initial client contact, assess project requirements, set up the Raid Party, and manage the timeline, budget, and client satisfaction throughout the project. They are also responsible for maintaining the project’s status in Dungeon Master and ensuring milestones are met. The Cleric’s role is essential for coordinating with the client and the Raid Party, keeping the project on track from start to finish.\n\n---\n\n#### 8. **Client Camp**\nA *Client Camp* is a dedicated communication channel created for each Raid project. It serves as the primary point of contact between the client and the Raid Party, where updates, feedback, and essential project information are shared. This channel fosters transparency and keeps all project stakeholders informed, promoting clear communication and collaboration. Client Camp is hosted within the Guild’s Discord server, with strict access control to ensure confidentiality.\n\n---\n\n#### 9. **Commission Model**\nThe *Commission Model* is RaidGuild’s framework for compensating Raiders involved in project scoping, client acquisition, and preparation phases prior to full project execution. Under this model, Raiders who participate in the *Prepping for Battle* phase receive a **3% commission** of the project budget, split among participants based on involvement. This commission is drawn from the client’s project payment, separate from the consultation fee. The Commission Model incentivizes participation in early project phases, ensuring fair compensation and encouraging Raiders to close deals.\n\n---\n\n#### 10. **Consultation Fee**\nThe *Consultation Fee* is a standard, upfront payment from clients to RaidGuild, typically **500 DAI** (but sometimes more in bull market conditions), paid before the initial consultation. This fee confirms the client’s commitment and compensates the Clerics who conduct the project assessment. The Consultation Fee helps ensure that RaidGuild’s resources are allocated to serious inquiries and that Clerics are compensated for their time spent evaluating and scoping potential projects. This fee is managed and tracked through the Dungeon Master tool.\n\n---\n\n#### 11. **Consultation**\nA *Consultation* is an initial meeting between a RaidGuild Cleric and a prospective client to discuss project needs, objectives, scope, budget, and timeline. This meeting helps the Guild determine if the project is a suitable fit and whether the Guild has the right expertise to deliver. The consultation phase includes the collection of a **Consultation Fee** to compensate the Guild for the time and resources spent assessing the client’s needs. Following the consultation, the Cleric prepares a summary of the project to determine the best path forward.\n\n---\n\n#### 12. **DAO (Decentralized Autonomous Organization)**\nA *DAO*, or Decentralized Autonomous Organization, is a collective organization governed by smart contracts and token-based voting rather than a centralized authority. RaidGuild itself operates as a DAO, with members making collective decisions through proposals and voting mechanisms. The DAO structure aligns with RaidGuild’s decentralized ethos, allowing members to participate in decision-making, project management, and treasury oversight.\n\n---\n\n#### 13. **DAO Treasury**\nThe *DAO Treasury* is the central repository for funds managed by the RaidGuild DAO. It holds assets contributed through Guild spoils, tributes, and project profits, ensuring that RaidGuild has resources to support operations, compensate members, and fund initiatives. All members have the ability to propose funding requests to the treasury for project-related costs or community initiatives, with approval decided through DAO voting.\n\n---\n\n#### 14. **DAOhaus**\n*DAOhaus* is a platform for managing and interacting with DAOs built on the Moloch framework, which RaidGuild uses. DAOhaus provides a user-friendly interface that allows members to view proposals, vote, manage memberships, and track treasury transactions. It is integral to RaidGuild’s operations, allowing seamless coordination and governance.\n\n---\n\n#### 15. **Dungeon Master (Tool)**\n*Dungeon Master* is RaidGuild’s internal project management tool, designed specifically for tracking and managing Raids. It provides a centralized space to organize project details, monitor milestones, assign roles, and maintain communication channels. Dungeon Master also supports financial tracking, including fee collection and escrow management, making it a key tool for Clerics and Raid Parties to manage projects from start to finish.\n\nIn Dungeon Master, each Raid has a designated *Status* that reflects its current phase in the project lifecycle. These statuses include:\n   - **New**: A project that has just entered the Guild’s pipeline.\n   - **Consulting**: Initial contact and needs assessment with the client.\n   - **Consultation Paid**: The Consultation Fee has been received, and the project is ready for scoping.\n   - **Recruiting**: Actively assembling a Raid Party for the project.\n   - **In Progress**: Work has commenced on the Raid.\n   - **Lost**: The project is no longer active, often due to client withdrawal.\n   - **Shipped**: The project is complete, and all deliverables have been accepted.\n\nThese statuses ensure transparency and allow all Guild members to see the progress of each project at a glance.\n\n---\n\n#### 16. **ERC-20 Token**\nAn *ERC-20 Token* is a standard for fungible tokens on the Ethereum blockchain, allowing compatibility with the ecosystem’s wallets and exchanges. Many of RaidGuild’s financial transactions, including client payments, compensation, and tokenized rewards (e.g., Loot and voting shares), are managed with ERC-20 tokens like **DAI**, **wxDAI**, and **WETH**. This token standard ensures that funds are easily transferable and compatible with RaidGuild’s escrow systems and multisig wallets.\n\n---\n\n#### 17. **Escrow**\n*Escrow* refers to a secured holding of funds until project milestones are completed, ensuring payment upon successful delivery of services. RaidGuild uses its custom **SmartInvoice** tool to set up and manage escrow accounts, where clients deposit funds for a project. Payments are released incrementally upon milestone completion, providing security for both the client and the Raid Party. Clerics coordinate with clients to establish escrow at the start of each project, setting up a clear payment structure for the Raid.\n\n---\n\n#### 18. **Funding Distribution**\n*Funding Distribution* is the process of dividing client payments among Raid Party members according to the agreed-upon payment structure. This process includes the deduction of Guild spoils, share purchases (if applicable), and member payments. Distribution is managed in **Dungeon Master** or a shared Gnosis Safe Multisig Wallet, with funds released based on each milestone’s completion. The Cleric overseeing the project often ensures that all payments are accurately tracked and distributed per the project agreement.\n\n---\n\n#### 19. **Funding Proposal**\nA *Funding Proposal* is a formal request submitted by a Raid Party or individual member to the RaidGuild DAO for financial resources from the Guild’s treasury. Proposals may cover project costs, member compensation, or operational expenses. Each funding proposal must outline the requested amount, purpose, and impact on the Guild. Members can vote on these proposals through the DAOhaus UI, helping maintain transparency and community consensus on Guild spending.\n\n---\n\n#### 20. **Guild HQ**\n*Guild HQ*, or sometimes referred to as *The Citadel*, is RaidGuild’s primary hub for internal communication, hosted on Discord. Guild HQ houses essential channels for project updates, recruitment, announcements, and coordination between members. From **#who-is-available** for team recruitment to **#general** for important news, Guild HQ serves as the nerve center for all RaidGuild operations. Each member is expected to familiarize themselves with HQ channels to stay informed and engaged in Guild activities.\n\n---\n\n#### 21. **Guild Spoils**\n*Guild Spoils* refer to the portion of each project’s revenue that is allocated to RaidGuild’s treasury as a form of contribution. Guild Spoils are set at **10% of each project’s total invoice** and support the Guild’s broader mission, including operational costs and community resources. For example, if a project payment is 1,000 DAI, 100 DAI is tributed to the Guild as spoils, while the remaining funds are distributed among Raid Party members. This contribution reinforces the collective strength of the Guild, sustaining its resources for future projects.\n\n---\n\n#### 22. **GuildKick**\n*GuildKick* is a governance mechanism that allows RaidGuild members to propose the removal of another member from the Guild. This action is taken in cases of serious misconduct, breach of trust, or behavior that goes against the Guild’s Code of Conduct. GuildKick proposals are submitted and voted upon within the DAOhaus UI, and a successful vote results in the removal of the member’s voting shares and exclusion from Guild activities. This process upholds the Guild’s standards and ensures a respectful, collaborative environment.\n\n---\n\n#### 23. **Gnosis Safe**\nA *Gnosis Safe* is a secure, multi-signature wallet used by RaidGuild to manage funds collaboratively. It requires multiple authorized signatures (e.g., from Clerics or Raid Party members) to approve transactions, providing enhanced security for project funds and shared assets. This wallet is often used for managing client payments and distributing funds to Raid Party members after milestone completion. By requiring multiple signatories, the Gnosis Safe ensures that funds are handled transparently and with collective oversight.\n\n---\n\n#### 24. **Hunter**\nIn RaidGuild, a *Hunter* is a member focused on business development (Biz Dev), responsible for identifying new project opportunities, building client relationships, and bringing new Raids to the Guild. Hunters play a crucial role in expanding the Guild’s reach by networking, pitching services, and closing deals. Compensation for Hunters may include a percentage of project budgets, in line with the Guild’s commission structure, incentivizing them to generate high-value leads.\n\n---\n\n#### 25. **Internal Camps**\nAn *Internal Camp* is a private Discord channel designated for Raid Party members to coordinate on project tasks, milestones, and other internal matters without client visibility. This channel allows for candid communication, brainstorming, and problem-solving among team members. The Internal Camp complements the Client Camp (external) channel, keeping client-facing communication separate from team discussions.\n\n---\n\n#### 26. **Loot (RaidGuild Shares)**\n*Loot* represents non-voting shares in RaidGuild, awarded to members for their contributions to projects. Unlike voting shares, Loot does not grant governance rights but serves as a measure of a member’s contributions and entitles them to a share of profits distributed from the Guild’s treasury. Loot is an integral part of the RaidGuild compensation model, providing a way for members to benefit financially from their work without influencing governance.\n\n---\n\n#### 27. **Milestone**\nA *Milestone* is a defined deliverable or achievement within a Raid project, marking a key phase of progress. Milestones are tied to payment releases, with funds disbursed upon successful completion and client approval of each milestone. Milestones are used in the **SmartInvoice** escrow setup to ensure that funds are secured and only released when agreed-upon deliverables are met. This milestone-based approach maintains accountability and provides both clients and Raid Parties with a clear structure for project completion.\n\n---\n\n#### 28. **Monk**\nA *Monk* in RaidGuild is a project manager responsible for overseeing project timelines, coordinating team efforts, and ensuring efficient resource allocation. Monks work closely with Clerics and the Raid Party to keep the project on track and ensure deliverables meet client expectations. They handle task prioritization, team organization, and may also lead retrospectives after project completion. Monks play an essential role in maintaining smooth project execution from start to finish.\n\n---\n\n#### 29. **Moloch (DAO Contracts)**\n*Moloch DAO contracts* are a specific framework for DAOs that prioritize simplicity, efficiency, and community governance. These contracts use a structure where members can vote on proposals, RageQuit to withdraw funds, and make collective decisions about the treasury. RaidGuild, like many DAOs, uses the Moloch contract model for its governance operations on DAOhaus, benefiting from its straightforward and resilient approach to decentralized management.\n\n---\n\n#### 30. **Moloch (Meme)**\nThe term *Moloch* as a meme represents the concept of coordination failure—symbolizing the challenges DAOs and Web3 communities aim to overcome through decentralized governance and collaboration. In RaidGuild, Moloch signifies the reason for forming decentralized communities, as the Guild works collectively to achieve what traditional systems often fail to do: fair, transparent, and coordinated efforts. The Moloch meme is a cultural reference to the DAO ethos and the drive to solve collective action problems.\n\n---\n\n#### 31. **MolochDAO (Grant Organization)**\n*MolochDAO* is a grant-giving organization that funds projects and initiatives focused on Ethereum ecosystem development and public goods. This DAO operates under the same Moloch contracts used by RaidGuild and is known for supporting infrastructure and projects that enhance the Ethereum community. MolochDAO’s focus on public goods aligns with RaidGuild’s mission to advance Web3 technologies and decentralized solutions.\n\n---\n\n#### 32. **Onboarding Cohort**\nAn *Onboarding Cohort* is a group of new RaidGuild members who join the Guild at the same time and undergo a shared initiation process. The cohort model provides structured onboarding, where Apprentices learn RaidGuild’s tools, values, and processes. This experience is often facilitated by more experienced members, helping the cohort develop skills, establish connections, and progress toward full membership. The cohort approach strengthens community bonds and prepares new members for active participation in the Guild.\n\n---\n\n#### 33. **Paladin**\nA *Paladin* is a technical role within RaidGuild, typically responsible for back-end development, blockchain integration, and other infrastructure-heavy tasks. Paladins handle the foundation of projects, building and maintaining the architecture that supports project functionality. Paladins ensure that the project’s technical backbone is strong, secure, and reliable.\n\n---\n\n#### 34. **Portfolio Case Study**\nA *Portfolio Case Study* is a detailed record of a completed Raid project that highlights the problem, process, solution, and results. These case studies serve as examples of RaidGuild’s work, demonstrating its capabilities and approach to prospective clients. Portfolio case studies are shared publicly to showcase successful projects and also serve as a retrospective tool for Guild members, providing insights and lessons learned from each project.\n\n---\n\n#### 35. **Prepping for Battle**\n*Prepping for Battle* is the initial phase of a Raid where the Raid Party prepares for project execution. During this stage, the team assembles the necessary members, defines roles, scopes the project, and finalizes the proposal. The Cleric and Monk coordinate to ensure the team is ready and all project requirements are met before officially moving into the **Raiding** phase. This preparation step is essential for aligning expectations, securing resources, and organizing the team for a successful project.\n\n---\n\n#### 36. **Proof of Contribution**\n*Proof of Contribution* is a mechanism within RaidGuild that allows members to gain recognition, shares, and compensation based on their contributions to projects and the Guild. Members can use part of their earnings from a project to purchase voting shares, effectively increasing their stake in the Guild as \"proof\" of their active involvement. This system encourages commitment and rewards members for their meaningful contributions, reinforcing the Guild’s meritocratic structure.\n\n---\n\n#### 37. **Proposal**\nA *Proposal* in RaidGuild is an on-chain goverance document submitted to the DAO by members to request funding, approve a project, or enact a new initiative. Proposals might require detailed explanations, including objectives, budget, and potential impact, or they might simply ratify a decision made elsewhere to ensure consensus. Once submitted, proposals are voted on by members through DAOhaus, and, if approved, they unlock resources or permissions needed to carry out the proposed actions. Proposals are a core aspect of RaidGuild’s decentralized governance and ensure transparent decision-making.\n\n---\n\n#### 38. **Raid**\nA *Raid* is a client project undertaken by a RaidGuild team, organized and executed as a collaborative effort among Guild members. Each Raid has a specific goal, whether it’s developing a new product, providing consulting services, or building a smart contract. Raids are managed through distinct phases, from initial scoping to final delivery, and are supported by tools like **Dungeon Master** and **SmartInvoice** to ensure smooth operation and secure payment.\n\n---\n\n#### 39. **Raid Party**\nA *Raid Party* is the team assembled to work on a specific Raid project, consisting of members with various roles and skill sets (e.g., Cleric, Monk, Archer, Wizard, Paladin). Each member contributes their expertise to meet the client’s objectives, with roles and responsibilities clearly defined at the start of the Raid. The Cleric and Monk typically lead the Raid Party, coordinating client interactions and internal operations. The collective skills and efforts of the Raid Party are essential for successful project execution.\n\n---\n\n#### 40. **Raider RoundTable**\nThe *Raider RoundTable* is a weekly Guild meeting where members discuss current events, share project updates, announce new opportunities, and conduct roadmapping sessions. The RoundTable is an essential touchpoint for communication within RaidGuild, helping members stay aligned and up-to-date on Guild activities. It also serves as a space for networking and mentorship, where new members can learn from experienced Raiders, and all members can provide feedback or suggestions.\n\n---\n\n#### 41. **Raider Round-up**\nThe *Raider Round-up* is a specific weekly gathering dedicated to reviewing ongoing projects, recruiting members for upcoming Raids, and ensuring teams have the necessary support and resources. During this meeting, Clerics announce active Raids, and members can express interest in joining or discuss skill sets needed for various roles. The Raider Round-up fosters collaboration and encourages active involvement in Guild projects, making it a key part of the Raid recruitment process.\n\n---\n\n#### 42. **Raiding**\n*Raiding* refers to the active execution phase of a Raid project, where the Raid Party works on deliverables according to the client’s scope and timeline. In the Raiding phase, team members are focused on completing tasks, achieving milestones, and meeting project goals. This phase requires close coordination, clear communication, and regular updates, both internally and with the client. Raiding continues until the project reaches its final milestone, marking the project as complete.\n\n---\n\n#### 43. **RageQuit**\n*RageQuit* is a DAO mechanism allowing members to exit the Guild by withdrawing their financial stake from the treasury. This action is particularly relevant in Moloch DAOs, where members can RageQuit if they disagree with the direction of the organization or a specific proposal. In RaidGuild, RageQuit provides a failsafe for members to retain autonomy over their contributions, ensuring that participation remains voluntary and aligned with personal values.\n\n---\n\n#### 44. **Retrospective**\nA *Retrospective* is a structured reflection session conducted after the completion of a Raid, led by the Monk or project lead. In this meeting, the Raid Party reviews what went well, what could have been improved, and lessons learned. The retrospective process is crucial for continuous improvement, allowing the Guild to refine workflows, enhance teamwork, and document key takeaways. Outcomes from retrospectives may also be used to build case studies and contribute to the Guild’s portfolio.\n\n---\n\n#### 45. **RIP (Raid Guild Improvement Proposal)**\nAn *RIP*, or Raid Guild Improvement Proposal, is a formal suggestion submitted by a member to improve a process, introduce new tools, or update practices within the Guild. RIPs are reviewed and voted on by members, and if approved, they lead to operational changes or new initiatives. This proposal type encourages innovation and adaptability, allowing the Guild to evolve based on member input and community needs. RIPs are also a valuable means of empowering members to shape the Guild’s future.\n\n---\n\n#### 46. **Scope of Work (SoW)**\nA *Scope of Work (SoW)* is a comprehensive document that outlines the goals, deliverables, timeline, and budget for a Raid project. The SoW ensures clear alignment between the Raid Party and the client, detailing each phase of work and expected outcomes. Clerics typically draft the SoW after the initial consultation, in collaboration with the project team, and it serves as a foundational agreement for the project. A well-defined SoW helps manage client expectations and provides a reference throughout the project lifecycle.\n\n---\n\n#### 47. **Scoping Sprint**\nA *Scoping Sprint* is a preliminary phase of a Raid project in which the Raid Party conducts an in-depth exploration of the client’s needs, project requirements, and technical specifications. During this sprint, team members collaborate to define the project’s scope, timeline, and resources, setting a solid foundation for the Scope of Work (SoW). Scoping Sprints often involve consultation with subject matter experts and aim to ensure that both the client and the team have a clear understanding of the project’s requirements.\n\n---\n\n#### 48. **Shares (Voting Shares)**\n*Shares* in RaidGuild are voting shares that represent governance power within the Guild. Members can acquire shares by purchasing them with up to 20% of their earnings from Raids, allowing them to have a say in Guild decisions, including funding proposals and membership matters. Unlike Loot, which does not carry voting rights, shares give members a voice in the DAO’s operations, with each share contributing to a member’s voting weight. Shares are purchased, not gifted, maintaining balance within the Guild’s governance structure.\n\n---\n\n#### 49. **Shipped**\n*Shipped* is the final status of a Raid project in Dungeon Master, indicating that the project has been completed, all deliverables have been accepted, and final payment has been received. Once a project is marked as Shipped, any remaining administrative tasks, such as tributing Guild Spoils, distributing payments, and archiving communication channels, are completed. The project may also go through a retrospective review to document learnings and successes.\n\n---\n\n#### 50. **SmartInvoice (Tool)**\n*SmartInvoice* is a payment management tool developed to facilitate secure and transparent payment for Raid projects. It operates as an escrow system, holding client funds and releasing payments incrementally based on milestone completion. SmartInvoice ensures that funds are available and distributed fairly, reducing risk for both the client and the Raid Party. Clerics work with clients to set up SmartInvoice at the project’s start, aligning payments with the Scope of Work.\n\n---\n\n#### 51. **Spoils**\n*Spoils* are the profits generated from a successful Raid, representing the total earnings distributed among the Raid Party members. Once spoils are calculated, **Tribute**—a 10% portion of these spoils—is sent back to RaidGuild’s Treasury to support Guild operations, community resources, and future initiatives. This Tribute is essential to sustaining RaidGuild’s ecosystem and ensuring that all members benefit collectively from the Guild’s successes. Tribute is typically deducted automatically through tools like SmartInvoice or Dungeon Master. \n\n---\n\n#### 52. **Spoils Split Contract**\nThe *Spoils Split Contract* is a smart contract used by RaidGuild to automate the distribution of Guild Spoils from client payments. When a Raid is completed, this contract allocates the specified percentage of funds (typically 10%) directly to the Guild’s treasury, ensuring that Spoils are consistently contributed. The Spoils Split Contract streamlines payment management, reducing manual tracking and improving transparency.\n\n---\n\n#### 53. **Splits (Tool)**\n*Splits* is a financial management tool used by RaidGuild to distribute payments from a single source to multiple recipients. Often used in conjunction with SmartInvoice, Splits divides funds according to predefined allocations for each Raid Party member. This tool simplifies payment distribution and ensures that everyone receives their agreed share of project earnings without delay, based on the terms established in the Scope of Work.\n\n---\n\n#### 54. **Tavern**\nThe *Tavern* is a RaidGuild community channel on Discord, where members gather for informal discussions, announcements, and social interactions. The Tavern serves as a casual space within Guild HQ, fostering camaraderie, networking, and team-building among members. It is also a place where members can share updates, seek advice, or simply connect with each other outside the formal structure of project channels.\n\n---\n\n#### 55. **Task Bounty**\nA *Task Bounty* is a small, well-defined task within RaidGuild that members can claim for individual completion. Task bounties are typically associated with specific, one-time needs that arise during projects or Guild operations. Raiders can earn additional compensation by completing bounties, which are paid out upon task completion. Task bounties provide opportunities for members to contribute in flexible ways and are particularly useful for new members seeking to gain experience and reputation within the Guild.\n\n---\n\n#### 56. **Tribute**\nA *Tribute* in RaidGuild is a contribution made by members or Raid Parties to the Guild’s Treasury, often as a percentage of project revenue. This tribute is typically set at **10% of a Raid’s total earnings** and supports the Guild’s operations and resources. By consistently contributing tributes, RaidGuild members collectively fund the ecosystem, helping sustain community resources, fund Guild initiatives, and ensure the Guild’s long-term growth.\n\n---\n\n#### 57. **Valhalla (Channel Archive Command)**\n*Valhalla* is a command used in RaidGuild’s Discord to archive completed or inactive channels, moving them to an archive area. When a project is marked as Shipped or Lost, members use the `/to-valhalla` command to retire the project’s communication channels, preserving past discussions for reference while decluttering active channels. This system maintains organization within the Guild’s Discord server and allows members to revisit archived projects if needed.\n\n---\n\n#### 58. **War Chest**\nThe *War Chest* is RaidGuild’s central Treasury, a communal fund that supports the Guild’s strategic operations, special projects, and long-term sustainability. Filled through Tribute contributions from Raid spoils and other income sources, the War Chest acts as a financial safety net, ensuring resources are available to weather slow periods and invest in high-impact initiatives. Guild members can propose allocations from the War Chest for projects or expenses that benefit the entire Guild.\n\n---\n\n#### 59. **Warrior**\nA *Warrior* in RaidGuild is a front-end developer responsible for implementing user-facing aspects of Raid projects. Warriors specialize in creating intuitive and engaging interfaces, ensuring a seamless user experience and visual coherence. As key contributors to Raid Parties, Warriors collaborate closely with designers, back-end developers, and project leads to bring client visions to life with precision and creativity.\n\n---\n\n#### 60. **Who-is-available (Channel)**\n*#who-is-available* is a channel in RaidGuild’s Discord where members post notices for open roles and recruitment needs on new or ongoing Raids. Clerics and project leads use this channel to assemble Raid Parties by tagging specific roles and sharing project details, including expected time commitment and budget. The #who-is-available channel streamlines the recruitment process and helps connect project leaders with Raiders who are ready to contribute.\n\n---\n\n#### 61. **Wizard**\nA *Wizard* in RaidGuild is a developer specializing in smart contracts and blockchain architecture. Wizards are skilled in coding, deploying, and auditing smart contracts, ensuring that the decentralized aspects of a project are secure, efficient, and aligned with the client’s needs. As key technical experts on Raids, Wizards work alongside other team members to implement blockchain solutions and uphold quality and security standards throughout the project.\n\n---\n\n#### 62. **wxDAI (Wrapped xDAI)**\n*wxDAI* is a wrapped version of xDAI, a stablecoin pegged to the value of the U.S. dollar and commonly used for transactions on the xDAI blockchain. Wrapping xDAI into wxDAI allows it to be used in various DeFi applications and makes it compatible with Ethereum-based contracts, such as those used by RaidGuild. Many payments and transactions within RaidGuild are conducted in wxDAI, as it provides low fees and is compatible with the Guild’s multisig wallets and escrow systems.\n\n---\n\nThis glossary will continue to grow as new roles, tools, and practices emerge within the guild.",
+      "metadata": {
+        "title": "Glossary",
+        "slug": "raidguild-handbook-resources-glossary",
+        "kind": "reference",
+        "summary": "An evolving archive of RaidGuild terminology and key concepts. This lexicon adapts with the guild, reflecting our practices, tools, and shared values.",
+        "tags": [
+          "general",
+          "knowledge"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "Discord",
+          "DAO",
+          "Escrow",
+          "Smart Invoice",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-resources"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/resources/glossary/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/resources/glossary/page.mdx"
+      }
+    },
+    {
+      "filename": "raidguild-handbook-resources-learn-about-web3.md",
+      "content": "# Learn About Web3\nSource repo: `dekanbro/RG-handbook-nextra`\nSource path: `app/resources/learn-about-web3/page.mdx`\nSource URL: https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/resources/learn-about-web3/page.mdx\n## General, Basics & Overview of Web3/Crypto\n\n1. Crypto Reading — Dan Romero - Let’s start with a reading list link to a reading list. This has a ton of great fundamental and mostly non tech basics.\n\n2. Web 3.0 and the Future of Trust - This article by Ali Yahya (a16z) talks about the building blocks and evolution of trust. He theorizes how cryptonetworks could enable a new era of trust and cooperation.\n\n3. Everything You Need To Know About DAOs - This article by Foundation gives a primer on Decentralized Autonomous Organizations (DAO). It explains what a DAO is, how it works, and the benefits of participating in a DAO.\n\n4. Mastering Ethereum - This is a free book available on GitHub. It's updated frequently, so if you really need to go deep or want to understand everything this is good.\n\n## Non Dev Web3/Crypto Topics (or applied web3)\n\n1. Enter The Metaverse - This article, also by Foundation, talks about the \"metaverse\", first mentioned in Neil Stephenson’s Snow Crash. It explains how the metaverse empowers us to own our data, decentralizes power, and helps free the internet.\n\n2. What explains the rise of AMMs? - Good showcase of how web3/defi disrupts tradfi. Non-tech intro on how Uniswap, Sushiswap etc. work.\n\n3. Zero Knowledge - Very important topic, explained in simple terms - learn how zero knowledge proofs work and where they can be applied.\n\n4. Play to earn - Axie Infinity - Play-to-earn is just getting started. Learn about ingame economies, new mind blowing business models and the use of NFTs and fungible tokens in a game.\n\n5. Why we need wide adoption of social recovery wallets - Lost your seed phrase? Recover your wallet using smart contracts and some friends. Learn about how social recovery wallets work and how they compare to other wallets.\n\n6. Shapeshift is decentralising - what does this have to do with learning about web3? Decentralising a real company and turning into a DAO gives you a glimpse on where this is all heading!\n\n7. 1729 Earn Crypto by learning - Cool portal that pays you for completing tasks mostly around crypto and web3. Lots of interesting articles too.\n\n8. Work full time for a DAO - Interesting thread about how to work for a DAO full time.\n\n9. Blockchains as App stores - Lots to learn from this thread and in general from Chris Dixon on Twitter.\n\n10. Beginners guides on NFT, DEFI and DAOs - Links to some great intro articles and also worth following on twitter.\n\n11. vfat tools - An ETH/ Web3 DEFI Pool 0 Aggregator.\n\n12. Defi Prime - DeFiprime.com is a media outlet and analytical services provider for the DeFi community. Its mandate is to inform, educate, and connect the community as the definitive source of news dedicated to decentralized finance space.\n\n13. SOLANA Ecosystem - The official solana site that showcases their entire ecosystem.\n\n14. Dune Analytics - Dune Analytics is a powerful tool for blockchain research. Dune gives you all the tools to query, extract, and visualize vast amounts of data from the blockchain. Dune is unlocking the power of public blockchain data by making it accessible to everyone\n\n## The Web3 Stack\n\n1. The Web3 Stack (AVC) - This article by Fred Wilson talks about decentralized apps (DAPPs). Decentralized applications will allow us to truly take back control of our data. He mentions that in the future, he hopes to see new social media apps where we actually own our data.\n\n2. The Web3 Stack (Original by MulticoinCapital) - This is the expanded version of Fred Wilson’s article. They’ve drawn up a helpful illustration of what the web3 stack looks like. It goes quite in depth about all the interesting technologies coming together to make web3 a reality.\n\n3. Web3 foundation - The about page has a great overview of the web 3.0 tech stack. Short, simple and interactive.\n\n## Getting Started With Web3 Development\n\n1. CupOJoseph's (a guild member) Guide to becoming an Ethereum developer - A guide that provides some more direction and is less overwhelming than other giant lists, and has most of the resources you need to become a successful Ethereum developer.\n\n2. The Ultimate Ethereum Dapp Tutorial - This article (and video) by Dapp University is a step-by-step guide that goes over how to build a full stack decentralized application on the Ethereum blockchain.\n\n3. Alchemy API Guide - Alchemy is a blockchain platform that makes web3 much faster with an easy-to-use API. This set of documents by Alchemy is a great way to get started using their API and building out your first Dapp.\n\n4. EthHub - Goto source for everything Ethereum. From Tokenomics to Developer Tools.\n\n5. Pet Shop Tutorial - Get started with Solidity using Truffe and Ganache.\n\n6. Ethereum contract overview - OpenZeppelin - Ethereum contract overview, including Truffle or Hardhat tutorials for Solidity.\n\n7. Ethereum dev stack for fast product iterations - Quick and easy way to set up a scaffold and start fiddling around with contracts and the connected frontend.\n\n8. Solidity Examples - List of Solidity sample coding.\n\n9. Use web3.xyz - useWeb3 provides a curated overview of the best and latest resources on Ethereum, blockchain and Web3 development. These resources help you develop your own smart contracts, DeFi project, ERC20 or NFT tokens in Solidity or Vyper.\n\n10. Cryptozombies - Nice entry into web3 via gaming. CryptoZombies is an interactive school that teaches you all things technical about blockchains. Learn to make smart contracts in Solidity or Libra by making your own crypto-collectibles game.\n\n## Podcasts / YouTube shows\n\n1. Bankless - Great Defi podcast, covering a broad range of topics.\n\n2. Finematics - Animated, simple learning videos on Defi, crypto and web3.\n\n3. Unchained - Podcast with a lot of great guests from a diverse background. The host breaks topics down well for non crypto natives.\n\n4. Defiant - The Defiant curates, digests, and analyzes all the major developments in decentralized finance, so that we can stay informed and smart about the most cutting-edge and fastest-changing corner of crypto and finance. It delivers journalism with authority; objective, data-backed, primary-source, reported pieces, written by insiders who can also provide informed analysis on the latest moves.\n\n## Web 2 Stack\n\n1. FreeCodeCamp.org - is a non-profit organization that consists of an interactive learning web platform, an online community forum, chat rooms, online publications and local organizations that intend to make learning web development accessible to anyone. Beginning with tutorials that introduce students to HTML, CSS and JavaScript, students progress to project assignments that they complete either alone or in pairs.\n\n2. Codecademy - An American online interactive platform that offers free coding classes in different programming languages including Python (pandas-Python library, Beautiful Soup-Python Library), Java, Go, JavaScript (jQuery, AngularJS, React.js), Ruby (Ruby on Rails-Ruby framework), SQL, C++, C#, Swift, and Sass, as well as markup languages HTML and CSS.",
+      "metadata": {
+        "title": "Learn About Web3",
+        "slug": "raidguild-handbook-resources-learn-about-web3",
+        "kind": "guide",
+        "summary": "1. Crypto Reading — Dan Romero - Let’s start with a reading list link to a reading list. This has a ton of great fundamental and mostly non tech basics.",
+        "tags": [
+          "general",
+          "knowledge"
+        ],
+        "owners": [
+          "raidguild"
+        ],
+        "status": "active",
+        "audience": "public",
+        "stability": "evolving",
+        "updated": "2025-12-18T11:07:36-07:00",
+        "entities": [
+          "RaidGuild",
+          "DAO",
+          "Web3"
+        ],
+        "related_docs": [
+          "raidguild-handbook-home",
+          "raidguild-handbook-resources"
+        ],
+        "triaged_at": "2026-04-15T18:13:49.288Z",
+        "source_repo": "dekanbro/RG-handbook-nextra",
+        "source_path": "app/resources/learn-about-web3/page.mdx",
+        "source_url": "https://github.com/dekanbro/RG-handbook-nextra/blob/main/app/resources/learn-about-web3/page.mdx"
+      }
+    }
+  ]
+}

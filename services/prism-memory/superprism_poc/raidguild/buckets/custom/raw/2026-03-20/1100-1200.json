@@ -1,0 +1,34 @@
+{
+  "bucket": "custom",
+  "channels": [
+    {
+      "category_id": "example_command",
+      "channel_id": "example-feed",
+      "channel_name": "example-feed",
+      "channel_topic": "Example custom collector output",
+      "messages": [
+        {
+          "attachments": [],
+          "author": {
+            "display_name": "Example Source",
+            "id": "example-source",
+            "username": "example-source"
+          },
+          "content": "This is a sample custom collector message.",
+          "created_at": "2026-03-20T11:15:00Z",
+          "embeds": [],
+          "id": "example-1",
+          "jump_url": "https://example.com/custom-collector"
+        }
+      ]
+    }
+  ],
+  "since": "2026-03-20T11:00:00Z",
+  "skipped": [],
+  "totals": {
+    "channels": 1,
+    "messages": 1
+  },
+  "until": "2026-03-20T12:00:00Z",
+  "window_key": "2026-03-20T110000Z_2026-03-20T120000Z"
+}

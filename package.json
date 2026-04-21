@@ -1,0 +1,20 @@
+{
+  "name": "prism-agent-railway",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "bootstrap": "bash scripts/bootstrap.sh",
+    "build": "npm run build --workspaces --if-present",
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:all": "bash scripts/dev-all.sh",
+    "dev:local": "bash scripts/dev-local-stack.sh",
+    "lint": "npm run lint --workspaces --if-present",
+    "railway:deploy-prism-stack": "bash scripts/railway-deploy-prism-stack.sh",
+    "railway:bootstrap-api": "bash scripts/railway-bootstrap-api.sh",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

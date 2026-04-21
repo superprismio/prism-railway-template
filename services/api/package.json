@@ -1,0 +1,37 @@
+{
+  "name": "@prism-railway/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "migrate": "tsx src/cli/migrate.ts",
+    "bootstrap:admin": "tsx src/cli/bootstrap-admin.ts",
+    "bootstrap:targets": "tsx src/cli/bootstrap-targets.ts",
+    "seed": "tsx src/cli/seed.ts",
+    "seed:catalog": "tsx src/cli/seed-catalog.ts",
+    "seed:demo": "tsx src/cli/seed-demo.ts",
+    "seed:profiles": "tsx src/cli/seed-profiles.ts",
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.8.1",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.21.2"
+    ,
+    "multer": "^2.1.1"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^24.7.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

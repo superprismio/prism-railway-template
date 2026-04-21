@@ -1,0 +1,57 @@
+import path from 'node:path';
+
+function readBooleanEnv(name: string, fallback: boolean) {
+  const value = process.env[name]?.trim().toLowerCase();
+  if (!value) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(value);
+}
+
+function readNumberEnv(name: string, fallback: number) {
+  const value = process.env[name]?.trim();
+  if (!value) return fallback;
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
+const workspaceRoot = path.resolve(process.cwd());
+
+export const config = {
+  codexBinary: process.env.CODEX_BIN?.trim() || 'codex',
+  codexHome: process.env.CODEX_HOME?.trim() || null,
+  codexModel: process.env.CODEX_MODEL?.trim() || null,
+  gitAuthorName: process.env.GIT_AUTHOR_NAME?.trim() || 'Prism Codex',
+  gitAuthorEmail: process.env.GIT_AUTHOR_EMAIL?.trim() || 'prism-codex@users.noreply.github.com',
+  gitCommitterName: process.env.GIT_COMMITTER_NAME?.trim() || process.env.GIT_AUTHOR_NAME?.trim() || 'Prism Codex',
+  gitCommitterEmail:
+    process.env.GIT_COMMITTER_EMAIL?.trim()
+    || process.env.GIT_AUTHOR_EMAIL?.trim()
+    || 'prism-codex@users.noreply.github.com',
+  prismApiBase: process.env.PRISM_API_BASE?.trim().replace(/\/+$/, '') || null,
+  prismApiKey: process.env.PRISM_API_READ_KEY?.trim() || process.env.PRISM_API_KEY?.trim() || null,
+  appApiBaseUrl: process.env.APP_API_BASE_URL?.trim().replace(/\/+$/, '') || null,
+  appServiceToken:
+    process.env.APP_API_SERVICE_TOKEN?.trim()
+    || process.env.INTERNAL_SERVICE_TOKEN?.trim()
+    || process.env.SERVICE_SHARED_TOKEN?.trim()
+    || null,
+  githubToken:
+    process.env.TARGET_REPO_GITHUB_TOKEN?.trim()
+    || process.env.GITHUB_TOKEN?.trim()
+    || null,
+  targetWorkspaceRoot:
+    process.env.CODEX_TARGET_WORKSPACE_ROOT?.trim()
+    || (process.env.RAILWAY_VOLUME_MOUNT_PATH?.trim()
+      ? path.resolve(process.env.RAILWAY_VOLUME_MOUNT_PATH.trim(), 'workspaces')
+      : path.resolve(workspaceRoot, '.codex-target-workspaces')),
+  prismSkillCacheTtlMs: readNumberEnv('PRISM_SKILL_CACHE_TTL_MS', 300_000),
+  codexRuntimeEnabled: readBooleanEnv('CODEX_RUNTIME_ENABLED', true),
+  codexRuntimeTimeoutMs: readNumberEnv('CODEX_RUNTIME_TIMEOUT_MS', 600_000),
+  codexWorkspaceRoot: process.env.CODEX_WORKSPACE_ROOT?.trim() || workspaceRoot,
+  port: readNumberEnv('PORT', 3030),
+  workspaceRoot,
+};

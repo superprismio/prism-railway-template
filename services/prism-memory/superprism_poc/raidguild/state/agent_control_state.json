@@ -1,0 +1,10 @@
+{
+  "agents": {
+    "knowledge": {
+      "paused": false
+    },
+    "memory": {
+      "paused": false
+    }
+  }
+}
