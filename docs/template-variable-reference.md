@@ -34,7 +34,7 @@ Use this while filling out the Railway template composer.
 | `PORT` | `8788` | Port the Prism Memory service listens on. | No |
 | `PRISM_API_KEY` | `${{ secret(64) }}` | API key used to authorize Prism Memory API calls. | No |
 | `PRISM_API_DATA_ROOT` | `/data` | Mounted data directory for Prism Memory runtime state. | No |
-| `PRISM_API_SPACE` | `raidguild` | Default Prism Memory space slug. | No |
+| `PRISM_API_SPACE` | `community` | Runtime Prism Memory space slug. | No |
 
 ## Discord Adapter
 
@@ -43,7 +43,7 @@ Use this while filling out the Railway template composer.
 | `PORT` | `8789` | Port the Discord adapter listens on. | No |
 | `NODE_ENV` | `production` | Runtime environment for the Discord adapter. | No |
 | `SOURCE_KIND` | `discord` | Source provider handled by this adapter. | No |
-| `SOURCE_SPACE` | `raidguild` | Prism space this adapter writes into. | No |
+| `SOURCE_SPACE` | `community` | Prism Memory space this adapter writes into. Must match `PRISM_API_SPACE`. | No |
 | `SOURCE_SYNC_MODE` | `manual` | Sync mode for Discord ingestion. | No |
 | `SOURCE_ADAPTER_TOKEN` | `${{ secret(64) }}` | Token used to authorize calls to the adapter. | No |
 | `SOURCE_ADAPTER_DATA_ROOT` | `/data` | Mounted data directory for checkpoints and recordings. | No |

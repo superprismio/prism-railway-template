@@ -79,9 +79,9 @@ Consumes:
 Owns:
 
 - normalized message ingest
-- the vendored `prism-memory-starter` runtime under `superprism_poc/raidguild`
+- the vendored `prism-memory-starter` runtime under `superprism_poc/raidguild`, seeded into the configured runtime space
 - memory, knowledge, and product retrieval API
-- mounted data volume at `/data/superprism_poc/raidguild`
+- mounted data volume at `/data/superprism_poc/<PRISM_API_SPACE>`
 - authenticated `/ops/*` routes for collect, digest, memory, seeds, and knowledge jobs
 
 ### `services/source-adapter`
@@ -218,7 +218,7 @@ If the Prism app needs to reference a local target during development, create th
 - Use watch paths so site changes do not redeploy the API and vice versa.
 - `services/source-adapter` is the preferred place for Discord/Slack/Telegram collection for memory ingest.
 - `services/source-adapter` supports persisted sync checkpoints, `dry_run`, and resettable sync windows.
-- `services/prism-memory` seeds the starter runtime into its mounted volume and keeps the active config at `/data/superprism_poc/raidguild/config/space.json`.
+- `services/prism-memory` seeds the starter runtime into its mounted volume and keeps the active config at `/data/superprism_poc/<PRISM_API_SPACE>/config/space.json`.
 - `prism-memory` and `source-adapter` both use explicit Dockerfiles so the deploy runtime stays pinned and reproducible.
 
 Supporting docs:

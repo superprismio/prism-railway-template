@@ -31,7 +31,7 @@ Current behavior:
 Recommended envs:
 
 - `SOURCE_KIND=discord`
-- `SOURCE_SPACE=raidguild`
+- `SOURCE_SPACE=community`
 - `SOURCE_SYNC_MODE=manual`
 - `PRISM_API_BASE=https://your-prism-memory.up.railway.app`
 - `PRISM_API_KEY=...`

@@ -32,6 +32,7 @@ class Settings:
     base_dir: Path
     base: str = "superprism_poc"
     space: str = "raidguild"
+    code_space: Optional[str] = None
     api_key: Optional[str] = None
     read_api_key: Optional[str] = None
     write_api_key: Optional[str] = None
@@ -52,9 +53,10 @@ class Settings:
 def create_app(settings: Settings) -> FastAPI:
     data_root = settings.data_root
     skills_root = settings.base_dir / "skills"
-    bundled_config_path = settings.base_dir / settings.base / settings.space / "config" / "space.json"
+    code_space = settings.code_space or settings.space
+    bundled_config_path = settings.base_dir / settings.base / code_space / "config" / "space.json"
     if settings.data_root_override is not None and not data_root.exists():
-        bundled_root = settings.base_dir / settings.base / settings.space
+        bundled_root = settings.base_dir / settings.base / code_space
         if bundled_root.exists():
             shutil.copytree(bundled_root, data_root)
     data_root.mkdir(parents=True, exist_ok=True)
@@ -63,7 +65,7 @@ def create_app(settings: Settings) -> FastAPI:
         root=data_root,
     )
 
-    code_path = settings.base_dir / settings.base / settings.space / "code"
+    code_path = settings.base_dir / settings.base / code_space / "code"
     if str(code_path) not in sys.path:
         sys.path.append(str(code_path))
     try:
@@ -171,7 +173,7 @@ def create_app(settings: Settings) -> FastAPI:
         data_root.parent.parent if settings.data_root_override is not None else settings.base_dir
     )
     ops_base_arg = settings.base
-    code_path = settings.base_dir / settings.base / settings.space / "code"
+    code_path = settings.base_dir / settings.base / code_space / "code"
 
     def _ops_env() -> dict[str, str]:
         env = dict(os.environ)

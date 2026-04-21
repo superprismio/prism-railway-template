@@ -9,8 +9,9 @@ from fastapi import Header, HTTPException
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
 STARTER_BASE = "superprism_poc"
-SPACE_SLUG = os.environ.get("PRISM_API_SPACE", "raidguild").strip() or "raidguild"
-CODE_ROOT = SERVICE_ROOT / STARTER_BASE / SPACE_SLUG / "code"
+BUNDLED_SPACE_SLUG = os.environ.get("PRISM_API_BUNDLED_SPACE", "raidguild").strip() or "raidguild"
+SPACE_SLUG = os.environ.get("PRISM_API_SPACE", "community").strip() or "community"
+CODE_ROOT = SERVICE_ROOT / STARTER_BASE / BUNDLED_SPACE_SLUG / "code"
 
 if str(CODE_ROOT) not in sys.path:
     sys.path.insert(0, str(CODE_ROOT))
@@ -40,7 +41,29 @@ def runtime_space_root() -> Path:
 
 
 def bundled_space_root() -> Path:
-    return SERVICE_ROOT / STARTER_BASE / SPACE_SLUG
+    return SERVICE_ROOT / STARTER_BASE / BUNDLED_SPACE_SLUG
+
+
+def rewrite_runtime_config(target_root: Path) -> None:
+    config_path = target_root / "config" / "space.json"
+    if not config_path.exists():
+        return
+
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["space_slug"] = SPACE_SLUG
+    old_prefix = f"{STARTER_BASE}/{BUNDLED_SPACE_SLUG}/"
+    new_prefix = f"{STARTER_BASE}/{SPACE_SLUG}/"
+
+    def rewrite(value):
+        if isinstance(value, str):
+            return value.replace(old_prefix, new_prefix)
+        if isinstance(value, list):
+            return [rewrite(item) for item in value]
+        if isinstance(value, dict):
+            return {key: rewrite(item) for key, item in value.items()}
+        return value
+
+    config_path.write_text(json.dumps(rewrite(config), indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
 
 
 def ensure_runtime_seeded(target_root: Path) -> None:
@@ -50,6 +73,7 @@ def ensure_runtime_seeded(target_root: Path) -> None:
         import shutil
 
         shutil.copytree(source_root, target_root)
+        rewrite_runtime_config(target_root)
         return
 
     import shutil
@@ -62,6 +86,7 @@ def ensure_runtime_seeded(target_root: Path) -> None:
             shutil.copytree(child, destination)
         else:
             shutil.copy2(child, destination)
+    rewrite_runtime_config(target_root)
 
 
 def ingest_log_path() -> Path:
@@ -86,6 +111,7 @@ def starter_settings() -> Settings:
         base_dir=SERVICE_ROOT,
         base=STARTER_BASE,
         space=SPACE_SLUG,
+        code_space=BUNDLED_SPACE_SLUG,
         api_key=api_key,
         read_api_key=read_key,
         write_api_key=write_key,

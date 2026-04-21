@@ -104,7 +104,7 @@ Notes:
 Required:
 
 - `SOURCE_KIND=discord`
-- `SOURCE_SPACE=raidguild`
+- `SOURCE_SPACE=community`
 - `SOURCE_SYNC_MODE=manual`
 - `SOURCE_ADAPTER_TOKEN=<strong-secret>`
 - `SOURCE_ADAPTER_DATA_ROOT=/data`
@@ -160,7 +160,7 @@ Required:
 - `PRISM_API_PORT=8788`
 - `PRISM_API_KEY=<strong-secret>`
 - `PRISM_API_DATA_ROOT=/data`
-- `PRISM_API_SPACE=raidguild`
+- `PRISM_API_SPACE=community`
 
 Recommended:
 
@@ -169,7 +169,7 @@ Recommended:
 Notes:
 
 - this service now accepts `POST /ingest/messages`
-- active starter data is stored at `/data/superprism_poc/raidguild`
+- active starter data is stored at `/data/superprism_poc/<PRISM_API_SPACE>`
 - `POST /ops/memory/run` performs `collect`, `digest`, `memory`, and `seeds`
 - `POST /ops/knowledge/run` performs `promote`, `validate`, and `index`
 - after deploy, confirm `GET /health`

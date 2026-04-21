@@ -149,7 +149,7 @@ function checkpointOverlapMinutes(): number {
 function adapterConfig() {
   return {
     sourceKind: (process.env.SOURCE_KIND ?? "discord").trim() || "discord",
-    space: (process.env.SOURCE_SPACE ?? "raidguild").trim() || "raidguild",
+    space: (process.env.SOURCE_SPACE ?? "community").trim() || "community",
     syncMode: (process.env.SOURCE_SYNC_MODE ?? "manual").trim() || "manual",
     prismApiBase: (process.env.PRISM_API_BASE ?? "").trim().replace(/\/+$/, ""),
     prismIngestPath: (process.env.PRISM_INGEST_PATH ?? "/ingest/messages").trim() || "/ingest/messages",
