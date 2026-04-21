@@ -7,7 +7,7 @@ The API now has a first-pass execution layer for agent work on tracked change re
 This is the bridge between:
 
 - a board request that is ready for agent work
-- a staging target environment
+- a target repository and review branch
 - the artifacts the active agent runtime produces while working
 
 ## New Concepts
@@ -42,7 +42,7 @@ Protected by the same admin session or `x-admin-password` path as the board:
 
 `deploy-plan` does not redeploy yet.
 
-It validates the selected target environment and returns the canonical staging deployment context:
+It validates the selected target environment and returns the canonical execution context:
 
 - target app
 - target environment
@@ -50,7 +50,7 @@ It validates the selected target environment and returns the canonical staging d
 - deploy config
 - whether the target is currently allowed
 - warnings that block or weaken execution
-- the next manual action
+- the next manual review or preview action
 
 This lets Codex, another approved agent runtime, or a human fetch one trusted plan instead of reading target config ad hoc.
 
@@ -63,13 +63,14 @@ That means:
 - the API validates target state
 - the API returns a deploy plan
 - the active agent runtime can record execution artifacts
-- actual staging redeploy is still manual
+- preview deployment is handled by GitHub/Railway PR environments or another configured target workflow
 
 ## Next Step
 
-When `agent-target-staging` exists as the shared Railway staging service, the next implementation step is:
+The next implementation step is:
 
-- add a Railway deploy adapter that consumes the existing validated deploy plan
-- keep the same endpoint shape, but allow the adapter to perform the redeploy
+- publish Codex work to a GitHub branch for the change request
+- track PR metadata and Railway PR environment URLs back on the execution record
+- keep the same endpoint shape, but allow adapters to report preview URLs from the configured review workflow
 
 That way the execution records and API contract do not need to change when automation is added.

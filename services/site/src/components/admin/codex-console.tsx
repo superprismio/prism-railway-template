@@ -157,7 +157,7 @@ export function CodexConsole() {
             name="prompt"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Ask Codex about a request, staging target, deploy state, or Prism context."
+            placeholder="Ask Codex about a request, review branch, preview state, or Prism context."
             className="min-h-28"
             required
           />

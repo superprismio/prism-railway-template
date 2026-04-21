@@ -1108,7 +1108,7 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                   </div>
                   <div className="space-y-2">
                     <h1 className="max-w-3xl text-4xl font-semibold tracking-tight md:text-5xl">
-                      Triage requests, route them to safe staging targets, and keep production out of the blast radius.
+                      Triage requests, route them to review branches, and keep production out of the blast radius.
                     </h1>
                     <p className="max-w-2xl text-base leading-7 text-muted-foreground md:text-lg">
                       This board now refreshes live so requests can move across lanes while Codex is triaging or working them.

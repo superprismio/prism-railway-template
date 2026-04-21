@@ -124,7 +124,7 @@ From the template repo:
 ```bash
 bash -n scripts/*.sh
 find . -maxdepth 4 \( -name '.env' -o -name 'node_modules' -o -name 'data' -o -name '.venv' -o -name '__pycache__' -o -name 'dist' -o -name '.next' -o -name '*.db' -o -name '*.db-*' -o -name '*.tsbuildinfo' \) -print
-rg -n "pinata-sites|Haus Keepers|daohaus|agent-target-staging|up\\.railway\\.app|/home/dekanjbrown" README.md docs services scripts packages .env.example
+rg -n "pinata-sites|Haus Keepers|daohaus|up\\.railway\\.app|/home/dekanjbrown" README.md docs services scripts packages .env.example
 ```
 
 The last command is expected to still find some migration-era references until the public-doc cleanup is complete.

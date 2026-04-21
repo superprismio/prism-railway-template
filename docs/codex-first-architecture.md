@@ -9,7 +9,7 @@ Make Codex the primary operator for:
 - checking and triaging change requests
 - running repo-local skills
 - editing target apps
-- rebuilding and redeploying writable staging targets
+- publishing review branches and reporting preview environments
 - posting updates back to Discord
 
 Make GitHub the canonical source of truth for:
@@ -238,9 +238,7 @@ Review and preview model:
 
 1. GitHub becomes the source of truth for code review artifacts such as commits, diffs, branches, and pull requests.
 2. The board should focus on workflow state, execution summaries, failure details, preview deploy status, and links out to GitHub and Railway.
-3. Short-term preview can still use a shared writable staging target.
-4. Long-term preview should move toward Railway PR environments so each pull request can get its own temporary preview environment.
-5. Shared preview should become a fallback path once PR environment flow is stable.
+3. Preview should use Railway PR environments so each pull request can get its own temporary preview environment.
 
 Railway environment direction:
 
@@ -250,8 +248,8 @@ Railway environment direction:
 
 Current preview decision:
 
-- keep the new clean `agent-target-staging` target as the shared preview fallback
-- plan to shift primary preview responsibility to Railway PR environments after GitHub branch and PR publishing are wired
+- use GitHub pull requests and Railway PR environments as the primary preview path
+- do not include a separate preview service in the template
 
 ## Next Phase
 
@@ -273,8 +271,7 @@ Future direction:
 3. Make change-request execution work from Codex CLI.
 4. Add branch-per-CR workflow and persist git-aware execution metadata plus artifacts.
 5. Publish CR branches to GitHub and track PR metadata from the board.
-6. Use the clean shared Railway staging target as fallback preview while GitHub branch publishing is stabilizing.
-7. Enable Railway PR environments and move preview responsibility there for published CR pull requests.
-8. Add Discord notifications and command routing.
-9. Add the minimal admin Codex console to `site`, backed by `api`.
-10. Revisit whether `site` and `api` should be merged only after the bridge, console, and GitHub-aware CR flow are all working.
+6. Enable Railway PR environments for published CR pull requests.
+7. Add Discord notifications and command routing.
+8. Add the minimal admin Codex console to `site`, backed by `api`.
+9. Revisit whether `site` and `api` should be merged only after the bridge, console, and GitHub-aware CR flow are all working.

@@ -90,7 +90,7 @@ export function buildTargetEnvironmentDeployPlan(input: {
       warnings.length === 0
         ? targetEnvironment.deployBackend === 'local'
           ? 'Run the target locally from the configured workspace and report the local URL back to the execution record.'
-          : 'Redeploy the configured staging target and report the deploy URL back to the execution record.'
+          : 'Publish or update the review branch and report the PR preview URL back to the execution record when available.'
         : 'Resolve the warnings before using this target for agent execution.',
   };
 }

@@ -27,7 +27,7 @@ export default async function Page() {
             Change requests in front, controlled agent execution behind.
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
-            This stack is evolving into a request board that can route work to safe staging targets, feed context from
+            This stack is evolving into a request board that can route work to review branches, feed context from
             Prism Memory, and keep production changes under human review.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
