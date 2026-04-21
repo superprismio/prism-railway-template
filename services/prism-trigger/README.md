@@ -27,9 +27,11 @@ For `discord-sync-cron` hitting the source adapter:
 - `PRISM_TRIGGER_PATH=/sync`
 - `PRISM_TRIGGER_AUTH_HEADER=X-Adapter-Token`
 - `PRISM_TRIGGER_AUTH_TOKEN=...`
+- `PRISM_TRIGGER_DISABLED=true` until Discord credentials are configured
 
 Optional trigger envs:
 
+- `PRISM_TRIGGER_DISABLED=true`
 - `PRISM_TRIGGER_BODY={"dryRun":false}`
 - `PRISM_TRIGGER_PATH=/sync?dry_run=true`
 - `PRISM_TRIGGER_RETRY_ATTEMPTS=6`

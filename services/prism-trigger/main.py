@@ -6,7 +6,15 @@ import urllib.error
 import urllib.request
 
 
+def truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def main() -> int:
+    if truthy(os.environ.get("PRISM_TRIGGER_DISABLED")):
+        print(json.dumps({"ok": True, "status": "disabled"}))
+        return 0
+
     base = os.environ.get("PRISM_API_BASE", "").rstrip("/")
     path = os.environ.get("PRISM_TRIGGER_PATH", "/ops/memory/run")
     auth_header = os.environ.get("PRISM_TRIGGER_AUTH_HEADER", "X-Prism-Api-Key").strip() or "X-Prism-Api-Key"
