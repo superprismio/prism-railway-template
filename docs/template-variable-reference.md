@@ -15,7 +15,7 @@ Use this while filling out the Railway template composer.
 | `SESSION_SECRET` | `${{ secret(64) }}` | Secret used to sign API sessions. | No |
 | `INTERNAL_SERVICE_TOKEN` | `${{ secret(64) }}` | Shared token for internal service-to-service API calls. | No |
 | `PRISM_MEMORY_BASE_URL` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}` | Private URL for Prism Memory. | No |
-| `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}` | Private URL for Codex Runtime. | No |
+| `CODEX_RUNTIME_BASE_URL` | `https://${{codex-runtime.RAILWAY_PUBLIC_DOMAIN}}` | URL the API uses to call Codex Runtime. Public URL is recommended unless private networking has been verified with the runtime port. | No |
 | `COMMUNITY_PROVIDER` | `discord` | Community adapter provider enabled for this stack. | No |
 
 ## Site
