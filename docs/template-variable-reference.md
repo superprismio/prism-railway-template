@@ -15,7 +15,7 @@ Use this while filling out the Railway template composer.
 | `SESSION_SECRET` | `${{ secret(64) }}` | Secret used to sign API sessions. | No |
 | `INTERNAL_SERVICE_TOKEN` | `${{ secret(64) }}` | Shared token for internal service-to-service API calls. | No |
 | `PRISM_MEMORY_BASE_URL` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}` | Private URL for Prism Memory. | No |
-| `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:3030` | Private URL the API uses to call Codex Runtime. Include the runtime port. | No |
+| `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}` | Private URL the API uses to call Codex Runtime. References the runtime port. | No |
 | `COMMUNITY_PROVIDER` | `discord` | Community adapter provider enabled for this stack. | No |
 
 ## Site
@@ -53,7 +53,7 @@ Use this while filling out the Railway template composer.
 | `PRISM_INGEST_PATH` | `/ingest/messages` | Prism Memory ingest endpoint path. | No |
 | `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}` | Private URL for the API service. | No |
 | `INTERNAL_SERVICE_TOKEN` | `${{api.INTERNAL_SERVICE_TOKEN}}` | Internal API service token reference. | No |
-| `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:3030` | Private URL for Codex Runtime. Include the runtime port. | No |
+| `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}` | Private URL for Codex Runtime. References the runtime port. | No |
 | `DISCORD_BOT_TOKEN` | empty | Discord bot token. Required to enable Discord sync/chat. | No |
 | `DISCORD_GUILD_ID` | empty | Discord guild ID to sync and serve. Required to enable Discord. | No |
 | `DISCORD_APPLICATION_ID` | empty | Discord application ID. Recommended for slash command registration. | Yes |

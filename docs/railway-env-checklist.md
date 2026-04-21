@@ -26,7 +26,7 @@ Recommended shared references in this project:
 | `codex-runtime` | `PRISM_API_BASE` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}` |
 | `codex-runtime` | `APP_API_SERVICE_TOKEN` | `${{api.INTERNAL_SERVICE_TOKEN}}` |
 | `discord-adapter` | `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}` |
-| `discord-adapter` | `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:3030` |
+| `discord-adapter` | `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}` |
 | `discord-adapter` | `PRISM_API_BASE` | `https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}` |
 | `discord-adapter` | `INTERNAL_SERVICE_TOKEN` | `${{api.INTERNAL_SERVICE_TOKEN}}` |
 | `discord-adapter` | `PRISM_API_KEY` | `${{prism-memory.PRISM_API_KEY}}` |
@@ -117,7 +117,7 @@ Required:
 - `DISCORD_CHAT_ENABLED=true`
 - `APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}`
 - `INTERNAL_SERVICE_TOKEN=${{api.INTERNAL_SERVICE_TOKEN}}`
-- `CODEX_RUNTIME_BASE_URL=http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:3030`
+- `CODEX_RUNTIME_BASE_URL=http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}`
 
 Recommended first-pass values:
 
