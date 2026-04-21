@@ -14,7 +14,7 @@ Use this while filling out the Railway template composer.
 | `ADMIN_PASSWORD` | `${{ secret(32) }}` | Generated initial admin password. | No |
 | `SESSION_SECRET` | `${{ secret(64) }}` | Secret used to sign API sessions. | No |
 | `INTERNAL_SERVICE_TOKEN` | `${{ secret(64) }}` | Shared token for internal service-to-service API calls. | No |
-| `PRISM_MEMORY_BASE_URL` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}` | Private URL for Prism Memory. | No |
+| `PRISM_MEMORY_BASE_URL` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}` | Private URL for Prism Memory. References the memory service port. | No |
 | `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}` | Private URL the API uses to call Codex Runtime. References the runtime port. | No |
 | `COMMUNITY_PROVIDER` | `discord` | Community adapter provider enabled for this stack. | No |
 
@@ -51,7 +51,7 @@ Use this while filling out the Railway template composer.
 | `PRISM_API_BASE` | `https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}` | Public URL for Prism Memory ingest calls. | No |
 | `PRISM_API_KEY` | `${{prism-memory.PRISM_API_KEY}}` | Prism Memory API key reference. | No |
 | `PRISM_INGEST_PATH` | `/ingest/messages` | Prism Memory ingest endpoint path. | No |
-| `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}` | Private URL for the API service. | No |
+| `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}` | Private URL for the API service. References the API service port. | No |
 | `INTERNAL_SERVICE_TOKEN` | `${{api.INTERNAL_SERVICE_TOKEN}}` | Internal API service token reference. | No |
 | `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}` | Private URL for Codex Runtime. References the runtime port. | No |
 | `DISCORD_BOT_TOKEN` | empty | Discord bot token. Required to enable Discord sync/chat. | No |
@@ -81,9 +81,9 @@ Use this while filling out the Railway template composer.
 | `CODEX_RUNTIME_TIMEOUT_MS` | `600000` | Maximum Codex execution timeout in milliseconds. | No |
 | `CODEX_WORKSPACE_ROOT` | `/app` | Default workspace root for Codex execution. | No |
 | `CODEX_TARGET_WORKSPACE_ROOT` | `/data/workspaces` | Mounted directory for cloned target repositories. | No |
-| `PRISM_API_BASE` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}` | Private URL for Prism Memory. | No |
+| `PRISM_API_BASE` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}` | Private URL for Prism Memory. References the memory service port. | No |
 | `PRISM_API_KEY` | `${{prism-memory.PRISM_API_KEY}}` | Prism Memory API key reference. | No |
-| `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}` | Private URL for the API service. | No |
+| `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}` | Private URL for the API service. References the API service port. | No |
 | `APP_API_SERVICE_TOKEN` | `${{api.INTERNAL_SERVICE_TOKEN}}` | Internal API service token reference. | No |
 | `TARGET_REPO_GITHUB_TOKEN` | empty | GitHub token for cloning or pushing private target repositories. | Yes |
 | `GIT_AUTHOR_NAME` | `Prism Codex` | Git author name used for Codex-created commits. | No |

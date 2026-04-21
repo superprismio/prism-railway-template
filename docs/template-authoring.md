@@ -32,12 +32,12 @@ Use Railway reference variables wherever possible so the canvas shows service ed
 Good reference variable examples:
 
 - `site.NEXT_PUBLIC_API_BASE_URL=https://${{api.RAILWAY_PUBLIC_DOMAIN}}`
-- `site.API_INTERNAL_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}`
-- `discord-adapter.APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}`
+- `site.API_INTERNAL_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`
+- `discord-adapter.APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`
 - `discord-adapter.CODEX_RUNTIME_BASE_URL=http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}`
 - `discord-adapter.PRISM_API_BASE=https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}`
-- `codex-runtime.APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}`
-- `codex-runtime.PRISM_API_BASE=http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}`
+- `codex-runtime.APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`
+- `codex-runtime.PRISM_API_BASE=http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}`
 - `discord-sync-cron.PRISM_API_BASE=https://${{discord-adapter.RAILWAY_PUBLIC_DOMAIN}}`
 - `memory-cron.PRISM_API_BASE=https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}`
 - `knowledge-cron.PRISM_API_BASE=https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}`

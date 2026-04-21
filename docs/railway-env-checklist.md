@@ -10,7 +10,7 @@ and avoids drift when a service domain or token changes.
 
 Use these rules:
 
-- use `http://${{service.RAILWAY_PRIVATE_DOMAIN}}` for internal server-to-server calls after connectivity has been verified from the calling service
+- use `http://${{service.RAILWAY_PRIVATE_DOMAIN}}:${{service.PORT}}` for internal server-to-server calls after connectivity has been verified from the calling service
 - use `https://${{service.RAILWAY_PUBLIC_DOMAIN}}` only when a browser or external webhook needs the value
 - for `site -> api`, `discord-adapter` voice summaries, and Prism inbox writes, use public Railway URLs until private-domain connectivity is confirmed from the deployed caller
 - use shared references for secrets that must stay identical across services
@@ -22,10 +22,10 @@ Recommended shared references in this project:
 | --- | --- | --- |
 | `site` | `API_INTERNAL_BASE_URL` | `https://${{api.RAILWAY_PUBLIC_DOMAIN}}` |
 | `site` | `NEXT_PUBLIC_API_BASE_URL` | `https://${{api.RAILWAY_PUBLIC_DOMAIN}}` |
-| `codex-runtime` | `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}` |
-| `codex-runtime` | `PRISM_API_BASE` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}` |
+| `codex-runtime` | `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}` |
+| `codex-runtime` | `PRISM_API_BASE` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}` |
 | `codex-runtime` | `APP_API_SERVICE_TOKEN` | `${{api.INTERNAL_SERVICE_TOKEN}}` |
-| `discord-adapter` | `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}` |
+| `discord-adapter` | `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}` |
 | `discord-adapter` | `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}` |
 | `discord-adapter` | `PRISM_API_BASE` | `https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}` |
 | `discord-adapter` | `INTERNAL_SERVICE_TOKEN` | `${{api.INTERNAL_SERVICE_TOKEN}}` |
@@ -67,7 +67,7 @@ Required:
 
 - `PORT=3100`
 - `NEXT_PUBLIC_API_BASE_URL=https://${{api.RAILWAY_PUBLIC_DOMAIN}}`
-- `API_INTERNAL_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}`
+- `API_INTERNAL_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`
 
 Notes:
 
@@ -87,9 +87,9 @@ Recommended:
 - `CODEX_RUNTIME_TIMEOUT_MS=600000`
 - `CODEX_WORKSPACE_ROOT=/app`
 - `CODEX_TARGET_WORKSPACE_ROOT=/data/workspaces`
-- `PRISM_API_BASE=http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}`
+- `PRISM_API_BASE=http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}`
 - `PRISM_API_KEY=<read-or-limited prism api key>`
-- `APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}`
+- `APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`
 - `APP_API_SERVICE_TOKEN=${{api.INTERNAL_SERVICE_TOKEN}}`
 
 Notes:
@@ -115,7 +115,7 @@ Required:
 - `DISCORD_BOT_TOKEN=<discord bot token>`
 - `DISCORD_GUILD_ID=<discord guild id>`
 - `DISCORD_CHAT_ENABLED=true`
-- `APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}`
+- `APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`
 - `INTERNAL_SERVICE_TOKEN=${{api.INTERNAL_SERVICE_TOKEN}}`
 - `CODEX_RUNTIME_BASE_URL=http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}`
 
