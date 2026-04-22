@@ -314,7 +314,7 @@ Manual steps still required:
 - Codex auth/bootstrap for the chosen runtime
 - Discord bridge onboarding
 - Railway secret entry
-- Railway cron schedule setup
+- Railway cron schedule setup. Template instances may create `memory-cron`, `knowledge-cron`, and `discord-sync-cron` without recurring schedules; add schedules manually after deploy. Suggested starting points: hourly `memory-cron`, daily `knowledge-cron`, and 15-60 minute `discord-sync-cron` only after Discord is configured.
 
 ## Suggested Migration Order
 

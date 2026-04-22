@@ -149,7 +149,28 @@ curl -X POST "https://<discord-adapter-domain>/sync?dry_run=true" \
   -d "{}"
 ```
 
-## 8. Optional Voice Transcription
+## 8. Configure Cron Schedules
+
+Railway template creation may preserve the cron services without preserving recurring schedules. Treat cron schedules as a required post-deploy Railway setting, not as application env.
+
+Suggested starting schedules:
+
+| Service | Suggested Schedule | Purpose |
+| --- | --- | --- |
+| `memory-cron` | hourly, for example `0 * * * *` | Processes Prism Memory inbox items, digests, memory, and seed outputs. |
+| `knowledge-cron` | daily, for example `15 3 * * *` | Promotes, validates, and indexes knowledge docs. |
+| `discord-sync-cron` | every 15-60 minutes after Discord setup, for example `*/30 * * * *` | Pulls Discord message history through `discord-adapter /sync`. Keep disabled until Discord credentials and permissions are verified. |
+
+Manual setup:
+
+1. Open each cron service in Railway.
+2. Go to **Settings -> Deploy -> Cron Schedule**.
+3. Add the schedule.
+4. Force one run from Railway before relying on the recurring schedule.
+
+Backfill is optional. A fresh template instance can validate Prism Memory with direct inbox writes, such as Discord voice transcript and summary ingestion, before enabling recurring backfill or sync.
+
+## 9. Optional Voice Transcription
 
 Set on `discord-adapter`:
 
@@ -160,7 +181,7 @@ VOICE_TRANSCRIPTION_API_KEY=<transcription-key> # Optional API key for the confi
 
 Then test `/prism-record` and `/prism-stoprecord` in Discord.
 
-## 9. Optional Target Repo Access
+## 10. Optional Target Repo Access
 
 Set on `codex-runtime` only if Codex should clone or push private target repositories:
 
@@ -170,7 +191,7 @@ TARGET_REPO_GITHUB_TOKEN=<github-token> # Optional GitHub token for cloning or p
 
 Public target repositories may not need this.
 
-## 10. Final Template Notes
+## 11. Final Template Notes
 
 Template-generated secrets should use Railway template functions:
 
@@ -179,7 +200,7 @@ ${{ secret(32) }}
 ${{ secret(64) }}
 ```
 
-## 11. Template Raw Variable Blocks
+## 12. Template Raw Variable Blocks
 
 Use these blocks in the Railway template composer raw variable editor when descriptions need to be carried by inline comments.
 
