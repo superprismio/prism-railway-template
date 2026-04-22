@@ -783,19 +783,21 @@ export class DiscordVoiceManager {
       `[discord-adapter] stop recording requested session=${session.sessionId} activeStreams=${session.activeAudioStreams.size} trackedParticipants=${session.participants.size}`,
     );
     const metadata = await this.finalizeSession(session);
+    const transcriptArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemoryTranscriptPath);
+    const summaryArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemorySummaryPath);
     return [
       `Recording stopped for **${session.channelName}**.`,
       `Session: \`${metadata.sessionId}\``,
       session.recoveredFromDisk ? "Recovered unfinished session from the recording volume after adapter restart." : null,
       `Participants: ${metadata.participants.length}`,
       `Speakers with audio: ${metadata.speakers.length}`,
-      metadata.artifacts?.prismMemoryTranscriptPath
-        ? `Transcript saved to Prism memory: \`${metadata.artifacts.prismMemoryTranscriptPath}\``
+      transcriptArtifact
+        ? `Transcript: ${transcriptArtifact.url} (\`${transcriptArtifact.id}\`)`
         : metadata.artifacts?.transcriptMarkdownPath
           ? `Transcript written locally: \`${metadata.artifacts.transcriptMarkdownPath}\``
           : "Transcript not generated.",
-      metadata.artifacts?.prismMemorySummaryPath
-        ? `Summary saved to Prism memory: \`${metadata.artifacts.prismMemorySummaryPath}\``
+      summaryArtifact
+        ? `Summary: ${summaryArtifact.url} (\`${summaryArtifact.id}\`)`
         : metadata.artifacts?.summaryMarkdownPath
           ? `Summary written locally: \`${metadata.artifacts.summaryMarkdownPath}\``
           : "Summary not generated.",
@@ -1516,6 +1518,26 @@ export class DiscordVoiceManager {
       throw new Error("PRISM_API_BASE is required for Prism memory ingest");
     }
     return baseUrl;
+  }
+
+  private prismArtifactReference(artifactPath?: string): { id: string; url: string } | null {
+    if (!artifactPath) {
+      return null;
+    }
+    const filename = path.basename(artifactPath);
+    const artifactId = filename.replace(/\.json$/i, "");
+    if (!artifactId || artifactId === filename) {
+      return null;
+    }
+    try {
+      const baseUrl = this.prismApiBaseUrl();
+      return {
+        id: artifactId,
+        url: `${baseUrl}/artifacts/${encodeURIComponent(artifactId)}`,
+      };
+    } catch {
+      return null;
+    }
   }
 
   private prismApiKey(): string {

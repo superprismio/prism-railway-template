@@ -1,6 +1,6 @@
 ---
 name: prism-api-reader
-description: Read from the Prism Memory API using a read-scoped API key. Use when an agent needs rolling memory, digests, participant activity, knowledge search, knowledge docs, or product suggestion outputs without writing to inboxes or triggering ops endpoints.
+description: Read from the Prism Memory API using a read-scoped API key. Use when an agent needs rolling memory, digests, participant activity, knowledge search, knowledge docs, memory/knowledge artifacts such as meeting summaries, or product suggestion outputs without writing to inboxes or triggering ops endpoints.
 ---
 
 # Prism API Reader
@@ -24,7 +24,8 @@ Use a read-scoped key only.
 1. Start from the narrowest endpoint that can answer the question.
 2. For knowledge questions, search first, then fetch specific docs.
 3. For recent community activity, prefer digests and participant queries over scanning raw memory.
-4. Cite the exact docs, dates, buckets, and endpoints used.
+4. For meeting summaries, transcripts, or linked artifact IDs, fetch the artifact detail directly before broader search.
+5. Cite the exact docs, artifact IDs, dates, buckets, and endpoints used.
 
 ## Endpoint selection
 
@@ -46,6 +47,12 @@ Use a read-scoped key only.
   `GET /knowledge/search?q=...&kind=...&tag=...&entity=...&limit=...`
 - Knowledge doc:
   `GET /knowledge/docs/{slug}`
+- Artifact list:
+  `GET /api/artifacts?category=...&type=...&source=...&status=...&limit=...`
+- Artifact detail:
+  `GET /api/artifacts/{artifact-id}`
+- Raw artifact:
+  `GET /api/artifacts/{artifact-id}/raw`
 - Product suggestions:
   `GET /products/suggestions/latest`
   `GET /products/suggestions/date/{yyyy-mm-dd}`
@@ -68,6 +75,11 @@ Use a read-scoped key only.
 - For project state:
   - use `/state/latest`
   - do not infer active project state from memory alone
+- For artifacts:
+  - if the user provides a Prism artifact link, use the final path segment as the artifact ID
+  - use `/api/artifacts/{artifact-id}` for metadata plus rendered content
+  - use `/api/artifacts/{artifact-id}/raw` when exact raw JSON or Markdown matters
+  - use `/api/artifacts?source=discord-voice&type=meeting_summary&limit=...` for recent voice summaries
 
 ## Safety
 
