@@ -152,13 +152,13 @@ function EnvironmentInstructions() {
   )
 }
 
-function TargetForms({ targetApps, targetEnvironments }: { targetApps: TargetAppRecord[]; targetEnvironments: TargetEnvironmentRecord[] }) {
+function RepositorySetup({ targetApps, targetEnvironments }: { targetApps: TargetAppRecord[]; targetEnvironments: TargetEnvironmentRecord[] }) {
   return (
-    <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+    <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
       <Card className="rounded-[22px] bg-card/90">
         <CardHeader>
-          <CardTitle>Target App</CardTitle>
-          <CardDescription>Create a GitHub repo target. The app stores metadata only; credentials stay in Railway env.</CardDescription>
+          <CardTitle>Repository Target</CardTitle>
+          <CardDescription>Create one Codex target. The base branch is where change request feature branches start.</CardDescription>
         </CardHeader>
         <CardContent>
           <form action="/admin/target-apps" method="post" className="space-y-4">
@@ -178,7 +178,7 @@ function TargetForms({ targetApps, targetEnvironments }: { targetApps: TargetApp
             </label>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-2 text-sm font-medium">
-                Default Branch
+                Base Branch
                 <Input name="defaultBranch" defaultValue="main" />
               </label>
               <label className="space-y-2 text-sm font-medium">
@@ -187,99 +187,28 @@ function TargetForms({ targetApps, targetEnvironments }: { targetApps: TargetApp
               </label>
             </div>
             <label className="space-y-2 text-sm font-medium">
+              Base URL
+              <Input name="baseUrl" placeholder="https://preview.example.com" />
+            </label>
+            <label className="space-y-2 text-sm font-medium">
               Description
               <Textarea name="description" placeholder="What this target repo represents." />
             </label>
-            <Button type="submit">Create target app</Button>
+            <Button type="submit">Create repository target</Button>
           </form>
         </CardContent>
       </Card>
 
       <Card className="rounded-[22px] bg-card/90">
         <CardHeader>
-          <CardTitle>Target Environment</CardTitle>
-          <CardDescription>Bind an agent-writable branch/environment to a target app.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form action="/admin/target-environments" method="post" className="space-y-4">
-            <label className="space-y-2 text-sm font-medium">
-              Target App
-              <select
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                name="targetAppId"
-                required
-              >
-                <option value="">Select target app</option>
-                {targetApps.map((targetApp) => (
-                  <option key={targetApp.id} value={targetApp.id}>
-                    {targetApp.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-2 text-sm font-medium">
-                Name
-                <Input name="name" placeholder="Smoke" required />
-              </label>
-              <label className="space-y-2 text-sm font-medium">
-                Slug
-                <Input name="slug" placeholder="smoke" />
-              </label>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-2 text-sm font-medium">
-                Branch
-                <Input name="branch" defaultValue="main" />
-              </label>
-              <label className="space-y-2 text-sm font-medium">
-                Kind
-                <select
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                  name="kind"
-                  defaultValue="development"
-                >
-                  <option value="development">Development</option>
-                  <option value="preview">Preview</option>
-                  <option value="staging">Staging</option>
-                  <option value="production">Production</option>
-                </select>
-              </label>
-            </div>
-            <label className="space-y-2 text-sm font-medium">
-              Base URL
-              <Input name="baseUrl" placeholder="https://preview.example.com" />
-            </label>
-            <div className="flex flex-wrap gap-4 text-sm">
-              <label className="inline-flex items-center gap-2">
-                <input type="checkbox" name="agentWritable" defaultChecked />
-                Agent writable
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input type="checkbox" name="humanReviewRequired" defaultChecked />
-                Human review required
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input type="checkbox" name="isDefaultForAgent" />
-                Default for agent
-              </label>
-            </div>
-            <Button type="submit" disabled={targetApps.length === 0}>
-              Create environment
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-[22px] bg-card/90 xl:col-span-2">
-        <CardHeader>
           <CardTitle>Current Targets</CardTitle>
-          <CardDescription>Repos and environments available for change requests.</CardDescription>
+          <CardDescription>Repositories available in the New Change Request form.</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
+        <CardContent className="grid gap-3">
           {targetApps.length ? (
             targetApps.map((targetApp) => {
               const environments = targetEnvironments.filter((environment) => environment.targetAppId === targetApp.id)
+              const defaultEnvironment = environments.find((environment) => environment.isDefaultForAgent) ?? environments[0]
               return (
                 <div key={targetApp.id} className="rounded-xl border border-border bg-background/70 p-4">
                   <div className="flex items-start justify-between gap-3">
@@ -291,23 +220,20 @@ function TargetForms({ targetApps, targetEnvironments }: { targetApps: TargetApp
                       {targetApp.agentEnabled ? "Agent on" : "Agent off"}
                     </Badge>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {environments.length ? (
-                      environments.map((environment) => (
-                        <Badge key={environment.id} variant="outline">
-                          {environment.slug}:{environment.branch ?? "branch"}
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-sm text-muted-foreground">No environments yet</span>
-                    )}
+                  <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                    <span>
+                      Base branch: <span className="font-medium text-foreground">{defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main"}</span>
+                    </span>
+                    <span>
+                      Workspace: <span className="font-medium text-foreground">{defaultEnvironment ? "ready" : "not created"}</span>
+                    </span>
                   </div>
                 </div>
               )
             })
           ) : (
-            <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground md:col-span-2">
-              No target apps configured.
+            <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+              No repository targets configured.
             </div>
           )}
         </CardContent>
@@ -373,7 +299,7 @@ export default async function AdminSettingsPage({
 
         <SetupStatus setup={settings.data.setup} />
         <EnvironmentInstructions />
-        <TargetForms targetApps={settings.data.targetApps} targetEnvironments={settings.data.targetEnvironments} />
+        <RepositorySetup targetApps={settings.data.targetApps} targetEnvironments={settings.data.targetEnvironments} />
       </div>
     </main>
   )

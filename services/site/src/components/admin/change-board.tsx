@@ -589,7 +589,7 @@ function RequestDetailsModal({
                     <p className="mt-2 font-medium">{request.priority}</p>
                   </div>
                   <div className="rounded-2xl border border-border/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Target App</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Repository</p>
                     <p className="mt-2 font-medium">{targetApp?.name ?? request.targetAppSlug ?? "Unknown"}</p>
                   </div>
                   <div className="rounded-2xl border border-border/70 p-4">
@@ -1137,7 +1137,7 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-3 lg:grid-cols-2">
               <div className="rounded-2xl bg-white/6 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-white/55">Target apps</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-white/55">Repositories</p>
                 <p className="mt-2 text-3xl font-semibold">{data.targetApps.length}</p>
               </div>
               <div className="rounded-2xl bg-white/6 p-4">
@@ -1246,7 +1246,7 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium" htmlFor="targetAppId">
-                      Target app
+                      Repository
                     </label>
                     <select
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
@@ -1282,7 +1282,7 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
             <Card className="rounded-[24px] border-border/60 bg-card/90">
               <CardHeader>
                 <CardTitle>Target Inventory</CardTitle>
-                <CardDescription>Seeded apps and environments available to the board.</CardDescription>
+                <CardDescription>Repository targets available to the board.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {data.targetApps.map((targetApp) => {
