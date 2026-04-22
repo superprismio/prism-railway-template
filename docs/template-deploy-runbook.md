@@ -154,7 +154,7 @@ curl -X POST "https://<discord-adapter-domain>/sync?dry_run=true" \
 Set on `discord-adapter`:
 
 ```text
-VOICE_TRANSCRIPTION_BASE_URL=<transcription-url> # Optional Whisper-compatible transcription endpoint for Discord voice recordings.
+VOICE_TRANSCRIPTION_BASE_URL=https://api.venice.ai/api/v1/audio/transcriptions # Optional Whisper-compatible transcription endpoint for Discord voice recordings.
 VOICE_TRANSCRIPTION_API_KEY=<transcription-key> # Optional API key for the configured voice transcription endpoint.
 ```
 
@@ -247,9 +247,9 @@ DISCORD_ATTACHMENT_TEXT_ENABLED="true" # Enables extraction of text-like Discord
 DISCORD_EMBED_TEXT_ENABLED="true" # Enables preservation of Discord embed text.
 VOICE_DAVE_ENCRYPTION="false" # Enables Discord DAVE voice encryption support when available.
 VOICE_CHAT_IGNORE_BOT_MESSAGES="true" # Skips bot messages when stitching voice channel chat into transcripts.
-VOICE_TRANSCRIPTION_BASE_URL="" # Whisper-compatible transcription endpoint for Discord voice recordings.
+VOICE_TRANSCRIPTION_BASE_URL="https://api.venice.ai/api/v1/audio/transcriptions" # Whisper-compatible transcription endpoint for Discord voice recordings.
 VOICE_TRANSCRIPTION_API_KEY="" # Optional API key for the configured voice transcription endpoint.
-VOICE_TRANSCRIPTION_MODEL="" # Model sent to the transcription endpoint.
+VOICE_TRANSCRIPTION_MODEL="nvidia/parakeet-tdt-0.6b-v3" # Model sent to the transcription endpoint.
 VOICE_TRANSCRIPTION_LANGUAGE="en" # Optional transcription language hint.
 VOICE_TRANSCRIPTION_RESPONSE_FORMAT="json" # Response format sent to the transcription endpoint.
 VOICE_TRANSCRIPTION_TIMESTAMPS="true" # Requests timestamp segments from the transcription endpoint.
