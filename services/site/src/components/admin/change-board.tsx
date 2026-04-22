@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, useTransition } from "react"
-import { Activity, Bot, Boxes, CheckCircle2, ChevronDown, ChevronUp, GitBranch, LoaderCircle, Settings, ShieldAlert, Sparkles, X } from "lucide-react"
+import { Activity, Bot, Boxes, CheckCircle2, GitBranch, LoaderCircle, Settings, ShieldAlert, Sparkles, X } from "lucide-react"
 
 import { CodexConsole } from "@/components/admin/codex-console"
 import { Badge } from "@/components/ui/badge"
@@ -16,14 +16,6 @@ import type {
   TargetAppRecord,
   TargetEnvironmentRecord,
 } from "@/lib/admin"
-
-const boardColumns = [
-  { key: "submitted", label: "Inbox" },
-  { key: "triaging", label: "Triaging" },
-  { key: "ready-for-agent", label: "Ready" },
-  { key: "in-progress", label: "Working" },
-  { key: "awaiting-review", label: "Review" },
-] as const
 
 const triageStatuses = [
   { value: "submitted", label: "Inbox" },
@@ -40,6 +32,17 @@ function priorityVariant(priority: string) {
   if (priority === "urgent") return "default"
   if (priority === "high") return "secondary"
   return "muted"
+}
+
+function statusLabel(status: string) {
+  return triageStatuses.find((option) => option.value === status)?.label ?? status
+}
+
+function statusVariant(status: string) {
+  if (status === "in-progress") return "default"
+  if (status === "ready-for-agent" || status === "awaiting-review" || status === "approved") return "secondary"
+  if (status === "closed") return "muted"
+  return "outline"
 }
 
 function environmentForRequest(
@@ -177,76 +180,65 @@ type AgentThreadSession = {
   id: string
 }
 
-function RequestCard({
+function RequestTaskRow({
   request,
   targetApps,
   targetEnvironments,
   onOpen,
-  isExpanded,
-  onToggleExpanded,
 }: {
   request: ChangeRequestRecord
   targetApps: TargetAppRecord[]
   targetEnvironments: TargetEnvironmentRecord[]
   onOpen: (request: ChangeRequestRecord) => void
-  isExpanded: boolean
-  onToggleExpanded: (requestId: string) => void
 }) {
   const targetApp = targetAppForRequest(request, targetApps)
   const targetEnvironment = environmentForRequest(request, targetEnvironments)
+  const targetBranch = targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch"
 
   return (
-    <Card className="border-border/70 bg-card/95 transition hover:border-foreground/30 hover:shadow-[0_16px_40px_-28px_rgba(26,31,44,0.45)]">
-      <CardHeader className="gap-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <button type="button" onClick={() => onOpen(request)} className="min-w-0 flex-1 text-left">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Request #{request.requestNumber}</p>
-              <CardTitle className="mt-1 line-clamp-2 text-base leading-tight">{request.title}</CardTitle>
-            </div>
-          </button>
-          <div className="flex items-center gap-2">
-            {isExpanded ? <Badge variant={priorityVariant(request.priority)}>{request.priority}</Badge> : null}
-            <Button type="button" variant="outline" className="h-8 px-2" onClick={() => onToggleExpanded(request.id)}>
-              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </Button>
-          </div>
+    <button
+      type="button"
+      onClick={() => onOpen(request)}
+      className="grid w-full gap-4 rounded-2xl border border-border/70 bg-background/75 p-4 text-left transition hover:border-foreground/30 hover:bg-background md:grid-cols-[84px_minmax(0,1fr)_180px_150px_140px]"
+    >
+      <div>
+        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">CR</p>
+        <p className="mt-1 text-lg font-semibold">#{request.requestNumber}</p>
+      </div>
+
+      <div className="min-w-0 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={statusVariant(request.status)}>{statusLabel(request.status)}</Badge>
+          <Badge variant={priorityVariant(request.priority)}>{request.priority}</Badge>
+          <Badge variant="outline">{request.requestType}</Badge>
         </div>
-        {isExpanded ? <CardDescription className="text-sm leading-6">{request.description}</CardDescription> : null}
-      </CardHeader>
-      {isExpanded ? (
-        <CardContent className="space-y-3 p-4 pt-0 text-sm">
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">{request.requestType}</Badge>
-            <Badge variant="muted">{targetApp?.name ?? request.targetAppSlug ?? "Unknown target"}</Badge>
-            {targetEnvironment ? <Badge variant="muted">{targetEnvironment.slug}</Badge> : null}
-          </div>
-          {request.agentRecommendation ? (
-            <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/70 px-3 py-2 text-xs leading-5 text-emerald-900">
-              <span className="font-medium">Suggested:</span> {request.agentRecommendation}
-            </div>
-          ) : null}
-          <div className="grid gap-2 text-muted-foreground">
-            <div className="flex items-center gap-2">
-              <GitBranch className="h-3.5 w-3.5" />
-              <span>{targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch configured"}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Bot className="h-3.5 w-3.5" />
-              <span>{targetEnvironment?.agentWritable ? "Agent writable" : "Human-only target"}</span>
-            </div>
-          </div>
-          <div className="rounded-xl border border-border/70 bg-background/60 px-3 py-3 text-xs leading-5 text-muted-foreground">
-            <div>Updated: {isoLabel(request.updatedAt) ?? "Unknown"}</div>
-            {request.triageSummary ? (
-              <div className="mt-2 whitespace-pre-wrap">
-                <span className="font-medium text-foreground">Triage:</span> {request.triageSummary}
-              </div>
-            ) : null}
-          </div>
-        </CardContent>
-      ) : null}
-    </Card>
+        <h3 className="line-clamp-1 text-base font-semibold">{request.title}</h3>
+        <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">{request.description}</p>
+      </div>
+
+      <div className="space-y-1 text-sm">
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Repository</p>
+        <p className="truncate font-medium">{targetApp?.name ?? request.targetAppSlug ?? "Unknown"}</p>
+        <p className="flex items-center gap-1 text-xs text-muted-foreground">
+          <GitBranch className="h-3.5 w-3.5" />
+          <span className="truncate">{targetBranch}</span>
+        </p>
+      </div>
+
+      <div className="space-y-1 text-sm">
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Agent</p>
+        <p className="flex items-center gap-1 font-medium">
+          <Bot className="h-3.5 w-3.5 text-muted-foreground" />
+          {targetEnvironment?.agentWritable ? "Writable" : "Locked"}
+        </p>
+        {request.agentRecommendation ? <p className="truncate text-xs text-muted-foreground">Triage ready</p> : null}
+      </div>
+
+      <div className="space-y-1 text-sm">
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Updated</p>
+        <p className="font-medium">{isoLabel(request.updatedAt) ?? "Unknown"}</p>
+      </div>
+    </button>
   )
 }
 
@@ -1007,7 +999,6 @@ function RequestDetailsModal({
 export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
   const [data, setData] = useState(initialData)
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null)
-  const [expandedRequestIds, setExpandedRequestIds] = useState<string[]>([])
   const [isSaving, startSaving] = useTransition()
   const [modalError, setModalError] = useState<string | null>(null)
 
@@ -1041,6 +1032,9 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
 
   const closedCount = data.changeRequests.filter((request) =>
     ["approved", "rejected", "closed"].includes(request.status)
+  ).length
+  const activeCount = data.changeRequests.filter((request) =>
+    !["approved", "rejected", "closed"].includes(request.status)
   ).length
 
   const selectedRequest = useMemo(
@@ -1088,11 +1082,15 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
     })
   }
 
-  function toggleExpandedRequest(requestId: string) {
-    setExpandedRequestIds((current) =>
-      current.includes(requestId) ? current.filter((value) => value !== requestId) : [...current, requestId]
-    )
-  }
+  const taskList = useMemo(
+    () =>
+      [...data.changeRequests].sort((left, right) => {
+        const leftUpdated = new Date(left.updatedAt).getTime()
+        const rightUpdated = new Date(right.updatedAt).getTime()
+        return (Number.isNaN(rightUpdated) ? 0 : rightUpdated) - (Number.isNaN(leftUpdated) ? 0 : leftUpdated)
+      }),
+    [data.changeRequests]
+  )
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(236,110,57,0.18),transparent_26rem),radial-gradient(circle_at_top_right,rgba(90,182,255,0.14),transparent_24rem),linear-gradient(180deg,#f4f0e8,#f7f4ee_42%,#efe8dd)] text-foreground">
@@ -1111,7 +1109,7 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                       Triage requests, route them to review branches, and keep production out of the blast radius.
                     </h1>
                     <p className="max-w-2xl text-base leading-7 text-muted-foreground md:text-lg">
-                      This board now refreshes live so requests can move across lanes while Codex is triaging or working them.
+                      This task list refreshes live while Codex triages, branches, and moves requests toward review.
                     </p>
                   </div>
                 </div>
@@ -1145,6 +1143,10 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                 <p className="mt-2 text-3xl font-semibold">{data.targetEnvironments.length}</p>
               </div>
               <div className="rounded-2xl bg-white/6 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-white/55">Active requests</p>
+                <p className="mt-2 text-3xl font-semibold">{activeCount}</p>
+              </div>
+              <div className="rounded-2xl bg-white/6 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-white/55">Closed requests</p>
                 <p className="mt-2 text-3xl font-semibold">{closedCount}</p>
               </div>
@@ -1154,42 +1156,43 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
 
         <section className="grid gap-6 xl:grid-cols-[1.4fr_420px]">
           <div className="space-y-4">
-            <div className="grid gap-4 xl:grid-cols-5">
-              {boardColumns.map((column) => {
-                const requests = data.changeRequests.filter((request) => request.status === column.key)
-
-                return (
-                  <div key={column.key} className="rounded-[24px] border border-border/60 bg-card/85 p-3 backdrop-blur">
-                    <div className="mb-3 flex items-center justify-between px-1">
-                      <div>
-                        <p className="text-sm font-semibold">{column.label}</p>
-                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{requests.length} cards</p>
-                      </div>
-                      <Badge variant="outline">{requests.length}</Badge>
-                    </div>
-                    <div className="max-h-[70vh] space-y-3 overflow-y-auto overflow-x-hidden pr-1">
-                      {requests.length ? (
-                        requests.map((request) => (
-                          <RequestCard
-                            key={request.id}
-                            request={request}
-                            targetApps={data.targetApps}
-                            targetEnvironments={data.targetEnvironments}
-                            onOpen={(nextRequest) => setSelectedRequestId(nextRequest.id)}
-                            isExpanded={expandedRequestIds.includes(request.id)}
-                            onToggleExpanded={toggleExpandedRequest}
-                          />
-                        ))
-                      ) : (
-                        <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                          No requests
-                        </div>
-                      )}
-                    </div>
+            <Card className="rounded-[24px] border-border/60 bg-card/90">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <CardTitle>Change Requests</CardTitle>
+                    <CardDescription>Open a task to review context, comments, execution history, and agent controls.</CardDescription>
                   </div>
-                )
-              })}
-            </div>
+                  <Badge variant="outline">{taskList.length} total</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="hidden rounded-xl border border-border/60 bg-muted/35 px-4 py-3 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground md:grid md:grid-cols-[84px_minmax(0,1fr)_180px_150px_140px] md:gap-4">
+                  <span>Number</span>
+                  <span>Request</span>
+                  <span>Repository</span>
+                  <span>Agent</span>
+                  <span>Updated</span>
+                </div>
+                <div className="max-h-[72vh] space-y-3 overflow-y-auto pr-1">
+                  {taskList.length ? (
+                    taskList.map((request) => (
+                      <RequestTaskRow
+                        key={request.id}
+                        request={request}
+                        targetApps={data.targetApps}
+                        targetEnvironments={data.targetEnvironments}
+                        onOpen={(nextRequest) => setSelectedRequestId(nextRequest.id)}
+                      />
+                    ))
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+                      No change requests yet.
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
 
             <CodexConsole />
           </div>
