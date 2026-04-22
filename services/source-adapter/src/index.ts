@@ -6,6 +6,7 @@ import {
   GatewayIntentBits,
   Interaction,
   Message,
+  PermissionFlagsBits,
   REST,
   Routes,
   SlashCommandBuilder,
@@ -762,7 +763,19 @@ async function ensureConversationThread(message: Message): Promise<TextBasedChan
       name: `Prism ${message.member?.displayName ?? message.author.displayName}`.slice(0, 100),
       autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
     });
-  } catch {
+  } catch (error) {
+    const botPermissions = message.guild?.members.me ? message.channel.permissionsFor(message.guild.members.me) : null;
+    console.warn("[discord-adapter] thread creation failed", {
+      guildId: message.guildId,
+      channelId: message.channel.id,
+      channelName: message.channel.name,
+      canViewChannel: botPermissions?.has(PermissionFlagsBits.ViewChannel) ?? null,
+      canSendMessages: botPermissions?.has(PermissionFlagsBits.SendMessages) ?? null,
+      canCreatePublicThreads: botPermissions?.has(PermissionFlagsBits.CreatePublicThreads) ?? null,
+      canSendMessagesInThreads: botPermissions?.has(PermissionFlagsBits.SendMessagesInThreads) ?? null,
+      canReadMessageHistory: botPermissions?.has(PermissionFlagsBits.ReadMessageHistory) ?? null,
+      error: describeError(error),
+    });
     return null;
   }
 }
