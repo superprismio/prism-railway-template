@@ -587,6 +587,13 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     ...(config.codexHome ? { CODEX_HOME: config.codexHome } : {}),
     ...(config.appApiBaseUrl ? { PRISM_AGENT_API_BASE_URL: config.appApiBaseUrl } : {}),
     ...(config.appServiceToken ? { PRISM_AGENT_SERVICE_TOKEN: config.appServiceToken } : {}),
+    ...(config.githubToken
+      ? {
+          TARGET_REPO_GITHUB_TOKEN: config.githubToken,
+          GITHUB_TOKEN: process.env.GITHUB_TOKEN?.trim() || config.githubToken,
+          GH_TOKEN: process.env.GH_TOKEN?.trim() || config.githubToken,
+        }
+      : {}),
   };
 
   console.log(
