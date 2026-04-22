@@ -99,6 +99,8 @@ function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
 }
 
 function EnvironmentInstructions() {
+  const serviceLabel = (name: string) => <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Railway service: {name}</p>
+
   return (
     <section className="grid gap-4 lg:grid-cols-3">
       <Card className="rounded-[22px] bg-card/90">
@@ -110,6 +112,7 @@ function EnvironmentInstructions() {
           <CardDescription>Set these in Railway only when enabling Discord chat or sync.</CardDescription>
         </CardHeader>
         <CardContent>
+          {serviceLabel("discord-adapter")}
           {copyBlock([
             'DISCORD_BOT_TOKEN=""',
             'DISCORD_GUILD_ID=""',
@@ -128,6 +131,7 @@ function EnvironmentInstructions() {
           <CardDescription>Discord recording stays disabled until the transcription key is set.</CardDescription>
         </CardHeader>
         <CardContent>
+          {serviceLabel("discord-adapter")}
           {copyBlock([
             'VOICE_TRANSCRIPTION_BASE_URL="https://api.venice.ai/api/v1/audio/transcriptions"',
             'VOICE_TRANSCRIPTION_API_KEY=""',
@@ -145,6 +149,7 @@ function EnvironmentInstructions() {
           <CardDescription>Only needed for private repos or branch pushes.</CardDescription>
         </CardHeader>
         <CardContent>
+          {serviceLabel("codex-runtime")}
           {copyBlock(['TARGET_REPO_GITHUB_TOKEN=""'])}
         </CardContent>
       </Card>
