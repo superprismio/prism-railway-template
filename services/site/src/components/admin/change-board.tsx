@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, useTransition } from "react"
-import { Activity, Bot, Boxes, CheckCircle2, ChevronDown, ChevronUp, GitBranch, LoaderCircle, ShieldAlert, Sparkles, X } from "lucide-react"
+import { Activity, Bot, Boxes, CheckCircle2, ChevronDown, ChevronUp, GitBranch, LoaderCircle, Settings, ShieldAlert, Sparkles, X } from "lucide-react"
 
 import { CodexConsole } from "@/components/admin/codex-console"
 import { Badge } from "@/components/ui/badge"
@@ -1115,11 +1115,17 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                     </p>
                   </div>
                 </div>
-                <form action="/admin/logout" method="post">
-                  <Button variant="outline" type="submit">
-                    Exit admin
-                  </Button>
-                </form>
+                <div className="flex flex-wrap gap-2">
+                  <a className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-medium hover:bg-accent" href="/admin/settings">
+                    <Settings className="h-4 w-4" />
+                    Settings
+                  </a>
+                  <form action="/admin/logout" method="post">
+                    <Button variant="outline" type="submit">
+                      Exit admin
+                    </Button>
+                  </form>
+                </div>
               </div>
             </CardContent>
           </Card>

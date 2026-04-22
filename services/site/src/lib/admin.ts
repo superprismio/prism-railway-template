@@ -101,6 +101,35 @@ export type AdminBoardData = {
   changeRequests: ChangeRequestRecord[]
 }
 
+export type AdminSetupStatus = {
+  prismMemory: {
+    configured: boolean
+    reachable: boolean
+    status: number | null
+    error: string | null
+    space: string | null
+  }
+  codexRuntime: {
+    configured: boolean
+    reachable: boolean
+    status: number | null
+    error: string | null
+    codexAuthConfigured: boolean
+    codexHome: string | null
+  }
+  targets: {
+    targetAppCount: number
+    targetEnvironmentCount: number
+  }
+  community: {
+    provider: string | null
+  }
+}
+
+export type AdminSettingsData = AdminBoardData & {
+  setup: AdminSetupStatus
+}
+
 export async function getAdminPasswordCookie() {
   return (await cookies()).get(adminPasswordCookieName)?.value ?? null
 }
@@ -160,6 +189,49 @@ export async function getAdminBoardData(): Promise<
         targetApps: targetAppsJson.targetApps,
         targetEnvironments: targetEnvironmentsJson.targetEnvironments,
         changeRequests: changeRequestsJson.changeRequests,
+      },
+    }
+  } catch {
+    return { ok: false, reason: "error" }
+  }
+}
+
+export async function getAdminSettingsData(): Promise<
+  { ok: true; data: AdminSettingsData } | { ok: false; reason: "missing-password" | "unauthorized" | "error" }
+> {
+  const password = await getAdminPasswordCookie()
+  if (!password) {
+    return { ok: false, reason: "missing-password" }
+  }
+
+  try {
+    const [targetAppsResponse, targetEnvironmentsResponse, setupResponse] = await Promise.all([
+      adminFetch("/api/admin/target-apps"),
+      adminFetch("/api/admin/target-environments"),
+      adminFetch("/api/admin/setup/status"),
+    ])
+
+    if (targetAppsResponse.status === 401 || targetEnvironmentsResponse.status === 401 || setupResponse.status === 401) {
+      return { ok: false, reason: "unauthorized" }
+    }
+
+    if (!targetAppsResponse.ok || !targetEnvironmentsResponse.ok || !setupResponse.ok) {
+      return { ok: false, reason: "error" }
+    }
+
+    const [targetAppsJson, targetEnvironmentsJson, setupJson] = await Promise.all([
+      targetAppsResponse.json() as Promise<{ targetApps: TargetAppRecord[] }>,
+      targetEnvironmentsResponse.json() as Promise<{ targetEnvironments: TargetEnvironmentRecord[] }>,
+      setupResponse.json() as Promise<{ setup: AdminSetupStatus }>,
+    ])
+
+    return {
+      ok: true,
+      data: {
+        targetApps: targetAppsJson.targetApps,
+        targetEnvironments: targetEnvironmentsJson.targetEnvironments,
+        changeRequests: [],
+        setup: setupJson.setup,
       },
     }
   } catch {

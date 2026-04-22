@@ -1,4 +1,6 @@
 import process from 'node:process';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import express from 'express';
 import { config } from './config.js';
 import { generateCodexCliReply } from './codex-runtime.js';
@@ -9,7 +11,21 @@ const app = express();
 
 app.use(express.json({ limit: '1mb' }));
 
-app.get('/health', (_req, res) => {
+async function pathExists(filePath: string) {
+  return fs.access(filePath).then(
+    () => true,
+    () => false,
+  );
+}
+
+async function codexAuthConfigured() {
+  if (!config.codexHome) {
+    return false;
+  }
+  return pathExists(path.join(config.codexHome, 'auth.json'));
+}
+
+app.get('/health', async (_req, res) => {
   res.json({
     ok: true,
     service: 'codex-runtime',
@@ -17,6 +33,7 @@ app.get('/health', (_req, res) => {
     startedAt: startedAt.toISOString(),
     codexBinary: config.codexBinary,
     codexHome: config.codexHome,
+    codexAuthConfigured: await codexAuthConfigured(),
     codexRuntimeEnabled: config.codexRuntimeEnabled,
   });
 });
