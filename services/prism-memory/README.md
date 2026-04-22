@@ -23,4 +23,9 @@ Prism Memory serves memory inbox artifacts directly so services can link to dura
 - `GET /api/artifacts/{id}` returns authenticated JSON metadata, content, and raw payload.
 - `GET /api/artifacts/{id}/raw` returns the authenticated raw JSON artifact.
 
-Initial artifact support covers `inbox/memory/{incoming,processed,rejected}/*.json`, including Discord voice transcripts and summaries written through `POST /memory/inbox`.
+Artifact support covers:
+
+- `inbox/memory/{incoming,processed,rejected}/*.json`, including Discord voice transcripts and summaries written through `POST /memory/inbox`
+- `knowledge/kb/docs/**/*.md`
+- `knowledge/kb/metadata/**/*.json`
+- knowledge inbox files under `inbox/knowledge/*` and `knowledge/kb/triage/*`

@@ -41,6 +41,13 @@ curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
   "$PRISM_API_BASE/api/artifacts?source=discord-voice&limit=10"
 ```
 
+List processed knowledge artifacts:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/api/artifacts?category=knowledge&status=processed&limit=10"
+```
+
 Fetch one artifact as JSON:
 
 ```bash

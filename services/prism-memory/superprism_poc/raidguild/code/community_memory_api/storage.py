@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 _BUCKET_RE = re.compile(r"^[a-z0-9_-]+$")
 _SAFE_DOC_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
-_SAFE_ARTIFACT_ID_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+_SAFE_ARTIFACT_ID_RE = re.compile(r"^[a-zA-Z0-9._~-]+$")
 
 
 class StorageError(RuntimeError):
@@ -32,6 +32,7 @@ class FilesystemStorageBackend:
         self.knowledge_indexes = (self.knowledge_root / "indexes").resolve()
         self.knowledge_inbox = (self.knowledge_root / "triage" / "inbox").resolve()
         self.memory_inbox = (self.root / "inbox" / "memory" / "incoming").resolve()
+        self.external_knowledge_inbox = (self.root / "inbox" / "knowledge").resolve()
         self._root_prefix = tuple(self.root.parts[-2:])
 
     def _load_json(self, path: Path) -> Any:
@@ -483,26 +484,16 @@ class FilesystemStorageBackend:
         artifact_type: Optional[str] = None,
         source: Optional[str] = None,
         status: Optional[str] = None,
+        category: Optional[str] = None,
         limit: int = 50,
     ) -> Dict[str, Any]:
         results: List[Dict[str, Any]] = []
-        statuses = [status] if status else ["incoming", "processed", "rejected"]
-        for item_status in statuses:
-            if item_status not in {"incoming", "processed", "rejected"}:
-                raise StorageError("invalid_query", "status must be incoming, processed, or rejected")
-            inbox_dir = self.root / "inbox" / "memory" / item_status
-            if not inbox_dir.is_dir():
-                continue
-            for path in sorted(inbox_dir.glob("*.json")):
-                try:
-                    item = self._artifact_summary_from_path(path, item_status)
-                except StorageError:
-                    continue
-                if artifact_type and item.get("type") != artifact_type:
-                    continue
-                if source and item.get("source") != source:
-                    continue
-                results.append(item)
+        if category and category not in {"memory", "knowledge"}:
+            raise StorageError("invalid_query", "category must be memory or knowledge")
+        if not category or category == "memory":
+            results.extend(self._list_memory_artifacts(artifact_type=artifact_type, source=source, status=status))
+        if not category or category == "knowledge":
+            results.extend(self._list_knowledge_artifacts(artifact_type=artifact_type, source=source, status=status))
 
         results.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
         return {
@@ -513,21 +504,29 @@ class FilesystemStorageBackend:
                 "type": artifact_type,
                 "source": source,
                 "status": status,
+                "category": category,
             },
         }
 
     def artifact_detail(self, artifact_id: str) -> Dict[str, Any]:
-        path, status = self._resolve_artifact_path(artifact_id)
+        path, status, category = self._resolve_artifact_path(artifact_id)
         item = self._artifact_summary_from_path(path, status)
-        payload = self._load_json(path)
-        item["content"] = str(payload.get("content") or "")
-        item["payload"] = payload
+        if category == "memory":
+            payload = self._load_json(path)
+            item["content"] = str(payload.get("content") or "")
+            item["payload"] = payload
+        else:
+            item["content"] = self._read_text(path)
+            item["payload"] = self._knowledge_payload_for_path(path)
         return item
 
     def artifact_raw(self, artifact_id: str) -> Tuple[str, str]:
-        path, _status = self._resolve_artifact_path(artifact_id)
+        path, _status, category = self._resolve_artifact_path(artifact_id)
         try:
-            return ("application/json", path.read_text(encoding="utf-8"))
+            media_type = "application/json" if path.suffix.lower() == ".json" else "text/markdown; charset=utf-8"
+            if category == "memory":
+                media_type = "application/json"
+            return (media_type, path.read_text(encoding="utf-8"))
         except OSError as exc:
             raise StorageError("not_found", f"Unable to read artifact: {artifact_id}") from exc
 
@@ -553,8 +552,13 @@ class FilesystemStorageBackend:
         return self._load_json(path)
 
     def _artifact_summary_from_path(self, path: Path, status: str) -> Dict[str, Any]:
-        payload = self._load_json(path)
+        if path.suffix.lower() == ".json":
+            payload = self._load_json(path)
+        else:
+            payload = {}
         content = str(payload.get("content") or "")
+        if not content and path.suffix.lower() in {".md", ".markdown", ".txt"}:
+            content = self._read_text(path)
         stat = path.stat()
         created_at = str(payload.get("ts") or self._to_iso(datetime.fromtimestamp(stat.st_mtime, timezone.utc)))
         participants = self._coerce_str_list(payload.get("participants"))
@@ -565,13 +569,13 @@ class FilesystemStorageBackend:
             except (TypeError, ValueError):
                 participant_count = None
         return {
-            "id": path.stem,
-            "category": "memory",
+            "id": self._artifact_id_for_path(path, status),
+            "category": self._artifact_category_for_path(path),
             "status": status,
             "path": str(path.relative_to(self.root)),
             "filename": path.name,
-            "source": str(payload.get("source")) if payload.get("source") is not None else None,
-            "type": str(payload.get("type")) if payload.get("type") is not None else None,
+            "source": str(payload.get("source")) if payload.get("source") is not None else self._artifact_source_for_path(path),
+            "type": str(payload.get("type")) if payload.get("type") is not None else self._artifact_type_for_path(path),
             "created_at": created_at,
             "bucket": str(payload.get("bucket")) if payload.get("bucket") is not None else None,
             "author": str(payload.get("author")) if payload.get("author") is not None else None,
@@ -582,20 +586,149 @@ class FilesystemStorageBackend:
             "preview": content[:240],
         }
 
-    def _resolve_artifact_path(self, artifact_id: str) -> Tuple[Path, str]:
+    def _resolve_artifact_path(self, artifact_id: str) -> Tuple[Path, str, str]:
         normalized = artifact_id.strip().removesuffix(".json")
         if not normalized or not _SAFE_ARTIFACT_ID_RE.fullmatch(normalized):
             raise StorageError("invalid_query", "Invalid artifact id")
-        matches: List[Tuple[Path, str]] = []
+        matches: List[Tuple[Path, str, str]] = []
         for status in ("incoming", "processed", "rejected"):
             candidate = self.root / "inbox" / "memory" / status / f"{normalized}.json"
             if candidate.is_file():
-                matches.append((candidate, status))
+                matches.append((candidate, status, "memory"))
+        for item in self._list_knowledge_artifacts():
+            if item.get("id") == normalized:
+                matches.append((self.root / str(item["path"]), str(item["status"]), "knowledge"))
         if not matches:
             raise StorageError("not_found", f"Artifact not found: {artifact_id}")
         if len(matches) > 1:
             raise StorageError("ambiguous_slug", f"Artifact id matched multiple files: {artifact_id}")
         return matches[0]
+
+    def _list_memory_artifacts(
+        self,
+        *,
+        artifact_type: Optional[str] = None,
+        source: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
+        statuses = [status] if status else ["incoming", "processed", "rejected"]
+        for item_status in statuses:
+            if item_status not in {"incoming", "processed", "rejected"}:
+                raise StorageError("invalid_query", "status must be incoming, processed, or rejected")
+            inbox_dir = self.root / "inbox" / "memory" / item_status
+            if not inbox_dir.is_dir():
+                continue
+            for path in sorted(inbox_dir.glob("*.json")):
+                try:
+                    item = self._artifact_summary_from_path(path, item_status)
+                except StorageError:
+                    continue
+                if artifact_type and item.get("type") != artifact_type:
+                    continue
+                if source and item.get("source") != source:
+                    continue
+                results.append(item)
+        return results
+
+    def _list_knowledge_artifacts(
+        self,
+        *,
+        artifact_type: Optional[str] = None,
+        source: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
+        if status in {None, "processed"}:
+            for path in sorted(self.knowledge_docs.rglob("*.md")) if self.knowledge_docs.is_dir() else []:
+                item = self._artifact_summary_from_path(path, "processed")
+                if artifact_type and item.get("type") != artifact_type:
+                    continue
+                if source and item.get("source") != source:
+                    continue
+                results.append(item)
+        for item_status in ([status] if status else ["incoming", "processed", "rejected", "reviewed"]):
+            if item_status not in {"incoming", "processed", "rejected", "reviewed"}:
+                raise StorageError("invalid_query", "knowledge status must be incoming, processed, rejected, or reviewed")
+            inbox_dirs = [
+                self.external_knowledge_inbox / item_status,
+                self.knowledge_root / "triage" / item_status,
+            ]
+            for inbox_dir in inbox_dirs:
+                if not inbox_dir.is_dir():
+                    continue
+                for path in sorted([*inbox_dir.glob("*.md"), *inbox_dir.glob("*.json")]):
+                    item = self._artifact_summary_from_path(path, item_status)
+                    if artifact_type and item.get("type") != artifact_type:
+                        continue
+                    if source and item.get("source") != source:
+                        continue
+                    results.append(item)
+        return results
+
+    def _artifact_id_for_path(self, path: Path, status: str) -> str:
+        category = self._artifact_category_for_path(path)
+        if category == "memory":
+            return path.stem
+        try:
+            if path.is_relative_to(self.knowledge_docs):
+                relative = path.relative_to(self.knowledge_docs).with_suffix("").as_posix()
+                return f"knowledge-doc--{relative.replace('/', '~')}"
+            if path.is_relative_to(self.knowledge_metadata):
+                relative = path.relative_to(self.knowledge_metadata).with_suffix("").as_posix()
+                return f"knowledge-meta--{relative.replace('/', '~')}"
+        except AttributeError:
+            pass
+        relative = path.relative_to(self.root).as_posix()
+        safe_relative = relative.replace("/", "~")
+        return f"knowledge-inbox--{status}--{safe_relative}"
+
+    def _artifact_category_for_path(self, path: Path) -> str:
+        try:
+            path.relative_to(self.root / "inbox" / "memory")
+            return "memory"
+        except ValueError:
+            return "knowledge"
+
+    def _artifact_source_for_path(self, path: Path) -> Optional[str]:
+        if self._artifact_category_for_path(path) == "knowledge":
+            return "knowledge"
+        return None
+
+    def _artifact_type_for_path(self, path: Path) -> Optional[str]:
+        if self._artifact_category_for_path(path) != "knowledge":
+            return None
+        if path.is_relative_to(self.knowledge_docs):
+            return "knowledge_doc"
+        if path.suffix.lower() == ".json":
+            return "knowledge_metadata"
+        return "knowledge_inbox"
+
+    def _knowledge_payload_for_path(self, path: Path) -> Dict[str, Any]:
+        if path.suffix.lower() == ".json":
+            loaded = self._load_json(path)
+            return loaded if isinstance(loaded, dict) else {"value": loaded}
+        meta_candidates = [
+            path.with_suffix(".meta.json"),
+        ]
+        try:
+            if path.is_relative_to(self.knowledge_docs):
+                rel = path.relative_to(self.knowledge_docs)
+                meta_candidates.append((self.knowledge_metadata / rel).with_suffix(".json"))
+        except AttributeError:
+            pass
+        for meta_path in meta_candidates:
+            if meta_path.is_file():
+                loaded = self._load_json(meta_path)
+                return loaded if isinstance(loaded, dict) else {"value": loaded}
+        return {}
+
+    @staticmethod
+    def _read_text(path: Path) -> str:
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise StorageError("not_found", f"Unable to read artifact: {path}") from exc
 
     def _iter_raw_window_paths(
         self, start_dt: datetime, end_dt: datetime, *, bucket: Optional[str] = None

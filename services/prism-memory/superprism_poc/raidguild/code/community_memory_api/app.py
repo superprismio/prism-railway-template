@@ -571,12 +571,13 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/api/artifacts", response_model=schemas.ArtifactListResponse, dependencies=[read_auth_dependency], tags=["artifacts"])
     async def artifacts_list(
+        category: Optional[str] = Query(None, description="memory or knowledge"),
         type: Optional[str] = Query(None, description="Optional memory artifact type filter"),
         source: Optional[str] = Query(None, description="Optional source filter"),
         status: Optional[str] = Query(None, description="incoming, processed, or rejected"),
         limit: int = Query(50, ge=1, le=200),
     ):
-        return storage.list_artifacts(artifact_type=type, source=source, status=status, limit=limit)
+        return storage.list_artifacts(artifact_type=type, source=source, status=status, category=category, limit=limit)
 
     @app.get("/api/artifacts/{artifact_id}", response_model=schemas.ArtifactDetail, dependencies=[read_auth_dependency], tags=["artifacts"])
     async def artifact_detail(artifact_id: str):
