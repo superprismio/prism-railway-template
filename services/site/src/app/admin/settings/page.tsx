@@ -164,37 +164,21 @@ function RepositorySetup({ targetApps, targetEnvironments }: { targetApps: Targe
       <Card className="rounded-[22px] bg-card/90">
         <CardHeader>
           <CardTitle>Repository Target</CardTitle>
-          <CardDescription>Create one Codex target. The base branch is where change request feature branches start.</CardDescription>
+          <CardDescription>Create one Codex target. Change request branches start from the target branch.</CardDescription>
         </CardHeader>
         <CardContent>
           <form action="/admin/target-apps" method="post" className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-2 text-sm font-medium">
-                Name
-                <Input name="name" placeholder="Prism Website" required />
-              </label>
-              <label className="space-y-2 text-sm font-medium">
-                Slug
-                <Input name="slug" placeholder="prism-website" />
-              </label>
-            </div>
+            <label className="space-y-2 text-sm font-medium">
+              Name
+              <Input name="name" placeholder="DAOhaus Admin" required />
+            </label>
             <label className="space-y-2 text-sm font-medium">
               GitHub Repo URL
-              <Input name="repoUrl" placeholder="https://github.com/org/repo.git" required />
+              <Input name="repoUrl" placeholder="https://github.com/HausDAO/daohaus-admin.git" required />
             </label>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-2 text-sm font-medium">
-                Base Branch
-                <Input name="defaultBranch" defaultValue="main" />
-              </label>
-              <label className="space-y-2 text-sm font-medium">
-                Framework
-                <Input name="framework" placeholder="nextjs" />
-              </label>
-            </div>
             <label className="space-y-2 text-sm font-medium">
-              Base URL
-              <Input name="baseUrl" placeholder="https://preview.example.com" />
+              Target Branch
+              <Input name="defaultBranch" defaultValue="main" />
             </label>
             <label className="space-y-2 text-sm font-medium">
               Description
@@ -228,7 +212,7 @@ function RepositorySetup({ targetApps, targetEnvironments }: { targetApps: Targe
                   </div>
                   <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
                     <span>
-                      Base branch: <span className="font-medium text-foreground">{defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main"}</span>
+                      Target branch: <span className="font-medium text-foreground">{defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main"}</span>
                     </span>
                     <span>
                       Workspace: <span className="font-medium text-foreground">{defaultEnvironment ? "ready" : "not created"}</span>

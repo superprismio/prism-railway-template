@@ -597,7 +597,7 @@ function RequestDetailsModal({
                     <p className="mt-2 font-medium">{targetEnvironment?.name ?? "Not assigned"}</p>
                   </div>
                   <div className="rounded-2xl border border-border/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Base Branch</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Target Branch</p>
                     <p className="mt-2 font-medium">{configuredBaseBranch ?? "Not configured"}</p>
                   </div>
                 </div>

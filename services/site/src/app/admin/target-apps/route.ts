@@ -13,9 +13,14 @@ function slugFromName(value: string) {
 export async function POST(request: Request) {
   const formData = await request.formData()
   const name = String(formData.get("name") ?? "").trim()
-  const slug = String(formData.get("slug") ?? "").trim() || slugFromName(name)
+  const repoUrl = String(formData.get("repoUrl") ?? "").trim()
+  const repoName = repoUrl
+    .split("/")
+    .pop()
+    ?.replace(/\.git$/i, "")
+    .trim()
+  const slug = String(formData.get("slug") ?? "").trim() || slugFromName(name || repoName || "repository")
   const defaultBranch = String(formData.get("defaultBranch") ?? "main").trim() || "main"
-  const baseUrl = String(formData.get("baseUrl") ?? "").trim()
 
   const response = await adminFetch("/api/admin/target-apps", {
     method: "POST",
@@ -23,10 +28,10 @@ export async function POST(request: Request) {
       slug,
       name,
       description: String(formData.get("description") ?? "").trim(),
-      repoUrl: String(formData.get("repoUrl") ?? "").trim(),
+      repoUrl,
       repoProvider: "github",
       defaultBranch,
-      framework: String(formData.get("framework") ?? "").trim() || null,
+      framework: null,
       deployBackend: "github",
       deployConfig: {
         workspace: "external",
@@ -58,7 +63,7 @@ export async function POST(request: Request) {
       name: "Default",
       kind: "development",
       branch: defaultBranch,
-      baseUrl: baseUrl || null,
+      baseUrl: null,
       deployBackend: "local",
       deployConfig: {
         path: "/data/workspaces",
