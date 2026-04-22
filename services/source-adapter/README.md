@@ -60,7 +60,7 @@ Discord-specific envs you can add later:
 - `VOICE_FFMPEG_SEGMENT_SECONDS=180`
 - `VOICE_CHAT_MAX_MESSAGES=200`
 - `VOICE_CHAT_IGNORE_BOT_MESSAGES=true`
-- `VOICE_DAVE_ENCRYPTION=false`
+- `VOICE_DAVE_ENCRYPTION=true`
 - `VOICE_TRANSCRIPTION_BASE_URL=https://api.venice.ai/api/v1/audio/transcriptions`
 - `VOICE_TRANSCRIPTION_API_KEY=...`
 - `VOICE_TRANSCRIPTION_MODEL=nvidia/parakeet-tdt-0.6b-v3`
@@ -153,7 +153,7 @@ The verified Railway path uses:
 - `VOICE_TRANSCRIPTION_LANGUAGE=en`
 - `VOICE_CHAT_MAX_MESSAGES=200`
 - `VOICE_CHAT_IGNORE_BOT_MESSAGES=true`
-- `VOICE_DAVE_ENCRYPTION=false`
+- `VOICE_DAVE_ENCRYPTION=true`
 - `CODEX_RUNTIME_BASE_URL=https://codex-runtime-production.up.railway.app` or a verified reachable private URL
 - `PRISM_API_BASE=https://prism-memory-production.up.railway.app` or a verified reachable private URL
 - `PRISM_API_KEY`

@@ -23,7 +23,9 @@ import { spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 import prism from "prism-media";
 
-const voiceDaveEncryptionEnabled = (process.env.VOICE_DAVE_ENCRYPTION ?? "false").trim().toLowerCase() === "true";
+const voiceDaveEncryptionRaw = process.env.VOICE_DAVE_ENCRYPTION?.trim().toLowerCase();
+const voiceDaveEncryptionExplicit = Boolean(voiceDaveEncryptionRaw);
+const voiceDaveEncryptionEnabled = voiceDaveEncryptionRaw ? voiceDaveEncryptionRaw === "true" : true;
 
 export type VoiceChunkMetadata = {
   audioUrl: string | null;
@@ -312,22 +314,30 @@ export class DiscordVoiceManager {
       existing.connection.destroy();
       this.connections.delete(guild.id);
     }
-    const connection = joinVoiceChannel({
-      channelId: channel.id,
-      guildId: guild.id,
-      adapterCreator: guild.voiceAdapterCreator,
-      selfDeaf: false,
-      selfMute: false,
-      daveEncryption: voiceDaveEncryptionEnabled,
-    });
-    connection.on("error", (error) => {
-      console.warn(`[discord-adapter] voice connection error guild=${guild.id}: ${this.describeError(error)}`);
-    });
-    connection.on("stateChange", (oldState, newState) => {
-      if (oldState.status !== newState.status) {
-        console.log(`[discord-adapter] voice connection state guild=${guild.id} ${oldState.status}->${newState.status}`);
-      }
-    });
+    const createConnection = (daveEncryption: boolean) =>
+      joinVoiceChannel({
+        channelId: channel.id,
+        guildId: guild.id,
+        adapterCreator: guild.voiceAdapterCreator,
+        selfDeaf: false,
+        selfMute: false,
+        daveEncryption,
+      });
+    const attachConnectionLogging = (connectionToLog: VoiceConnection) => {
+      connectionToLog.on("error", (error) => {
+        console.warn(`[discord-adapter] voice connection error guild=${guild.id}: ${this.describeError(error)}`);
+      });
+      connectionToLog.on("stateChange", (oldState, newState) => {
+        if (oldState.status !== newState.status) {
+          console.log(`[discord-adapter] voice connection state guild=${guild.id} ${oldState.status}->${newState.status}`);
+        }
+      });
+    };
+    let connection = createConnection(voiceDaveEncryptionEnabled);
+    console.log(
+      `[discord-adapter] joining voice guild=${guild.id} channel=${channel.id} daveEncryption=${voiceDaveEncryptionEnabled ? "true" : "false"}${voiceDaveEncryptionExplicit ? "" : " default"}`,
+    );
+    attachConnectionLogging(connection);
     try {
       await entersState(connection, VoiceConnectionStatus.Ready, 5_000);
     } catch (error) {
@@ -335,12 +345,23 @@ export class DiscordVoiceManager {
       const joinedTargetChannel = me?.voice.channelId === channel.id;
       if (!joinedTargetChannel) {
         connection.destroy();
-        throw error;
+        if (voiceDaveEncryptionEnabled && !voiceDaveEncryptionExplicit) {
+          console.warn(
+            `[discord-adapter] voice join failed with default DAVE encryption for guild ${guild.id}; retrying with daveEncryption=false`,
+            this.describeError(error),
+          );
+          connection = createConnection(false);
+          attachConnectionLogging(connection);
+          await entersState(connection, VoiceConnectionStatus.Ready, 5_000);
+        } else {
+          throw error;
+        }
+      } else {
+        console.warn(
+          `[discord-adapter] voice join ready-wait failed for guild ${guild.id}, but bot is present in ${channel.id}; continuing`,
+          this.describeError(error),
+        );
       }
-      console.warn(
-        `[discord-adapter] voice join ready-wait failed for guild ${guild.id}, but bot is present in ${channel.id}; continuing`,
-        this.describeError(error),
-      );
     }
     const receiverStartHandler = (userId: string) => {
       const activeSession = this.sessionsByGuild.get(guild.id);

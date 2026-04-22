@@ -65,7 +65,7 @@ Use this while filling out the Railway template composer.
 | `DISCORD_IGNORE_BOT_MESSAGES` | `false` | Whether bot messages are skipped during sync. | No |
 | `DISCORD_ATTACHMENT_TEXT_ENABLED` | `true` | Enables extraction of text-like Discord attachments. | No |
 | `DISCORD_EMBED_TEXT_ENABLED` | `true` | Enables preservation of Discord embed text. | No |
-| `VOICE_DAVE_ENCRYPTION` | `false` | Enables Discord DAVE voice encryption support when available. | No |
+| `VOICE_DAVE_ENCRYPTION` | `true` | Enables Discord DAVE voice encryption support when available. | No |
 | `VOICE_CHAT_IGNORE_BOT_MESSAGES` | `true` | Skips bot messages when stitching voice channel chat into transcripts. | No |
 | `VOICE_TRANSCRIPTION_BASE_URL` | `https://api.venice.ai/api/v1/audio/transcriptions` | Whisper-compatible transcription endpoint for Discord voice recordings. | Yes |
 | `VOICE_TRANSCRIPTION_API_KEY` | empty | API key for the configured voice transcription endpoint. | Yes |

@@ -133,6 +133,7 @@ function EnvironmentInstructions() {
         <CardContent>
           {serviceLabel("discord-adapter")}
           {copyBlock([
+            'VOICE_DAVE_ENCRYPTION="true"',
             'VOICE_TRANSCRIPTION_BASE_URL="https://api.venice.ai/api/v1/audio/transcriptions"',
             'VOICE_TRANSCRIPTION_API_KEY=""',
             'VOICE_TRANSCRIPTION_MODEL="nvidia/parakeet-tdt-0.6b-v3"',

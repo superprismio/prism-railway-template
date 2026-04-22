@@ -109,7 +109,7 @@ Required for Discord voice:
 - `VOICE_TRANSCRIPTION_TIMESTAMPS=true`
 - `VOICE_CHAT_MAX_MESSAGES=200`
 - `VOICE_CHAT_IGNORE_BOT_MESSAGES=true`
-- `VOICE_DAVE_ENCRYPTION=false`
+- `VOICE_DAVE_ENCRYPTION=true`
 - `CODEX_RUNTIME_BASE_URL=https://<codex-runtime-domain>`
 - `PRISM_API_BASE=https://<prism-memory-domain>`
 - `PRISM_API_KEY=<same Prism API key>`
@@ -186,7 +186,7 @@ If transcription is missing:
 If `/prism-stoprecord` says no active recording after `/prism-record` succeeded:
 
 - check logs for `voice connection error` or `DecryptionFailed`
-- keep `VOICE_DAVE_ENCRYPTION=false` unless Discord voice receive behavior changes and this has been retested
+- keep `VOICE_DAVE_ENCRYPTION=true` unless Discord voice receive behavior changes and this has been retested
 - with the recovery path deployed, `/prism-stoprecord` should recover the newest unfinished session for the guild from the recording volume
 - if recovery fails, inspect `/data/recordings/<session-id>/session.json` and `/data/recordings/<session-id>/raw`
 - to recover a specific known session, call `POST /recordings/<session-id>/recover` with `X-Adapter-Token`
