@@ -184,6 +184,36 @@ Or run the whole local stack:
 npm run dev:all
 ```
 
+For local development, use concrete loopback URLs in `.env`; Railway template references such as `${{api.RAILWAY_PRIVATE_DOMAIN}}` only resolve inside Railway templates.
+
+Minimum local values:
+
+```text
+API_INTERNAL_BASE_URL=http://127.0.0.1:4010
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:4010
+APP_API_BASE_URL=http://127.0.0.1:4010
+CODEX_RUNTIME_BASE_URL=http://127.0.0.1:3030
+PRISM_API_BASE=http://127.0.0.1:8788
+PRISM_API_KEY=replace-me
+INTERNAL_SERVICE_TOKEN=replace-me
+SOURCE_ADAPTER_TOKEN=replace-me
+```
+
+Codex runtime needs local Codex auth. The default `.env.example` uses your normal `~/.codex`:
+
+```text
+CODEX_HOME=$HOME/.codex
+```
+
+Discord and voice transcription are optional locally. Leave these blank unless you want to test Discord sync/chat or `/prism-record`:
+
+```text
+DISCORD_BOT_TOKEN=
+DISCORD_GUILD_ID=
+VOICE_TRANSCRIPTION_BASE_URL=
+VOICE_TRANSCRIPTION_API_KEY=
+```
+
 ### Local Target Apps
 
 Shared target bootstrap data should only include stable shared environments such as staging and production.
