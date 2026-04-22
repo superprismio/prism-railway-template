@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import hashlib
+import html
 import logging
 import os
 import secrets
@@ -567,6 +568,69 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/knowledge/indexes/entities", dependencies=[read_auth_dependency], tags=["knowledge"])
     async def knowledge_index_entities():
         return storage.knowledge_index("entities")
+
+    @app.get("/api/artifacts", response_model=schemas.ArtifactListResponse, dependencies=[read_auth_dependency], tags=["artifacts"])
+    async def artifacts_list(
+        type: Optional[str] = Query(None, description="Optional memory artifact type filter"),
+        source: Optional[str] = Query(None, description="Optional source filter"),
+        status: Optional[str] = Query(None, description="incoming, processed, or rejected"),
+        limit: int = Query(50, ge=1, le=200),
+    ):
+        return storage.list_artifacts(artifact_type=type, source=source, status=status, limit=limit)
+
+    @app.get("/api/artifacts/{artifact_id}", response_model=schemas.ArtifactDetail, dependencies=[read_auth_dependency], tags=["artifacts"])
+    async def artifact_detail(artifact_id: str):
+        return storage.artifact_detail(artifact_id)
+
+    @app.get("/api/artifacts/{artifact_id}/raw", dependencies=[read_auth_dependency], tags=["artifacts"])
+    async def artifact_raw(artifact_id: str):
+        media_type, content = storage.artifact_raw(artifact_id)
+        return Response(content=content, media_type=media_type)
+
+    @app.get("/artifacts/{artifact_id}", tags=["artifacts"], include_in_schema=False)
+    async def artifact_html(artifact_id: str):
+        artifact = storage.artifact_detail(artifact_id)
+        title = f"{artifact.get('type') or 'artifact'} / {artifact.get('source') or 'unknown'}"
+        content = str(artifact.get("content") or "")
+        raw_url = f"/api/artifacts/{html.escape(str(artifact.get('id') or artifact_id), quote=True)}/raw"
+        page = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{html.escape(title)}</title>
+  <style>
+    :root {{ color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    body {{ margin: 0; background: #f7f4ee; color: #1d2433; }}
+    main {{ max-width: 920px; margin: 0 auto; padding: 32px 20px 56px; }}
+    header {{ border-bottom: 1px solid #ddd6cc; margin-bottom: 24px; padding-bottom: 18px; }}
+    h1 {{ font-size: 28px; line-height: 1.2; margin: 0 0 12px; }}
+    dl {{ display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 0; color: #5f6572; font-size: 14px; }}
+    dt {{ font-weight: 700; color: #303747; }}
+    dd {{ margin: 0; overflow-wrap: anywhere; }}
+    article {{ background: #fffaf3; border: 1px solid #ddd6cc; border-radius: 12px; padding: 20px; box-shadow: 0 18px 48px -36px rgba(26,31,44,.55); }}
+    pre {{ white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; margin: 0; }}
+    a {{ color: #bb4d2a; }}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>{html.escape(title)}</h1>
+      <dl>
+        <dt>ID</dt><dd>{html.escape(str(artifact.get('id') or ''))}</dd>
+        <dt>Status</dt><dd>{html.escape(str(artifact.get('status') or ''))}</dd>
+        <dt>Created</dt><dd>{html.escape(str(artifact.get('created_at') or ''))}</dd>
+        <dt>Path</dt><dd>{html.escape(str(artifact.get('path') or ''))}</dd>
+        <dt>Raw</dt><dd><a href="{raw_url}">{raw_url}</a></dd>
+      </dl>
+    </header>
+    <article><pre>{html.escape(content)}</pre></article>
+  </main>
+</body>
+</html>
+"""
+        return Response(content=page, media_type="text/html; charset=utf-8")
 
     @app.post(
         "/knowledge/inbox",

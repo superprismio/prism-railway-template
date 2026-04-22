@@ -50,6 +50,36 @@ class MemoryInboxResponse(BaseModel):
     path: str
 
 
+class ArtifactSummary(BaseModel):
+    id: str
+    category: str
+    status: str
+    path: str
+    filename: str
+    source: Optional[str] = None
+    type: Optional[str] = None
+    created_at: str
+    bucket: Optional[str] = None
+    author: Optional[str] = None
+    url: Optional[str] = None
+    participants: Optional[list[str]] = None
+    participant_count: Optional[int] = None
+    content_length: int
+    preview: str
+
+
+class ArtifactDetail(ArtifactSummary):
+    content: str
+    payload: Dict[str, Any]
+
+
+class ArtifactListResponse(BaseModel):
+    artifacts: list[ArtifactSummary]
+    total: int
+    limit: int
+    filters: Dict[str, Optional[str]]
+
+
 class StateProjectUpsertRequest(BaseModel):
     display_name: Optional[str] = None
     description: Optional[str] = None

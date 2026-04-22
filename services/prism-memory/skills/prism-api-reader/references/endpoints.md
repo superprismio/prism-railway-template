@@ -33,3 +33,23 @@ curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
 curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
   "$PRISM_API_BASE/knowledge/docs/raidguild-handbook-home"
 ```
+
+List recent memory inbox artifacts:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/api/artifacts?source=discord-voice&limit=10"
+```
+
+Fetch one artifact as JSON:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/api/artifacts/<artifact-id>"
+```
+
+Human-readable artifact pages are available at:
+
+```text
+$PRISM_API_BASE/artifacts/<artifact-id>
+```

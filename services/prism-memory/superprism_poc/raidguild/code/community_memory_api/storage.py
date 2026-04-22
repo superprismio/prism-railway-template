@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 _BUCKET_RE = re.compile(r"^[a-z0-9_-]+$")
 _SAFE_DOC_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
+_SAFE_ARTIFACT_ID_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
 
 class StorageError(RuntimeError):
@@ -476,6 +477,60 @@ class FilesystemStorageBackend:
         path = self.knowledge_indexes / f"{name}.json"
         return self._load_json(path)
 
+    def list_artifacts(
+        self,
+        *,
+        artifact_type: Optional[str] = None,
+        source: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50,
+    ) -> Dict[str, Any]:
+        results: List[Dict[str, Any]] = []
+        statuses = [status] if status else ["incoming", "processed", "rejected"]
+        for item_status in statuses:
+            if item_status not in {"incoming", "processed", "rejected"}:
+                raise StorageError("invalid_query", "status must be incoming, processed, or rejected")
+            inbox_dir = self.root / "inbox" / "memory" / item_status
+            if not inbox_dir.is_dir():
+                continue
+            for path in sorted(inbox_dir.glob("*.json")):
+                try:
+                    item = self._artifact_summary_from_path(path, item_status)
+                except StorageError:
+                    continue
+                if artifact_type and item.get("type") != artifact_type:
+                    continue
+                if source and item.get("source") != source:
+                    continue
+                results.append(item)
+
+        results.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        return {
+            "artifacts": results[:limit],
+            "total": len(results),
+            "limit": limit,
+            "filters": {
+                "type": artifact_type,
+                "source": source,
+                "status": status,
+            },
+        }
+
+    def artifact_detail(self, artifact_id: str) -> Dict[str, Any]:
+        path, status = self._resolve_artifact_path(artifact_id)
+        item = self._artifact_summary_from_path(path, status)
+        payload = self._load_json(path)
+        item["content"] = str(payload.get("content") or "")
+        item["payload"] = payload
+        return item
+
+    def artifact_raw(self, artifact_id: str) -> Tuple[str, str]:
+        path, _status = self._resolve_artifact_path(artifact_id)
+        try:
+            return ("application/json", path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise StorageError("not_found", f"Unable to read artifact: {artifact_id}") from exc
+
     def product_suggestion_latest(self) -> Any:
         suggestions_dir = self.root / "products" / "suggestions"
         candidates = sorted(
@@ -496,6 +551,51 @@ class FilesystemStorageBackend:
         self._validate_week(week_key)
         path = self.root / "products" / "suggestions" / f"weekly-{week_key}.json"
         return self._load_json(path)
+
+    def _artifact_summary_from_path(self, path: Path, status: str) -> Dict[str, Any]:
+        payload = self._load_json(path)
+        content = str(payload.get("content") or "")
+        stat = path.stat()
+        created_at = str(payload.get("ts") or self._to_iso(datetime.fromtimestamp(stat.st_mtime, timezone.utc)))
+        participants = self._coerce_str_list(payload.get("participants"))
+        participant_count = payload.get("participant_count")
+        if participant_count is not None:
+            try:
+                participant_count = int(participant_count)
+            except (TypeError, ValueError):
+                participant_count = None
+        return {
+            "id": path.stem,
+            "category": "memory",
+            "status": status,
+            "path": str(path.relative_to(self.root)),
+            "filename": path.name,
+            "source": str(payload.get("source")) if payload.get("source") is not None else None,
+            "type": str(payload.get("type")) if payload.get("type") is not None else None,
+            "created_at": created_at,
+            "bucket": str(payload.get("bucket")) if payload.get("bucket") is not None else None,
+            "author": str(payload.get("author")) if payload.get("author") is not None else None,
+            "url": str(payload.get("url")) if payload.get("url") is not None else None,
+            "participants": participants or None,
+            "participant_count": participant_count,
+            "content_length": len(content),
+            "preview": content[:240],
+        }
+
+    def _resolve_artifact_path(self, artifact_id: str) -> Tuple[Path, str]:
+        normalized = artifact_id.strip().removesuffix(".json")
+        if not normalized or not _SAFE_ARTIFACT_ID_RE.fullmatch(normalized):
+            raise StorageError("invalid_query", "Invalid artifact id")
+        matches: List[Tuple[Path, str]] = []
+        for status in ("incoming", "processed", "rejected"):
+            candidate = self.root / "inbox" / "memory" / status / f"{normalized}.json"
+            if candidate.is_file():
+                matches.append((candidate, status))
+        if not matches:
+            raise StorageError("not_found", f"Artifact not found: {artifact_id}")
+        if len(matches) > 1:
+            raise StorageError("ambiguous_slug", f"Artifact id matched multiple files: {artifact_id}")
+        return matches[0]
 
     def _iter_raw_window_paths(
         self, start_dt: datetime, end_dt: datetime, *, bucket: Optional[str] = None
