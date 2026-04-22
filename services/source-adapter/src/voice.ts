@@ -149,7 +149,7 @@ type SessionSummary = {
   summaryMarkdownPath: string;
 };
 
-type VeniceTranscriptionResponse = {
+type VoiceTranscriptionResponse = {
   text?: string;
   duration?: number;
   timestamps?: {
@@ -260,7 +260,6 @@ export class DiscordVoiceManager {
   private readonly ffmpegSegmentSeconds = Number.parseInt(process.env.VOICE_FFMPEG_SEGMENT_SECONDS ?? "180", 10) || 180;
   private readonly voiceChatMaxMessages = Number.parseInt(process.env.VOICE_CHAT_MAX_MESSAGES ?? "200", 10) || 200;
   private readonly recordingsRoot: string;
-  private readonly veniceTranscriptionApi = "https://api.venice.ai/api/v1/audio/transcriptions";
 
   constructor(options: VoiceManagerOptions) {
     this.client = options.client;
@@ -1070,7 +1069,7 @@ export class DiscordVoiceManager {
     const chatMessages = await this.fetchVoiceChannelChatSegments(session, metadata.endedAt);
     const speakerTranscripts: SpeakerTranscript[] = [];
 
-    if (this.veniceApiKey()) {
+    if (this.voiceTranscriptionApiKey()) {
       for (const speaker of metadata.speakers) {
         const segments: TranscriptionSegment[] = [];
         for (const chunk of speaker.chunks) {
@@ -1113,7 +1112,7 @@ export class DiscordVoiceManager {
         });
       }
     } else if (metadata.speakers.length > 0) {
-      console.warn(`[discord-adapter] voice transcription skipped session=${session.sessionId}: VENICE_API_KEY is not configured`);
+      console.warn(`[discord-adapter] voice transcription skipped session=${session.sessionId}: VOICE_TRANSCRIPTION_API_KEY is not configured`);
     }
 
     if (speakerTranscripts.length === 0 && chatMessages.length === 0) {
@@ -1423,34 +1422,46 @@ export class DiscordVoiceManager {
     }
   }
 
-  private veniceApiKey(): string {
-    return (process.env.VENICE_API_KEY ?? "").trim();
+  private voiceTranscriptionApiKey(): string {
+    return (process.env.VOICE_TRANSCRIPTION_API_KEY ?? "").trim();
   }
 
-  private async transcribeChunk(filePath: string): Promise<VeniceTranscriptionResponse> {
-    const model = (process.env.VENICE_TRANSCRIPTION_MODEL ?? "").trim() || "nvidia/parakeet-tdt-0.6b-v3";
+  private voiceTranscriptionApiUrl(): string {
+    const url = process.env.VOICE_TRANSCRIPTION_BASE_URL?.trim().replace(/\/+$/, "") || "";
+    if (!url) {
+      throw new Error("VOICE_TRANSCRIPTION_BASE_URL is required when voice transcription is enabled");
+    }
+    return url;
+  }
+
+  private async transcribeChunk(filePath: string): Promise<VoiceTranscriptionResponse> {
+    const model = (process.env.VOICE_TRANSCRIPTION_MODEL ?? "").trim();
+    const responseFormat = (process.env.VOICE_TRANSCRIPTION_RESPONSE_FORMAT ?? "").trim() || "json";
+    const timestamps = (process.env.VOICE_TRANSCRIPTION_TIMESTAMPS ?? "true").trim() || "true";
     const form = new FormData();
     const fileBuffer = await fs.readFile(filePath);
     form.append("file", new Blob([fileBuffer], { type: "audio/flac" }), path.basename(filePath));
-    form.append("model", model);
-    form.append("response_format", "json");
-    form.append("timestamps", "true");
-    const language = (process.env.VENICE_TRANSCRIPTION_LANGUAGE ?? "").trim();
+    if (model) {
+      form.append("model", model);
+    }
+    form.append("response_format", responseFormat);
+    form.append("timestamps", timestamps);
+    const language = (process.env.VOICE_TRANSCRIPTION_LANGUAGE ?? "").trim();
     if (language) {
       form.append("language", language);
     }
 
-    const response = await fetch(this.veniceTranscriptionApi, {
+    const response = await fetch(this.voiceTranscriptionApiUrl(), {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${this.veniceApiKey()}`,
+        Authorization: `Bearer ${this.voiceTranscriptionApiKey()}`,
       },
       body: form,
     });
     if (!response.ok) {
-      throw new Error(`Venice transcription failed: ${response.status} ${(await response.text()).slice(0, 300)}`);
+      throw new Error(`Voice transcription failed: ${response.status} ${(await response.text()).slice(0, 300)}`);
     }
-    return (await response.json()) as VeniceTranscriptionResponse;
+    return (await response.json()) as VoiceTranscriptionResponse;
   }
 
   private formatTimeSec(value: number): string {

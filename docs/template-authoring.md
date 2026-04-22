@@ -47,7 +47,7 @@ Template-required user inputs:
 - `DISCORD_BOT_TOKEN`
 - `DISCORD_APPLICATION_ID`
 - `DISCORD_GUILD_ID`
-- `VENICE_API_KEY` if voice transcription is enabled
+- `VOICE_TRANSCRIPTION_BASE_URL` and `VOICE_TRANSCRIPTION_API_KEY` if voice transcription is enabled
 - `TARGET_REPO_GITHUB_TOKEN` if change requests should push branches to private target repos
 
 Template-generated secrets:

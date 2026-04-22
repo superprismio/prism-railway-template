@@ -29,7 +29,7 @@ Current open items for turning the POC into a clean Railway template.
 
 - [ ] Document Codex device auth inside `codex-runtime`.
 - [ ] Document Discord bot creation, invite scopes, and slash command registration.
-- [ ] Document optional Venice transcription setup.
+- [ ] Document optional voice transcription setup.
 - [ ] Document optional GitHub token setup for target app CR branches.
 - [ ] Document target app configuration through the admin/API layer.
 - [ ] Document backup/recovery expectations for mounted volumes.

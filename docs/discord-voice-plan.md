@@ -7,7 +7,7 @@ This document captures the current Discord voice-recording path in `services/sou
 - keep Discord text chat, slash commands, and voice flows in one TypeScript service
 - avoid Supabase and avoid permanent raw-audio storage
 - use local/Railway volume storage for transient audio processing
-- transcribe voice recordings with Venice speech-to-text
+- transcribe voice recordings with a Whisper-compatible voice transcription provider
 - summarize transcripts through `codex-runtime`
 - store transcript and summary outputs in Prism Memory inbox
 - keep `n8n` as an optional legacy handoff, not the primary processing path
@@ -45,7 +45,7 @@ The Discord command surface uses the `prism-` prefix:
    - stops active receiver streams
    - closes Ogg writers
    - runs `ffmpeg` to create segmented mono FLAC chunks under `/data/recordings/<session-id>/flac`
-   - sends FLAC chunks to Venice speech-to-text when `VENICE_API_KEY` is set
+   - sends FLAC chunks to the configured voice transcription provider when `VOICE_TRANSCRIPTION_API_KEY` is set
    - fetches messages posted in the Discord voice channel during the recording window
    - stitches voice transcription segments and voice-channel chat messages into one timestamp-sorted transcript
    - writes transcript JSON and markdown under `/data/recordings/<session-id>/transcript`
@@ -101,8 +101,12 @@ Required for Discord voice:
 - `DISCORD_GUILD_ID=<guild id>`
 - `DISCORD_CHAT_ENABLED=true`
 - `DISCORD_REGISTER_COMMANDS=true`
-- `VENICE_API_KEY=<venice api key>`
-- `VENICE_TRANSCRIPTION_LANGUAGE=en`
+- `VOICE_TRANSCRIPTION_BASE_URL=`
+- `VOICE_TRANSCRIPTION_API_KEY=<voice transcription API key>`
+- `VOICE_TRANSCRIPTION_MODEL=`
+- `VOICE_TRANSCRIPTION_LANGUAGE=en`
+- `VOICE_TRANSCRIPTION_RESPONSE_FORMAT=json`
+- `VOICE_TRANSCRIPTION_TIMESTAMPS=true`
 - `VOICE_CHAT_MAX_MESSAGES=200`
 - `VOICE_CHAT_IGNORE_BOT_MESSAGES=true`
 - `VOICE_DAVE_ENCRYPTION=false`
@@ -175,7 +179,7 @@ If `/prism-stoprecord` reports `Speakers with audio: 0`:
 
 If transcription is missing:
 
-- confirm `VENICE_API_KEY` is set
+- confirm `VOICE_TRANSCRIPTION_BASE_URL` and `VOICE_TRANSCRIPTION_API_KEY` are set
 - confirm `ffmpeg` exists in the deployment image
 - inspect `/data/recordings/<session-id>/flac`
 

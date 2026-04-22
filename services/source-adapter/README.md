@@ -5,7 +5,7 @@ Generic source-ingestion adapter for Prism memory.
 Runtime note:
 
 - voice capture is currently validated on `@discordjs/voice` `0.19.x`, which requires a Node 22 runtime for deployment parity
-- Discord voice recording is validated locally and on Railway using volume-backed Ogg capture, `ffmpeg` FLAC conversion, Venice transcription, Codex runtime summaries, and Prism Memory inbox writes
+- Discord voice recording is validated locally and on Railway using volume-backed Ogg capture, `ffmpeg` FLAC conversion, Whisper-compatible voice transcription, Codex runtime summaries, and Prism Memory inbox writes
 
 Deploy this directory separately for each upstream source you want to ingest:
 
@@ -61,9 +61,12 @@ Discord-specific envs you can add later:
 - `VOICE_CHAT_MAX_MESSAGES=200`
 - `VOICE_CHAT_IGNORE_BOT_MESSAGES=true`
 - `VOICE_DAVE_ENCRYPTION=false`
-- `VENICE_API_KEY=...`
-- `VENICE_TRANSCRIPTION_MODEL=nvidia/parakeet-tdt-0.6b-v3`
-- `VENICE_TRANSCRIPTION_LANGUAGE=en`
+- `VOICE_TRANSCRIPTION_BASE_URL=`
+- `VOICE_TRANSCRIPTION_API_KEY=...`
+- `VOICE_TRANSCRIPTION_MODEL=`
+- `VOICE_TRANSCRIPTION_LANGUAGE=en`
+- `VOICE_TRANSCRIPTION_RESPONSE_FORMAT=json`
+- `VOICE_TRANSCRIPTION_TIMESTAMPS=true`
 - `N8N_WEBHOOK_URL=https://your-n8n.example/webhook/transcribe` only if the legacy webhook handoff is still needed
 
 Chat bridge envs:
@@ -100,7 +103,7 @@ Current voice command status:
 - `/prism-record` eagerly subscribes to current non-bot channel participants, then uses Discord speaking events as a backup for continued capture
 - `/prism-stoprecord` stops the session, runs `ffmpeg`, and writes FLAC chunks under `/data/recordings/<session-id>/flac`
 - `/prism-rollcall` inspects the active/current voice channel and lists non-bot participants
-- if `VENICE_API_KEY` is set, `/prism-stoprecord` transcribes FLAC chunks and writes transcript artifacts under `/data/recordings/<session-id>/transcript`
+- if `VOICE_TRANSCRIPTION_API_KEY` is set, `/prism-stoprecord` sends FLAC chunks to the configured Whisper-compatible transcription endpoint and writes transcript artifacts under `/data/recordings/<session-id>/transcript`
 - `/prism-stoprecord` also fetches messages posted in the Discord voice channel during the recording window and stitches them into the merged transcript timeline as `chat` segments
 - if the adapter restarts during recording, `/prism-stoprecord` can recover the newest unfinished session for the guild from `/data/recordings/<session-id>/session.json` and `/raw/*.ogg`
 - if `CODEX_RUNTIME_BASE_URL` is set, the adapter asks codex-runtime to synthesize a meeting summary from the merged transcript
@@ -145,8 +148,9 @@ The verified Railway path uses:
 
 - `SOURCE_ADAPTER_DATA_ROOT=/data` with a mounted volume
 - `DISCORD_BOT_TOKEN` and `DISCORD_GUILD_ID`
-- `VENICE_API_KEY`
-- `VENICE_TRANSCRIPTION_LANGUAGE=en`
+- `VOICE_TRANSCRIPTION_BASE_URL=`
+- `VOICE_TRANSCRIPTION_API_KEY`
+- `VOICE_TRANSCRIPTION_LANGUAGE=en`
 - `VOICE_CHAT_MAX_MESSAGES=200`
 - `VOICE_CHAT_IGNORE_BOT_MESSAGES=true`
 - `VOICE_DAVE_ENCRYPTION=false`

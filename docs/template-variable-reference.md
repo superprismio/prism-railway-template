@@ -67,7 +67,12 @@ Use this while filling out the Railway template composer.
 | `DISCORD_EMBED_TEXT_ENABLED` | `true` | Enables preservation of Discord embed text. | No |
 | `VOICE_DAVE_ENCRYPTION` | `false` | Enables Discord DAVE voice encryption support when available. | No |
 | `VOICE_CHAT_IGNORE_BOT_MESSAGES` | `true` | Skips bot messages when stitching voice channel chat into transcripts. | No |
-| `VENICE_API_KEY` | empty | Venice API key for voice transcription. | Yes |
+| `VOICE_TRANSCRIPTION_BASE_URL` | empty | Whisper-compatible transcription endpoint for Discord voice recordings. | Yes |
+| `VOICE_TRANSCRIPTION_API_KEY` | empty | API key for the configured voice transcription endpoint. | Yes |
+| `VOICE_TRANSCRIPTION_MODEL` | empty | Model sent to the transcription endpoint. | Yes |
+| `VOICE_TRANSCRIPTION_LANGUAGE` | `en` | Optional transcription language hint. | Yes |
+| `VOICE_TRANSCRIPTION_RESPONSE_FORMAT` | `json` | Response format sent to the transcription endpoint. | Yes |
+| `VOICE_TRANSCRIPTION_TIMESTAMPS` | `true` | Requests timestamp segments from the transcription endpoint. | Yes |
 | `CODEX_RUNTIME_REQUEST_TIMEOUT_SECONDS` | `660` | Timeout for adapter calls to Codex Runtime. | No |
 
 ## Codex Runtime
