@@ -986,9 +986,27 @@ function discordCommandDefinitions() {
   ].map((command) => command.toJSON());
 }
 
+function voiceTranscriptionConfigured(): boolean {
+  return Boolean(
+    (process.env.VOICE_TRANSCRIPTION_BASE_URL ?? "").trim()
+    && (process.env.VOICE_TRANSCRIPTION_API_KEY ?? "").trim(),
+  );
+}
+
+function voiceTranscriptionSetupMessage(): string {
+  return [
+    "Voice transcription is not configured for this Prism deployment.",
+    "Set `VOICE_TRANSCRIPTION_BASE_URL` and `VOICE_TRANSCRIPTION_API_KEY` on the `discord-adapter` service, then redeploy it before using `/prism-record` or `/prism-stoprecord`.",
+  ].join("\n");
+}
+
 async function handleVoiceCommand(interaction: ChatInputCommandInteraction, action: "join" | "record" | "stoprecord" | "rollcall"): Promise<void> {
   if (!voiceManager) {
     await interaction.reply({ content: "Voice manager is not available in this runtime.", ephemeral: true });
+    return;
+  }
+  if ((action === "record" || action === "stoprecord") && !voiceTranscriptionConfigured()) {
+    await interaction.reply({ content: voiceTranscriptionSetupMessage(), ephemeral: true });
     return;
   }
   try {
@@ -1204,6 +1222,9 @@ async function healthPayload(): Promise<JsonObject> {
     discord: {
       discordReady,
       discordUserTag,
+    },
+    voice: {
+      transcriptionConfigured: voiceTranscriptionConfigured(),
     },
   };
 }
