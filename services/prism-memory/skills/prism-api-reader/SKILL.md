@@ -43,6 +43,10 @@ Use a read-scoped key only.
   `GET /state/latest`
 - Knowledge manifest:
   `GET /knowledge/indexes/manifest`
+- Knowledge sources:
+  `GET /knowledge/sources`
+- Knowledge source detail:
+  `GET /knowledge/sources/{source-id}`
 - Knowledge search:
   `GET /knowledge/search?q=...&kind=...&tag=...&entity=...&limit=...`
 - Knowledge doc:
@@ -65,6 +69,9 @@ Use a read-scoped key only.
   - then fetch top matches with `/knowledge/docs/{slug}`
   - prefer `guide` and `policy` docs for workflows
   - prefer `reference` docs for templates
+- For repo-backed handbook setup or diagnostics:
+  - inspect `/knowledge/sources` before suggesting a new source
+  - treat an existing `repo_url + branch` source as the canonical sync target
 - For memory:
   - use `/memory/latest` for compact current state
   - use `/memory/date/{date}` for a specific day

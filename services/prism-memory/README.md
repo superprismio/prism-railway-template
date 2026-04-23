@@ -29,3 +29,41 @@ Artifact support covers:
 - `knowledge/kb/docs/**/*.md`
 - `knowledge/kb/metadata/**/*.json`
 - knowledge inbox files under `inbox/knowledge/*` and `knowledge/kb/triage/*`
+
+## Knowledge Sources
+
+Prism Knowledge now supports file-backed repo sources for deterministic handbook sync.
+
+- Source records live under:
+  - `knowledge/sources/<source-id>.json`
+- Per-source state, history, and mirror live under:
+  - `knowledge/sources/<source-id>/state.json`
+  - `knowledge/sources/<source-id>/sync-history/*.json`
+  - `knowledge/sources/<source-id>/mirror/`
+
+Current rules:
+
+- only `github` sources are supported
+- only `markdown-only` content policy is supported
+- sync only ingests `.md` and `.mdx`
+- sync scopes to declared or inferred docs roots such as `docs`, `content`, `pages`, or `app`
+- sync rebuilds one source partition at a time under:
+  - `knowledge/kb/docs/sources/<source-id>/...`
+  - `knowledge/kb/metadata/sources/<source-id>/...`
+
+Current endpoints:
+
+- `GET /knowledge/sources`
+- `POST /knowledge/sources`
+- `GET /knowledge/sources/{source-id}`
+- `PATCH /knowledge/sources/{source-id}`
+- `POST /knowledge/sources/{source-id}/sync`
+
+Sync semantics:
+
+- per-source deterministic rebuild
+- idempotent re-run for the same repo commit
+- stable doc identity from `source-id + repo-relative path`
+- other knowledge docs and sources are left untouched
+
+The existing knowledge query interface does not change. Source sync feeds the same `knowledge/search` and `knowledge/docs/{slug}` read paths.

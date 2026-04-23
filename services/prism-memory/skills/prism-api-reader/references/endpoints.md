@@ -60,3 +60,17 @@ Human-readable artifact pages are available at:
 ```text
 $PRISM_API_BASE/artifacts/<artifact-id>
 ```
+
+Knowledge source inventory:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/knowledge/sources"
+```
+
+Fetch one knowledge source:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/knowledge/sources/<source-id>"
+```

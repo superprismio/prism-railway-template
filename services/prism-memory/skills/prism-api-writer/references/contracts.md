@@ -38,3 +38,17 @@ Knowledge inbox example:
   }
 }
 ```
+
+Knowledge source example:
+
+```json
+{
+  "repo_url": "https://github.com/org/handbook",
+  "branch": "main",
+  "label": "Community Handbook",
+  "content_policy": "markdown-only",
+  "docs_roots": ["docs"],
+  "default_kind": "reference",
+  "default_tags": ["knowledge", "general"]
+}
+```

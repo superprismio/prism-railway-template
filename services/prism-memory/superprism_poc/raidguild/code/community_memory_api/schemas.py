@@ -33,6 +33,85 @@ class KnowledgeInboxResponse(BaseModel):
     warnings: Optional[list[str]] = None
 
 
+class KnowledgeSourceState(BaseModel):
+    source_id: str
+    status: str
+    last_requested_at: Optional[str] = None
+    last_started_at: Optional[str] = None
+    last_completed_at: Optional[str] = None
+    last_synced_at: Optional[str] = None
+    last_synced_commit: Optional[str] = None
+    file_count: int = 0
+    doc_count: int = 0
+    docs_roots: list[str] = Field(default_factory=list)
+    change_summary: Dict[str, int] = Field(default_factory=dict)
+    error: Optional[Dict[str, str]] = None
+
+
+class KnowledgeSourceCreateRequest(BaseModel):
+    id: Optional[str] = None
+    kind: str = "github"
+    repo_url: str
+    branch: str = "main"
+    label: Optional[str] = None
+    content_policy: str = "markdown-only"
+    docs_roots: list[str] = Field(default_factory=list)
+    include: list[str] = Field(default_factory=list)
+    exclude: list[str] = Field(default_factory=list)
+    sync_mode: str = "manual"
+    managed_by: str = "api"
+    default_kind: str = "reference"
+    default_tags: list[str] = Field(default_factory=list)
+    owner: Optional[str] = None
+    audience: str = "public"
+    stability: str = "evolving"
+
+
+class KnowledgeSourceUpdateRequest(BaseModel):
+    branch: Optional[str] = None
+    label: Optional[str] = None
+    docs_roots: Optional[list[str]] = None
+    include: Optional[list[str]] = None
+    exclude: Optional[list[str]] = None
+    sync_mode: Optional[str] = None
+    managed_by: Optional[str] = None
+    default_kind: Optional[str] = None
+    default_tags: Optional[list[str]] = None
+    owner: Optional[str] = None
+    audience: Optional[str] = None
+    stability: Optional[str] = None
+
+
+class KnowledgeSourceResponse(BaseModel):
+    id: str
+    kind: str
+    repo_url: str
+    branch: str
+    label: str
+    content_policy: str
+    docs_roots: list[str]
+    include: list[str]
+    exclude: list[str]
+    sync_mode: str
+    managed_by: str
+    default_kind: str
+    default_tags: list[str]
+    owner: str
+    audience: str
+    stability: str
+    status: str
+    last_synced_commit: Optional[str] = None
+    last_synced_at: Optional[str] = None
+    created_at: str
+    updated_at: str
+    state: KnowledgeSourceState
+
+
+class KnowledgeSourceListResponse(BaseModel):
+    sources: list[KnowledgeSourceResponse]
+    total: int
+
+
 class MemoryInboxRequest(BaseModel):
     source: str
     ts: datetime

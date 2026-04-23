@@ -25,6 +25,24 @@ Do not assume the key can run ops endpoints.
   `POST /memory/inbox`
 - Knowledge inbox:
   `POST /knowledge/inbox`
+- Knowledge source create:
+  `POST /knowledge/sources`
+- Knowledge source update:
+  `PATCH /knowledge/sources/{source-id}`
+- Knowledge source sync:
+  `POST /knowledge/sources/{source-id}/sync`
+
+## Repo-backed knowledge workflow
+
+For handbook, docs, or policy repos that should be re-synced later:
+
+1. inspect the repo first
+2. check `GET /knowledge/sources`
+3. reuse an existing source when `repo_url + branch` already match
+4. otherwise create a source
+5. sync the source
+
+Use `knowledge/inbox` only for manual Prism-authored docs. Do not send repo files from GitHub directly to `knowledge/inbox`.
 
 ## Memory inbox contract
 
@@ -87,6 +105,8 @@ Use these defaults unless the deployed corpus has a stronger convention:
 - Do not call `/ops/*` from this skill.
 - Do not overwrite canonical docs directly.
 - If `/knowledge/inbox` rejects metadata, fix the metadata rather than weakening validation.
+- For repo-backed handbook sync, use `knowledge/sources`, not `knowledge/inbox`.
+- Before creating a source, check for an existing `repo_url + branch` match and reuse it.
 
 ## References
 

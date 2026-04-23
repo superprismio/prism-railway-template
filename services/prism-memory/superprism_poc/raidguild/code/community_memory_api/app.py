@@ -72,6 +72,10 @@ def create_app(settings: Settings) -> FastAPI:
     try:
         from community_memory.config_loader import load_config as _load_config
         from community_knowledge.schemas import validate_metadata as _validate_metadata
+        from community_knowledge.source_sync import (
+            KnowledgeSourceError as _KnowledgeSourceError,
+            KnowledgeSourceManager as _KnowledgeSourceManager,
+        )
     except ModuleNotFoundError as exc:
         raise RuntimeError("community_memory or community_knowledge package not found") from exc
 
@@ -123,6 +127,18 @@ def create_app(settings: Settings) -> FastAPI:
                 logger.exception("Bundled fallback config failed at %s", bundled_config_path)
 
     _reload_config_state()
+
+    def _load_active_config():
+        try:
+            return _load_config(config_path)
+        except Exception:
+            return _load_config(bundled_config_path)
+
+    knowledge_source_manager = _KnowledgeSourceManager(
+        data_root=data_root,
+        workspace_root=(data_root.parent.parent if settings.data_root_override is not None else settings.base_dir),
+        load_config=_load_active_config,
+    )
 
     app = FastAPI(title="Prism Memory API", version="0.1.0", root_path=settings.root_path or "")
 
@@ -568,6 +584,65 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/knowledge/indexes/entities", dependencies=[read_auth_dependency], tags=["knowledge"])
     async def knowledge_index_entities():
         return storage.knowledge_index("entities")
+
+    @app.get(
+        "/knowledge/sources",
+        response_model=schemas.KnowledgeSourceListResponse,
+        dependencies=[read_auth_dependency],
+        tags=["knowledge"],
+    )
+    async def knowledge_sources_list():
+        sources = knowledge_source_manager.list_sources()
+        return schemas.KnowledgeSourceListResponse(sources=sources, total=len(sources))
+
+    @app.post(
+        "/knowledge/sources",
+        response_model=schemas.KnowledgeSourceResponse,
+        dependencies=[write_auth_dependency],
+        tags=["knowledge"],
+    )
+    async def knowledge_sources_create(payload: schemas.KnowledgeSourceCreateRequest):
+        try:
+            return knowledge_source_manager.create_source(payload.model_dump())
+        except _KnowledgeSourceError as exc:
+            return _error_response(exc.code, exc.message, 400 if exc.code != "not_found" else 404)
+
+    @app.get(
+        "/knowledge/sources/{source_id}",
+        response_model=schemas.KnowledgeSourceResponse,
+        dependencies=[read_auth_dependency],
+        tags=["knowledge"],
+    )
+    async def knowledge_sources_get(source_id: str):
+        try:
+            return knowledge_source_manager.get_source(source_id)
+        except _KnowledgeSourceError as exc:
+            return _error_response(exc.code, exc.message, 404 if exc.code == "not_found" else 400)
+
+    @app.patch(
+        "/knowledge/sources/{source_id}",
+        response_model=schemas.KnowledgeSourceResponse,
+        dependencies=[write_auth_dependency],
+        tags=["knowledge"],
+    )
+    async def knowledge_sources_update(source_id: str, payload: schemas.KnowledgeSourceUpdateRequest):
+        update = payload.model_dump(exclude_none=True)
+        try:
+            return knowledge_source_manager.update_source(source_id, update)
+        except _KnowledgeSourceError as exc:
+            return _error_response(exc.code, exc.message, 404 if exc.code == "not_found" else 400)
+
+    @app.post(
+        "/knowledge/sources/{source_id}/sync",
+        response_model=schemas.KnowledgeSourceResponse,
+        dependencies=[write_auth_dependency],
+        tags=["knowledge"],
+    )
+    async def knowledge_sources_sync(source_id: str):
+        try:
+            return knowledge_source_manager.sync_source(source_id)
+        except _KnowledgeSourceError as exc:
+            return _error_response(exc.code, exc.message, 404 if exc.code == "not_found" else 400)
 
     @app.get("/api/artifacts", response_model=schemas.ArtifactListResponse, dependencies=[read_auth_dependency], tags=["artifacts"])
     async def artifacts_list(
