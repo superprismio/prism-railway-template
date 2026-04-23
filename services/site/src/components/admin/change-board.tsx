@@ -8,6 +8,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import type {
   AdminBoardData,
@@ -605,30 +608,29 @@ function RequestDetailsModal({
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium" htmlFor="triage-status">
-                    Status
-                  </label>
-                  <select
-                    id="triage-status"
+                  <Label htmlFor="triage-status">Status</Label>
+                  <Select
                     value={status}
-                    onChange={(event) => {
-                      setStatus(event.target.value)
+                    onValueChange={(value) => {
+                      setStatus(value)
                       setIsDraftDirty(true)
                     }}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                   >
-                    {triageStatuses.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger id="triage-status" className="border border-input shadow-sm">
+                      <SelectValue placeholder="Select a status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {triageStatuses.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium" htmlFor="triage-summary">
-                    Triage Summary
-                  </label>
+                  <Label htmlFor="triage-summary">Triage Summary</Label>
                   <Textarea
                     id="triage-summary"
                     value={triageSummary}
@@ -642,10 +644,10 @@ function RequestDetailsModal({
                 </div>
 
                 <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm font-medium" htmlFor="agent-recommendation">
+                  <Label className="flex items-center gap-2" htmlFor="agent-recommendation">
                     <Sparkles className="h-4 w-4" />
                     Suggested Changes Summary
-                  </label>
+                  </Label>
                   <Textarea
                     id="agent-recommendation"
                     value={agentRecommendation}
@@ -731,7 +733,8 @@ function RequestDetailsModal({
                   </div>
                 ) : null}
 
-                <div className="max-h-[260px] space-y-3 overflow-y-auto rounded-2xl border border-border/70 bg-background/70 p-4">
+                <ScrollArea className="max-h-[260px] rounded-2xl border border-border/70 bg-background/70 p-4">
+                  <div className="space-y-3">
                   {threadMessages.length ? (
                     threadMessages.map((message) => (
                       <div
@@ -758,12 +761,11 @@ function RequestDetailsModal({
                       No comments or agent replies yet for this request.
                     </div>
                   )}
-                </div>
+                  </div>
+                </ScrollArea>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium" htmlFor="request-comment">
-                    Add Comment
-                  </label>
+                  <Label htmlFor="request-comment">Add Comment</Label>
                   <Textarea
                     id="request-comment"
                     value={commentDraft}
@@ -780,7 +782,7 @@ function RequestDetailsModal({
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Continue Agent</label>
+                  <Label>Continue Agent</Label>
                   <p className="text-sm text-muted-foreground">
                     Uses the latest admin comment on this request, plus the current request status and linked thread history.
                   </p>
@@ -847,7 +849,8 @@ function RequestDetailsModal({
                 <CardDescription>Recent agent runs, status changes, and failure details for this request.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="max-h-[320px] space-y-3 overflow-y-auto">
+                <ScrollArea className="max-h-[320px]">
+                  <div className="space-y-3">
                   {executions.length ? (
                     executions.map((execution) => (
                       <div key={execution.id} className="rounded-2xl border border-border/70 bg-background/70 p-4 text-sm">
@@ -961,7 +964,8 @@ function RequestDetailsModal({
                       No execution records yet for this request.
                     </div>
                   )}
-                </div>
+                  </div>
+                </ScrollArea>
               </CardContent>
             </Card>
           </div>
@@ -1093,7 +1097,7 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
   )
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(236,110,57,0.18),transparent_26rem),radial-gradient(circle_at_top_right,rgba(90,182,255,0.14),transparent_24rem),linear-gradient(180deg,#f4f0e8,#f7f4ee_42%,#efe8dd)] text-foreground">
+    <main className="min-h-screen text-foreground">
       <div className="mx-auto flex max-w-[1600px] flex-col gap-6 px-4 py-6 md:px-6 lg:px-8">
         <section className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
           <Card className="overflow-hidden border-none bg-transparent shadow-none">
@@ -1174,7 +1178,8 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                   <span>Agent</span>
                   <span>Updated</span>
                 </div>
-                <div className="max-h-[72vh] space-y-3 overflow-y-auto pr-1">
+                <ScrollArea className="max-h-[72vh] pr-1">
+                  <div className="space-y-3">
                   {taskList.length ? (
                     taskList.map((request) => (
                       <RequestTaskRow
@@ -1190,7 +1195,8 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                       No change requests yet.
                     </div>
                   )}
-                </div>
+                  </div>
+                </ScrollArea>
               </CardContent>
             </Card>
 
@@ -1206,16 +1212,12 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
               <CardContent>
                 <form action="/admin/requests" method="post" className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium" htmlFor="title">
-                      Title
-                    </label>
+                    <Label htmlFor="title">Title</Label>
                     <Input id="title" name="title" placeholder="Fix mobile treasury panel spacing" required />
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium" htmlFor="requestType">
-                        Type
-                      </label>
+                      <Label htmlFor="requestType">Type</Label>
                       <select
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                         defaultValue="bug"
@@ -1231,9 +1233,7 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium" htmlFor="priority">
-                        Priority
-                      </label>
+                      <Label htmlFor="priority">Priority</Label>
                       <select
                         className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                         defaultValue="normal"
@@ -1248,9 +1248,7 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium" htmlFor="targetAppId">
-                      Repository
-                    </label>
+                    <Label htmlFor="targetAppId">Repository</Label>
                     <select
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                       id="targetAppId"
@@ -1265,9 +1263,7 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium" htmlFor="description">
-                      Description
-                    </label>
+                    <Label htmlFor="description">Description</Label>
                     <Textarea
                       id="description"
                       name="description"

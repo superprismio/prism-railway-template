@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { getAdminSettingsData, type AdminSetupStatus, type TargetAppRecord, type TargetEnvironmentRecord } from "@/lib/admin"
 
@@ -168,22 +169,22 @@ function RepositorySetup({ targetApps, targetEnvironments }: { targetApps: Targe
         </CardHeader>
         <CardContent>
           <form action="/admin/target-apps" method="post" className="space-y-4">
-            <label className="space-y-2 text-sm font-medium">
-              Name
+            <div className="space-y-2">
+              <Label>Name</Label>
               <Input name="name" placeholder="DAOhaus Admin" required />
-            </label>
-            <label className="space-y-2 text-sm font-medium">
-              GitHub Repo URL
+            </div>
+            <div className="space-y-2">
+              <Label>GitHub Repo URL</Label>
               <Input name="repoUrl" placeholder="https://github.com/HausDAO/daohaus-admin.git" required />
-            </label>
-            <label className="space-y-2 text-sm font-medium">
-              Target Branch
+            </div>
+            <div className="space-y-2">
+              <Label>Target Branch</Label>
               <Input name="defaultBranch" defaultValue="main" />
-            </label>
-            <label className="space-y-2 text-sm font-medium">
-              Description
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
               <Textarea name="description" placeholder="What this target repo represents." />
-            </label>
+            </div>
             <Button type="submit">Create repository target</Button>
           </form>
         </CardContent>
@@ -257,7 +258,7 @@ export default async function AdminSettingsPage({
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(236,110,57,0.16),transparent_26rem),linear-gradient(180deg,#f4f0e8,#f7f4ee_42%,#efe8dd)] text-foreground">
+    <main className="min-h-screen text-foreground">
       <div className="mx-auto flex max-w-[1280px] flex-col gap-6 px-4 py-6 md:px-6 lg:px-8">
         <section className="rounded-[28px] border border-border/60 bg-card/90 p-6 shadow-[0_24px_80px_-36px_rgba(26,31,44,0.45)] backdrop-blur md:p-8">
           <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">

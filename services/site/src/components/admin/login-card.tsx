@@ -3,6 +3,7 @@ import { LockKeyhole } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 export function LoginCard({ error }: { error?: string }) {
   return (
@@ -21,9 +22,7 @@ export function LoginCard({ error }: { error?: string }) {
         <CardContent>
           <form action="/admin/login" method="post" className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor="password">
-                Password
-              </label>
+              <Label htmlFor="password">Password</Label>
               <Input id="password" name="password" type="password" placeholder="Shared admin password" required />
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
