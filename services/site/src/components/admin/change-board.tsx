@@ -1,24 +1,60 @@
-"use client"
+"use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react"
-import { Activity, Bot, Boxes, CheckCircle2, GitBranch, LoaderCircle, Settings, ShieldAlert, Sparkles, X } from "lucide-react"
+import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  Activity,
+  Bot,
+  BotMessageSquare,
+  Boxes,
+  CheckCircle2,
+  FilePlus,
+  GitBranch,
+  GitGraph,
+  LoaderCircle,
+  LogOut,
+  Rows3,
+  Settings,
+  ShieldAlert,
+  Sparkles,
+  X,
+} from "lucide-react";
 
-import { CodexConsole } from "@/components/admin/codex-console"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
+import { CodexConsole } from "@/components/admin/codex-console";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import type {
   AdminBoardData,
   ChangeRequestExecutionRecord,
   ChangeRequestRecord,
   TargetAppRecord,
   TargetEnvironmentRecord,
-} from "@/lib/admin"
+} from "@/lib/admin";
 
 const triageStatuses = [
   { value: "submitted", label: "Inbox" },
@@ -29,69 +65,87 @@ const triageStatuses = [
   { value: "changes-requested", label: "Changes requested" },
   { value: "approved", label: "Approved" },
   { value: "closed", label: "Closed" },
-] as const
+] as const;
 
 function priorityVariant(priority: string) {
-  if (priority === "urgent") return "default"
-  if (priority === "high") return "secondary"
-  return "muted"
+  if (priority === "urgent") return "default";
+  if (priority === "high") return "secondary";
+  return "muted";
 }
 
 function statusLabel(status: string) {
-  return triageStatuses.find((option) => option.value === status)?.label ?? status
+  return (
+    triageStatuses.find((option) => option.value === status)?.label ?? status
+  );
 }
 
 function statusVariant(status: string) {
-  if (status === "in-progress") return "default"
-  if (status === "ready-for-agent" || status === "awaiting-review" || status === "approved") return "secondary"
-  if (status === "closed") return "muted"
-  return "outline"
+  if (status === "in-progress") return "default";
+  if (
+    status === "ready-for-agent" ||
+    status === "awaiting-review" ||
+    status === "approved"
+  )
+    return "secondary";
+  if (status === "closed") return "muted";
+  return "outline";
 }
 
 function environmentForRequest(
   request: ChangeRequestRecord,
-  targetEnvironments: TargetEnvironmentRecord[]
+  targetEnvironments: TargetEnvironmentRecord[],
 ) {
-  return targetEnvironments.find((environment) => environment.id === request.targetEnvironmentId) ?? null
+  return (
+    targetEnvironments.find(
+      (environment) => environment.id === request.targetEnvironmentId,
+    ) ?? null
+  );
 }
 
-function targetAppForRequest(request: ChangeRequestRecord, targetApps: TargetAppRecord[]) {
-  return targetApps.find((targetApp) => targetApp.id === request.targetAppId) ?? null
+function targetAppForRequest(
+  request: ChangeRequestRecord,
+  targetApps: TargetAppRecord[],
+) {
+  return (
+    targetApps.find((targetApp) => targetApp.id === request.targetAppId) ?? null
+  );
 }
 
 function isoLabel(value: string | null) {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString()
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 function formatDurationFrom(startedAt: string | null, nowMs: number) {
-  if (!startedAt) return null
-  const startedMs = new Date(startedAt).getTime()
-  if (Number.isNaN(startedMs)) return null
+  if (!startedAt) return null;
+  const startedMs = new Date(startedAt).getTime();
+  if (Number.isNaN(startedMs)) return null;
 
-  const totalSeconds = Math.max(0, Math.floor((nowMs - startedMs) / 1000))
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
+  const totalSeconds = Math.max(0, Math.floor((nowMs - startedMs) / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
 
   if (minutes >= 60) {
-    const hours = Math.floor(minutes / 60)
-    const remainingMinutes = minutes % 60
-    return `${hours}h ${remainingMinutes}m`
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m`;
   }
 
   if (minutes > 0) {
-    return `${minutes}m ${seconds}s`
+    return `${minutes}m ${seconds}s`;
   }
 
-  return `${seconds}s`
+  return `${seconds}s`;
 }
 
 function latestTraceEntry(execution: ChangeRequestExecutionRecord | null) {
-  const trace = Array.isArray(execution?.meta?.runtimeTrace) ? execution.meta.runtimeTrace : []
+  const trace = Array.isArray(execution?.meta?.runtimeTrace)
+    ? execution.meta.runtimeTrace
+    : [];
   for (let index = trace.length - 1; index >= 0; index -= 1) {
-    const entry = trace[index]
+    const entry = trace[index];
     if (
       entry &&
       typeof entry === "object" &&
@@ -102,86 +156,94 @@ function latestTraceEntry(execution: ChangeRequestExecutionRecord | null) {
         at: typeof entry.at === "string" ? entry.at : null,
         kind: typeof entry.kind === "string" ? entry.kind : "runtime",
         message: entry.message.trim(),
-      }
+      };
     }
   }
 
-  return null
+  return null;
 }
 
-function describeExecutionStage(execution: ChangeRequestExecutionRecord | null) {
+function describeExecutionStage(
+  execution: ChangeRequestExecutionRecord | null,
+) {
   if (!execution) {
-    return "No active execution"
+    return "No active execution";
   }
 
-  const traceEntry = latestTraceEntry(execution)
+  const traceEntry = latestTraceEntry(execution);
   if (traceEntry) {
-    return `${traceEntry.kind}: ${traceEntry.message}`
+    return `${traceEntry.kind}: ${traceEntry.message}`;
   }
 
   if (execution.branchName) {
-    return `Working on branch ${execution.branchName}`
+    return `Working on branch ${execution.branchName}`;
   }
 
-  return "Execution started and waiting for runtime updates"
+  return "Execution started and waiting for runtime updates";
 }
 
 function executionBranchUrl(execution: ChangeRequestExecutionRecord | null) {
-  const candidate = execution?.meta?.branchUrl
-  return typeof candidate === "string" && candidate.trim() ? candidate.trim() : null
+  const candidate = execution?.meta?.branchUrl;
+  return typeof candidate === "string" && candidate.trim()
+    ? candidate.trim()
+    : null;
 }
 
 function executionDeployUrl(
   execution: ChangeRequestExecutionRecord | null,
-  targetEnvironment?: TargetEnvironmentRecord | null
+  targetEnvironment?: TargetEnvironmentRecord | null,
 ) {
-  const direct = execution?.deployUrl
+  const direct = execution?.deployUrl;
   if (typeof direct === "string" && direct.trim()) {
-    return direct.trim()
+    return direct.trim();
   }
 
-  const staticUrl = execution?.meta?.deployStaticUrl
+  const staticUrl = execution?.meta?.deployStaticUrl;
   if (typeof staticUrl === "string" && staticUrl.trim()) {
-    return staticUrl.startsWith("http") ? staticUrl.trim() : `https://${staticUrl.trim()}`
+    return staticUrl.startsWith("http")
+      ? staticUrl.trim()
+      : `https://${staticUrl.trim()}`;
   }
 
-  const fallback = targetEnvironment?.baseUrl
+  const fallback = targetEnvironment?.baseUrl;
   if (typeof fallback === "string" && fallback.trim()) {
-    return fallback.trim()
+    return fallback.trim();
   }
 
-  return null
+  return null;
 }
 
 function githubCompareUrl(
   targetApp: TargetAppRecord | null,
   baseBranch: string | null | undefined,
-  branchName: string | null | undefined
+  branchName: string | null | undefined,
 ) {
   if (!targetApp?.repoUrl || !baseBranch || !branchName) {
-    return null
+    return null;
   }
 
-  const match = targetApp.repoUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/.]+)(?:\.git)?$/)
+  const match = targetApp.repoUrl.match(
+    /^https:\/\/github\.com\/([^/]+)\/([^/.]+)(?:\.git)?$/,
+  );
   if (!match) {
-    return null
+    return null;
   }
 
-  const [, owner, repo] = match
-  return `https://github.com/${owner}/${repo}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(branchName)}?expand=1`
+  const [, owner, repo] = match;
+  return `https://github.com/${owner}/${repo}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(branchName)}?expand=1`;
 }
 
 type AgentThreadMessage = {
-  id: string
-  role: string
-  source: string
-  content: string
-  createdAt: string
-}
+  id: string;
+  role: string;
+  source: string;
+  content: string;
+  createdAt: string;
+};
 
 type AgentThreadSession = {
-  id: string
-}
+  id: string;
+};
 
 function RequestTaskRow({
   request,
@@ -189,14 +251,15 @@ function RequestTaskRow({
   targetEnvironments,
   onOpen,
 }: {
-  request: ChangeRequestRecord
-  targetApps: TargetAppRecord[]
-  targetEnvironments: TargetEnvironmentRecord[]
-  onOpen: (request: ChangeRequestRecord) => void
+  request: ChangeRequestRecord;
+  targetApps: TargetAppRecord[];
+  targetEnvironments: TargetEnvironmentRecord[];
+  onOpen: (request: ChangeRequestRecord) => void;
 }) {
-  const targetApp = targetAppForRequest(request, targetApps)
-  const targetEnvironment = environmentForRequest(request, targetEnvironments)
-  const targetBranch = targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch"
+  const targetApp = targetAppForRequest(request, targetApps);
+  const targetEnvironment = environmentForRequest(request, targetEnvironments);
+  const targetBranch =
+    targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch";
 
   return (
     <button
@@ -205,23 +268,37 @@ function RequestTaskRow({
       className="grid w-full gap-4 rounded-2xl border border-border/70 bg-background/75 p-4 text-left transition hover:border-foreground/30 hover:bg-background md:grid-cols-[84px_minmax(0,1fr)_180px_150px_140px]"
     >
       <div>
-        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">CR</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+          CR
+        </p>
         <p className="mt-1 text-lg font-semibold">#{request.requestNumber}</p>
       </div>
 
       <div className="min-w-0 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={statusVariant(request.status)}>{statusLabel(request.status)}</Badge>
-          <Badge variant={priorityVariant(request.priority)}>{request.priority}</Badge>
+          <Badge variant={statusVariant(request.status)}>
+            {statusLabel(request.status)}
+          </Badge>
+          <Badge variant={priorityVariant(request.priority)}>
+            {request.priority}
+          </Badge>
           <Badge variant="outline">{request.requestType}</Badge>
         </div>
-        <h3 className="line-clamp-1 text-base font-semibold">{request.title}</h3>
-        <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">{request.description}</p>
+        <h3 className="line-clamp-1 text-base font-semibold">
+          {request.title}
+        </h3>
+        <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
+          {request.description}
+        </p>
       </div>
 
       <div className="space-y-1 text-sm">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Repository</p>
-        <p className="truncate font-medium">{targetApp?.name ?? request.targetAppSlug ?? "Unknown"}</p>
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+          Repository
+        </p>
+        <p className="truncate font-medium">
+          {targetApp?.name ?? request.targetAppSlug ?? "Unknown"}
+        </p>
         <p className="flex items-center gap-1 text-xs text-muted-foreground">
           <GitBranch className="h-3.5 w-3.5" />
           <span className="truncate">{targetBranch}</span>
@@ -229,20 +306,224 @@ function RequestTaskRow({
       </div>
 
       <div className="space-y-1 text-sm">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Agent</p>
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+          Agent
+        </p>
         <p className="flex items-center gap-1 font-medium">
           <Bot className="h-3.5 w-3.5 text-muted-foreground" />
           {targetEnvironment?.agentWritable ? "Writable" : "Locked"}
         </p>
-        {request.agentRecommendation ? <p className="truncate text-xs text-muted-foreground">Triage ready</p> : null}
+        {request.agentRecommendation ? (
+          <p className="truncate text-xs text-muted-foreground">Triage ready</p>
+        ) : null}
       </div>
 
       <div className="space-y-1 text-sm">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Updated</p>
-        <p className="font-medium">{isoLabel(request.updatedAt) ?? "Unknown"}</p>
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+          Updated
+        </p>
+        <p className="font-medium">
+          {isoLabel(request.updatedAt) ?? "Unknown"}
+        </p>
       </div>
     </button>
-  )
+  );
+}
+
+function NewChangeRequestDialog({
+  open,
+  onOpenChange,
+  targetApps,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  targetApps: TargetAppRecord[];
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl rounded-[28px] border-border/70 bg-background p-0 shadow-[0_28px_90px_-42px_rgba(26,31,44,0.7)]">
+        <DialogHeader className="border-b border-border/70 px-6 py-5 text-left">
+          <DialogTitle className="text-2xl tracking-tight">
+            New Change Request
+          </DialogTitle>
+          <DialogDescription>
+            Capture the task, target repository, and review context before
+            routing it into the workspace.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          action="/admin/requests"
+          method="post"
+          className="space-y-5 px-6 py-6"
+        >
+          <div className="space-y-2">
+            <Label htmlFor="new-request-title">Title</Label>
+            <Input
+              id="new-request-title"
+              name="title"
+              placeholder="Fix mobile treasury panel spacing"
+              required
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="new-request-type">Type</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                defaultValue="bug"
+                id="new-request-type"
+                name="requestType"
+              >
+                <option value="bug">Bug</option>
+                <option value="feature">Feature</option>
+                <option value="content">Content</option>
+                <option value="design">Design</option>
+                <option value="config">Config</option>
+                <option value="ops">Ops</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="new-request-priority">Priority</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                defaultValue="normal"
+                id="new-request-priority"
+                name="priority"
+              >
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="new-request-target-app">Repository</Label>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              id="new-request-target-app"
+              name="targetAppId"
+              required
+            >
+              {targetApps.map((targetApp) => (
+                <option key={targetApp.id} value={targetApp.id}>
+                  {targetApp.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="new-request-description">Description</Label>
+            <Textarea
+              id="new-request-description"
+              name="description"
+              placeholder="Describe the issue, expected behavior, and any review constraints."
+              required
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 border-t border-border/70 pt-5">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit">
+              <FilePlus className="h-4 w-4" />
+              Create draft request
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReposWorkspace({
+  targetApps,
+  targetEnvironments,
+  activeCount,
+  closedCount,
+}: {
+  targetApps: TargetAppRecord[];
+  targetEnvironments: TargetEnvironmentRecord[];
+  activeCount: number;
+  closedCount: number;
+}) {
+  return (
+    <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+      <Card className="rounded-none border-x-0 border-y-0 border-border/60 bg-background/95 shadow-none">
+        <CardHeader>
+          <CardTitle>Target Inventory</CardTitle>
+          <CardDescription>
+            Repository targets available to the board.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {targetApps.map((targetApp) => {
+            const environments = targetEnvironments.filter(
+              (environment) => environment.targetAppId === targetApp.id,
+            );
+
+            return (
+              <div
+                key={targetApp.id}
+                className="space-y-3 rounded-2xl border border-border/70 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{targetApp.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {targetApp.slug}
+                    </p>
+                  </div>
+                  <Badge
+                    variant={targetApp.agentEnabled ? "secondary" : "outline"}
+                  >
+                    {targetApp.agentEnabled ? "agent enabled" : "disabled"}
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  {environments.map((environment) => (
+                    <div
+                      key={environment.id}
+                      className="flex items-center justify-between rounded-xl bg-muted/50 px-3 py-2 text-sm"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Boxes className="h-4 w-4 text-muted-foreground" />
+                        <span>{environment.name}</span>
+                        <Badge variant="outline">{environment.kind}</Badge>
+                      </div>
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        {environment.agentWritable ? (
+                          <span className="inline-flex items-center gap-1">
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                            writable
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1">
+                            <ShieldAlert className="h-4 w-4 text-amber-700" />
+                            locked
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function RequestDetailsModal({
@@ -254,242 +535,312 @@ function RequestDetailsModal({
   onClose,
   onSave,
 }: {
-  request: ChangeRequestRecord
-  targetApp: TargetAppRecord | null
-  targetEnvironment: TargetEnvironmentRecord | null
-  isPending: boolean
-  error: string | null
-  onClose: () => void
-  onSave: (payload: { status: string; triageSummary: string; agentRecommendation: string }) => void
+  request: ChangeRequestRecord;
+  targetApp: TargetAppRecord | null;
+  targetEnvironment: TargetEnvironmentRecord | null;
+  isPending: boolean;
+  error: string | null;
+  onClose: () => void;
+  onSave: (payload: {
+    status: string;
+    triageSummary: string;
+    agentRecommendation: string;
+  }) => void;
 }) {
-  const configuredBaseBranch = targetEnvironment?.branch ?? targetApp?.defaultBranch ?? null
-  const [status, setStatus] = useState(request.status)
-  const [triageSummary, setTriageSummary] = useState(request.triageSummary ?? "")
-  const [agentRecommendation, setAgentRecommendation] = useState(request.agentRecommendation ?? "")
-  const [threadSession, setThreadSession] = useState<AgentThreadSession | null>(null)
-  const [threadMessages, setThreadMessages] = useState<AgentThreadMessage[]>([])
-  const [commentDraft, setCommentDraft] = useState("")
-  const [threadError, setThreadError] = useState<string | null>(null)
-  const [executions, setExecutions] = useState<ChangeRequestExecutionRecord[]>([])
-  const [isDraftDirty, setIsDraftDirty] = useState(false)
-  const [isCommentPending, startCommentTransition] = useTransition()
-  const [isContinuePending, startContinueTransition] = useTransition()
-  const [liveNowMs, setLiveNowMs] = useState(() => Date.now())
+  const configuredBaseBranch =
+    targetEnvironment?.branch ?? targetApp?.defaultBranch ?? null;
+  const [status, setStatus] = useState(request.status);
+  const [triageSummary, setTriageSummary] = useState(
+    request.triageSummary ?? "",
+  );
+  const [agentRecommendation, setAgentRecommendation] = useState(
+    request.agentRecommendation ?? "",
+  );
+  const [threadSession, setThreadSession] = useState<AgentThreadSession | null>(
+    null,
+  );
+  const [threadMessages, setThreadMessages] = useState<AgentThreadMessage[]>(
+    [],
+  );
+  const [commentDraft, setCommentDraft] = useState("");
+  const [threadError, setThreadError] = useState<string | null>(null);
+  const [executions, setExecutions] = useState<ChangeRequestExecutionRecord[]>(
+    [],
+  );
+  const [isDraftDirty, setIsDraftDirty] = useState(false);
+  const [isCommentPending, startCommentTransition] = useTransition();
+  const [isContinuePending, startContinueTransition] = useTransition();
+  const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
 
   useEffect(() => {
-    setStatus(request.status)
-    setTriageSummary(request.triageSummary ?? "")
-    setAgentRecommendation(request.agentRecommendation ?? "")
-    setIsDraftDirty(false)
-  }, [request.id, request.updatedAt])
+    setStatus(request.status);
+    setTriageSummary(request.triageSummary ?? "");
+    setAgentRecommendation(request.agentRecommendation ?? "");
+    setIsDraftDirty(false);
+  }, [request.id, request.updatedAt]);
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
 
     async function loadThread() {
       try {
-        const response = await fetch(`/admin/change-requests/${request.id}/agent-thread`, { cache: "no-store" })
+        const response = await fetch(
+          `/admin/change-requests/${request.id}/agent-thread`,
+          { cache: "no-store" },
+        );
         if (!response.ok) {
-          throw new Error("Could not load request thread")
+          throw new Error("Could not load request thread");
         }
 
         const payload = (await response.json()) as {
-          ok?: boolean
-          session?: AgentThreadSession | null
-          messages?: AgentThreadMessage[]
-          error?: string
-        }
+          ok?: boolean;
+          session?: AgentThreadSession | null;
+          messages?: AgentThreadMessage[];
+          error?: string;
+        };
 
-        if (cancelled) return
+        if (cancelled) return;
         if (payload.ok === false) {
-          throw new Error(payload.error || "Could not load request thread")
+          throw new Error(payload.error || "Could not load request thread");
         }
 
-        setThreadSession(payload.session ?? null)
-        setThreadMessages(Array.isArray(payload.messages) ? payload.messages : [])
-        setThreadError(null)
+        setThreadSession(payload.session ?? null);
+        setThreadMessages(
+          Array.isArray(payload.messages) ? payload.messages : [],
+        );
+        setThreadError(null);
       } catch (error) {
         if (!cancelled) {
-          setThreadError(error instanceof Error ? error.message : "Could not load request thread")
+          setThreadError(
+            error instanceof Error
+              ? error.message
+              : "Could not load request thread",
+          );
         }
       }
     }
 
-    loadThread()
+    loadThread();
     return () => {
-      cancelled = true
-    }
-  }, [request.id])
+      cancelled = true;
+    };
+  }, [request.id]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      setLiveNowMs(Date.now())
-    }, 1000)
+      setLiveNowMs(Date.now());
+    }, 1000);
 
     return () => {
-      window.clearInterval(intervalId)
-    }
-  }, [])
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   useEffect(() => {
     if (!executions.some((execution) => execution.status === "running")) {
-      return
+      return;
     }
 
-    let cancelled = false
+    let cancelled = false;
 
     async function pollLiveState() {
       try {
         const [threadResponse, executionResponse] = await Promise.all([
-          fetch(`/admin/change-requests/${request.id}/agent-thread`, { cache: "no-store" }),
-          fetch(`/admin/change-requests/${request.id}/executions`, { cache: "no-store" }),
-        ])
+          fetch(`/admin/change-requests/${request.id}/agent-thread`, {
+            cache: "no-store",
+          }),
+          fetch(`/admin/change-requests/${request.id}/executions`, {
+            cache: "no-store",
+          }),
+        ]);
 
         if (!threadResponse.ok || !executionResponse.ok || cancelled) {
-          return
+          return;
         }
 
         const threadPayload = (await threadResponse.json()) as {
-          session?: AgentThreadSession | null
-          messages?: AgentThreadMessage[]
-        }
+          session?: AgentThreadSession | null;
+          messages?: AgentThreadMessage[];
+        };
         const executionPayload = (await executionResponse.json()) as {
-          executions?: ChangeRequestExecutionRecord[]
-        }
+          executions?: ChangeRequestExecutionRecord[];
+        };
 
-        if (cancelled) return
+        if (cancelled) return;
 
-        setThreadSession(threadPayload.session ?? null)
-        setThreadMessages(Array.isArray(threadPayload.messages) ? threadPayload.messages : [])
-        setExecutions(Array.isArray(executionPayload.executions) ? executionPayload.executions : [])
+        setThreadSession(threadPayload.session ?? null);
+        setThreadMessages(
+          Array.isArray(threadPayload.messages) ? threadPayload.messages : [],
+        );
+        setExecutions(
+          Array.isArray(executionPayload.executions)
+            ? executionPayload.executions
+            : [],
+        );
       } catch {
         // Keep the current modal state and try again on the next interval.
       }
     }
 
-    const intervalId = window.setInterval(pollLiveState, 2500)
+    const intervalId = window.setInterval(pollLiveState, 2500);
     return () => {
-      cancelled = true
-      window.clearInterval(intervalId)
-    }
-  }, [executions, request.id])
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [executions, request.id]);
 
   const activeExecution = useMemo(
-    () => executions.find((execution) => execution.status === "running") ?? null,
-    [executions]
-  )
-  const activeExecutionElapsed = formatDurationFrom(activeExecution?.startedAt ?? null, liveNowMs)
-  const activeExecutionStage = describeExecutionStage(activeExecution)
-  const activeExecutionBranchUrl = executionBranchUrl(activeExecution)
-  const activeExecutionDeployUrl = executionDeployUrl(activeExecution, targetEnvironment)
+    () =>
+      executions.find((execution) => execution.status === "running") ?? null,
+    [executions],
+  );
+  const activeExecutionElapsed = formatDurationFrom(
+    activeExecution?.startedAt ?? null,
+    liveNowMs,
+  );
+  const activeExecutionStage = describeExecutionStage(activeExecution);
+  const activeExecutionBranchUrl = executionBranchUrl(activeExecution);
+  const activeExecutionDeployUrl = executionDeployUrl(
+    activeExecution,
+    targetEnvironment,
+  );
   const activeExecutionPrUrl = githubCompareUrl(
     targetApp,
-    (typeof activeExecution?.meta?.baseBranch === "string" ? activeExecution.meta.baseBranch : null) ?? configuredBaseBranch,
-    activeExecution?.branchName ?? null
-  )
+    (typeof activeExecution?.meta?.baseBranch === "string"
+      ? activeExecution.meta.baseBranch
+      : null) ?? configuredBaseBranch,
+    activeExecution?.branchName ?? null,
+  );
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
 
     async function loadExecutions() {
       try {
-        const response = await fetch(`/admin/change-requests/${request.id}/executions`, { cache: "no-store" })
+        const response = await fetch(
+          `/admin/change-requests/${request.id}/executions`,
+          { cache: "no-store" },
+        );
         if (!response.ok) {
-          throw new Error("Could not load execution log")
+          throw new Error("Could not load execution log");
         }
 
         const payload = (await response.json()) as {
-          ok?: boolean
-          executions?: ChangeRequestExecutionRecord[]
-          error?: string
-        }
+          ok?: boolean;
+          executions?: ChangeRequestExecutionRecord[];
+          error?: string;
+        };
 
-        if (cancelled) return
+        if (cancelled) return;
         if (payload.ok === false) {
-          throw new Error(payload.error || "Could not load execution log")
+          throw new Error(payload.error || "Could not load execution log");
         }
 
-        setExecutions(Array.isArray(payload.executions) ? payload.executions : [])
+        setExecutions(
+          Array.isArray(payload.executions) ? payload.executions : [],
+        );
       } catch (error) {
         if (!cancelled) {
-          setThreadError((current) => current ?? (error instanceof Error ? error.message : "Could not load execution log"))
+          setThreadError(
+            (current) =>
+              current ??
+              (error instanceof Error
+                ? error.message
+                : "Could not load execution log"),
+          );
         }
       }
     }
 
-    loadExecutions()
+    loadExecutions();
     return () => {
-      cancelled = true
-    }
-  }, [request.id])
+      cancelled = true;
+    };
+  }, [request.id]);
 
   async function refreshThread() {
-    const response = await fetch(`/admin/change-requests/${request.id}/agent-thread`, { cache: "no-store" })
+    const response = await fetch(
+      `/admin/change-requests/${request.id}/agent-thread`,
+      { cache: "no-store" },
+    );
     if (!response.ok) {
-      throw new Error("Could not refresh request thread")
+      throw new Error("Could not refresh request thread");
     }
 
     const payload = (await response.json()) as {
-      session?: AgentThreadSession | null
-      messages?: AgentThreadMessage[]
-    }
-    setThreadSession(payload.session ?? null)
-    setThreadMessages(Array.isArray(payload.messages) ? payload.messages : [])
+      session?: AgentThreadSession | null;
+      messages?: AgentThreadMessage[];
+    };
+    setThreadSession(payload.session ?? null);
+    setThreadMessages(Array.isArray(payload.messages) ? payload.messages : []);
   }
 
   async function refreshExecutions() {
-    const response = await fetch(`/admin/change-requests/${request.id}/executions`, { cache: "no-store" })
+    const response = await fetch(
+      `/admin/change-requests/${request.id}/executions`,
+      { cache: "no-store" },
+    );
     if (!response.ok) {
-      throw new Error("Could not refresh execution log")
+      throw new Error("Could not refresh execution log");
     }
 
     const payload = (await response.json()) as {
-      executions?: ChangeRequestExecutionRecord[]
-    }
-    setExecutions(Array.isArray(payload.executions) ? payload.executions : [])
+      executions?: ChangeRequestExecutionRecord[];
+    };
+    setExecutions(Array.isArray(payload.executions) ? payload.executions : []);
   }
 
   function handleAddComment() {
-    const content = commentDraft.trim()
-    if (!content) return
+    const content = commentDraft.trim();
+    if (!content) return;
 
-    setThreadError(null)
+    setThreadError(null);
     startCommentTransition(async () => {
       try {
-        const response = await fetch(`/admin/change-requests/${request.id}/comments`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
+        const response = await fetch(
+          `/admin/change-requests/${request.id}/comments`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({ content }),
           },
-          body: JSON.stringify({ content }),
-        })
+        );
 
         const payload = (await response.json()) as {
-          ok?: boolean
-          error?: string
-          session?: AgentThreadSession | null
-          messages?: AgentThreadMessage[]
-        }
+          ok?: boolean;
+          error?: string;
+          session?: AgentThreadSession | null;
+          messages?: AgentThreadMessage[];
+        };
 
         if (!response.ok || payload.ok === false) {
-          throw new Error(payload.error || "Could not add comment")
+          throw new Error(payload.error || "Could not add comment");
         }
 
-        setCommentDraft("")
-        setThreadSession(payload.session ?? threadSession)
-        setThreadMessages(Array.isArray(payload.messages) ? payload.messages : [])
+        setCommentDraft("");
+        setThreadSession(payload.session ?? threadSession);
+        setThreadMessages(
+          Array.isArray(payload.messages) ? payload.messages : [],
+        );
       } catch (error) {
-        setThreadError(error instanceof Error ? error.message : "Could not add comment")
+        setThreadError(
+          error instanceof Error ? error.message : "Could not add comment",
+        );
       }
-    })
+    });
   }
 
   function handleContinueAgent() {
-    const latestComment = [...threadMessages]
-      .reverse()
-      .find((message) => message.source === "site-comment" && message.content.trim())
-      ?.content
-      .trim() ?? null
+    const latestComment =
+      [...threadMessages]
+        .reverse()
+        .find(
+          (message) =>
+            message.source === "site-comment" && message.content.trim(),
+        )
+        ?.content.trim() ?? null;
 
     const prompt = [
       `Continue work on change request #${request.requestNumber}: ${request.title}.`,
@@ -500,9 +851,9 @@ function RequestDetailsModal({
       request.status === "awaiting-review"
         ? "This request is currently in review. Apply the review feedback if needed, continue the work, update the request state if appropriate, and leave a detailed summary comment."
         : "Use the latest request context and comments, continue the work, update the request state if appropriate, and leave a detailed summary comment.",
-    ].join("\n")
+    ].join("\n");
 
-    setThreadError(null)
+    setThreadError(null);
     startContinueTransition(async () => {
       try {
         const response = await fetch("/admin/responses", {
@@ -517,26 +868,28 @@ function RequestDetailsModal({
             linked_target_environment_id: request.targetEnvironmentId,
             requested_skills: ["change-request-ops", "target-deploy-ops"],
           }),
-        })
+        });
 
         const payload = (await response.json()) as {
-          error?: string
-          session_id?: string
-        }
+          error?: string;
+          session_id?: string;
+        };
 
         if (!response.ok) {
-          throw new Error(payload.error || "Could not continue agent")
+          throw new Error(payload.error || "Could not continue agent");
         }
 
         if (payload.session_id) {
-          setThreadSession({ id: payload.session_id })
+          setThreadSession({ id: payload.session_id });
         }
-        await refreshThread()
-        await refreshExecutions()
+        await refreshThread();
+        await refreshExecutions();
       } catch (error) {
-        setThreadError(error instanceof Error ? error.message : "Could not continue agent")
+        setThreadError(
+          error instanceof Error ? error.message : "Could not continue agent",
+        );
       }
-    })
+    });
   }
 
   return (
@@ -546,11 +899,17 @@ function RequestDetailsModal({
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">Request #{request.requestNumber}</Badge>
-                <Badge variant={priorityVariant(request.priority)}>{request.priority}</Badge>
+                <Badge variant="outline">
+                  Request #{request.requestNumber}
+                </Badge>
+                <Badge variant={priorityVariant(request.priority)}>
+                  {request.priority}
+                </Badge>
                 <Badge variant="muted">{request.status}</Badge>
               </div>
-              <h2 className="text-2xl font-semibold tracking-tight">{request.title}</h2>
+              <h2 className="text-2xl font-semibold tracking-tight">
+                {request.title}
+              </h2>
               <p className="text-sm text-muted-foreground">
                 {targetApp?.name ?? request.targetAppSlug ?? "Unknown target"}
                 {targetEnvironment ? ` / ${targetEnvironment.name}` : ""}
@@ -568,7 +927,10 @@ function RequestDetailsModal({
             <Card className="rounded-[24px] border-border/60 bg-card/90">
               <CardHeader>
                 <CardTitle>Request Details</CardTitle>
-                <CardDescription>Original request plus the target context currently assigned to it.</CardDescription>
+                <CardDescription>
+                  Original request plus the target context currently assigned to
+                  it.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
                 <div className="rounded-2xl border border-border/70 bg-background/70 p-4 leading-7">
@@ -576,24 +938,40 @@ function RequestDetailsModal({
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-2xl border border-border/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Type</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      Type
+                    </p>
                     <p className="mt-2 font-medium">{request.requestType}</p>
                   </div>
                   <div className="rounded-2xl border border-border/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Priority</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      Priority
+                    </p>
                     <p className="mt-2 font-medium">{request.priority}</p>
                   </div>
                   <div className="rounded-2xl border border-border/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Repository</p>
-                    <p className="mt-2 font-medium">{targetApp?.name ?? request.targetAppSlug ?? "Unknown"}</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      Repository
+                    </p>
+                    <p className="mt-2 font-medium">
+                      {targetApp?.name ?? request.targetAppSlug ?? "Unknown"}
+                    </p>
                   </div>
                   <div className="rounded-2xl border border-border/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Environment</p>
-                    <p className="mt-2 font-medium">{targetEnvironment?.name ?? "Not assigned"}</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      Environment
+                    </p>
+                    <p className="mt-2 font-medium">
+                      {targetEnvironment?.name ?? "Not assigned"}
+                    </p>
                   </div>
                   <div className="rounded-2xl border border-border/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Target Branch</p>
-                    <p className="mt-2 font-medium">{configuredBaseBranch ?? "Not configured"}</p>
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      Target Branch
+                    </p>
+                    <p className="mt-2 font-medium">
+                      {configuredBaseBranch ?? "Not configured"}
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -603,7 +981,8 @@ function RequestDetailsModal({
               <CardHeader>
                 <CardTitle>Triage Notes</CardTitle>
                 <CardDescription>
-                  Capture the proposed scope, suggested changes, and the point where the request is ready to route.
+                  Capture the proposed scope, suggested changes, and the point
+                  where the request is ready to route.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -612,11 +991,14 @@ function RequestDetailsModal({
                   <Select
                     value={status}
                     onValueChange={(value) => {
-                      setStatus(value)
-                      setIsDraftDirty(true)
+                      setStatus(value);
+                      setIsDraftDirty(true);
                     }}
                   >
-                    <SelectTrigger id="triage-status" className="border border-input shadow-sm">
+                    <SelectTrigger
+                      id="triage-status"
+                      className="border border-input shadow-sm"
+                    >
                       <SelectValue placeholder="Select a status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -635,8 +1017,8 @@ function RequestDetailsModal({
                     id="triage-summary"
                     value={triageSummary}
                     onChange={(event) => {
-                      setTriageSummary(event.target.value)
-                      setIsDraftDirty(true)
+                      setTriageSummary(event.target.value);
+                      setIsDraftDirty(true);
                     }}
                     placeholder="Summarize what needs to happen, any sequencing, and review notes."
                     className="min-h-32"
@@ -644,7 +1026,10 @@ function RequestDetailsModal({
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-2" htmlFor="agent-recommendation">
+                  <Label
+                    className="flex items-center gap-2"
+                    htmlFor="agent-recommendation"
+                  >
                     <Sparkles className="h-4 w-4" />
                     Suggested Changes Summary
                   </Label>
@@ -652,8 +1037,8 @@ function RequestDetailsModal({
                     id="agent-recommendation"
                     value={agentRecommendation}
                     onChange={(event) => {
-                      setAgentRecommendation(event.target.value)
-                      setIsDraftDirty(true)
+                      setAgentRecommendation(event.target.value);
+                      setIsDraftDirty(true);
                     }}
                     placeholder="Short summary of the proposed changes shown on the card and used for routing."
                     className="min-h-24"
@@ -667,7 +1052,9 @@ function RequestDetailsModal({
             <Card className="rounded-[24px] border-border/60 bg-card/90">
               <CardHeader>
                 <CardTitle>Request Thread</CardTitle>
-                <CardDescription>Comments and agent replies linked to this change request.</CardDescription>
+                <CardDescription>
+                  Comments and agent replies linked to this change request.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {activeExecution ? (
@@ -682,9 +1069,17 @@ function RequestDetailsModal({
                     <div className="mt-3 space-y-2">
                       <p className="leading-6">{activeExecutionStage}</p>
                       <div className="grid gap-1 text-xs text-sky-900/75">
-                        {activeExecutionElapsed ? <div>Elapsed: {activeExecutionElapsed}</div> : null}
-                        {activeExecution.startedAt ? <div>Started: {isoLabel(activeExecution.startedAt)}</div> : null}
-                        {configuredBaseBranch ? <div>Base branch: {configuredBaseBranch}</div> : null}
+                        {activeExecutionElapsed ? (
+                          <div>Elapsed: {activeExecutionElapsed}</div>
+                        ) : null}
+                        {activeExecution.startedAt ? (
+                          <div>
+                            Started: {isoLabel(activeExecution.startedAt)}
+                          </div>
+                        ) : null}
+                        {configuredBaseBranch ? (
+                          <div>Base branch: {configuredBaseBranch}</div>
+                        ) : null}
                         {activeExecution.branchName ? (
                           <div>
                             Branch:{" "}
@@ -735,32 +1130,48 @@ function RequestDetailsModal({
 
                 <ScrollArea className="max-h-[260px] rounded-2xl border border-border/70 bg-background/70 p-4">
                   <div className="space-y-3">
-                  {threadMessages.length ? (
-                    threadMessages.map((message) => (
-                      <div
-                        key={message.id}
-                        className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
-                          message.role === "assistant"
-                            ? "border border-border/70 bg-card text-foreground"
-                            : "bg-[#1d2433] text-white"
-                        }`}
-                      >
-                        <div className="mb-2 flex items-center justify-between gap-3 text-xs uppercase tracking-[0.16em]">
-                          <Badge variant={message.role === "assistant" ? "outline" : "secondary"}>
-                            {message.source === "site-comment" ? "comment" : message.role}
-                          </Badge>
-                          <span className={message.role === "assistant" ? "text-muted-foreground" : "text-white/70"}>
-                            {isoLabel(message.createdAt) ?? ""}
-                          </span>
+                    {threadMessages.length ? (
+                      threadMessages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
+                            message.role === "assistant"
+                              ? "border border-border/70 bg-card text-foreground"
+                              : "bg-[#1d2433] text-white"
+                          }`}
+                        >
+                          <div className="mb-2 flex items-center justify-between gap-3 text-xs uppercase tracking-[0.16em]">
+                            <Badge
+                              variant={
+                                message.role === "assistant"
+                                  ? "outline"
+                                  : "secondary"
+                              }
+                            >
+                              {message.source === "site-comment"
+                                ? "comment"
+                                : message.role}
+                            </Badge>
+                            <span
+                              className={
+                                message.role === "assistant"
+                                  ? "text-muted-foreground"
+                                  : "text-white/70"
+                              }
+                            >
+                              {isoLabel(message.createdAt) ?? ""}
+                            </span>
+                          </div>
+                          <p className="whitespace-pre-wrap">
+                            {message.content}
+                          </p>
                         </div>
-                        <p className="whitespace-pre-wrap">{message.content}</p>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                        No comments or agent replies yet for this request.
                       </div>
-                    ))
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                      No comments or agent replies yet for this request.
-                    </div>
-                  )}
+                    )}
                   </div>
                 </ScrollArea>
 
@@ -774,8 +1185,15 @@ function RequestDetailsModal({
                     className="min-h-24"
                   />
                   <div className="flex justify-end">
-                    <Button type="button" variant="outline" onClick={handleAddComment} disabled={isCommentPending}>
-                      {isCommentPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleAddComment}
+                      disabled={isCommentPending}
+                    >
+                      {isCommentPending ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : null}
                       {isCommentPending ? "Saving" : "Add comment"}
                     </Button>
                   </div>
@@ -784,11 +1202,18 @@ function RequestDetailsModal({
                 <div className="space-y-2">
                   <Label>Continue Agent</Label>
                   <p className="text-sm text-muted-foreground">
-                    Uses the latest admin comment on this request, plus the current request status and linked thread history.
+                    Uses the latest admin comment on this request, plus the
+                    current request status and linked thread history.
                   </p>
                   <div className="flex justify-end">
-                    <Button type="button" onClick={handleContinueAgent} disabled={isContinuePending}>
-                      {isContinuePending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                    <Button
+                      type="button"
+                      onClick={handleContinueAgent}
+                      disabled={isContinuePending}
+                    >
+                      {isContinuePending ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : null}
                       {isContinuePending ? "Running" : "Continue agent"}
                     </Button>
                   </div>
@@ -800,7 +1225,8 @@ function RequestDetailsModal({
               <CardHeader>
                 <CardTitle>Suggested Changes Details</CardTitle>
                 <CardDescription>
-                  Use this scrollable area for fuller triage notes, implementation direction, and what Codex should change.
+                  Use this scrollable area for fuller triage notes,
+                  implementation direction, and what Codex should change.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -808,8 +1234,8 @@ function RequestDetailsModal({
                   <Textarea
                     value={agentRecommendation}
                     onChange={(event) => {
-                      setAgentRecommendation(event.target.value)
-                      setIsDraftDirty(true)
+                      setAgentRecommendation(event.target.value);
+                      setIsDraftDirty(true);
                     }}
                     placeholder="List the proposed edits, areas to touch, expected outcome, and anything the agent should avoid."
                     className="min-h-[420px] max-h-[420px] resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
@@ -821,24 +1247,42 @@ function RequestDetailsModal({
             <Card className="rounded-[24px] border-border/60 bg-card/90">
               <CardHeader>
                 <CardTitle>Lifecycle</CardTitle>
-                <CardDescription>Current timestamps visible to the board.</CardDescription>
+                <CardDescription>
+                  Current timestamps visible to the board.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <div className="rounded-2xl border border-border/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Created</p>
-                  <p className="mt-2">{isoLabel(request.createdAt) ?? "Unknown"}</p>
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Created
+                  </p>
+                  <p className="mt-2">
+                    {isoLabel(request.createdAt) ?? "Unknown"}
+                  </p>
                 </div>
                 <div className="rounded-2xl border border-border/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Triaged</p>
-                  <p className="mt-2">{isoLabel(request.triagedAt) ?? "Not yet"}</p>
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Triaged
+                  </p>
+                  <p className="mt-2">
+                    {isoLabel(request.triagedAt) ?? "Not yet"}
+                  </p>
                 </div>
                 <div className="rounded-2xl border border-border/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Approved For Work</p>
-                  <p className="mt-2">{isoLabel(request.approvedForWorkAt) ?? "Not yet"}</p>
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Approved For Work
+                  </p>
+                  <p className="mt-2">
+                    {isoLabel(request.approvedForWorkAt) ?? "Not yet"}
+                  </p>
                 </div>
                 <div className="rounded-2xl border border-border/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Last Updated</p>
-                  <p className="mt-2">{isoLabel(request.updatedAt) ?? "Unknown"}</p>
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Last Updated
+                  </p>
+                  <p className="mt-2">
+                    {isoLabel(request.updatedAt) ?? "Unknown"}
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -846,124 +1290,185 @@ function RequestDetailsModal({
             <Card className="rounded-[24px] border-border/60 bg-card/90">
               <CardHeader>
                 <CardTitle>Execution Log</CardTitle>
-                <CardDescription>Recent agent runs, status changes, and failure details for this request.</CardDescription>
+                <CardDescription>
+                  Recent agent runs, status changes, and failure details for
+                  this request.
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="max-h-[320px]">
                   <div className="space-y-3">
-                  {executions.length ? (
-                    executions.map((execution) => (
-                      <div key={execution.id} className="rounded-2xl border border-border/70 bg-background/70 p-4 text-sm">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <Badge variant={execution.status === "completed" ? "secondary" : execution.status === "running" ? "default" : "outline"}>
-                              {execution.status}
-                            </Badge>
-                            <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                              {execution.actorType}
+                    {executions.length ? (
+                      executions.map((execution) => (
+                        <div
+                          key={execution.id}
+                          className="rounded-2xl border border-border/70 bg-background/70 p-4 text-sm"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant={
+                                  execution.status === "completed"
+                                    ? "secondary"
+                                    : execution.status === "running"
+                                      ? "default"
+                                      : "outline"
+                                }
+                              >
+                                {execution.status}
+                              </Badge>
+                              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                                {execution.actorType}
+                              </span>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {isoLabel(execution.updatedAt) ?? ""}
                             </span>
                           </div>
-                          <span className="text-xs text-muted-foreground">{isoLabel(execution.updatedAt) ?? ""}</span>
-                        </div>
-                        {execution.summary ? <p className="mt-3 whitespace-pre-wrap leading-6">{execution.summary}</p> : null}
-                        {execution.errorMessage ? (
-                          <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
-                            {execution.errorMessage}
-                          </div>
-                        ) : null}
-                        <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
-                          {execution.branchName ? (
-                            <div>
-                              Branch:{" "}
-                              {executionBranchUrl(execution) ? (
+                          {execution.summary ? (
+                            <p className="mt-3 whitespace-pre-wrap leading-6">
+                              {execution.summary}
+                            </p>
+                          ) : null}
+                          {execution.errorMessage ? (
+                            <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
+                              {execution.errorMessage}
+                            </div>
+                          ) : null}
+                          <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+                            {execution.branchName ? (
+                              <div>
+                                Branch:{" "}
+                                {executionBranchUrl(execution) ? (
+                                  <a
+                                    href={executionBranchUrl(execution) ?? "#"}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="font-medium underline underline-offset-2"
+                                  >
+                                    {execution.branchName}
+                                  </a>
+                                ) : (
+                                  execution.branchName
+                                )}
+                              </div>
+                            ) : null}
+                            {githubCompareUrl(
+                              targetApp,
+                              (typeof execution.meta?.baseBranch === "string"
+                                ? execution.meta.baseBranch
+                                : null) ?? configuredBaseBranch,
+                              execution.branchName,
+                            ) ? (
+                              <div>
+                                PR:{" "}
                                 <a
-                                  href={executionBranchUrl(execution) ?? "#"}
+                                  href={
+                                    githubCompareUrl(
+                                      targetApp,
+                                      (typeof execution.meta?.baseBranch ===
+                                      "string"
+                                        ? execution.meta.baseBranch
+                                        : null) ?? configuredBaseBranch,
+                                      execution.branchName,
+                                    ) ?? "#"
+                                  }
                                   target="_blank"
                                   rel="noreferrer"
                                   className="font-medium underline underline-offset-2"
                                 >
-                                  {execution.branchName}
+                                  Open compare / PR
                                 </a>
-                              ) : (
-                                execution.branchName
-                              )}
-                            </div>
-                          ) : null}
-                          {githubCompareUrl(
-                            targetApp,
-                            (typeof execution.meta?.baseBranch === "string" ? execution.meta.baseBranch : null) ?? configuredBaseBranch,
-                            execution.branchName
-                          ) ? (
-                            <div>
-                              PR:{" "}
-                              <a
-                                href={
-                                  githubCompareUrl(
-                                    targetApp,
-                                    (typeof execution.meta?.baseBranch === "string" ? execution.meta.baseBranch : null) ?? configuredBaseBranch,
-                                    execution.branchName
-                                  ) ?? "#"
-                                }
-                                target="_blank"
-                                rel="noreferrer"
-                                className="font-medium underline underline-offset-2"
-                              >
-                                Open compare / PR
-                              </a>
-                            </div>
-                          ) : null}
-                          {execution.commitSha ? <div>Commit: {execution.commitSha}</div> : null}
-                          {executionDeployUrl(execution, targetEnvironment) ? (
-                            <div>
-                              Preview:{" "}
-                              <a
-                                href={executionDeployUrl(execution, targetEnvironment) ?? "#"}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="font-medium underline underline-offset-2"
-                              >
-                                {executionDeployUrl(execution, targetEnvironment)}
-                              </a>
-                            </div>
-                          ) : null}
-                          {execution.startedAt ? <div>Started: {isoLabel(execution.startedAt)}</div> : null}
-                          {execution.finishedAt ? <div>Finished: {isoLabel(execution.finishedAt)}</div> : null}
-                        </div>
-                        {Array.isArray(execution.meta?.runtimeTrace) && execution.meta.runtimeTrace.length ? (
-                          <div className="mt-3 rounded-xl border border-border/60 bg-muted/30 p-3">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                              Execution Trace
-                            </div>
-                            <div className="mt-2 max-h-40 space-y-2 overflow-y-auto font-mono text-[11px] leading-5 text-muted-foreground">
-                              {execution.meta.runtimeTrace.map((entry, index) => {
-                                if (!entry || typeof entry !== "object") {
-                                  return null
-                                }
-
-                                const at = typeof entry.at === "string" ? entry.at : null
-                                const kind = typeof entry.kind === "string" ? entry.kind : "runtime"
-                                const message = typeof entry.message === "string" ? entry.message : ""
-
-                                if (!message.trim()) {
-                                  return null
-                                }
-
-                                return (
-                                  <div key={`${execution.id}-trace-${index}`} className="whitespace-pre-wrap">
-                                    [{at ?? "unknown"}] {kind}: {message}
-                                  </div>
-                                )
-                              })}
-                            </div>
+                              </div>
+                            ) : null}
+                            {execution.commitSha ? (
+                              <div>Commit: {execution.commitSha}</div>
+                            ) : null}
+                            {executionDeployUrl(
+                              execution,
+                              targetEnvironment,
+                            ) ? (
+                              <div>
+                                Preview:{" "}
+                                <a
+                                  href={
+                                    executionDeployUrl(
+                                      execution,
+                                      targetEnvironment,
+                                    ) ?? "#"
+                                  }
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="font-medium underline underline-offset-2"
+                                >
+                                  {executionDeployUrl(
+                                    execution,
+                                    targetEnvironment,
+                                  )}
+                                </a>
+                              </div>
+                            ) : null}
+                            {execution.startedAt ? (
+                              <div>
+                                Started: {isoLabel(execution.startedAt)}
+                              </div>
+                            ) : null}
+                            {execution.finishedAt ? (
+                              <div>
+                                Finished: {isoLabel(execution.finishedAt)}
+                              </div>
+                            ) : null}
                           </div>
-                        ) : null}
+                          {Array.isArray(execution.meta?.runtimeTrace) &&
+                          execution.meta.runtimeTrace.length ? (
+                            <div className="mt-3 rounded-xl border border-border/60 bg-muted/30 p-3">
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                                Execution Trace
+                              </div>
+                              <div className="mt-2 max-h-40 space-y-2 overflow-y-auto font-mono text-[11px] leading-5 text-muted-foreground">
+                                {execution.meta.runtimeTrace.map(
+                                  (entry, index) => {
+                                    if (!entry || typeof entry !== "object") {
+                                      return null;
+                                    }
+
+                                    const at =
+                                      typeof entry.at === "string"
+                                        ? entry.at
+                                        : null;
+                                    const kind =
+                                      typeof entry.kind === "string"
+                                        ? entry.kind
+                                        : "runtime";
+                                    const message =
+                                      typeof entry.message === "string"
+                                        ? entry.message
+                                        : "";
+
+                                    if (!message.trim()) {
+                                      return null;
+                                    }
+
+                                    return (
+                                      <div
+                                        key={`${execution.id}-trace-${index}`}
+                                        className="whitespace-pre-wrap"
+                                      >
+                                        [{at ?? "unknown"}] {kind}: {message}
+                                      </div>
+                                    );
+                                  },
+                                )}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                        No execution records yet for this request.
                       </div>
-                    ))
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                      No execution records yet for this request.
-                    </div>
-                  )}
+                    )}
                   </div>
                 </ScrollArea>
               </CardContent>
@@ -986,10 +1491,14 @@ function RequestDetailsModal({
               </Button>
               <Button
                 type="button"
-                onClick={() => onSave({ status, triageSummary, agentRecommendation })}
+                onClick={() =>
+                  onSave({ status, triageSummary, agentRecommendation })
+                }
                 disabled={isPending}
               >
-                {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                {isPending ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : null}
                 {isPending ? "Saving" : "Save request"}
               </Button>
             </div>
@@ -997,189 +1506,234 @@ function RequestDetailsModal({
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
-  const [data, setData] = useState(initialData)
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null)
-  const [isSaving, startSaving] = useTransition()
-  const [modalError, setModalError] = useState<string | null>(null)
+  const [data, setData] = useState(initialData);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(
+    null,
+  );
+  const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
+  const [isSaving, startSaving] = useTransition();
+  const [modalError, setModalError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
 
     async function refreshBoard() {
       try {
-        const response = await fetch("/admin/board", { cache: "no-store" })
+        const response = await fetch("/admin/board", { cache: "no-store" });
         if (!response.ok) {
-          return
+          return;
         }
 
-        const payload = (await response.json()) as { ok: true; data: AdminBoardData }
+        const payload = (await response.json()) as {
+          ok: true;
+          data: AdminBoardData;
+        };
         if (!cancelled && payload.ok) {
-          setData(payload.data)
+          setData(payload.data);
         }
       } catch {
         // Leave the current board state in place and try again on the next interval.
       }
     }
 
-    refreshBoard()
-    const intervalId = window.setInterval(refreshBoard, 2500)
+    refreshBoard();
+    const intervalId = window.setInterval(refreshBoard, 2500);
 
     return () => {
-      cancelled = true
-      window.clearInterval(intervalId)
-    }
-  }, [])
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const closedCount = data.changeRequests.filter((request) =>
-    ["approved", "rejected", "closed"].includes(request.status)
-  ).length
-  const activeCount = data.changeRequests.filter((request) =>
-    !["approved", "rejected", "closed"].includes(request.status)
-  ).length
+    ["approved", "rejected", "closed"].includes(request.status),
+  ).length;
+  const activeCount = data.changeRequests.filter(
+    (request) => !["approved", "rejected", "closed"].includes(request.status),
+  ).length;
 
   const selectedRequest = useMemo(
-    () => data.changeRequests.find((request) => request.id === selectedRequestId) ?? null,
-    [data.changeRequests, selectedRequestId]
-  )
+    () =>
+      data.changeRequests.find((request) => request.id === selectedRequestId) ??
+      null,
+    [data.changeRequests, selectedRequestId],
+  );
 
   async function refreshOnce() {
-    const response = await fetch("/admin/board", { cache: "no-store" })
+    const response = await fetch("/admin/board", { cache: "no-store" });
     if (!response.ok) {
-      throw new Error("Board refresh failed")
+      throw new Error("Board refresh failed");
     }
 
-    const payload = (await response.json()) as { ok: true; data: AdminBoardData }
+    const payload = (await response.json()) as {
+      ok: true;
+      data: AdminBoardData;
+    };
     if (!payload.ok) {
-      throw new Error("Board refresh failed")
+      throw new Error("Board refresh failed");
     }
 
-    setData(payload.data)
+    setData(payload.data);
   }
 
-  function handleSaveTriage(payload: { status: string; triageSummary: string; agentRecommendation: string }) {
-    if (!selectedRequest) return
+  function handleSaveTriage(payload: {
+    status: string;
+    triageSummary: string;
+    agentRecommendation: string;
+  }) {
+    if (!selectedRequest) return;
 
-    setModalError(null)
+    setModalError(null);
     startSaving(async () => {
       try {
-        const response = await fetch(`/admin/change-requests/${selectedRequest.id}`, {
-          method: "PATCH",
-          headers: {
-            "content-type": "application/json",
+        const response = await fetch(
+          `/admin/change-requests/${selectedRequest.id}`,
+          {
+            method: "PATCH",
+            headers: {
+              "content-type": "application/json",
+            },
+            body: JSON.stringify(payload),
           },
-          body: JSON.stringify(payload),
-        })
+        );
 
-        const responsePayload = (await response.json()) as { ok?: boolean; error?: string }
+        const responsePayload = (await response.json()) as {
+          ok?: boolean;
+          error?: string;
+        };
         if (!response.ok || responsePayload.ok === false) {
-          throw new Error(responsePayload.error || "Could not save triage")
+          throw new Error(responsePayload.error || "Could not save triage");
         }
 
-        await refreshOnce()
+        await refreshOnce();
       } catch (error) {
-        setModalError(error instanceof Error ? error.message : "Could not save triage")
+        setModalError(
+          error instanceof Error ? error.message : "Could not save triage",
+        );
       }
-    })
+    });
   }
 
   const taskList = useMemo(
     () =>
       [...data.changeRequests].sort((left, right) => {
-        const leftUpdated = new Date(left.updatedAt).getTime()
-        const rightUpdated = new Date(right.updatedAt).getTime()
-        return (Number.isNaN(rightUpdated) ? 0 : rightUpdated) - (Number.isNaN(leftUpdated) ? 0 : leftUpdated)
+        const leftUpdated = new Date(left.updatedAt).getTime();
+        const rightUpdated = new Date(right.updatedAt).getTime();
+        return (
+          (Number.isNaN(rightUpdated) ? 0 : rightUpdated) -
+          (Number.isNaN(leftUpdated) ? 0 : leftUpdated)
+        );
       }),
-    [data.changeRequests]
-  )
+    [data.changeRequests],
+  );
 
   return (
-    <main className="min-h-screen text-foreground">
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-6 px-4 py-6 md:px-6 lg:px-8">
-        <section className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
-          <Card className="overflow-hidden border-none bg-transparent shadow-none">
-            <CardContent className="rounded-[28px] border border-border/60 bg-card/90 p-6 shadow-[0_24px_80px_-36px_rgba(26,31,44,0.45)] backdrop-blur md:p-8">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-                <div className="space-y-4">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs uppercase tracking-[0.22em] text-muted-foreground">
-                    <Activity className="h-3.5 w-3.5" />
-                    Prism Change Board
-                  </div>
-                  <div className="space-y-2">
-                    <h1 className="max-w-3xl text-4xl font-semibold tracking-tight md:text-5xl">
-                      Triage requests, route them to review branches, and keep production out of the blast radius.
-                    </h1>
-                    <p className="max-w-2xl text-base leading-7 text-muted-foreground md:text-lg">
-                      This task list refreshes live while Codex triages, branches, and moves requests toward review.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <a className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-medium hover:bg-accent" href="/admin/settings">
-                    <Settings className="h-4 w-4" />
-                    Settings
-                  </a>
-                  <form action="/admin/logout" method="post">
-                    <Button variant="outline" type="submit">
-                      Exit admin
-                    </Button>
-                  </form>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+    <main className="min-h-screen w-full bg-background text-foreground">
+      <div className="sticky top-0 z-30 border-b border-border/60 bg-background/95 backdrop-blur">
+        <div className="flex min-h-16 items-center justify-between gap-4 px-5 md:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-muted/40">
+              <Activity className="h-4 w-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold tracking-tight">
+                Prism Refactory
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                Admin workspace
+              </p>
+            </div>
+          </div>
 
-          <Card className="rounded-[28px] border-border/60 bg-[#1d2433] text-white shadow-[0_24px_80px_-36px_rgba(26,31,44,0.6)]">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-white">Board Snapshot</CardTitle>
-              <CardDescription className="text-white/70">Seeded target inventory and current request volume.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-3 lg:grid-cols-2">
-              <div className="rounded-2xl bg-white/6 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-white/55">Repositories</p>
-                <p className="mt-2 text-3xl font-semibold">{data.targetApps.length}</p>
-              </div>
-              <div className="rounded-2xl bg-white/6 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-white/55">Environments</p>
-                <p className="mt-2 text-3xl font-semibold">{data.targetEnvironments.length}</p>
-              </div>
-              <div className="rounded-2xl bg-white/6 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-white/55">Active requests</p>
-                <p className="mt-2 text-3xl font-semibold">{activeCount}</p>
-              </div>
-              <div className="rounded-2xl bg-white/6 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-white/55">Closed requests</p>
-                <p className="mt-2 text-3xl font-semibold">{closedCount}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </section>
+          <div className="flex items-center gap-2">
+            <Button type="button" onClick={() => setIsNewRequestOpen(true)}>
+              <FilePlus className="h-4 w-4" />
+              <span className="hidden sm:inline">Add Change Request</span>
+            </Button>
+            <Button asChild variant="outline">
+              <a href="/admin/settings">
+                <Settings className="h-4 w-4" />
+                <span className="hidden sm:inline">Settings</span>
+              </a>
+            </Button>
+            <form action="/admin/logout" method="post">
+              <Button variant="outline" type="submit">
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">Exit admin</span>
+              </Button>
+            </form>
+          </div>
+        </div>
+      </div>
 
-        <section className="grid gap-6 xl:grid-cols-[1.4fr_420px]">
-          <div className="space-y-4">
-            <Card className="rounded-[24px] border-border/60 bg-card/90">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <CardTitle>Change Requests</CardTitle>
-                    <CardDescription>Open a task to review context, comments, execution history, and agent controls.</CardDescription>
-                  </div>
-                  <Badge variant="outline">{taskList.length} total</Badge>
+      <Tabs
+        defaultValue="change-requests"
+        className="flex min-h-[calc(100vh-65px)] flex-col"
+      >
+        <div className="sticky top-16 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
+          <div className="px-5 py-3 md:px-6">
+            <TabsList className="h-auto flex-wrap rounded-2xl bg-transparent p-0">
+              <TabsTrigger
+                value="change-requests"
+                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+              >
+                <Rows3 className="h-4 w-4 md:hidden" />
+                <span className="hidden md:inline">Change Requests</span>
+                <Badge variant="outline" className="ml-2 hidden md:inline-flex">
+                  {taskList.length}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger
+                value="codex-console"
+                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+              >
+                <BotMessageSquare className="h-4 w-4 md:hidden" />
+                <span className="hidden md:inline">Codex Console</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="snapshot"
+                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+              >
+                <GitGraph className="h-4 w-4 md:hidden" />
+                <span className="hidden md:inline">Repos</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
+        </div>
+
+        <TabsContent value="change-requests" className="mt-0 flex-1">
+          <section className="grid min-h-full gap-0 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="border-b border-border/60 xl:border-b-0 xl:border-r">
+              <div className="flex items-center justify-between gap-4 border-b border-border/60 px-5 py-4 md:px-6">
+                <div>
+                  <h1 className="text-2xl font-semibold tracking-tight">
+                    Change Requests
+                  </h1>
+                  <p className="text-sm text-muted-foreground">
+                    Open a request to review context, comments, execution
+                    history, and agent controls.
+                  </p>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="hidden rounded-xl border border-border/60 bg-muted/35 px-4 py-3 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground md:grid md:grid-cols-[84px_minmax(0,1fr)_180px_150px_140px] md:gap-4">
-                  <span>Number</span>
-                  <span>Request</span>
-                  <span>Repository</span>
-                  <span>Agent</span>
-                  <span>Updated</span>
-                </div>
-                <ScrollArea className="max-h-[72vh] pr-1">
-                  <div className="space-y-3">
+                <Button type="button" onClick={() => setIsNewRequestOpen(true)}>
+                  <FilePlus className="h-4 w-4" />
+                  Add Change Request
+                </Button>
+              </div>
+
+              <div className="hidden border-b border-border/60 bg-muted/30 px-5 py-3 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground md:grid md:grid-cols-[84px_minmax(0,1fr)_180px_150px_140px] md:gap-4 md:px-6">
+                <span>Number</span>
+                <span>Request</span>
+                <span>Repository</span>
+                <span>Agent</span>
+                <span>Updated</span>
+              </div>
+
+              <ScrollArea className="h-[calc(100vh-190px)]">
+                <div className="space-y-3 px-5 py-4 md:px-6">
                   {taskList.length ? (
                     taskList.map((request) => (
                       <RequestTaskRow
@@ -1187,7 +1741,9 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                         request={request}
                         targetApps={data.targetApps}
                         targetEnvironments={data.targetEnvironments}
-                        onOpen={(nextRequest) => setSelectedRequestId(nextRequest.id)}
+                        onOpen={(nextRequest) =>
+                          setSelectedRequestId(nextRequest.id)
+                        }
                       />
                     ))
                   ) : (
@@ -1195,155 +1751,110 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                       No change requests yet.
                     </div>
                   )}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
+                </div>
+              </ScrollArea>
+            </div>
+
+            <aside className="flex flex-col bg-card/30">
+              <div className="border-b border-border/60 px-5 py-4 md:px-6">
+                <p className="text-sm font-medium">Workspace Snapshot</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Quick read on activity while you triage the board.
+                </p>
+              </div>
+              <div className="grid gap-3 px-5 py-4 md:px-6">
+                <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    Active
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold">{activeCount}</p>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    Closed
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold">{closedCount}</p>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    Repositories
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold">
+                    {data.targetApps.length}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    Environments
+                  </p>
+                  <p className="mt-2 text-3xl font-semibold">
+                    {data.targetEnvironments.length}
+                  </p>
+                </div>
+              </div>
+            </aside>
+          </section>
+        </TabsContent>
+
+        <TabsContent value="codex-console" className="mt-0 flex-1">
+          <section className="min-h-full">
+            <div className="border-b border-border/60 px-5 py-4 md:px-6">
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Codex Console
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Work directly with Codex on request context, review state, and
+                implementation planning.
+              </p>
+            </div>
 
             <CodexConsole />
-          </div>
+          </section>
+        </TabsContent>
 
-          <div className="space-y-6">
-            <Card className="rounded-[24px] border-border/60 bg-card/90">
-              <CardHeader>
-                <CardTitle>New Change Request</CardTitle>
-                <CardDescription>Bootstrap form posting through the site to the API.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form action="/admin/requests" method="post" className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="title">Title</Label>
-                    <Input id="title" name="title" placeholder="Fix mobile treasury panel spacing" required />
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="requestType">Type</Label>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                        defaultValue="bug"
-                        id="requestType"
-                        name="requestType"
-                      >
-                        <option value="bug">Bug</option>
-                        <option value="feature">Feature</option>
-                        <option value="content">Content</option>
-                        <option value="design">Design</option>
-                        <option value="config">Config</option>
-                        <option value="ops">Ops</option>
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="priority">Priority</Label>
-                      <select
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                        defaultValue="normal"
-                        id="priority"
-                        name="priority"
-                      >
-                        <option value="low">Low</option>
-                        <option value="normal">Normal</option>
-                        <option value="high">High</option>
-                        <option value="urgent">Urgent</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="targetAppId">Repository</Label>
-                    <select
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                      id="targetAppId"
-                      name="targetAppId"
-                      required
-                    >
-                      {data.targetApps.map((targetApp) => (
-                        <option key={targetApp.id} value={targetApp.id}>
-                          {targetApp.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description</Label>
-                    <Textarea
-                      id="description"
-                      name="description"
-                      placeholder="Describe the issue, expected behavior, and any review constraints."
-                      required
-                    />
-                  </div>
-                  <Button className="w-full" type="submit">
-                    Create draft request
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
+        <TabsContent value="snapshot" className="mt-0 flex-1">
+          <section className="min-h-full">
+            <div className="border-b border-border/60 px-5 py-4 md:px-6">
+              <h1 className="text-2xl font-semibold tracking-tight">Repos</h1>
+              <p className="text-sm text-muted-foreground">
+                Review repository targets, writable environments, and the
+                current board footprint.
+              </p>
+            </div>
 
-            <Card className="rounded-[24px] border-border/60 bg-card/90">
-              <CardHeader>
-                <CardTitle>Target Inventory</CardTitle>
-                <CardDescription>Repository targets available to the board.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {data.targetApps.map((targetApp) => {
-                  const environments = data.targetEnvironments.filter((environment) => environment.targetAppId === targetApp.id)
-                  return (
-                    <div key={targetApp.id} className="space-y-3 rounded-2xl border border-border/70 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{targetApp.name}</p>
-                          <p className="text-sm text-muted-foreground">{targetApp.slug}</p>
-                        </div>
-                        <Badge variant={targetApp.agentEnabled ? "secondary" : "outline"}>
-                          {targetApp.agentEnabled ? "agent enabled" : "disabled"}
-                        </Badge>
-                      </div>
-                      <div className="space-y-2">
-                        {environments.map((environment) => (
-                          <div key={environment.id} className="flex items-center justify-between rounded-xl bg-muted/50 px-3 py-2 text-sm">
-                            <div className="flex items-center gap-2">
-                              <Boxes className="h-4 w-4 text-muted-foreground" />
-                              <span>{environment.name}</span>
-                              <Badge variant="outline">{environment.kind}</Badge>
-                            </div>
-                            <div className="flex items-center gap-2 text-muted-foreground">
-                              {environment.agentWritable ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                                  writable
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1">
-                                  <ShieldAlert className="h-4 w-4 text-amber-700" />
-                                  locked
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )
-                })}
-              </CardContent>
-            </Card>
-          </div>
-        </section>
-      </div>
+            <ReposWorkspace
+              targetApps={data.targetApps}
+              targetEnvironments={data.targetEnvironments}
+              activeCount={activeCount}
+              closedCount={closedCount}
+            />
+          </section>
+        </TabsContent>
+      </Tabs>
+
+      <NewChangeRequestDialog
+        open={isNewRequestOpen}
+        onOpenChange={setIsNewRequestOpen}
+        targetApps={data.targetApps}
+      />
 
       {selectedRequest ? (
         <RequestDetailsModal
           request={selectedRequest}
           targetApp={targetAppForRequest(selectedRequest, data.targetApps)}
-          targetEnvironment={environmentForRequest(selectedRequest, data.targetEnvironments)}
+          targetEnvironment={environmentForRequest(
+            selectedRequest,
+            data.targetEnvironments,
+          )}
           isPending={isSaving}
           error={modalError}
           onClose={() => {
-            setSelectedRequestId(null)
-            setModalError(null)
+            setSelectedRequestId(null);
+            setModalError(null);
           }}
           onSave={handleSaveTriage}
         />
       ) : null}
     </main>
-  )
+  );
 }

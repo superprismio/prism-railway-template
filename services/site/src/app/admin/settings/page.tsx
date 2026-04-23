@@ -1,4 +1,4 @@
-import { Activity, Bot, ExternalLink, GitBranch, KeyRound, Settings, ShieldAlert } from "lucide-react"
+import { Activity, Bot, GitBranch, KeyRound, LogOut, Rows3, ShieldAlert } from "lucide-react"
 
 import { LoginCard } from "@/components/admin/login-card"
 import { Badge } from "@/components/ui/badge"
@@ -28,7 +28,7 @@ function copyBlock(lines: string[]) {
 function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
   return (
     <section className="grid gap-4 lg:grid-cols-3">
-      <Card className="rounded-[22px] bg-card/90">
+      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Activity className="h-4 w-4" />
@@ -45,7 +45,7 @@ function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
         </CardContent>
       </Card>
 
-      <Card className="rounded-[22px] bg-card/90">
+      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Bot className="h-4 w-4" />
@@ -73,7 +73,7 @@ function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
         </CardContent>
       </Card>
 
-      <Card className="rounded-[22px] bg-card/90">
+      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <GitBranch className="h-4 w-4" />
@@ -104,7 +104,7 @@ function EnvironmentInstructions() {
 
   return (
     <section className="grid gap-4 lg:grid-cols-3">
-      <Card className="rounded-[22px] bg-card/90">
+      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <KeyRound className="h-4 w-4" />
@@ -123,7 +123,7 @@ function EnvironmentInstructions() {
         </CardContent>
       </Card>
 
-      <Card className="rounded-[22px] bg-card/90">
+      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Activity className="h-4 w-4" />
@@ -142,7 +142,7 @@ function EnvironmentInstructions() {
         </CardContent>
       </Card>
 
-      <Card className="rounded-[22px] bg-card/90">
+      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <ShieldAlert className="h-4 w-4" />
@@ -162,7 +162,7 @@ function EnvironmentInstructions() {
 function RepositorySetup({ targetApps, targetEnvironments }: { targetApps: TargetAppRecord[]; targetEnvironments: TargetEnvironmentRecord[] }) {
   return (
     <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-      <Card className="rounded-[22px] bg-card/90">
+      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
         <CardHeader>
           <CardTitle>Repository Target</CardTitle>
           <CardDescription>Create one Codex target. Change request branches start from the target branch.</CardDescription>
@@ -190,7 +190,7 @@ function RepositorySetup({ targetApps, targetEnvironments }: { targetApps: Targe
         </CardContent>
       </Card>
 
-      <Card className="rounded-[22px] bg-card/90">
+      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
         <CardHeader>
           <CardTitle>Current Targets</CardTitle>
           <CardDescription>Repositories available in the New Change Request form.</CardDescription>
@@ -258,39 +258,60 @@ export default async function AdminSettingsPage({
   }
 
   return (
-    <main className="min-h-screen text-foreground">
-      <div className="mx-auto flex max-w-[1280px] flex-col gap-6 px-4 py-6 md:px-6 lg:px-8">
-        <section className="rounded-[28px] border border-border/60 bg-card/90 p-6 shadow-[0_24px_80px_-36px_rgba(26,31,44,0.45)] backdrop-blur md:p-8">
-          <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-            <div className="space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs uppercase tracking-[0.22em] text-muted-foreground">
-                <Settings className="h-3.5 w-3.5" />
-                Admin Settings
-              </div>
-              <div className="space-y-2">
-                <h1 className="text-4xl font-semibold tracking-tight md:text-5xl">Configure Prism without moving secrets into the app.</h1>
-                <p className="max-w-3xl text-base leading-7 text-muted-foreground">
-                  This page tracks runtime readiness, gives Railway env instructions, and stores target repo metadata for Codex.
-                </p>
-              </div>
+    <main className="min-h-screen w-full border-t border-border/60 bg-background text-foreground">
+      <div className="sticky top-0 z-30 border-b border-border/60 bg-background/95 backdrop-blur">
+        <div className="flex min-h-16 items-center justify-between gap-4 px-5 md:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center border border-border/70 bg-muted/40">
+              <Activity className="h-4 w-4 text-primary" />
             </div>
-            <div className="flex gap-2">
-              <a className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-background px-4 text-sm font-medium hover:bg-accent" href="/admin">
-                <ExternalLink className="h-4 w-4" />
-                Board
-              </a>
-              <form action="/admin/logout" method="post">
-                <Button variant="outline" type="submit">
-                  Exit admin
-                </Button>
-              </form>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold tracking-tight">
+                Prism Refactory
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                Admin workspace
+              </p>
             </div>
           </div>
-        </section>
 
-        <SetupStatus setup={settings.data.setup} />
-        <EnvironmentInstructions />
-        <RepositorySetup targetApps={settings.data.targetApps} targetEnvironments={settings.data.targetEnvironments} />
+          <div className="flex items-center gap-2">
+            <Button asChild variant="outline">
+              <a href="/admin">
+                <Rows3 className="h-4 w-4" />
+                Admin
+              </a>
+            </Button>
+            <form action="/admin/logout" method="post">
+              <Button variant="outline" type="submit">
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">Exit admin</span>
+              </Button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <section className="border-b border-border/60 px-5 py-4 md:px-6">
+        <h1 className="text-2xl font-semibold tracking-tight">Admin Settings</h1>
+        <p className="text-sm text-muted-foreground">
+          Configure Prism without moving secrets into the app.
+        </p>
+      </section>
+
+      <div className="grid gap-4 px-0 py-0">
+        <div className="px-5 py-4 md:px-6">
+          <SetupStatus setup={settings.data.setup} />
+        </div>
+        <div className="border-t border-border/60 px-5 py-4 md:px-6">
+          <EnvironmentInstructions />
+        </div>
+        <div className="border-t border-border/60 px-5 py-4 md:px-6">
+          <RepositorySetup
+            targetApps={settings.data.targetApps}
+            targetEnvironments={settings.data.targetEnvironments}
+          />
+        </div>
       </div>
     </main>
   )
