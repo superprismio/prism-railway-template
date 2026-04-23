@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Monitor, Moon, Sun, Rainbow, Pyramid } from "lucide-react";
+import { Monitor, Sun, Pyramid } from "lucide-react";
 import { useTheme } from "next-themes";
 
 import { Button } from "@/components/ui/button";
@@ -15,10 +15,8 @@ import {
 
 const themeOptions = [
   { value: "system", label: "System", icon: Monitor },
+  { value: "dark", label: "Dark Side", icon: Pyramid },
   { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Pyramid },
-  { value: "rainbow", label: "Bright", icon: Rainbow },
-  { value: "darkside", label: "Dark Side", icon: Moon },
 ] as const;
 
 export function ThemeToggle() {
