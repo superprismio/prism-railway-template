@@ -154,6 +154,58 @@ function buildGitHubAuthArgs(repoUrl: string) {
   return ['-c', `http.extraheader=AUTHORIZATION: basic ${basicAuth}`];
 }
 
+function isGitHubHttpsRepo(repoUrl: string) {
+  return repoUrl.startsWith('https://github.com/');
+}
+
+async function runGitHubReadCommand(
+  repoUrl: string,
+  gitArgs: string[],
+  options: {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+  } = {},
+) {
+  if (!isGitHubHttpsRepo(repoUrl)) {
+    await runCommand(['git', ...gitArgs], options);
+    return;
+  }
+
+  try {
+    await runCommand(['git', ...gitArgs], options);
+    return;
+  } catch (error) {
+    if (!config.githubToken) {
+      throw error;
+    }
+  }
+
+  await runCommand(['git', ...buildGitHubAuthArgs(repoUrl), ...gitArgs], options);
+}
+
+async function runGitHubReadCapture(
+  repoUrl: string,
+  gitArgs: string[],
+  options: {
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+  } = {},
+) {
+  if (!isGitHubHttpsRepo(repoUrl)) {
+    return await runCommandCapture(['git', ...gitArgs], options);
+  }
+
+  try {
+    return await runCommandCapture(['git', ...gitArgs], options);
+  } catch (error) {
+    if (!config.githubToken) {
+      throw error;
+    }
+  }
+
+  return await runCommandCapture(['git', ...buildGitHubAuthArgs(repoUrl), ...gitArgs], options);
+}
+
 async function runCommand(
   args: string[],
   options: {
@@ -343,9 +395,7 @@ async function prepareExecutionWorkspace(
 
   if (!(await pathExists(gitDir))) {
     appendTrace(trace, 'workspace.clone', `Cloning ${targetApp.repoUrl} into ${workspacePath}`);
-    await runCommand([
-      'git',
-      ...buildGitHubAuthArgs(targetApp.repoUrl),
+    await runGitHubReadCommand(targetApp.repoUrl, [
       'clone',
       '--branch',
       repoBranch,
@@ -357,7 +407,7 @@ async function prepareExecutionWorkspace(
     appendTrace(trace, 'workspace.reuse', `Reusing existing workspace ${workspacePath}`);
     const remoteOriginUrl = targetApp.repoUrl;
     await runCommand(['git', 'remote', 'set-url', 'origin', remoteOriginUrl], { cwd: workspacePath }).catch(() => undefined);
-    await runCommand(['git', ...buildGitHubAuthArgs(remoteOriginUrl), 'fetch', 'origin', repoBranch, changeRequestBranch], { cwd: workspacePath }).catch((error) => {
+    await runGitHubReadCommand(remoteOriginUrl, ['fetch', 'origin', repoBranch, changeRequestBranch], { cwd: workspacePath }).catch((error) => {
       appendTrace(trace, 'workspace.fetch_failed', error instanceof Error ? error.message : 'git fetch failed');
     });
   }
@@ -419,8 +469,9 @@ async function gitHasChanges(cwd: string) {
 }
 
 async function remoteBranchExists(repoUrl: string, branchName: string, cwd: string) {
-  const output = await runCommandCapture(
-    ['git', ...buildGitHubAuthArgs(repoUrl), 'ls-remote', '--heads', repoUrl, branchName],
+  const output = await runGitHubReadCapture(
+    repoUrl,
+    ['ls-remote', '--heads', repoUrl, branchName],
     { cwd },
   ).catch(() => '');
   return Boolean(output.trim());
