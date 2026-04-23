@@ -265,7 +265,7 @@ function RequestTaskRow({
     <button
       type="button"
       onClick={() => onOpen(request)}
-      className="grid w-full gap-4 rounded-2xl border border-border/70 bg-background/75 p-4 text-left transition hover:border-foreground/30 hover:bg-background md:grid-cols-[84px_minmax(0,1fr)_180px_150px_140px]"
+      className="grid w-full gap-4 border border-border/70 bg-background/75 p-4 text-left transition hover:border-foreground/30 hover:bg-background md:grid-cols-[84px_minmax(0,1fr)_180px_150px_140px]"
     >
       <div>
         <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
@@ -894,7 +894,7 @@ function RequestDetailsModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--overlay)] px-4 py-8 backdrop-blur-sm">
-      <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[28px] border border-border/70 bg-background shadow-[0_28px_90px_-42px_rgba(26,31,44,0.7)]">
+      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden border border-border/70 bg-background shadow-[0_28px_90px_-42px_rgba(26,31,44,0.7)]">
         <div className="sticky top-0 z-10 border-b border-border/70 bg-background/95 px-6 py-5 backdrop-blur">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-2">
@@ -922,9 +922,9 @@ function RequestDetailsModal({
           </div>
         </div>
 
-        <div className="grid flex-1 gap-6 overflow-y-auto p-6 xl:grid-cols-[1.05fr_0.95fr]">
+        <div className="flex-1 overflow-y-auto p-6">
           <div className="space-y-6">
-            <Card className="rounded-[24px] border-border/60 bg-card/90">
+            <Card className="border-border/60 bg-card/90 rounded-none">
               <CardHeader>
                 <CardTitle>Request Details</CardTitle>
                 <CardDescription>
@@ -933,23 +933,23 @@ function RequestDetailsModal({
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
-                <div className="rounded-2xl border border-border/70 bg-background/70 p-4 leading-7">
+                <div className="rounded-none border border-border/70 bg-background/70 p-4 leading-7">
                   {request.description}
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-border/70 p-4">
+                  <div className="rounded-none border border-border/70 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                       Type
                     </p>
                     <p className="mt-2 font-medium">{request.requestType}</p>
                   </div>
-                  <div className="rounded-2xl border border-border/70 p-4">
+                  <div className="rounded-none border border-border/70 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                       Priority
                     </p>
                     <p className="mt-2 font-medium">{request.priority}</p>
                   </div>
-                  <div className="rounded-2xl border border-border/70 p-4">
+                  <div className="rounded-none border border-border/70 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                       Repository
                     </p>
@@ -957,7 +957,7 @@ function RequestDetailsModal({
                       {targetApp?.name ?? request.targetAppSlug ?? "Unknown"}
                     </p>
                   </div>
-                  <div className="rounded-2xl border border-border/70 p-4">
+                  <div className="rounded-none border border-border/70 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                       Environment
                     </p>
@@ -965,7 +965,7 @@ function RequestDetailsModal({
                       {targetEnvironment?.name ?? "Not assigned"}
                     </p>
                   </div>
-                  <div className="rounded-2xl border border-border/70 p-4">
+                  <div className="rounded-none border border-border/70 p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                       Target Branch
                     </p>
@@ -977,7 +977,7 @@ function RequestDetailsModal({
               </CardContent>
             </Card>
 
-            <Card className="rounded-[24px] border-border/60 bg-card/90">
+            <Card className="border-border/60 bg-card/90 rounded-none">
               <CardHeader>
                 <CardTitle>Triage Notes</CardTitle>
                 <CardDescription>
@@ -1046,10 +1046,7 @@ function RequestDetailsModal({
                 </div>
               </CardContent>
             </Card>
-          </div>
-
-          <div className="space-y-4">
-            <Card className="rounded-[24px] border-border/60 bg-card/90">
+            <Card className="border-border/60 bg-card/90 rounded-none">
               <CardHeader>
                 <CardTitle>Request Thread</CardTitle>
                 <CardDescription>
@@ -1058,7 +1055,7 @@ function RequestDetailsModal({
               </CardHeader>
               <CardContent className="space-y-4">
                 {activeExecution ? (
-                  <div className="rounded-2xl border border-sky-200/70 bg-sky-50/80 p-4 text-sm text-sky-950">
+                  <div className="rounded-none border border-sky-200/70 bg-sky-50/80 p-4 text-sm text-sky-950">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
                         <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -1128,13 +1125,13 @@ function RequestDetailsModal({
                   </div>
                 ) : null}
 
-                <ScrollArea className="max-h-[260px] rounded-2xl border border-border/70 bg-background/70 p-4">
+                <ScrollArea className="h-[320px] min-h-0 rounded-none border border-border/70 bg-background/70 p-4">
                   <div className="space-y-3">
                     {threadMessages.length ? (
                       threadMessages.map((message) => (
                         <div
                           key={message.id}
-                          className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
+                          className={`rounded-none px-4 py-3 text-sm leading-6 ${
                             message.role === "assistant"
                               ? "border border-border/70 bg-card text-foreground"
                               : "border border-primary/30 bg-primary/12 text-foreground"
@@ -1168,7 +1165,7 @@ function RequestDetailsModal({
                         </div>
                       ))
                     ) : (
-                      <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                      <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                         No comments or agent replies yet for this request.
                       </div>
                     )}
@@ -1221,7 +1218,7 @@ function RequestDetailsModal({
               </CardContent>
             </Card>
 
-            <Card className="rounded-[24px] border-border/60 bg-card/90">
+            <Card className="border-border/60 bg-card/90 rounded-none">
               <CardHeader>
                 <CardTitle>Suggested Changes Details</CardTitle>
                 <CardDescription>
@@ -1230,7 +1227,7 @@ function RequestDetailsModal({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="rounded-2xl border border-border/70 bg-background/70 p-4">
+                <div className="rounded-none border border-border/70 bg-background/70 p-4">
                   <Textarea
                     value={agentRecommendation}
                     onChange={(event) => {
@@ -1244,7 +1241,7 @@ function RequestDetailsModal({
               </CardContent>
             </Card>
 
-            <Card className="rounded-[24px] border-border/60 bg-card/90">
+            <Card className="border-border/60 bg-card/90 rounded-none">
               <CardHeader>
                 <CardTitle>Lifecycle</CardTitle>
                 <CardDescription>
@@ -1252,7 +1249,7 @@ function RequestDetailsModal({
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
-                <div className="rounded-2xl border border-border/70 p-4">
+                <div className="rounded-none border border-border/70 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                     Created
                   </p>
@@ -1260,7 +1257,7 @@ function RequestDetailsModal({
                     {isoLabel(request.createdAt) ?? "Unknown"}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-border/70 p-4">
+                <div className="rounded-none border border-border/70 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                     Triaged
                   </p>
@@ -1268,7 +1265,7 @@ function RequestDetailsModal({
                     {isoLabel(request.triagedAt) ?? "Not yet"}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-border/70 p-4">
+                <div className="rounded-none border border-border/70 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                     Approved For Work
                   </p>
@@ -1276,7 +1273,7 @@ function RequestDetailsModal({
                     {isoLabel(request.approvedForWorkAt) ?? "Not yet"}
                   </p>
                 </div>
-                <div className="rounded-2xl border border-border/70 p-4">
+                <div className="rounded-none border border-border/70 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
                     Last Updated
                   </p>
@@ -1287,7 +1284,7 @@ function RequestDetailsModal({
               </CardContent>
             </Card>
 
-            <Card className="rounded-[24px] border-border/60 bg-card/90">
+            <Card className="border-border/60 bg-card/90 rounded-none">
               <CardHeader>
                 <CardTitle>Execution Log</CardTitle>
                 <CardDescription>
@@ -1302,7 +1299,7 @@ function RequestDetailsModal({
                       executions.map((execution) => (
                         <div
                           key={execution.id}
-                          className="rounded-2xl border border-border/70 bg-background/70 p-4 text-sm"
+                          className="rounded-none border border-border/70 bg-background/70 p-4 text-sm"
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
@@ -1331,7 +1328,7 @@ function RequestDetailsModal({
                             </p>
                           ) : null}
                           {execution.errorMessage ? (
-                            <div className="mt-3 rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
+                            <div className="mt-3 rounded-none border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
                               {execution.errorMessage}
                             </div>
                           ) : null}
@@ -1421,7 +1418,7 @@ function RequestDetailsModal({
                           </div>
                           {Array.isArray(execution.meta?.runtimeTrace) &&
                           execution.meta.runtimeTrace.length ? (
-                            <div className="mt-3 rounded-xl border border-border/60 bg-muted/30 p-3">
+                            <div className="mt-3 rounded-none border border-border/60 bg-muted/30 p-3">
                               <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                                 Execution Trace
                               </div>
@@ -1465,7 +1462,7 @@ function RequestDetailsModal({
                         </div>
                       ))
                     ) : (
-                      <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                      <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                         No execution records yet for this request.
                       </div>
                     )}
