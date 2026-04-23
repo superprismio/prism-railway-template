@@ -704,7 +704,17 @@ class KnowledgeSourceManager:
             if backup.exists():
                 shutil.rmtree(backup)
             target.replace(backup)
-        source.replace(target)
+        try:
+            source.replace(target)
+        except OSError as exc:
+            if exc.errno != 18:  # EXDEV
+                raise
+            if source.is_dir():
+                shutil.copytree(source, target)
+                shutil.rmtree(source)
+            else:
+                shutil.copy2(source, target)
+                source.unlink()
         if backup is not None and backup.exists():
             shutil.rmtree(backup)
 
