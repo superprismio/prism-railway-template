@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import shutil
 import subprocess
@@ -33,6 +34,10 @@ _DEFAULT_EXCLUDE = (
 )
 _IGNORED_SEGMENTS = {".git", "node_modules", ".next", "dist", "build", "coverage", ".turbo", ".vercel"}
 _DOC_ROOT_MARKERS = ("docs", "content", "pages", "app")
+_GIT_COMMAND_TIMEOUT_SECONDS = 120
+
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeSourceError(RuntimeError):
@@ -112,13 +117,14 @@ class KnowledgeSourceManager:
         record.pop("state", None)
         state = self._load_state(source_id)
         requested_at = self._now_iso()
-        self._write_json(
-            self._state_path(source_id),
+        state = self._update_state(
+            source_id,
             {
                 **state,
                 "status": "syncing",
                 "last_requested_at": requested_at,
                 "last_started_at": requested_at,
+                "current_step": "starting",
                 "error": None,
             },
         )
@@ -134,8 +140,11 @@ class KnowledgeSourceManager:
             with tempfile.TemporaryDirectory(prefix=f"knowledge-source-{source_id}-") as tmp_root_str:
                 tmp_root = Path(tmp_root_str)
                 checkout_dir = tmp_root / "repo"
+                self._update_state(source_id, {**state, "current_step": "cloning"})
                 self._checkout_repo(record, checkout_dir)
+                self._update_state(source_id, {**self._load_state(source_id), "current_step": "resolving_commit"})
                 commit = self._git_output(["rev-parse", "HEAD"], checkout_dir)
+                self._update_state(source_id, {**self._load_state(source_id), "current_step": "discovering_docs_roots"})
                 inferred_docs_roots = record["docs_roots"] or self._infer_docs_roots(checkout_dir)
                 if not inferred_docs_roots:
                     raise KnowledgeSourceError(
@@ -144,6 +153,14 @@ class KnowledgeSourceManager:
                     )
                 derived_docs_dir = tmp_root / "derived" / "docs"
                 derived_meta_dir = tmp_root / "derived" / "metadata"
+                self._update_state(
+                    source_id,
+                    {
+                        **self._load_state(source_id),
+                        "current_step": "building_projection",
+                        "docs_roots": inferred_docs_roots,
+                    },
+                )
                 build = self._build_source_projection(
                     source=record,
                     config=config,
@@ -159,10 +176,12 @@ class KnowledgeSourceManager:
                 new_hashes = self._collect_hashes(derived_docs_dir, suffix=".md")
                 change_summary = self._diff_hashes(previous_hashes, new_hashes)
 
+                self._update_state(source_id, {**self._load_state(source_id), "current_step": "writing_outputs"})
                 self._replace_tree(source_docs_dir, derived_docs_dir)
                 self._replace_tree(source_meta_dir, derived_meta_dir)
                 self._replace_tree(self._mirror_dir(source_id), checkout_dir)
 
+                self._update_state(source_id, {**self._load_state(source_id), "current_step": "rebuilding_index"})
                 index_builder = KnowledgeIndexBuilder(
                     workspace_root=self.workspace_root,
                     config=config,
@@ -196,6 +215,7 @@ class KnowledgeSourceManager:
                     "doc_count": build["doc_count"],
                     "docs_roots": inferred_docs_roots,
                     "change_summary": change_summary,
+                    "current_step": "completed",
                     "error": None,
                 }
                 self._write_json(self._state_path(source_id), state)
@@ -213,6 +233,15 @@ class KnowledgeSourceManager:
                     "file_count": build["file_count"],
                     "doc_count": build["doc_count"],
                     "change_summary": change_summary,
+                    "steps": [
+                        "cloning",
+                        "resolving_commit",
+                        "discovering_docs_roots",
+                        "building_projection",
+                        "writing_outputs",
+                        "rebuilding_index",
+                        "completed",
+                    ],
                 }
                 self._write_history(source_id, history_payload)
                 activity.log(
@@ -226,11 +255,12 @@ class KnowledgeSourceManager:
         except KnowledgeSourceError as exc:
             completed_at = self._now_iso()
             error_state = {
-                **state,
+                **self._load_state(source_id),
                 "status": "error",
                 "last_requested_at": requested_at,
                 "last_started_at": requested_at,
                 "last_completed_at": completed_at,
+                "current_step": "error",
                 "error": {"code": exc.code, "message": exc.message},
             }
             self._write_json(self._state_path(source_id), error_state)
@@ -247,9 +277,41 @@ class KnowledgeSourceManager:
                     "completed_at": completed_at,
                     "repo_url": record["repo_url"],
                     "branch": record["branch"],
+                    "current_step": error_state.get("current_step"),
                     "error": {"code": exc.code, "message": exc.message},
                 },
             )
+            raise
+        except Exception as exc:
+            completed_at = self._now_iso()
+            error_state = {
+                **self._load_state(source_id),
+                "status": "error",
+                "last_requested_at": requested_at,
+                "last_started_at": requested_at,
+                "last_completed_at": completed_at,
+                "current_step": "error",
+                "error": {"code": "unexpected_error", "message": str(exc)},
+            }
+            self._write_json(self._state_path(source_id), error_state)
+            record["status"] = "error"
+            record["updated_at"] = completed_at
+            self._write_json(self._source_record_path(source_id), record)
+            self._write_history(
+                source_id,
+                {
+                    "source_id": source_id,
+                    "status": "error",
+                    "requested_at": requested_at,
+                    "started_at": requested_at,
+                    "completed_at": completed_at,
+                    "repo_url": record["repo_url"],
+                    "branch": record["branch"],
+                    "current_step": error_state.get("current_step"),
+                    "error": {"code": "unexpected_error", "message": str(exc)},
+                },
+            )
+            logger.exception("knowledge source sync failed unexpectedly source_id=%s", source_id)
             raise
 
         return self.get_source(source_id)
@@ -403,9 +465,22 @@ class KnowledgeSourceManager:
             str(checkout_dir),
         ]
         try:
-            subprocess.run(command, capture_output=True, text=True, check=True)
+            logger.info("knowledge source clone start source_id=%s repo=%s branch=%s", source.get("id"), source["repo_url"], source["branch"])
+            subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
+            )
+            logger.info("knowledge source clone complete source_id=%s", source.get("id"))
         except FileNotFoundError as exc:
             raise KnowledgeSourceError("git_missing", "git is required for knowledge source sync") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise KnowledgeSourceError(
+                "git_clone_timeout",
+                f"git clone timed out after {_GIT_COMMAND_TIMEOUT_SECONDS}s",
+            ) from exc
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or exc.stdout or "").strip()
             raise KnowledgeSourceError("git_clone_failed", stderr or "git clone failed") from exc
@@ -641,13 +716,29 @@ class KnowledgeSourceManager:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
             )
         except FileNotFoundError as exc:
             raise KnowledgeSourceError("git_missing", "git is required for knowledge source sync") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise KnowledgeSourceError(
+                "git_timeout",
+                f"git command timed out after {_GIT_COMMAND_TIMEOUT_SECONDS}s",
+            ) from exc
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or exc.stdout or "").strip()
             raise KnowledgeSourceError("git_failed", stderr or "git command failed") from exc
         return (completed.stdout or "").strip()
+
+    def _update_state(self, source_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._write_json(self._state_path(source_id), payload)
+        logger.info(
+            "knowledge source state source_id=%s status=%s step=%s",
+            source_id,
+            payload.get("status"),
+            payload.get("current_step"),
+        )
+        return payload
 
     def _read_json(self, path: Path) -> dict[str, Any]:
         if not path.is_file():
