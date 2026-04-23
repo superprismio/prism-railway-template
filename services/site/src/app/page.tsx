@@ -133,13 +133,13 @@ export default async function Page() {
               fill
               src="/images/prism_landscape.png"
             />
-            <div className="relative z-10 mx-auto max-w-3xl border border-border/60 bg-[#1d2433]/55 text-white">
-              <div className="border-b border-white/10 px-6 py-4">
-                <p className="font-mono text-xs uppercase tracking-[0.24em] text-white/60">
+            <div className="relative z-10 mx-auto max-w-3xl border border-border/60 bg-[var(--code-surface)] text-[var(--code-surface-foreground)]">
+              <div className="border-b border-border/60 px-6 py-4">
+                <p className="font-mono text-xs uppercase tracking-[0.24em] text-[var(--code-surface-muted)]">
                   API status
                 </p>
               </div>
-              <pre className="overflow-auto bg-white/[0.09] p-6 text-sm leading-6 text-white/90">
+              <pre className="overflow-auto bg-background/20 p-6 text-sm leading-6">
                 {JSON.stringify(
                   health ?? { ok: false, service: "api", timestamp: null },
                   null,

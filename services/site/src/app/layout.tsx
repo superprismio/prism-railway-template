@@ -30,7 +30,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${sans.variable} ${mono.variable} antialiased dark`}>
+      <body className={`${sans.variable} ${mono.variable} antialiased`}>
         <ThemeProvider>
           <main className="min-h-screen flex flex-col items-center w-full">{children}</main>
         </ThemeProvider>

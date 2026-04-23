@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
-  Activity,
   Bot,
   BotMessageSquare,
   Boxes,
@@ -19,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 
+import { AdminHeader } from "@/components/admin/admin-header";
 import { CodexConsole } from "@/components/admin/codex-console";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -893,7 +893,7 @@ function RequestDetailsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[#1d2433]/55 px-4 py-8 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--overlay)] px-4 py-8 backdrop-blur-sm">
       <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[28px] border border-border/70 bg-background shadow-[0_28px_90px_-42px_rgba(26,31,44,0.7)]">
         <div className="sticky top-0 z-10 border-b border-border/70 bg-background/95 px-6 py-5 backdrop-blur">
           <div className="flex items-start justify-between gap-4">
@@ -1137,7 +1137,7 @@ function RequestDetailsModal({
                           className={`rounded-2xl px-4 py-3 text-sm leading-6 ${
                             message.role === "assistant"
                               ? "border border-border/70 bg-card text-foreground"
-                              : "bg-[#1d2433] text-white"
+                              : "border border-primary/30 bg-primary/12 text-foreground"
                           }`}
                         >
                           <div className="mb-2 flex items-center justify-between gap-3 text-xs uppercase tracking-[0.16em]">
@@ -1156,7 +1156,7 @@ function RequestDetailsModal({
                               className={
                                 message.role === "assistant"
                                   ? "text-muted-foreground"
-                                  : "text-white/70"
+                                  : "text-foreground/70"
                               }
                             >
                               {isoLabel(message.createdAt) ?? ""}
@@ -1633,23 +1633,9 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
 
   return (
     <main className="min-h-screen w-full bg-background text-foreground">
-      <div className="sticky top-0 z-30 border-b border-border/60 bg-background/95 backdrop-blur">
-        <div className="flex min-h-16 items-center justify-between gap-4 px-5 md:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-muted/40">
-              <Activity className="h-4 w-4 text-primary" />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold tracking-tight">
-                Prism Refactory
-              </p>
-              <p className="truncate text-xs text-muted-foreground">
-                Admin workspace
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
+      <AdminHeader
+        actions={
+          <>
             <Button type="button" onClick={() => setIsNewRequestOpen(true)}>
               <FilePlus className="h-4 w-4" />
               <span className="hidden sm:inline">Add Change Request</span>
@@ -1666,9 +1652,9 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                 <span className="hidden sm:inline">Exit admin</span>
               </Button>
             </form>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <Tabs
         defaultValue="change-requests"

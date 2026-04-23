@@ -130,7 +130,7 @@ export function CodexConsole() {
                 className={`px-4 py-3 text-sm leading-6 ${
                   message.role === "assistant"
                     ? "border-l-2 border-border bg-muted/20 text-foreground"
-                    : "ml-auto max-w-3xl border-l-2 border-primary bg-[#1d2433]/70 text-white"
+                    : "ml-auto max-w-3xl border-l-2 border-primary/60 bg-primary/12 text-foreground"
                 }`}
               >
                 <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.18em]">

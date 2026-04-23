@@ -1,5 +1,6 @@
 import { Activity, Bot, GitBranch, KeyRound, LogOut, Rows3, ShieldAlert } from "lucide-react"
 
+import { AdminHeader } from "@/components/admin/admin-header"
 import { LoginCard } from "@/components/admin/login-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -19,7 +20,7 @@ function statusBadge(ok: boolean, label?: string) {
 
 function copyBlock(lines: string[]) {
   return (
-    <pre className="overflow-x-auto rounded-lg border border-border bg-[#1f2330] p-3 text-xs leading-5 text-white">
+    <pre className="overflow-x-auto rounded-lg border border-border bg-[var(--code-surface)] p-3 text-xs leading-5 text-[var(--code-surface-foreground)]">
       {lines.join("\n")}
     </pre>
   )
@@ -259,23 +260,9 @@ export default async function AdminSettingsPage({
 
   return (
     <main className="min-h-screen w-full border-t border-border/60 bg-background text-foreground">
-      <div className="sticky top-0 z-30 border-b border-border/60 bg-background/95 backdrop-blur">
-        <div className="flex min-h-16 items-center justify-between gap-4 px-5 md:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center border border-border/70 bg-muted/40">
-              <Activity className="h-4 w-4 text-primary" />
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold tracking-tight">
-                Prism Refactory
-              </p>
-              <p className="truncate text-xs text-muted-foreground">
-                Admin workspace
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
+      <AdminHeader
+        actions={
+          <>
             <Button asChild variant="outline">
               <a href="/admin">
                 <Rows3 className="h-4 w-4" />
@@ -288,9 +275,9 @@ export default async function AdminSettingsPage({
                 <span className="hidden sm:inline">Exit admin</span>
               </Button>
             </form>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <section className="border-b border-border/60 px-5 py-4 md:px-6">
         <h1 className="text-2xl font-semibold tracking-tight">Admin Settings</h1>
