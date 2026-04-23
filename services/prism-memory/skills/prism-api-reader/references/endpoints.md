@@ -34,6 +34,12 @@ curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
   "$PRISM_API_BASE/knowledge/docs/raidguild-handbook-home"
 ```
 
+Human-readable Prism knowledge doc page:
+
+```text
+$PRISM_API_BASE/knowledge/view/<slug>
+```
+
 List recent memory inbox artifacts:
 
 ```bash

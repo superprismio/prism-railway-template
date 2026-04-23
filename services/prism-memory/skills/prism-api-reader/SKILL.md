@@ -51,6 +51,8 @@ Use a read-scoped key only.
   `GET /knowledge/search?q=...&kind=...&tag=...&entity=...&limit=...`
 - Knowledge doc:
   `GET /knowledge/docs/{slug}`
+- Human-readable knowledge doc:
+  `GET /knowledge/view/{slug}`
 - Artifact list:
   `GET /api/artifacts?category=...&type=...&source=...&status=...&limit=...`
 - Artifact detail:
@@ -67,6 +69,8 @@ Use a read-scoped key only.
 - For knowledge:
   - use `/knowledge/search` first
   - then fetch top matches with `/knowledge/docs/{slug}`
+  - when replying with citations, prefer the Prism `doc_url` returned by search/doc responses
+  - include `source_url` when it exists and adds value, but Prism doc links are the default
   - prefer `guide` and `policy` docs for workflows
   - prefer `reference` docs for templates
 - For repo-backed handbook setup or diagnostics:

@@ -563,6 +563,53 @@ def create_app(settings: Settings) -> FastAPI:
     async def knowledge_doc(slug: str):
         return storage.knowledge_doc(slug)
 
+    @app.get("/knowledge/view/{slug:path}", tags=["knowledge"], include_in_schema=False)
+    async def knowledge_doc_html(slug: str):
+        doc = storage.knowledge_doc(slug)
+        title = str(doc.get("title") or doc.get("slug") or "Knowledge doc")
+        content = str(doc.get("content") or "")
+        api_url = f"/knowledge/docs/{html.escape(str(doc.get('slug') or slug), quote=True)}"
+        source_url = str(doc.get("source_url") or "").strip()
+        source_link = f'<dt>Source</dt><dd><a href="{html.escape(source_url, quote=True)}">{html.escape(source_url)}</a></dd>' if source_url else ""
+        page = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{html.escape(title)}</title>
+  <style>
+    :root {{ color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    body {{ margin: 0; background: #f7f4ee; color: #1d2433; }}
+    main {{ max-width: 920px; margin: 0 auto; padding: 32px 20px 56px; }}
+    header {{ border-bottom: 1px solid #ddd6cc; margin-bottom: 24px; padding-bottom: 18px; }}
+    h1 {{ font-size: 28px; line-height: 1.2; margin: 0 0 12px; }}
+    dl {{ display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 0; color: #5f6572; font-size: 14px; }}
+    dt {{ font-weight: 700; color: #303747; }}
+    dd {{ margin: 0; overflow-wrap: anywhere; }}
+    article {{ background: #fffaf3; border: 1px solid #ddd6cc; border-radius: 12px; padding: 20px; box-shadow: 0 18px 48px -36px rgba(26,31,44,.55); }}
+    pre {{ white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; margin: 0; }}
+    a {{ color: #bb4d2a; }}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>{html.escape(title)}</h1>
+      <dl>
+        <dt>Slug</dt><dd>{html.escape(str(doc.get('slug') or ''))}</dd>
+        <dt>Kind</dt><dd>{html.escape(str(doc.get('kind') or ''))}</dd>
+        <dt>Updated</dt><dd>{html.escape(str(doc.get('updated') or ''))}</dd>
+        <dt>API</dt><dd><a href="{api_url}">{api_url}</a></dd>
+        {source_link}
+      </dl>
+    </header>
+    <article><pre>{html.escape(content)}</pre></article>
+  </main>
+</body>
+</html>
+"""
+        return Response(content=page, media_type="text/html; charset=utf-8")
+
     @app.get("/knowledge/search", dependencies=[read_auth_dependency], tags=["knowledge"])
     async def knowledge_search(
         q: Optional[str] = Query(None, min_length=1),

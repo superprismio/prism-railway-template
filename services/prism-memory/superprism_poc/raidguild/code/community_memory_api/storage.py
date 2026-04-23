@@ -378,8 +378,9 @@ class FilesystemStorageBackend:
             content = doc_path.read_text(encoding="utf-8")
         except OSError as exc:
             raise StorageError("not_found", f"Unable to read document body: {doc_path}") from exc
+        doc_slug = metadata.get("slug") or normalized
         return {
-            "slug": metadata.get("slug") or normalized,
+            "slug": doc_slug,
             "path": str(doc_path.relative_to(self.root)),
             "meta_path": str(meta_path.relative_to(self.root)),
             "kind": metadata.get("kind"),
@@ -388,6 +389,9 @@ class FilesystemStorageBackend:
             "updated": metadata.get("updated"),
             "tags": metadata.get("tags"),
             "entities": metadata.get("entities"),
+            "doc_url": f"/knowledge/view/{doc_slug}",
+            "doc_api_url": f"/knowledge/docs/{doc_slug}",
+            "source_url": self._source_url_for_metadata(metadata),
             "metadata": metadata,
             "content": content,
         }
@@ -454,6 +458,9 @@ class FilesystemStorageBackend:
                     "entities": entities_list,
                     "path": entry.get("path"),
                     "meta_path": entry.get("meta_path"),
+                    "doc_url": f"/knowledge/view/{slug_value}",
+                    "doc_api_url": f"/knowledge/docs/{slug_value}",
+                    "source_url": self._source_url_for_entry(entry),
                     "score": score,
                     "match_tokens": sorted(matched_tokens) if matched_tokens else [],
                     "match_sources": match_sources,
@@ -729,6 +736,27 @@ class FilesystemStorageBackend:
             return path.read_text(encoding="utf-8")
         except OSError as exc:
             raise StorageError("not_found", f"Unable to read artifact: {path}") from exc
+
+    def _source_url_for_entry(self, entry: Dict[str, Any]) -> Optional[str]:
+        meta_path = self._rooted_path(entry["meta_path"])
+        if not meta_path.is_file():
+            return None
+        metadata = self._load_json(meta_path)
+        if not isinstance(metadata, dict):
+            return None
+        return self._source_url_for_metadata(metadata)
+
+    @staticmethod
+    def _source_url_for_metadata(metadata: Dict[str, Any]) -> Optional[str]:
+        repo = str(metadata.get("source_repo") or "").strip()
+        branch = str(metadata.get("source_branch") or "").strip()
+        source_path = str(metadata.get("source_path") or "").strip()
+        if not repo or not branch or not source_path:
+            return None
+        if repo.startswith("https://github.com/"):
+            normalized_repo = repo[:-4] if repo.endswith(".git") else repo
+            return f"{normalized_repo}/blob/{branch}/{source_path}"
+        return None
 
     def _iter_raw_window_paths(
         self, start_dt: datetime, end_dt: datetime, *, bucket: Optional[str] = None
