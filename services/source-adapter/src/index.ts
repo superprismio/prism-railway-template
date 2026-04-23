@@ -741,10 +741,7 @@ function shouldHandleMessage(message: Message, clientUserId: string, guildId: st
   if (!message.inGuild() || message.author.bot || message.guildId !== guildId) {
     return false;
   }
-  if (message.mentions.users.has(clientUserId)) {
-    return true;
-  }
-  return isBridgeThread(message.channel);
+  return message.mentions.users.has(clientUserId);
 }
 
 function cleanPrompt(message: Message, botUserId: string): string {
