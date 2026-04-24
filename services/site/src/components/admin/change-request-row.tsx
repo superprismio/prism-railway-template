@@ -1,0 +1,102 @@
+import { Bot, GitBranch } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import type {
+  ChangeRequestRecord,
+  TargetAppRecord,
+  TargetEnvironmentRecord,
+} from "@/lib/admin";
+
+import {
+  environmentForRequest,
+  isoLabel,
+  priorityVariant,
+  statusLabel,
+  statusVariant,
+  targetAppForRequest,
+} from "./change-request-utils";
+
+export function ChangeRequestRow({
+  request,
+  targetApps,
+  targetEnvironments,
+  onOpen,
+}: {
+  request: ChangeRequestRecord;
+  targetApps: TargetAppRecord[];
+  targetEnvironments: TargetEnvironmentRecord[];
+  onOpen: (request: ChangeRequestRecord) => void;
+}) {
+  const targetApp = targetAppForRequest(request, targetApps);
+  const targetEnvironment = environmentForRequest(request, targetEnvironments);
+  const targetBranch =
+    targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch";
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(request)}
+      className="grid w-full gap-4 border border-border/70 bg-background/75 p-4 text-left transition hover:border-foreground/30 hover:bg-background md:grid-cols-[84px_minmax(0,1fr)_180px_150px_140px]"
+    >
+      <div>
+        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+          CR
+        </p>
+        <p className="mt-1 text-lg font-semibold">#{request.requestNumber}</p>
+      </div>
+
+      <div className="min-w-0 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={statusVariant(request.status)}>
+            {statusLabel(request.status)}
+          </Badge>
+          <Badge variant={priorityVariant(request.priority)}>
+            {request.priority}
+          </Badge>
+          <Badge variant="outline">{request.requestType}</Badge>
+        </div>
+        <h3 className="line-clamp-1 text-base font-semibold">
+          {request.title}
+        </h3>
+        <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
+          {request.description}
+        </p>
+      </div>
+
+      <div className="space-y-1 text-sm">
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+          Repository
+        </p>
+        <p className="truncate font-medium">
+          {targetApp?.name ?? request.targetAppSlug ?? "Unknown"}
+        </p>
+        <p className="flex items-center gap-1 text-xs text-muted-foreground">
+          <GitBranch className="h-3.5 w-3.5" />
+          <span className="truncate">{targetBranch}</span>
+        </p>
+      </div>
+
+      <div className="space-y-1 text-sm">
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+          Agent
+        </p>
+        <p className="flex items-center gap-1 font-medium">
+          <Bot className="h-3.5 w-3.5 text-muted-foreground" />
+          {targetEnvironment?.agentWritable ? "Writable" : "Locked"}
+        </p>
+        {request.agentRecommendation ? (
+          <p className="truncate text-xs text-muted-foreground">Triage ready</p>
+        ) : null}
+      </div>
+
+      <div className="space-y-1 text-sm">
+        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+          Updated
+        </p>
+        <p className="font-medium">
+          {isoLabel(request.updatedAt) ?? "Unknown"}
+        </p>
+      </div>
+    </button>
+  );
+}
