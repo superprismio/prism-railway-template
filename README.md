@@ -20,6 +20,7 @@ Current direction:
 
 Template authoring notes live in [docs/template-authoring.md](docs/template-authoring.md).
 Post-deploy template operations live in [docs/template-deploy-runbook.md](docs/template-deploy-runbook.md).
+Non-Railway deployment notes live in [docs/local-vps-deployment.md](docs/local-vps-deployment.md).
 
 This repo is intentionally split by deployable service instead of using PM2 inside one container.
 
