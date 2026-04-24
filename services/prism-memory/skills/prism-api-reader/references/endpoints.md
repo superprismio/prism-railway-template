@@ -67,6 +67,14 @@ Human-readable artifact pages are available at:
 $PRISM_API_BASE/artifacts/<artifact-id>
 ```
 
+Raw artifact payloads are only available at:
+
+```text
+$PRISM_API_BASE/api/artifacts/<artifact-id>/raw
+```
+
+Use the `/artifacts/<artifact-id>` page for links shared with humans in Discord or chat. Do not use `/api/artifacts/<artifact-id>` as the default user-facing link.
+
 Knowledge source inventory:
 
 ```bash

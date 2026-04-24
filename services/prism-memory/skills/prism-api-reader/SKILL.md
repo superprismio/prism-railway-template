@@ -88,15 +88,20 @@ Use a read-scoped key only.
   - do not infer active project state from memory alone
 - For artifacts:
   - if the user provides a Prism artifact link, use the final path segment as the artifact ID
-  - use `/api/artifacts/{artifact-id}` for metadata plus rendered content
-  - use `/api/artifacts/{artifact-id}/raw` when exact raw JSON or Markdown matters
+  - use `/artifacts/{artifact-id}` when the user wants a human-viewable link to share in Discord or chat
+  - use `/api/artifacts/{artifact-id}` for structured metadata and content lookup
+  - use `/api/artifacts/{artifact-id}/raw` only when the user explicitly wants the raw payload
   - use `/api/artifacts?source=discord-voice&type=meeting_summary&limit=...` for recent voice summaries
+  - do not present `/api/artifacts/{artifact-id}` as the primary human-facing link
+  - do not invent alternate raw paths; the raw route is exactly `/api/artifacts/{artifact-id}/raw`
+  - when giving a link back to the user, prefer the full absolute Prism URL when the base is known
 
 ## Safety
 
 - Treat the Prism Memory API as the source of truth for current deployed state.
 - If a route returns empty or `404`, say so directly.
 - Do not call write or ops endpoints from this skill.
+- Do not guess Prism routes from memory when the API contract already defines them.
 
 ## References
 
