@@ -1022,6 +1022,7 @@ async function handleVoiceCommand(interaction: ChatInputCommandInteraction, acti
   try {
     await interaction.deferReply({ ephemeral: true });
     let content = "";
+    let publicContent: string | null = null;
     switch (action) {
       case "join":
         content = await voiceManager.join(interaction);
@@ -1029,14 +1030,20 @@ async function handleVoiceCommand(interaction: ChatInputCommandInteraction, acti
       case "record":
         content = await voiceManager.startRecording(interaction);
         break;
-      case "stoprecord":
-        content = await voiceManager.stopRecording(interaction);
+      case "stoprecord": {
+        const result = await voiceManager.stopRecording(interaction);
+        content = result.privateMessage;
+        publicContent = result.publicMessage ?? null;
         break;
+      }
       case "rollcall":
         content = await voiceManager.rollcall(interaction);
         break;
     }
     await interaction.editReply({ content });
+    if (publicContent && interaction.channel && interaction.channel.isTextBased()) {
+      await interaction.channel.send(publicContent);
+    }
   } catch (error) {
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply({ content: describeError(error) });

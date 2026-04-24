@@ -100,6 +100,11 @@ export type RecordingSessionMetadata = {
   };
 };
 
+export type StopRecordingResult = {
+  privateMessage: string;
+  publicMessage?: string | null;
+};
+
 type TranscriptionSegment = {
   text: string;
   start: number;
@@ -771,7 +776,7 @@ export class DiscordVoiceManager {
     };
   }
 
-  async stopRecording(interaction: ChatInputCommandInteraction): Promise<string> {
+  async stopRecording(interaction: ChatInputCommandInteraction): Promise<StopRecordingResult> {
     if (!interaction.guildId) {
       throw new Error("This command must be used inside a Discord server.");
     }
@@ -785,7 +790,7 @@ export class DiscordVoiceManager {
     const metadata = await this.finalizeSession(session);
     const transcriptArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemoryTranscriptPath);
     const summaryArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemorySummaryPath);
-    return [
+    const privateMessage = [
       `Recording stopped for **${session.channelName}**.`,
       `Session: \`${metadata.sessionId}\``,
       session.recoveredFromDisk ? "Recovered unfinished session from the recording volume after adapter restart." : null,
@@ -803,6 +808,16 @@ export class DiscordVoiceManager {
           : "Summary not generated.",
       process.env.N8N_WEBHOOK_URL ? "Legacy webhook handoff attempted." : "No legacy webhook handoff configured.",
     ].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n");
+    const publicMessage = summaryArtifact
+      ? [
+          `Meeting summary for **${session.channelName}** is ready: ${summaryArtifact.url}`,
+          transcriptArtifact ? `Transcript: ${transcriptArtifact.url}` : null,
+        ].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n")
+      : null;
+    return {
+      privateMessage,
+      publicMessage,
+    };
   }
 
   async finalizeSession(session: RecordingSession): Promise<RecordingSessionMetadata> {
