@@ -1041,7 +1041,7 @@ async function handleVoiceCommand(interaction: ChatInputCommandInteraction, acti
         break;
     }
     await interaction.editReply({ content });
-    if (publicContent && interaction.channel && interaction.channel.isTextBased()) {
+    if (publicContent && interaction.channel && interaction.channel.isSendable()) {
       await interaction.channel.send(publicContent);
     }
   } catch (error) {
