@@ -61,7 +61,6 @@ export function ChangeRequestList({
       <div className="border-b border-border/60 bg-background px-5 py-4 md:px-6">
         <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_160px_160px_180px_170px]">
           <div className="space-y-2">
-            <Label htmlFor="request-search">Search</Label>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -75,7 +74,6 @@ export function ChangeRequestList({
           </div>
 
           <div className="space-y-2">
-            <Label>Status</Label>
             <Select value={statusFilter} onValueChange={onStatusFilterChange}>
               <SelectTrigger>
                 <SelectValue placeholder="All statuses" />
@@ -92,7 +90,6 @@ export function ChangeRequestList({
           </div>
 
           <div className="space-y-2">
-            <Label>Type</Label>
             <Select value={typeFilter} onValueChange={onTypeFilterChange}>
               <SelectTrigger>
                 <SelectValue placeholder="All types" />
@@ -109,7 +106,6 @@ export function ChangeRequestList({
           </div>
 
           <div className="space-y-2">
-            <Label>Repository</Label>
             <Select
               value={repositoryFilter}
               onValueChange={onRepositoryFilterChange}
@@ -129,7 +125,6 @@ export function ChangeRequestList({
           </div>
 
           <div className="space-y-2">
-            <Label>Sort</Label>
             <Select
               value={sortValue}
               onValueChange={(value) =>
@@ -140,10 +135,18 @@ export function ChangeRequestList({
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="updated-desc">Updated, newest</SelectItem>
-                <SelectItem value="updated-asc">Updated, oldest</SelectItem>
-                <SelectItem value="number-desc">Number, highest</SelectItem>
-                <SelectItem value="number-asc">Number, lowest</SelectItem>
+                <SelectItem value="updated-desc">
+                  Sort by Date (Newest)
+                </SelectItem>
+                <SelectItem value="updated-asc">
+                  Sort by Date (Oldest)
+                </SelectItem>
+                <SelectItem value="number-desc">
+                  Sort by Number (Highest)
+                </SelectItem>
+                <SelectItem value="number-asc">
+                  Sort by Number (Lowest)
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>

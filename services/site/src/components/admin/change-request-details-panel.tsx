@@ -108,33 +108,34 @@ function CommandCenter({
   return (
     <Card className="rounded-none border-border/70 bg-background shadow-none">
       <CardHeader className="space-y-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <CardTitle>Command Center</CardTitle>
-            <CardDescription>
-              Current state, next action, and release flow for this request.
-            </CardDescription>
-          </div>
-          <Badge variant="outline">{status}</Badge>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-6">
+        <div className="relative grid gap-3 md:grid-cols-6">
+          <div className="absolute left-[calc(100%/12)] right-[calc(100%/12)] top-4 hidden h-px bg-border md:block" />
+          <div
+            className="absolute left-[calc(100%/12)] top-4 hidden h-px bg-primary md:block"
+            style={{
+              width:
+                currentStepIndex >= commandCenterSteps.length
+                  ? "calc(100% - (100% / 6))"
+                  : `calc((100% - (100% / 6)) * ${
+                      currentStepIndex / (commandCenterSteps.length - 1)
+                    })`,
+            }}
+          />
           {commandCenterSteps.map((step, index) => {
-            const isComplete =
-              status === "closed" || currentStepIndex > index;
+            const isComplete = status === "closed" || currentStepIndex > index;
             const isCurrent = currentStepIndex === index;
 
             return (
               <div key={step.status} className="relative flex gap-3 md:block">
                 {index < commandCenterSteps.length - 1 ? (
                   <div
-                    className={`absolute left-4 top-8 h-[calc(100%+0.75rem)] w-px md:left-[calc(50%+16px)] md:top-4 md:h-px md:w-[calc(100%-32px)] ${
+                    className={`absolute left-4 top-8 h-[calc(100%+0.75rem)] w-px md:hidden ${
                       isComplete ? "bg-primary" : "bg-border"
                     }`}
                   />
                 ) : null}
                 <div
-                  className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${
+                  className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border md:mx-auto ${
                     isComplete
                       ? "border-primary bg-primary text-primary-foreground"
                       : isCurrent
@@ -150,7 +151,7 @@ function CommandCenter({
                     <Circle className="h-3 w-3" />
                   )}
                 </div>
-                <div className="min-w-0 md:mt-3">
+                <div className="min-w-0 md:mt-3 md:text-center">
                   <p
                     className={`text-sm font-medium ${
                       isCurrent ? "text-foreground" : "text-muted-foreground"
@@ -171,7 +172,7 @@ function CommandCenter({
             <div>
               <p className="font-medium">New change request</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                This request is waiting for triage. Codex can review the
+                This request is waiting for triage. Prism can review the
                 request, summarize the scope, and propose the implementation
                 path.
               </p>
@@ -180,7 +181,7 @@ function CommandCenter({
               {isPending ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" />
               ) : null}
-              Triage with agent
+              Triage
             </Button>
           </div>
         ) : null}
@@ -194,11 +195,22 @@ function CommandCenter({
                   : "Triage in progress"}
               </p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Review the proposed scope before routing this into
+                The agent is preparing or revising the implementation plan.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {status === "ready-for-agent" ? (
+          <div className="space-y-4">
+            <div>
+              <p className="font-medium">Ready for approval</p>
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                Review the triage output, then approve it to start
                 implementation.
               </p>
             </div>
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="space-y-4">
               <div className="rounded-none border border-border/70 p-4">
                 <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                   Triage Summary
@@ -225,19 +237,9 @@ function CommandCenter({
                 {isPending ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                 ) : null}
-                Approve and implement
+                Approve
               </Button>
             </div>
-          </div>
-        ) : null}
-
-        {status === "ready-for-agent" ? (
-          <div>
-            <p className="font-medium">Ready for agent</p>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              The solution is approved. The agent will pick this up and move it
-              into Working.
-            </p>
           </div>
         ) : null}
 
@@ -820,7 +822,7 @@ export function RequestDetailsPanel({
     setThreadError(null);
     startCommandTransition(async () => {
       try {
-        saveRequestState("ready-for-agent");
+        saveRequestState("in-progress");
         await runAgent(prompt);
       } catch (error) {
         setThreadError(
@@ -868,567 +870,560 @@ export function RequestDetailsPanel({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 p-5 md:p-6">
         <div className="space-y-6">
-            <CommandCenter
-              status={status}
-              triageSummary={triageSummary}
-              agentRecommendation={agentRecommendation}
-              targetApp={targetApp}
-              reviewBranchName={reviewExecution?.branchName ?? null}
-              reviewBranchUrl={reviewExecutionBranchUrl}
-              reviewCompareUrl={reviewExecutionPrUrl}
-              isPending={isPending || isCommandPending}
-              onTriage={handleCommandTriage}
-              onApproveSolution={handleApproveSolution}
-              onApproveReview={handleApproveReview}
-              onRequestChanges={handleRequestChanges}
-              onCloseRequest={handleCloseRequest}
-            />
-            <Card className="border-border/60 bg-card/90 rounded-none">
-              <CardHeader>
-                <CardTitle>Request Details</CardTitle>
-                <CardDescription>
-                  Original request plus the target context currently assigned to
-                  it.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                <div className="rounded-none border border-border/70 bg-background/70 p-4 leading-7">
-                  {request.description}
+          <CommandCenter
+            status={status}
+            triageSummary={triageSummary}
+            agentRecommendation={agentRecommendation}
+            targetApp={targetApp}
+            reviewBranchName={reviewExecution?.branchName ?? null}
+            reviewBranchUrl={reviewExecutionBranchUrl}
+            reviewCompareUrl={reviewExecutionPrUrl}
+            isPending={isPending || isCommandPending}
+            onTriage={handleCommandTriage}
+            onApproveSolution={handleApproveSolution}
+            onApproveReview={handleApproveReview}
+            onRequestChanges={handleRequestChanges}
+            onCloseRequest={handleCloseRequest}
+          />
+          <Card className="border-border/60 bg-card/90 rounded-none">
+            <CardHeader>
+              <CardTitle>Request Details</CardTitle>
+              <CardDescription>
+                Original request plus the target context currently assigned to
+                it.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <div className="rounded-none border border-border/70 bg-background/70 p-4 leading-7">
+                {request.description}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-none border border-border/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Type
+                  </p>
+                  <p className="mt-2 font-medium">{request.requestType}</p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-none border border-border/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      Type
-                    </p>
-                    <p className="mt-2 font-medium">{request.requestType}</p>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      Priority
-                    </p>
-                    <p className="mt-2 font-medium">{request.priority}</p>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      Repository
-                    </p>
-                    <p className="mt-2 font-medium">
-                      {targetApp?.name ?? request.targetAppSlug ?? "Unknown"}
-                    </p>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      Environment
-                    </p>
-                    <p className="mt-2 font-medium">
-                      {targetEnvironment?.name ?? "Not assigned"}
-                    </p>
-                  </div>
-                  <div className="rounded-none border border-border/70 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                      Target Branch
-                    </p>
-                    <p className="mt-2 font-medium">
-                      {configuredBaseBranch ?? "Not configured"}
-                    </p>
-                  </div>
+                <div className="rounded-none border border-border/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Priority
+                  </p>
+                  <p className="mt-2 font-medium">{request.priority}</p>
                 </div>
-              </CardContent>
-            </Card>
+                <div className="rounded-none border border-border/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Repository
+                  </p>
+                  <p className="mt-2 font-medium">
+                    {targetApp?.name ?? request.targetAppSlug ?? "Unknown"}
+                  </p>
+                </div>
+                <div className="rounded-none border border-border/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Environment
+                  </p>
+                  <p className="mt-2 font-medium">
+                    {targetEnvironment?.name ?? "Not assigned"}
+                  </p>
+                </div>
+                <div className="rounded-none border border-border/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Target Branch
+                  </p>
+                  <p className="mt-2 font-medium">
+                    {configuredBaseBranch ?? "Not configured"}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-            <Card className="border-border/60 bg-card/90 rounded-none">
-              <CardHeader>
-                <CardTitle>Triage Notes</CardTitle>
-                <CardDescription>
-                  Capture the proposed scope, suggested changes, and the point
-                  where the request is ready to route.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="triage-status">Status</Label>
-                  <Select
-                    value={status}
-                    onValueChange={(value) => {
-                      setStatus(value);
-                      setIsDraftDirty(true);
-                    }}
+          <Card className="border-border/60 bg-card/90 rounded-none">
+            <CardHeader>
+              <CardTitle>Triage Notes</CardTitle>
+              <CardDescription>
+                Capture the proposed scope, suggested changes, and the point
+                where the request is ready to route.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="triage-status">Status</Label>
+                <Select
+                  value={status}
+                  onValueChange={(value) => {
+                    setStatus(value);
+                    setIsDraftDirty(true);
+                  }}
+                >
+                  <SelectTrigger
+                    id="triage-status"
+                    className="border border-input shadow-sm"
                   >
-                    <SelectTrigger
-                      id="triage-status"
-                      className="border border-input shadow-sm"
-                    >
-                      <SelectValue placeholder="Select a status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {triageStatuses.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                    <SelectValue placeholder="Select a status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {triageStatuses.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="triage-summary">Triage Summary</Label>
-                  <Textarea
-                    id="triage-summary"
-                    value={triageSummary}
-                    onChange={(event) => {
-                      setTriageSummary(event.target.value);
-                      setIsDraftDirty(true);
-                    }}
-                    placeholder="Summarize what needs to happen, any sequencing, and review notes."
-                    className="min-h-32"
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="triage-summary">Triage Summary</Label>
+                <Textarea
+                  id="triage-summary"
+                  value={triageSummary}
+                  onChange={(event) => {
+                    setTriageSummary(event.target.value);
+                    setIsDraftDirty(true);
+                  }}
+                  placeholder="Summarize what needs to happen, any sequencing, and review notes."
+                  className="min-h-32"
+                />
+              </div>
 
-                <div className="space-y-2">
-                  <Label
-                    className="flex items-center gap-2"
-                    htmlFor="agent-recommendation"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    Suggested Changes Summary
-                  </Label>
-                  <Textarea
-                    id="agent-recommendation"
-                    value={agentRecommendation}
-                    onChange={(event) => {
-                      setAgentRecommendation(event.target.value);
-                      setIsDraftDirty(true);
-                    }}
-                    placeholder="Short summary of the proposed changes shown on the card and used for routing."
-                    className="min-h-24"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-border/60 bg-card/90 rounded-none">
-              <CardHeader>
-                <CardTitle>Request Thread</CardTitle>
-                <CardDescription>
-                  Comments and agent replies linked to this change request.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {activeExecution ? (
-                  <div className="rounded-none border border-sky-200/70 bg-sky-50/80 p-4 text-sm text-sky-950">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                        <span className="font-medium">Current Run</span>
-                      </div>
-                      <Badge variant="outline">{activeExecution.status}</Badge>
+              <div className="space-y-2">
+                <Label
+                  className="flex items-center gap-2"
+                  htmlFor="agent-recommendation"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Suggested Changes Summary
+                </Label>
+                <Textarea
+                  id="agent-recommendation"
+                  value={agentRecommendation}
+                  onChange={(event) => {
+                    setAgentRecommendation(event.target.value);
+                    setIsDraftDirty(true);
+                  }}
+                  placeholder="Short summary of the proposed changes shown on the card and used for routing."
+                  className="min-h-24"
+                />
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-border/60 bg-card/90 rounded-none">
+            <CardHeader>
+              <CardTitle>Request Thread</CardTitle>
+              <CardDescription>
+                Comments and agent replies linked to this change request.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {activeExecution ? (
+                <div className="rounded-none border border-sky-200/70 bg-sky-50/80 p-4 text-sm text-sky-950">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      <span className="font-medium">Current Run</span>
                     </div>
-                    <div className="mt-3 space-y-2">
-                      <p className="leading-6">{activeExecutionStage}</p>
-                      <div className="grid gap-1 text-xs text-sky-900/75">
-                        {activeExecutionElapsed ? (
-                          <div>Elapsed: {activeExecutionElapsed}</div>
+                    <Badge variant="outline">{activeExecution.status}</Badge>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <p className="leading-6">{activeExecutionStage}</p>
+                    <div className="grid gap-1 text-xs text-sky-900/75">
+                      {activeExecutionElapsed ? (
+                        <div>Elapsed: {activeExecutionElapsed}</div>
+                      ) : null}
+                      {activeExecution.startedAt ? (
+                        <div>
+                          Started: {isoLabel(activeExecution.startedAt)}
+                        </div>
+                      ) : null}
+                      {configuredBaseBranch ? (
+                        <div>Base branch: {configuredBaseBranch}</div>
+                      ) : null}
+                      {activeExecution.branchName ? (
+                        <div>
+                          Branch:{" "}
+                          {activeExecutionBranchUrl ? (
+                            <a
+                              href={activeExecutionBranchUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-medium underline underline-offset-2"
+                            >
+                              {activeExecution.branchName}
+                            </a>
+                          ) : (
+                            activeExecution.branchName
+                          )}
+                        </div>
+                      ) : null}
+                      {activeExecutionPrUrl ? (
+                        <div>
+                          PR:{" "}
+                          <a
+                            href={activeExecutionPrUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium underline underline-offset-2"
+                          >
+                            Open compare / PR
+                          </a>
+                        </div>
+                      ) : null}
+                      {activeExecutionDeployUrl ? (
+                        <div>
+                          Preview:{" "}
+                          <a
+                            href={activeExecutionDeployUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium underline underline-offset-2"
+                          >
+                            {activeExecutionDeployUrl}
+                          </a>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <ScrollArea className="h-[320px] min-h-0 rounded-none border border-border/70 bg-background/70 p-4">
+                <div className="space-y-3">
+                  {threadMessages.length ? (
+                    threadMessages.map((message) => (
+                      <div
+                        key={message.id}
+                        className={`rounded-none px-4 py-3 text-sm leading-6 ${
+                          message.role === "assistant"
+                            ? "border border-border/70 bg-card text-foreground"
+                            : "border border-primary/30 bg-primary/12 text-foreground"
+                        }`}
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-3 text-xs uppercase tracking-[0.16em]">
+                          <Badge
+                            variant={
+                              message.role === "assistant"
+                                ? "outline"
+                                : "secondary"
+                            }
+                          >
+                            {message.source === "site-comment"
+                              ? "comment"
+                              : message.role}
+                          </Badge>
+                          <span
+                            className={
+                              message.role === "assistant"
+                                ? "text-muted-foreground"
+                                : "text-foreground/70"
+                            }
+                          >
+                            {isoLabel(message.createdAt) ?? ""}
+                          </span>
+                        </div>
+                        <p className="whitespace-pre-wrap">{message.content}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                      No comments or agent replies yet for this request.
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+
+              <div className="space-y-2">
+                <Label htmlFor="request-comment">Add Comment</Label>
+                <Textarea
+                  id="request-comment"
+                  value={commentDraft}
+                  onChange={(event) => setCommentDraft(event.target.value)}
+                  placeholder="Leave context, a review note, or a clarification without triggering the agent."
+                  className="min-h-24"
+                />
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleAddComment}
+                    disabled={isCommentPending}
+                  >
+                    {isCommentPending ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : null}
+                    {isCommentPending ? "Saving" : "Add comment"}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Continue Agent</Label>
+                <p className="text-sm text-muted-foreground">
+                  Uses the latest admin comment on this request, plus the
+                  current request status and linked thread history.
+                </p>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={handleContinueAgent}
+                    disabled={isContinuePending}
+                  >
+                    {isContinuePending ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : null}
+                    {isContinuePending ? "Running" : "Continue agent"}
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60 bg-card/90 rounded-none">
+            <CardHeader>
+              <CardTitle>Suggested Changes Details</CardTitle>
+              <CardDescription>
+                Use this scrollable area for fuller triage notes, implementation
+                direction, and what Codex should change.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-none border border-border/70 bg-background/70 p-4">
+                <Textarea
+                  value={agentRecommendation}
+                  onChange={(event) => {
+                    setAgentRecommendation(event.target.value);
+                    setIsDraftDirty(true);
+                  }}
+                  placeholder="List the proposed edits, areas to touch, expected outcome, and anything the agent should avoid."
+                  className="min-h-[420px] max-h-[420px] resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60 bg-card/90 rounded-none">
+            <CardHeader>
+              <CardTitle>Lifecycle</CardTitle>
+              <CardDescription>
+                Current timestamps visible to the board.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="rounded-none border border-border/70 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  Created
+                </p>
+                <p className="mt-2">
+                  {isoLabel(request.createdAt) ?? "Unknown"}
+                </p>
+              </div>
+              <div className="rounded-none border border-border/70 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  Triaged
+                </p>
+                <p className="mt-2">
+                  {isoLabel(request.triagedAt) ?? "Not yet"}
+                </p>
+              </div>
+              <div className="rounded-none border border-border/70 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  Approved For Work
+                </p>
+                <p className="mt-2">
+                  {isoLabel(request.approvedForWorkAt) ?? "Not yet"}
+                </p>
+              </div>
+              <div className="rounded-none border border-border/70 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  Last Updated
+                </p>
+                <p className="mt-2">
+                  {isoLabel(request.updatedAt) ?? "Unknown"}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60 bg-card/90 rounded-none">
+            <CardHeader>
+              <CardTitle>Execution Log</CardTitle>
+              <CardDescription>
+                Recent agent runs, status changes, and failure details for this
+                request.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="max-h-[320px]">
+                <div className="space-y-3">
+                  {executions.length ? (
+                    executions.map((execution) => (
+                      <div
+                        key={execution.id}
+                        className="rounded-none border border-border/70 bg-background/70 p-4 text-sm"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={
+                                execution.status === "completed"
+                                  ? "secondary"
+                                  : execution.status === "running"
+                                    ? "default"
+                                    : "outline"
+                              }
+                            >
+                              {execution.status}
+                            </Badge>
+                            <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                              {execution.actorType}
+                            </span>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {isoLabel(execution.updatedAt) ?? ""}
+                          </span>
+                        </div>
+                        {execution.summary ? (
+                          <p className="mt-3 whitespace-pre-wrap leading-6">
+                            {execution.summary}
+                          </p>
                         ) : null}
-                        {activeExecution.startedAt ? (
-                          <div>
-                            Started: {isoLabel(activeExecution.startedAt)}
+                        {execution.errorMessage ? (
+                          <div className="mt-3 rounded-none border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
+                            {execution.errorMessage}
                           </div>
                         ) : null}
-                        {configuredBaseBranch ? (
-                          <div>Base branch: {configuredBaseBranch}</div>
-                        ) : null}
-                        {activeExecution.branchName ? (
-                          <div>
-                            Branch:{" "}
-                            {activeExecutionBranchUrl ? (
+                        <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+                          {execution.branchName ? (
+                            <div>
+                              Branch:{" "}
+                              {executionBranchUrl(execution) ? (
+                                <a
+                                  href={executionBranchUrl(execution) ?? "#"}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="font-medium underline underline-offset-2"
+                                >
+                                  {execution.branchName}
+                                </a>
+                              ) : (
+                                execution.branchName
+                              )}
+                            </div>
+                          ) : null}
+                          {githubCompareUrl(
+                            targetApp,
+                            (typeof execution.meta?.baseBranch === "string"
+                              ? execution.meta.baseBranch
+                              : null) ?? configuredBaseBranch,
+                            execution.branchName,
+                          ) ? (
+                            <div>
+                              PR:{" "}
                               <a
-                                href={activeExecutionBranchUrl}
+                                href={
+                                  githubCompareUrl(
+                                    targetApp,
+                                    (typeof execution.meta?.baseBranch ===
+                                    "string"
+                                      ? execution.meta.baseBranch
+                                      : null) ?? configuredBaseBranch,
+                                    execution.branchName,
+                                  ) ?? "#"
+                                }
                                 target="_blank"
                                 rel="noreferrer"
                                 className="font-medium underline underline-offset-2"
                               >
-                                {activeExecution.branchName}
+                                Open compare / PR
                               </a>
-                            ) : (
-                              activeExecution.branchName
-                            )}
-                          </div>
-                        ) : null}
-                        {activeExecutionPrUrl ? (
-                          <div>
-                            PR:{" "}
-                            <a
-                              href={activeExecutionPrUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="font-medium underline underline-offset-2"
-                            >
-                              Open compare / PR
-                            </a>
-                          </div>
-                        ) : null}
-                        {activeExecutionDeployUrl ? (
-                          <div>
-                            Preview:{" "}
-                            <a
-                              href={activeExecutionDeployUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="font-medium underline underline-offset-2"
-                            >
-                              {activeExecutionDeployUrl}
-                            </a>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-
-                <ScrollArea className="h-[320px] min-h-0 rounded-none border border-border/70 bg-background/70 p-4">
-                  <div className="space-y-3">
-                    {threadMessages.length ? (
-                      threadMessages.map((message) => (
-                        <div
-                          key={message.id}
-                          className={`rounded-none px-4 py-3 text-sm leading-6 ${
-                            message.role === "assistant"
-                              ? "border border-border/70 bg-card text-foreground"
-                              : "border border-primary/30 bg-primary/12 text-foreground"
-                          }`}
-                        >
-                          <div className="mb-2 flex items-center justify-between gap-3 text-xs uppercase tracking-[0.16em]">
-                            <Badge
-                              variant={
-                                message.role === "assistant"
-                                  ? "outline"
-                                  : "secondary"
-                              }
-                            >
-                              {message.source === "site-comment"
-                                ? "comment"
-                                : message.role}
-                            </Badge>
-                            <span
-                              className={
-                                message.role === "assistant"
-                                  ? "text-muted-foreground"
-                                  : "text-foreground/70"
-                              }
-                            >
-                              {isoLabel(message.createdAt) ?? ""}
-                            </span>
-                          </div>
-                          <p className="whitespace-pre-wrap">
-                            {message.content}
-                          </p>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                        No comments or agent replies yet for this request.
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-
-                <div className="space-y-2">
-                  <Label htmlFor="request-comment">Add Comment</Label>
-                  <Textarea
-                    id="request-comment"
-                    value={commentDraft}
-                    onChange={(event) => setCommentDraft(event.target.value)}
-                    placeholder="Leave context, a review note, or a clarification without triggering the agent."
-                    className="min-h-24"
-                  />
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handleAddComment}
-                      disabled={isCommentPending}
-                    >
-                      {isCommentPending ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : null}
-                      {isCommentPending ? "Saving" : "Add comment"}
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Continue Agent</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Uses the latest admin comment on this request, plus the
-                    current request status and linked thread history.
-                  </p>
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      onClick={handleContinueAgent}
-                      disabled={isContinuePending}
-                    >
-                      {isContinuePending ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : null}
-                      {isContinuePending ? "Running" : "Continue agent"}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/60 bg-card/90 rounded-none">
-              <CardHeader>
-                <CardTitle>Suggested Changes Details</CardTitle>
-                <CardDescription>
-                  Use this scrollable area for fuller triage notes,
-                  implementation direction, and what Codex should change.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="rounded-none border border-border/70 bg-background/70 p-4">
-                  <Textarea
-                    value={agentRecommendation}
-                    onChange={(event) => {
-                      setAgentRecommendation(event.target.value);
-                      setIsDraftDirty(true);
-                    }}
-                    placeholder="List the proposed edits, areas to touch, expected outcome, and anything the agent should avoid."
-                    className="min-h-[420px] max-h-[420px] resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/60 bg-card/90 rounded-none">
-              <CardHeader>
-                <CardTitle>Lifecycle</CardTitle>
-                <CardDescription>
-                  Current timestamps visible to the board.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <div className="rounded-none border border-border/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                    Created
-                  </p>
-                  <p className="mt-2">
-                    {isoLabel(request.createdAt) ?? "Unknown"}
-                  </p>
-                </div>
-                <div className="rounded-none border border-border/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                    Triaged
-                  </p>
-                  <p className="mt-2">
-                    {isoLabel(request.triagedAt) ?? "Not yet"}
-                  </p>
-                </div>
-                <div className="rounded-none border border-border/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                    Approved For Work
-                  </p>
-                  <p className="mt-2">
-                    {isoLabel(request.approvedForWorkAt) ?? "Not yet"}
-                  </p>
-                </div>
-                <div className="rounded-none border border-border/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                    Last Updated
-                  </p>
-                  <p className="mt-2">
-                    {isoLabel(request.updatedAt) ?? "Unknown"}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/60 bg-card/90 rounded-none">
-              <CardHeader>
-                <CardTitle>Execution Log</CardTitle>
-                <CardDescription>
-                  Recent agent runs, status changes, and failure details for
-                  this request.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="max-h-[320px]">
-                  <div className="space-y-3">
-                    {executions.length ? (
-                      executions.map((execution) => (
-                        <div
-                          key={execution.id}
-                          className="rounded-none border border-border/70 bg-background/70 p-4 text-sm"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                              <Badge
-                                variant={
-                                  execution.status === "completed"
-                                    ? "secondary"
-                                    : execution.status === "running"
-                                      ? "default"
-                                      : "outline"
-                                }
-                              >
-                                {execution.status}
-                              </Badge>
-                              <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                                {execution.actorType}
-                              </span>
-                            </div>
-                            <span className="text-xs text-muted-foreground">
-                              {isoLabel(execution.updatedAt) ?? ""}
-                            </span>
-                          </div>
-                          {execution.summary ? (
-                            <p className="mt-3 whitespace-pre-wrap leading-6">
-                              {execution.summary}
-                            </p>
-                          ) : null}
-                          {execution.errorMessage ? (
-                            <div className="mt-3 rounded-none border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
-                              {execution.errorMessage}
                             </div>
                           ) : null}
-                          <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
-                            {execution.branchName ? (
-                              <div>
-                                Branch:{" "}
-                                {executionBranchUrl(execution) ? (
-                                  <a
-                                    href={executionBranchUrl(execution) ?? "#"}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="font-medium underline underline-offset-2"
-                                  >
-                                    {execution.branchName}
-                                  </a>
-                                ) : (
-                                  execution.branchName
-                                )}
-                              </div>
-                            ) : null}
-                            {githubCompareUrl(
-                              targetApp,
-                              (typeof execution.meta?.baseBranch === "string"
-                                ? execution.meta.baseBranch
-                                : null) ?? configuredBaseBranch,
-                              execution.branchName,
-                            ) ? (
-                              <div>
-                                PR:{" "}
-                                <a
-                                  href={
-                                    githubCompareUrl(
-                                      targetApp,
-                                      (typeof execution.meta?.baseBranch ===
-                                      "string"
-                                        ? execution.meta.baseBranch
-                                        : null) ?? configuredBaseBranch,
-                                      execution.branchName,
-                                    ) ?? "#"
-                                  }
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="font-medium underline underline-offset-2"
-                                >
-                                  Open compare / PR
-                                </a>
-                              </div>
-                            ) : null}
-                            {execution.commitSha ? (
-                              <div>Commit: {execution.commitSha}</div>
-                            ) : null}
-                            {executionDeployUrl(
-                              execution,
-                              targetEnvironment,
-                            ) ? (
-                              <div>
-                                Preview:{" "}
-                                <a
-                                  href={
-                                    executionDeployUrl(
-                                      execution,
-                                      targetEnvironment,
-                                    ) ?? "#"
-                                  }
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="font-medium underline underline-offset-2"
-                                >
-                                  {executionDeployUrl(
+                          {execution.commitSha ? (
+                            <div>Commit: {execution.commitSha}</div>
+                          ) : null}
+                          {executionDeployUrl(execution, targetEnvironment) ? (
+                            <div>
+                              Preview:{" "}
+                              <a
+                                href={
+                                  executionDeployUrl(
                                     execution,
                                     targetEnvironment,
-                                  )}
-                                </a>
-                              </div>
-                            ) : null}
-                            {execution.startedAt ? (
-                              <div>
-                                Started: {isoLabel(execution.startedAt)}
-                              </div>
-                            ) : null}
-                            {execution.finishedAt ? (
-                              <div>
-                                Finished: {isoLabel(execution.finishedAt)}
-                              </div>
-                            ) : null}
-                          </div>
-                          {Array.isArray(execution.meta?.runtimeTrace) &&
-                          execution.meta.runtimeTrace.length ? (
-                            <div className="mt-3 rounded-none border border-border/60 bg-muted/30 p-3">
-                              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                                Execution Trace
-                              </div>
-                              <div className="mt-2 max-h-40 space-y-2 overflow-y-auto font-mono text-[11px] leading-5 text-muted-foreground">
-                                {execution.meta.runtimeTrace.map(
-                                  (entry, index) => {
-                                    if (!entry || typeof entry !== "object") {
-                                      return null;
-                                    }
-
-                                    const at =
-                                      typeof entry.at === "string"
-                                        ? entry.at
-                                        : null;
-                                    const kind =
-                                      typeof entry.kind === "string"
-                                        ? entry.kind
-                                        : "runtime";
-                                    const message =
-                                      typeof entry.message === "string"
-                                        ? entry.message
-                                        : "";
-
-                                    if (!message.trim()) {
-                                      return null;
-                                    }
-
-                                    return (
-                                      <div
-                                        key={`${execution.id}-trace-${index}`}
-                                        className="whitespace-pre-wrap"
-                                      >
-                                        [{at ?? "unknown"}] {kind}: {message}
-                                      </div>
-                                    );
-                                  },
+                                  ) ?? "#"
+                                }
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-medium underline underline-offset-2"
+                              >
+                                {executionDeployUrl(
+                                  execution,
+                                  targetEnvironment,
                                 )}
-                              </div>
+                              </a>
+                            </div>
+                          ) : null}
+                          {execution.startedAt ? (
+                            <div>Started: {isoLabel(execution.startedAt)}</div>
+                          ) : null}
+                          {execution.finishedAt ? (
+                            <div>
+                              Finished: {isoLabel(execution.finishedAt)}
                             </div>
                           ) : null}
                         </div>
-                      ))
-                    ) : (
-                      <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                        No execution records yet for this request.
+                        {Array.isArray(execution.meta?.runtimeTrace) &&
+                        execution.meta.runtimeTrace.length ? (
+                          <div className="mt-3 rounded-none border border-border/60 bg-muted/30 p-3">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                              Execution Trace
+                            </div>
+                            <div className="mt-2 max-h-40 space-y-2 overflow-y-auto font-mono text-[11px] leading-5 text-muted-foreground">
+                              {execution.meta.runtimeTrace.map(
+                                (entry, index) => {
+                                  if (!entry || typeof entry !== "object") {
+                                    return null;
+                                  }
+
+                                  const at =
+                                    typeof entry.at === "string"
+                                      ? entry.at
+                                      : null;
+                                  const kind =
+                                    typeof entry.kind === "string"
+                                      ? entry.kind
+                                      : "runtime";
+                                  const message =
+                                    typeof entry.message === "string"
+                                      ? entry.message
+                                      : "";
+
+                                  if (!message.trim()) {
+                                    return null;
+                                  }
+
+                                  return (
+                                    <div
+                                      key={`${execution.id}-trace-${index}`}
+                                      className="whitespace-pre-wrap"
+                                    >
+                                      [{at ?? "unknown"}] {kind}: {message}
+                                    </div>
+                                  );
+                                },
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
-                    )}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
+                    ))
+                  ) : (
+                    <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                      No execution records yet for this request.
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
