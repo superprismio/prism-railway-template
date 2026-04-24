@@ -12,6 +12,7 @@ import {
   LoaderCircle,
   LogOut,
   Rows3,
+  Search,
   Settings,
   ShieldAlert,
   Sparkles,
@@ -89,6 +90,19 @@ function statusVariant(status: string) {
     return "secondary";
   if (status === "closed") return "muted";
   return "outline";
+}
+
+function requestTypeLabel(value: string) {
+  return value
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function parseTimestamp(value: string | null) {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 function environmentForRequest(
@@ -244,6 +258,12 @@ type AgentThreadMessage = {
 type AgentThreadSession = {
   id: string;
 };
+
+type RequestSortValue =
+  | "updated-desc"
+  | "updated-asc"
+  | "number-desc"
+  | "number-asc";
 
 function RequestTaskRow({
   request,
@@ -526,7 +546,7 @@ function ReposWorkspace({
   );
 }
 
-function RequestDetailsModal({
+function RequestDetailsPanel({
   request,
   targetApp,
   targetEnvironment,
@@ -893,37 +913,9 @@ function RequestDetailsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--overlay)] px-4 py-8 backdrop-blur-sm">
-      <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden border border-border/70 bg-background shadow-[0_28px_90px_-42px_rgba(26,31,44,0.7)]">
-        <div className="sticky top-0 z-10 border-b border-border/70 bg-background/95 px-6 py-5 backdrop-blur">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">
-                  Request #{request.requestNumber}
-                </Badge>
-                <Badge variant={priorityVariant(request.priority)}>
-                  {request.priority}
-                </Badge>
-                <Badge variant="muted">{request.status}</Badge>
-              </div>
-              <h2 className="text-2xl font-semibold tracking-tight">
-                {request.title}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {targetApp?.name ?? request.targetAppSlug ?? "Unknown target"}
-                {targetEnvironment ? ` / ${targetEnvironment.name}` : ""}
-              </p>
-            </div>
-            <Button type="button" variant="outline" onClick={onClose}>
-              <X className="h-4 w-4" />
-              Close
-            </Button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="space-y-6">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex-1 p-5 md:p-6">
+        <div className="space-y-6">
             <Card className="border-border/60 bg-card/90 rounded-none">
               <CardHeader>
                 <CardTitle>Request Details</CardTitle>
@@ -1470,35 +1462,34 @@ function RequestDetailsModal({
                 </ScrollArea>
               </CardContent>
             </Card>
-          </div>
         </div>
+      </div>
 
-        <div className="sticky bottom-0 z-10 border-t border-border/70 bg-background/95 px-6 py-4 backdrop-blur">
-          <div className="flex items-center justify-between gap-4">
-            {error || threadError ? (
-              <p className="text-sm text-destructive">{error ?? threadError}</p>
-            ) : isDraftDirty ? (
-              <p className="text-sm text-muted-foreground">Unsaved changes</p>
-            ) : (
-              <div />
-            )}
-            <div className="flex items-center gap-3">
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={() =>
-                  onSave({ status, triageSummary, agentRecommendation })
-                }
-                disabled={isPending}
-              >
-                {isPending ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                ) : null}
-                {isPending ? "Saving" : "Save request"}
-              </Button>
-            </div>
+      <div className="sticky bottom-0 z-10 border-t border-border/70 bg-background/95 px-5 py-4 backdrop-blur md:px-6">
+        <div className="flex items-center justify-between gap-4">
+          {error || threadError ? (
+            <p className="text-sm text-destructive">{error ?? threadError}</p>
+          ) : isDraftDirty ? (
+            <p className="text-sm text-muted-foreground">Unsaved changes</p>
+          ) : (
+            <div />
+          )}
+          <div className="flex items-center gap-3">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Close
+            </Button>
+            <Button
+              type="button"
+              onClick={() =>
+                onSave({ status, triageSummary, agentRecommendation })
+              }
+              disabled={isPending}
+            >
+              {isPending ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : null}
+              {isPending ? "Saving" : "Save request"}
+            </Button>
           </div>
         </div>
       </div>
@@ -1512,6 +1503,12 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
     null,
   );
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [repositoryFilter, setRepositoryFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortValue, setSortValue] =
+    useState<RequestSortValue>("updated-desc");
   const [isSaving, startSaving] = useTransition();
   const [modalError, setModalError] = useState<string | null>(null);
 
@@ -1558,6 +1555,20 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
       data.changeRequests.find((request) => request.id === selectedRequestId) ??
       null,
     [data.changeRequests, selectedRequestId],
+  );
+  const selectedTargetApp = selectedRequest
+    ? targetAppForRequest(selectedRequest, data.targetApps)
+    : null;
+  const selectedTargetEnvironment = selectedRequest
+    ? environmentForRequest(selectedRequest, data.targetEnvironments)
+    : null;
+
+  const requestTypeOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(data.changeRequests.map((request) => request.requestType)),
+      ).sort((left, right) => left.localeCompare(right)),
+    [data.changeRequests],
   );
 
   async function refreshOnce() {
@@ -1616,16 +1627,62 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
   }
 
   const taskList = useMemo(
-    () =>
-      [...data.changeRequests].sort((left, right) => {
-        const leftUpdated = new Date(left.updatedAt).getTime();
-        const rightUpdated = new Date(right.updatedAt).getTime();
-        return (
-          (Number.isNaN(rightUpdated) ? 0 : rightUpdated) -
-          (Number.isNaN(leftUpdated) ? 0 : leftUpdated)
-        );
-      }),
-    [data.changeRequests],
+    () => {
+      const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
+
+      return data.changeRequests
+        .filter((request) => {
+          if (statusFilter !== "all" && request.status !== statusFilter) {
+            return false;
+          }
+
+          if (typeFilter !== "all" && request.requestType !== typeFilter) {
+            return false;
+          }
+
+          if (
+            repositoryFilter !== "all" &&
+            request.targetAppId !== repositoryFilter
+          ) {
+            return false;
+          }
+
+          if (
+            normalizedSearch &&
+            !request.title.toLocaleLowerCase().includes(normalizedSearch)
+          ) {
+            return false;
+          }
+
+          return true;
+        })
+        .sort((left, right) => {
+          if (sortValue === "number-desc") {
+            return right.requestNumber - left.requestNumber;
+          }
+
+          if (sortValue === "number-asc") {
+            return left.requestNumber - right.requestNumber;
+          }
+
+          const leftUpdated = parseTimestamp(left.updatedAt);
+          const rightUpdated = parseTimestamp(right.updatedAt);
+
+          if (sortValue === "updated-asc") {
+            return leftUpdated - rightUpdated;
+          }
+
+          return rightUpdated - leftUpdated;
+        });
+    },
+    [
+      data.changeRequests,
+      repositoryFilter,
+      searchQuery,
+      sortValue,
+      statusFilter,
+      typeFilter,
+    ],
   );
 
   return (
@@ -1692,50 +1749,222 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
           <section className="grid min-h-full gap-0 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="border-b border-border/60 xl:border-b-0 xl:border-r">
               <div className="flex items-center justify-between gap-4 border-b border-border/60 px-5 py-4 md:px-6">
-                <div>
+                <div className="min-w-0">
                   <h1 className="text-2xl font-semibold tracking-tight">
-                    Change Requests
+                    {selectedRequest
+                      ? `#${selectedRequest.requestNumber} ${selectedRequest.title}`
+                      : "Change Requests"}
                   </h1>
-                  <p className="text-sm text-muted-foreground">
-                    Open a request to review context, comments, execution
-                    history, and agent controls.
-                  </p>
-                </div>
-                <Button type="button" onClick={() => setIsNewRequestOpen(true)}>
-                  <FilePlus className="h-4 w-4" />
-                  Add Change Request
-                </Button>
-              </div>
-
-              <div className="hidden border-b border-border/60 bg-muted/30 px-5 py-3 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground md:grid md:grid-cols-[84px_minmax(0,1fr)_180px_150px_140px] md:gap-4 md:px-6">
-                <span>Number</span>
-                <span>Request</span>
-                <span>Repository</span>
-                <span>Agent</span>
-                <span>Updated</span>
-              </div>
-
-              <ScrollArea className="h-[calc(100vh-190px)]">
-                <div className="space-y-3 px-5 py-4 md:px-6">
-                  {taskList.length ? (
-                    taskList.map((request) => (
-                      <RequestTaskRow
-                        key={request.id}
-                        request={request}
-                        targetApps={data.targetApps}
-                        targetEnvironments={data.targetEnvironments}
-                        onOpen={(nextRequest) =>
-                          setSelectedRequestId(nextRequest.id)
-                        }
-                      />
-                    ))
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-                      No change requests yet.
+                  {selectedRequest ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Badge variant={statusVariant(selectedRequest.status)}>
+                        {statusLabel(selectedRequest.status)}
+                      </Badge>
+                      <Badge variant={priorityVariant(selectedRequest.priority)}>
+                        {selectedRequest.priority}
+                      </Badge>
+                      <Badge variant="outline">
+                        {requestTypeLabel(selectedRequest.requestType)}
+                      </Badge>
+                      <span className="text-sm text-muted-foreground">
+                        {selectedTargetApp?.name ??
+                          selectedRequest.targetAppSlug ??
+                          "Unknown target"}
+                        {selectedTargetEnvironment
+                          ? ` / ${selectedTargetEnvironment.name}`
+                          : ""}
+                      </span>
                     </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Open a request to review context, comments, execution
+                      history, and agent controls.
+                    </p>
                   )}
                 </div>
-              </ScrollArea>
+                {selectedRequest ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedRequestId(null);
+                      setModalError(null);
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                    Close
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    onClick={() => setIsNewRequestOpen(true)}
+                  >
+                    <FilePlus className="h-4 w-4" />
+                    Add Change Request
+                  </Button>
+                )}
+              </div>
+
+              {selectedRequest ? (
+                <ScrollArea className="h-[calc(100vh-190px)]">
+                  <RequestDetailsPanel
+                    request={selectedRequest}
+                    targetApp={selectedTargetApp}
+                    targetEnvironment={selectedTargetEnvironment}
+                    isPending={isSaving}
+                    error={modalError}
+                    onClose={() => {
+                      setSelectedRequestId(null);
+                      setModalError(null);
+                    }}
+                    onSave={handleSaveTriage}
+                  />
+                </ScrollArea>
+              ) : (
+                <>
+                  <div className="border-b border-border/60 bg-background px-5 py-4 md:px-6">
+                    <div className="grid gap-3 lg:grid-cols-[minmax(220px,1fr)_160px_160px_180px_170px]">
+                      <div className="space-y-2">
+                        <Label htmlFor="request-search">Search</Label>
+                        <div className="relative">
+                          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="request-search"
+                            value={searchQuery}
+                            onChange={(event) =>
+                              setSearchQuery(event.target.value)
+                            }
+                            placeholder="Search titles"
+                            className="pl-9"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Status</Label>
+                        <Select
+                          value={statusFilter}
+                          onValueChange={setStatusFilter}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="All statuses" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All statuses</SelectItem>
+                            {triageStatuses.map((option) => (
+                              <SelectItem
+                                key={option.value}
+                                value={option.value}
+                              >
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Type</Label>
+                        <Select value={typeFilter} onValueChange={setTypeFilter}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="All types" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All types</SelectItem>
+                            {requestTypeOptions.map((requestType) => (
+                              <SelectItem key={requestType} value={requestType}>
+                                {requestTypeLabel(requestType)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Repository</Label>
+                        <Select
+                          value={repositoryFilter}
+                          onValueChange={setRepositoryFilter}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="All repositories" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All repositories</SelectItem>
+                            {data.targetApps.map((targetApp) => (
+                              <SelectItem
+                                key={targetApp.id}
+                                value={targetApp.id}
+                              >
+                                {targetApp.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Sort</Label>
+                        <Select
+                          value={sortValue}
+                          onValueChange={(value) =>
+                            setSortValue(value as RequestSortValue)
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sort by" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="updated-desc">
+                              Updated, newest
+                            </SelectItem>
+                            <SelectItem value="updated-asc">
+                              Updated, oldest
+                            </SelectItem>
+                            <SelectItem value="number-desc">
+                              Number, highest
+                            </SelectItem>
+                            <SelectItem value="number-asc">
+                              Number, lowest
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="hidden border-b border-border/60 bg-muted/30 px-5 py-3 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground md:grid md:grid-cols-[84px_minmax(0,1fr)_180px_150px_140px] md:gap-4 md:px-6">
+                    <span>Number</span>
+                    <span>Request</span>
+                    <span>Repository</span>
+                    <span>Agent</span>
+                    <span>Updated</span>
+                  </div>
+
+                  <ScrollArea className="h-[calc(100vh-290px)]">
+                    <div className="space-y-3 px-5 py-4 md:px-6">
+                      {taskList.length ? (
+                        taskList.map((request) => (
+                          <RequestTaskRow
+                            key={request.id}
+                            request={request}
+                            targetApps={data.targetApps}
+                            targetEnvironments={data.targetEnvironments}
+                            onOpen={(nextRequest) => {
+                              setSelectedRequestId(nextRequest.id);
+                              setModalError(null);
+                            }}
+                          />
+                        ))
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+                          No change requests match the current filters.
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </>
+              )}
             </div>
 
             <aside className="flex flex-col bg-card/30">
@@ -1821,23 +2050,6 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
         targetApps={data.targetApps}
       />
 
-      {selectedRequest ? (
-        <RequestDetailsModal
-          request={selectedRequest}
-          targetApp={targetAppForRequest(selectedRequest, data.targetApps)}
-          targetEnvironment={environmentForRequest(
-            selectedRequest,
-            data.targetEnvironments,
-          )}
-          isPending={isSaving}
-          error={modalError}
-          onClose={() => {
-            setSelectedRequestId(null);
-            setModalError(null);
-          }}
-          onSave={handleSaveTriage}
-        />
-      ) : null}
     </main>
   );
 }
