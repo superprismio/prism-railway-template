@@ -95,12 +95,6 @@ export type ChangeRequestExecutionRecord = {
   finishedAt: string | null
 }
 
-export type AdminBoardData = {
-  targetApps: TargetAppRecord[]
-  targetEnvironments: TargetEnvironmentRecord[]
-  changeRequests: ChangeRequestRecord[]
-}
-
 export type AdminSetupStatus = {
   prismMemory: {
     configured: boolean
@@ -126,7 +120,13 @@ export type AdminSetupStatus = {
   }
 }
 
-export type AdminSettingsData = AdminBoardData & {
+export type AdminBoardData = {
+  targetApps: TargetAppRecord[]
+  targetEnvironments: TargetEnvironmentRecord[]
+  changeRequests: ChangeRequestRecord[]
+}
+
+export type AdminWorkspaceData = AdminBoardData & {
   setup: AdminSetupStatus
 }
 
@@ -173,7 +173,11 @@ export async function getAdminBoardData(): Promise<
       return { ok: false, reason: "unauthorized" }
     }
 
-    if (!targetAppsResponse.ok || !targetEnvironmentsResponse.ok || !changeRequestsResponse.ok) {
+    if (
+      !targetAppsResponse.ok ||
+      !targetEnvironmentsResponse.ok ||
+      !changeRequestsResponse.ok
+    ) {
       return { ok: false, reason: "error" }
     }
 
@@ -196,8 +200,8 @@ export async function getAdminBoardData(): Promise<
   }
 }
 
-export async function getAdminSettingsData(): Promise<
-  { ok: true; data: AdminSettingsData } | { ok: false; reason: "missing-password" | "unauthorized" | "error" }
+export async function getAdminWorkspaceData(): Promise<
+  { ok: true; data: AdminWorkspaceData } | { ok: false; reason: "missing-password" | "unauthorized" | "error" }
 > {
   const password = await getAdminPasswordCookie()
   if (!password) {
@@ -205,32 +209,31 @@ export async function getAdminSettingsData(): Promise<
   }
 
   try {
-    const [targetAppsResponse, targetEnvironmentsResponse, setupResponse] = await Promise.all([
-      adminFetch("/api/admin/target-apps"),
-      adminFetch("/api/admin/target-environments"),
+    const [board, setupResponse] = await Promise.all([
+      getAdminBoardData(),
       adminFetch("/api/admin/setup/status"),
     ])
 
-    if (targetAppsResponse.status === 401 || targetEnvironmentsResponse.status === 401 || setupResponse.status === 401) {
+    if (!board.ok) {
+      return board
+    }
+
+    if (setupResponse.status === 401) {
       return { ok: false, reason: "unauthorized" }
     }
 
-    if (!targetAppsResponse.ok || !targetEnvironmentsResponse.ok || !setupResponse.ok) {
+    if (!setupResponse.ok) {
       return { ok: false, reason: "error" }
     }
 
-    const [targetAppsJson, targetEnvironmentsJson, setupJson] = await Promise.all([
-      targetAppsResponse.json() as Promise<{ targetApps: TargetAppRecord[] }>,
-      targetEnvironmentsResponse.json() as Promise<{ targetEnvironments: TargetEnvironmentRecord[] }>,
-      setupResponse.json() as Promise<{ setup: AdminSetupStatus }>,
-    ])
+    const setupJson = (await setupResponse.json()) as {
+      setup: AdminSetupStatus
+    }
 
     return {
       ok: true,
       data: {
-        targetApps: targetAppsJson.targetApps,
-        targetEnvironments: targetEnvironmentsJson.targetEnvironments,
-        changeRequests: [],
+        ...board.data,
         setup: setupJson.setup,
       },
     }

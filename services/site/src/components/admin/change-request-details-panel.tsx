@@ -409,7 +409,6 @@ export function RequestDetailsPanel({
   targetEnvironment,
   isPending,
   error,
-  onClose,
   onSave,
 }: {
   request: ChangeRequestRecord;
@@ -417,7 +416,6 @@ export function RequestDetailsPanel({
   targetEnvironment: TargetEnvironmentRecord | null;
   isPending: boolean;
   error: string | null;
-  onClose: () => void;
   onSave: (payload: {
     status: string;
     triageSummary: string;
@@ -935,6 +933,15 @@ export function RequestDetailsPanel({
             onRequestChanges={handleRequestChanges}
             onCloseRequest={handleCloseRequest}
           />
+          {error || threadError ? (
+            <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {error ?? threadError}
+            </div>
+          ) : isDraftDirty ? (
+            <div className="rounded-none border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+              Unsaved changes
+            </div>
+          ) : null}
           <Tabs defaultValue="details" className="space-y-4">
             <TabsList className="h-auto flex-wrap rounded-none bg-muted/50 p-1">
               <TabsTrigger value="details">Details</TabsTrigger>
@@ -1188,25 +1195,6 @@ export function RequestDetailsPanel({
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>Continue Agent</Label>
-                <p className="text-sm text-muted-foreground">
-                  Uses the latest admin comment on this request, plus the
-                  current request status and linked thread history.
-                </p>
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    onClick={handleContinueAgent}
-                    disabled={isContinuePending}
-                  >
-                    {isContinuePending ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    {isContinuePending ? "Running" : "Continue agent"}
-                  </Button>
-                </div>
-              </div>
             </CardContent>
           </Card>
             </TabsContent>
@@ -1247,6 +1235,26 @@ export function RequestDetailsPanel({
                       <LoaderCircle className="h-4 w-4 animate-spin" />
                     ) : null}
                     Save status
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2 rounded-none border border-border/70 p-4">
+                <Label>Continue Agent</Label>
+                <p className="text-sm text-muted-foreground">
+                  Uses the latest admin comment on this request, plus the
+                  current request status and linked thread history.
+                </p>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={handleContinueAgent}
+                    disabled={isContinuePending}
+                  >
+                    {isContinuePending ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : null}
+                    {isContinuePending ? "Running" : "Continue agent"}
                   </Button>
                 </div>
               </div>
@@ -1326,7 +1334,7 @@ export function RequestDetailsPanel({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ScrollArea className="max-h-[320px]">
+              <ScrollArea className="h-[420px] max-h-[calc(100vh-430px)] min-h-[240px]">
                 <div className="space-y-3">
                   {executions.length ? (
                     executions.map((execution) => (
@@ -1503,22 +1511,6 @@ export function RequestDetailsPanel({
         </div>
       </div>
 
-      <div className="sticky bottom-0 z-10 border-t border-border/70 bg-background/95 px-5 py-4 backdrop-blur md:px-6">
-        <div className="flex items-center justify-between gap-4">
-          {error || threadError ? (
-            <p className="text-sm text-destructive">{error ?? threadError}</p>
-          ) : isDraftDirty ? (
-            <p className="text-sm text-muted-foreground">Unsaved changes</p>
-          ) : (
-            <div />
-          )}
-          <div className="flex items-center gap-3">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Close
-            </Button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

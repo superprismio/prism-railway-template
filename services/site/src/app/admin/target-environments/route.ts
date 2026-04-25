@@ -36,8 +36,8 @@ export async function POST(request: Request) {
   })
 
   if (response.status === 401) {
-    redirect("/admin/settings?error=unauthorized")
+    redirect("/admin?tab=settings&error=unauthorized")
   }
 
-  redirect("/admin/settings")
+  redirect("/admin?tab=settings")
 }
