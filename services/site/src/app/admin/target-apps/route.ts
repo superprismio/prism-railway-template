@@ -41,18 +41,18 @@ export async function POST(request: Request) {
   })
 
   if (response.status === 401) {
-    redirect("/admin/settings?error=unauthorized")
+    redirect("/admin?tab=settings&error=unauthorized")
   }
 
   if (!response.ok) {
-    redirect("/admin/settings?error=target-app")
+    redirect("/admin?tab=settings&error=target-app")
   }
 
   const payload = (await response.json()) as { targetApp?: { id?: string } }
   const targetAppId = payload.targetApp?.id
 
   if (!targetAppId) {
-    redirect("/admin/settings?error=target-app")
+    redirect("/admin?tab=settings&error=target-app")
   }
 
   const environmentResponse = await adminFetch("/api/admin/target-environments", {
@@ -76,12 +76,12 @@ export async function POST(request: Request) {
   })
 
   if (environmentResponse.status === 401) {
-    redirect("/admin/settings?error=unauthorized")
+    redirect("/admin?tab=settings&error=unauthorized")
   }
 
   if (!environmentResponse.ok) {
-    redirect("/admin/settings?error=target-environment")
+    redirect("/admin?tab=settings&error=target-environment")
   }
 
-  redirect("/admin/settings")
+  redirect("/admin?tab=settings")
 }

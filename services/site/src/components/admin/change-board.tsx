@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   BotMessageSquare,
   FilePlus,
-  GitGraph,
   LogOut,
   Rows3,
   Settings,
@@ -12,16 +11,16 @@ import {
 } from "lucide-react";
 
 import { AdminHeader } from "@/components/admin/admin-header";
+import { AdminSettingsWorkspace } from "@/components/admin/admin-settings-workspace";
 import { ChangeRequestList } from "@/components/admin/change-request-list";
 import { RequestDetailsPanel } from "@/components/admin/change-request-details-panel";
 import { CodexConsole } from "@/components/admin/codex-console";
 import { NewChangeRequestDialog } from "@/components/admin/new-change-request-dialog";
-import { ReposWorkspace } from "@/components/admin/repos-workspace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { AdminBoardData } from "@/lib/admin";
+import type { AdminBoardData, AdminWorkspaceData } from "@/lib/admin";
 
 import {
   environmentForRequest,
@@ -34,7 +33,15 @@ import {
   type RequestSortValue,
 } from "./change-request-utils";
 
-export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
+const workspaceTabs = ["change-requests", "codex-console", "settings"];
+
+export function ChangeBoard({
+  data: initialData,
+  initialTab,
+}: {
+  data: AdminWorkspaceData;
+  initialTab?: string;
+}) {
   const [data, setData] = useState(initialData);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(
     null,
@@ -44,8 +51,7 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
   const [typeFilter, setTypeFilter] = useState("all");
   const [repositoryFilter, setRepositoryFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortValue, setSortValue] =
-    useState<RequestSortValue>("updated-desc");
+  const [sortValue, setSortValue] = useState<RequestSortValue>("updated-desc");
   const [isSaving, startSaving] = useTransition();
   const [modalError, setModalError] = useState<string | null>(null);
 
@@ -64,7 +70,10 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
           data: AdminBoardData;
         };
         if (!cancelled && payload.ok) {
-          setData(payload.data);
+          setData((current) => ({
+            ...payload.data,
+            setup: current.setup,
+          }));
         }
       } catch {
         // Leave the current board state in place and try again on the next interval.
@@ -122,7 +131,10 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
       throw new Error("Board refresh failed");
     }
 
-    setData(payload.data);
+    setData((current) => ({
+      ...payload.data,
+      setup: current.setup,
+    }));
   }
 
   function handleSaveTriage(payload: {
@@ -163,64 +175,65 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
     });
   }
 
-  const taskList = useMemo(
-    () => {
-      const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
+  const taskList = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLocaleLowerCase();
 
-      return data.changeRequests
-        .filter((request) => {
-          if (statusFilter !== "all" && request.status !== statusFilter) {
-            return false;
-          }
+    return data.changeRequests
+      .filter((request) => {
+        if (statusFilter !== "all" && request.status !== statusFilter) {
+          return false;
+        }
 
-          if (typeFilter !== "all" && request.requestType !== typeFilter) {
-            return false;
-          }
+        if (typeFilter !== "all" && request.requestType !== typeFilter) {
+          return false;
+        }
 
-          if (
-            repositoryFilter !== "all" &&
-            request.targetAppId !== repositoryFilter
-          ) {
-            return false;
-          }
+        if (
+          repositoryFilter !== "all" &&
+          request.targetAppId !== repositoryFilter
+        ) {
+          return false;
+        }
 
-          if (
-            normalizedSearch &&
-            !request.title.toLocaleLowerCase().includes(normalizedSearch)
-          ) {
-            return false;
-          }
+        if (
+          normalizedSearch &&
+          !request.title.toLocaleLowerCase().includes(normalizedSearch)
+        ) {
+          return false;
+        }
 
-          return true;
-        })
-        .sort((left, right) => {
-          if (sortValue === "number-desc") {
-            return right.requestNumber - left.requestNumber;
-          }
+        return true;
+      })
+      .sort((left, right) => {
+        if (sortValue === "number-desc") {
+          return right.requestNumber - left.requestNumber;
+        }
 
-          if (sortValue === "number-asc") {
-            return left.requestNumber - right.requestNumber;
-          }
+        if (sortValue === "number-asc") {
+          return left.requestNumber - right.requestNumber;
+        }
 
-          const leftUpdated = parseTimestamp(left.updatedAt);
-          const rightUpdated = parseTimestamp(right.updatedAt);
+        const leftUpdated = parseTimestamp(left.updatedAt);
+        const rightUpdated = parseTimestamp(right.updatedAt);
 
-          if (sortValue === "updated-asc") {
-            return leftUpdated - rightUpdated;
-          }
+        if (sortValue === "updated-asc") {
+          return leftUpdated - rightUpdated;
+        }
 
-          return rightUpdated - leftUpdated;
-        });
-    },
-    [
-      data.changeRequests,
-      repositoryFilter,
-      searchQuery,
-      sortValue,
-      statusFilter,
-      typeFilter,
-    ],
-  );
+        return rightUpdated - leftUpdated;
+      });
+  }, [
+    data.changeRequests,
+    repositoryFilter,
+    searchQuery,
+    sortValue,
+    statusFilter,
+    typeFilter,
+  ]);
+  const defaultTab =
+    initialTab && workspaceTabs.includes(initialTab)
+      ? initialTab
+      : "change-requests";
 
   return (
     <main className="min-h-screen w-full bg-background text-foreground">
@@ -230,12 +243,6 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
             <Button type="button" onClick={() => setIsNewRequestOpen(true)}>
               <FilePlus className="h-4 w-4" />
               <span className="hidden sm:inline">Add Change Request</span>
-            </Button>
-            <Button asChild variant="outline">
-              <a href="/admin/settings">
-                <Settings className="h-4 w-4" />
-                <span className="hidden sm:inline">Settings</span>
-              </a>
             </Button>
             <form action="/admin/logout" method="post">
               <Button variant="outline" type="submit">
@@ -248,7 +255,7 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
       />
 
       <Tabs
-        defaultValue="change-requests"
+        defaultValue={defaultTab}
         className="flex min-h-[calc(100vh-65px)] flex-col"
       >
         <div className="sticky top-16 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
@@ -269,14 +276,14 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                 className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
               >
                 <BotMessageSquare className="h-4 w-4 md:hidden" />
-                <span className="hidden md:inline">Codex Console</span>
+                <span className="hidden md:inline">Prism Console</span>
               </TabsTrigger>
               <TabsTrigger
-                value="snapshot"
+                value="settings"
                 className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
               >
-                <GitGraph className="h-4 w-4 md:hidden" />
-                <span className="hidden md:inline">Repos</span>
+                <Settings className="h-4 w-4 md:hidden" />
+                <span className="hidden md:inline">Settings</span>
               </TabsTrigger>
             </TabsList>
           </div>
@@ -305,7 +312,9 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                       <Badge variant={statusVariant(selectedRequest.status)}>
                         {statusLabel(selectedRequest.status)}
                       </Badge>
-                      <Badge variant={priorityVariant(selectedRequest.priority)}>
+                      <Badge
+                        variant={priorityVariant(selectedRequest.priority)}
+                      >
                         {selectedRequest.priority}
                       </Badge>
                       <Badge variant="outline">
@@ -358,10 +367,6 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                     targetEnvironment={selectedTargetEnvironment}
                     isPending={isSaving}
                     error={modalError}
-                    onClose={() => {
-                      setSelectedRequestId(null);
-                      setModalError(null);
-                    }}
                     onSave={handleSaveTriage}
                   />
                 </ScrollArea>
@@ -402,17 +407,13 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
                     <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                       Active
                     </p>
-                    <p className="mt-2 text-3xl font-semibold">
-                      {activeCount}
-                    </p>
+                    <p className="mt-2 text-3xl font-semibold">{activeCount}</p>
                   </div>
                   <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
                     <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                       Closed
                     </p>
-                    <p className="mt-2 text-3xl font-semibold">
-                      {closedCount}
-                    </p>
+                    <p className="mt-2 text-3xl font-semibold">{closedCount}</p>
                   </div>
                   <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
                     <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
@@ -440,10 +441,10 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
           <section className="min-h-full">
             <div className="border-b border-border/60 px-5 py-4 md:px-6">
               <h1 className="text-2xl font-semibold tracking-tight">
-                Codex Console
+                Prism Console
               </h1>
               <p className="text-sm text-muted-foreground">
-                Work directly with Codex on request context, review state, and
+                Work directly with Prism on request context, review state, and
                 implementation planning.
               </p>
             </div>
@@ -452,21 +453,21 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
           </section>
         </TabsContent>
 
-        <TabsContent value="snapshot" className="mt-0 flex-1">
+        <TabsContent value="settings" className="mt-0 flex-1">
           <section className="min-h-full">
             <div className="border-b border-border/60 px-5 py-4 md:px-6">
-              <h1 className="text-2xl font-semibold tracking-tight">Repos</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Settings
+              </h1>
               <p className="text-sm text-muted-foreground">
-                Review repository targets, writable environments, and the
-                current board footprint.
+                Configure Prism without moving secrets into the app.
               </p>
             </div>
 
-            <ReposWorkspace
+            <AdminSettingsWorkspace
+              setup={data.setup}
               targetApps={data.targetApps}
               targetEnvironments={data.targetEnvironments}
-              activeCount={activeCount}
-              closedCount={closedCount}
             />
           </section>
         </TabsContent>
