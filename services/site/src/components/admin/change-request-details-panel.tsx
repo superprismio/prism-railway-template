@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type {
   ChangeRequestExecutionRecord,
@@ -432,6 +433,10 @@ export function RequestDetailsPanel({
   const [agentRecommendation, setAgentRecommendation] = useState(
     request.agentRecommendation ?? "",
   );
+  const [manualStatus, setManualStatus] = useState(request.status);
+  const [manualAgentRecommendation, setManualAgentRecommendation] = useState(
+    request.agentRecommendation ?? "",
+  );
   const [threadSession, setThreadSession] = useState<AgentThreadSession | null>(
     null,
   );
@@ -453,6 +458,8 @@ export function RequestDetailsPanel({
     setStatus(request.status);
     setTriageSummary(request.triageSummary ?? "");
     setAgentRecommendation(request.agentRecommendation ?? "");
+    setManualStatus(request.status);
+    setManualAgentRecommendation(request.agentRecommendation ?? "");
     setIsDraftDirty(false);
   }, [request.id, request.updatedAt]);
 
@@ -600,6 +607,32 @@ export function RequestDetailsPanel({
       : null) ?? configuredBaseBranch,
     reviewExecution?.branchName ?? null,
   );
+  const lifecycleEvents = useMemo(
+    () =>
+      [
+        { label: "Last Updated", value: request.updatedAt },
+        { label: "Closed", value: request.closedAt },
+        { label: "Completed", value: request.completedAt },
+        { label: "Approved For Work", value: request.approvedForWorkAt },
+        { label: "Triaged", value: request.triagedAt },
+        { label: "Created", value: request.createdAt },
+      ].sort((left, right) => {
+        const leftTime = left.value ? new Date(left.value).getTime() : 0;
+        const rightTime = right.value ? new Date(right.value).getTime() : 0;
+        return (
+          (Number.isNaN(rightTime) ? 0 : rightTime) -
+          (Number.isNaN(leftTime) ? 0 : leftTime)
+        );
+      }),
+    [
+      request.approvedForWorkAt,
+      request.closedAt,
+      request.completedAt,
+      request.createdAt,
+      request.triagedAt,
+      request.updatedAt,
+    ],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -740,6 +773,7 @@ export function RequestDetailsPanel({
 
   function saveRequestState(nextStatus: string) {
     setStatus(nextStatus);
+    setManualStatus(nextStatus);
     setIsDraftDirty(false);
     onSave({ status: nextStatus, triageSummary, agentRecommendation });
   }
@@ -866,6 +900,22 @@ export function RequestDetailsPanel({
     saveRequestState("closed");
   }
 
+  function handleSaveManualStatus() {
+    setStatus(manualStatus);
+    setIsDraftDirty(false);
+    onSave({ status: manualStatus, triageSummary, agentRecommendation });
+  }
+
+  function handleSaveSuggestedChanges() {
+    setAgentRecommendation(manualAgentRecommendation);
+    setIsDraftDirty(false);
+    onSave({
+      status,
+      triageSummary,
+      agentRecommendation: manualAgentRecommendation,
+    });
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 p-5 md:p-6">
@@ -885,7 +935,17 @@ export function RequestDetailsPanel({
             onRequestChanges={handleRequestChanges}
             onCloseRequest={handleCloseRequest}
           />
-          <Card className="border-border/60 bg-card/90 rounded-none">
+          <Tabs defaultValue="details" className="space-y-4">
+            <TabsList className="h-auto flex-wrap rounded-none bg-muted/50 p-1">
+              <TabsTrigger value="details">Details</TabsTrigger>
+              <TabsTrigger value="comments">Comments</TabsTrigger>
+              <TabsTrigger value="history">History</TabsTrigger>
+              <TabsTrigger value="log">Log</TabsTrigger>
+              <TabsTrigger value="advanced">Advanced</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="details" className="mt-0 space-y-4">
+              <Card className="border-border/60 bg-card/90 rounded-none">
             <CardHeader>
               <CardTitle>Request Details</CardTitle>
               <CardDescription>
@@ -942,72 +1002,45 @@ export function RequestDetailsPanel({
             <CardHeader>
               <CardTitle>Triage Notes</CardTitle>
               <CardDescription>
-                Capture the proposed scope, suggested changes, and the point
-                where the request is ready to route.
+                Proposed scope, suggested changes, and routing context.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="triage-status">Status</Label>
-                <Select
-                  value={status}
-                  onValueChange={(value) => {
-                    setStatus(value);
-                    setIsDraftDirty(true);
-                  }}
-                >
-                  <SelectTrigger
-                    id="triage-status"
-                    className="border border-input shadow-sm"
-                  >
-                    <SelectValue placeholder="Select a status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {triageStatuses.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="triage-summary">Triage Summary</Label>
-                <Textarea
-                  id="triage-summary"
-                  value={triageSummary}
-                  onChange={(event) => {
-                    setTriageSummary(event.target.value);
-                    setIsDraftDirty(true);
-                  }}
-                  placeholder="Summarize what needs to happen, any sequencing, and review notes."
-                  className="min-h-32"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label
-                  className="flex items-center gap-2"
-                  htmlFor="agent-recommendation"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Suggested Changes Summary
-                </Label>
-                <Textarea
-                  id="agent-recommendation"
-                  value={agentRecommendation}
-                  onChange={(event) => {
-                    setAgentRecommendation(event.target.value);
-                    setIsDraftDirty(true);
-                  }}
-                  placeholder="Short summary of the proposed changes shown on the card and used for routing."
-                  className="min-h-24"
-                />
-              </div>
+              {triageSummary || agentRecommendation ? (
+                <>
+                  {triageSummary ? (
+                    <div className="rounded-none border border-border/70 p-4">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        Triage Summary
+                      </p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+                        {triageSummary}
+                      </p>
+                    </div>
+                  ) : null}
+                  {agentRecommendation ? (
+                    <div className="rounded-none border border-border/70 p-4">
+                      <p className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        <Sparkles className="h-4 w-4" />
+                        Suggested Changes Summary
+                      </p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+                        {agentRecommendation}
+                      </p>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                  No triage notes yet.
+                </div>
+              )}
             </CardContent>
           </Card>
-          <Card className="border-border/60 bg-card/90 rounded-none">
+            </TabsContent>
+
+            <TabsContent value="comments" className="mt-0">
+              <Card className="border-border/60 bg-card/90 rounded-none">
             <CardHeader>
               <CardTitle>Request Thread</CardTitle>
               <CardDescription>
@@ -1176,74 +1209,115 @@ export function RequestDetailsPanel({
               </div>
             </CardContent>
           </Card>
+            </TabsContent>
 
-          <Card className="border-border/60 bg-card/90 rounded-none">
+            <TabsContent value="advanced" className="mt-0">
+              <Card className="border-border/60 bg-card/90 rounded-none">
             <CardHeader>
-              <CardTitle>Suggested Changes Details</CardTitle>
+              <CardTitle>Advanced</CardTitle>
               <CardDescription>
-                Use this scrollable area for fuller triage notes, implementation
-                direction, and what Codex should change.
+                Manual status and suggested-change updates.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="rounded-none border border-border/70 bg-background/70 p-4">
-                <Textarea
-                  value={agentRecommendation}
-                  onChange={(event) => {
-                    setAgentRecommendation(event.target.value);
-                    setIsDraftDirty(true);
-                  }}
-                  placeholder="List the proposed edits, areas to touch, expected outcome, and anything the agent should avoid."
-                  className="min-h-[420px] max-h-[420px] resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
-                />
+            <CardContent className="space-y-6">
+              <div className="space-y-3">
+                <Label htmlFor="manual-status">Status</Label>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Select value={manualStatus} onValueChange={setManualStatus}>
+                    <SelectTrigger
+                      id="manual-status"
+                      className="border border-input shadow-sm sm:max-w-xs"
+                    >
+                      <SelectValue placeholder="Select a status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {triageStatuses.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    onClick={handleSaveManualStatus}
+                    disabled={isPending || manualStatus === status}
+                  >
+                    {isPending ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : null}
+                    Save status
+                  </Button>
+                </div>
               </div>
+
+              {agentRecommendation || manualAgentRecommendation ? (
+                <div className="space-y-3">
+                  <Label
+                    className="flex items-center gap-2"
+                    htmlFor="manual-agent-recommendation"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Suggested Changes
+                  </Label>
+                  <div className="rounded-none border border-border/70 bg-background/70 p-4">
+                    <Textarea
+                      id="manual-agent-recommendation"
+                      value={manualAgentRecommendation}
+                      onChange={(event) =>
+                        setManualAgentRecommendation(event.target.value)
+                      }
+                      placeholder="List the proposed edits, areas to touch, expected outcome, and anything the agent should avoid."
+                      className="min-h-[420px] max-h-[420px] resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
+                    />
+                  </div>
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      onClick={handleSaveSuggestedChanges}
+                      disabled={
+                        isPending ||
+                        manualAgentRecommendation === agentRecommendation
+                      }
+                    >
+                      {isPending ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : null}
+                      Save suggested changes
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
+            </TabsContent>
 
-          <Card className="border-border/60 bg-card/90 rounded-none">
+            <TabsContent value="history" className="mt-0">
+              <Card className="border-border/60 bg-card/90 rounded-none">
             <CardHeader>
-              <CardTitle>Lifecycle</CardTitle>
+              <CardTitle>History</CardTitle>
               <CardDescription>
-                Current timestamps visible to the board.
+                Lifecycle timestamps sorted newest to oldest.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <div className="rounded-none border border-border/70 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                  Created
-                </p>
-                <p className="mt-2">
-                  {isoLabel(request.createdAt) ?? "Unknown"}
-                </p>
-              </div>
-              <div className="rounded-none border border-border/70 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                  Triaged
-                </p>
-                <p className="mt-2">
-                  {isoLabel(request.triagedAt) ?? "Not yet"}
-                </p>
-              </div>
-              <div className="rounded-none border border-border/70 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                  Approved For Work
-                </p>
-                <p className="mt-2">
-                  {isoLabel(request.approvedForWorkAt) ?? "Not yet"}
-                </p>
-              </div>
-              <div className="rounded-none border border-border/70 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                  Last Updated
-                </p>
-                <p className="mt-2">
-                  {isoLabel(request.updatedAt) ?? "Unknown"}
-                </p>
-              </div>
+              {lifecycleEvents.map((event) => (
+                <div
+                  key={event.label}
+                  className="rounded-none border border-border/70 p-4"
+                >
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    {event.label}
+                  </p>
+                  <p className="mt-2">{isoLabel(event.value) ?? "Not yet"}</p>
+                </div>
+              ))}
             </CardContent>
           </Card>
+            </TabsContent>
 
-          <Card className="border-border/60 bg-card/90 rounded-none">
+            <TabsContent value="log" className="mt-0">
+              <Card className="border-border/60 bg-card/90 rounded-none">
             <CardHeader>
               <CardTitle>Execution Log</CardTitle>
               <CardDescription>
@@ -1424,6 +1498,8 @@ export function RequestDetailsPanel({
               </ScrollArea>
             </CardContent>
           </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 
@@ -1439,18 +1515,6 @@ export function RequestDetailsPanel({
           <div className="flex items-center gap-3">
             <Button type="button" variant="outline" onClick={onClose}>
               Close
-            </Button>
-            <Button
-              type="button"
-              onClick={() =>
-                onSave({ status, triageSummary, agentRecommendation })
-              }
-              disabled={isPending}
-            >
-              {isPending ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-              ) : null}
-              {isPending ? "Saving" : "Save request"}
             </Button>
           </div>
         </div>
