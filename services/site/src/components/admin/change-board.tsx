@@ -283,8 +283,16 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
         </div>
 
         <TabsContent value="change-requests" className="mt-0 flex-1">
-          <section className="grid min-h-full gap-0 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="border-b border-border/60 xl:border-b-0 xl:border-r">
+          <section
+            className={`grid min-h-full gap-0 ${
+              selectedRequest ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"
+            }`}
+          >
+            <div
+              className={`border-b border-border/60 xl:border-b-0 ${
+                selectedRequest ? "" : "xl:border-r"
+              }`}
+            >
               <div className="flex items-center justify-between gap-4 border-b border-border/60 px-5 py-4 md:px-6">
                 <div className="min-w-0">
                   <h1 className="text-2xl font-semibold tracking-tight">
@@ -381,44 +389,50 @@ export function ChangeBoard({ data: initialData }: { data: AdminBoardData }) {
               )}
             </div>
 
-            <aside className="flex flex-col bg-card/30">
-              <div className="border-b border-border/60 px-5 py-4 md:px-6">
-                <p className="text-sm font-medium">Workspace Snapshot</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Quick read on activity while you triage the board.
-                </p>
-              </div>
-              <div className="grid gap-3 px-5 py-4 md:px-6">
-                <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Active
-                  </p>
-                  <p className="mt-2 text-3xl font-semibold">{activeCount}</p>
-                </div>
-                <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Closed
-                  </p>
-                  <p className="mt-2 text-3xl font-semibold">{closedCount}</p>
-                </div>
-                <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Repositories
-                  </p>
-                  <p className="mt-2 text-3xl font-semibold">
-                    {data.targetApps.length}
+            {!selectedRequest ? (
+              <aside className="flex flex-col bg-card/30">
+                <div className="border-b border-border/60 px-5 py-4 md:px-6">
+                  <p className="text-sm font-medium">Workspace Snapshot</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Quick read on activity while you triage the board.
                   </p>
                 </div>
-                <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Environments
-                  </p>
-                  <p className="mt-2 text-3xl font-semibold">
-                    {data.targetEnvironments.length}
-                  </p>
+                <div className="grid gap-3 px-5 py-4 md:px-6">
+                  <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      Active
+                    </p>
+                    <p className="mt-2 text-3xl font-semibold">
+                      {activeCount}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      Closed
+                    </p>
+                    <p className="mt-2 text-3xl font-semibold">
+                      {closedCount}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      Repositories
+                    </p>
+                    <p className="mt-2 text-3xl font-semibold">
+                      {data.targetApps.length}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      Environments
+                    </p>
+                    <p className="mt-2 text-3xl font-semibold">
+                      {data.targetEnvironments.length}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </aside>
+              </aside>
+            ) : null}
           </section>
         </TabsContent>
 
