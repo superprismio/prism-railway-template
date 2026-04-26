@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import {
   BotMessageSquare,
   FilePlus,
   LogOut,
+  Search,
   Rows3,
   Settings,
   X,
@@ -243,6 +245,12 @@ export function ChangeBoard({
             <Button type="button" onClick={() => setIsNewRequestOpen(true)}>
               <FilePlus className="h-4 w-4" />
               <span className="hidden sm:inline">Add Change Request</span>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/memory">
+                <Search className="h-4 w-4" />
+                <span className="hidden sm:inline">Memory</span>
+              </Link>
             </Button>
             <form action="/admin/logout" method="post">
               <Button variant="outline" type="submit">
