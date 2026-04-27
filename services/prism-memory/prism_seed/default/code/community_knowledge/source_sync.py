@@ -66,7 +66,7 @@ class KnowledgeSourceManager:
 
     def get_source(self, source_id: str) -> dict[str, Any]:
         normalized = self._normalize_source_id(source_id)
-        source = self._read_json(self._source_record_path(normalized))
+        source = self._hydrate_source_record(self._read_json(self._source_record_path(normalized)))
         state = self._load_state(normalized)
         source["state"] = state
         return source
@@ -375,6 +375,11 @@ class KnowledgeSourceManager:
             "updated_at": now,
         }
         return record
+
+    def _hydrate_source_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        hydrated = dict(record)
+        hydrated["source_profile"] = str(hydrated.get("source_profile") or "canonical").strip().lower() or "canonical"
+        return hydrated
 
     def _build_source_projection(
         self,
