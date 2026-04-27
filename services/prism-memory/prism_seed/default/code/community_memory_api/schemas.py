@@ -54,6 +54,7 @@ class KnowledgeSourceCreateRequest(BaseModel):
     repo_url: str
     branch: str = "main"
     label: Optional[str] = None
+    source_profile: str = "canonical"
     content_policy: str = "markdown-only"
     docs_roots: list[str] = Field(default_factory=list)
     include: list[str] = Field(default_factory=list)
@@ -70,6 +71,7 @@ class KnowledgeSourceCreateRequest(BaseModel):
 class KnowledgeSourceUpdateRequest(BaseModel):
     branch: Optional[str] = None
     label: Optional[str] = None
+    source_profile: Optional[str] = None
     docs_roots: Optional[list[str]] = None
     include: Optional[list[str]] = None
     exclude: Optional[list[str]] = None
@@ -88,6 +90,7 @@ class KnowledgeSourceResponse(BaseModel):
     repo_url: str
     branch: str
     label: str
+    source_profile: str
     content_policy: str
     docs_roots: list[str]
     include: list[str]

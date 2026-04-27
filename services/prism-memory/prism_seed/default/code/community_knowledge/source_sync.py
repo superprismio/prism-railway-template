@@ -35,6 +35,7 @@ _DEFAULT_EXCLUDE = (
 _IGNORED_SEGMENTS = {".git", "node_modules", ".next", "dist", "build", "coverage", ".turbo", ".vercel"}
 _DOC_ROOT_MARKERS = ("docs", "content", "pages", "app")
 _GIT_COMMAND_TIMEOUT_SECONDS = 120
+_ALLOWED_SOURCE_PROFILES = {"canonical", "archive"}
 
 
 logger = logging.getLogger(__name__)
@@ -337,6 +338,12 @@ class KnowledgeSourceManager:
         content_policy = str(payload.get("content_policy") or "markdown-only").strip().lower()
         if content_policy != "markdown-only":
             raise KnowledgeSourceError("invalid_content_policy", "Only markdown-only content_policy is supported")
+        source_profile = str(payload.get("source_profile") or "canonical").strip().lower()
+        if source_profile not in _ALLOWED_SOURCE_PROFILES:
+            raise KnowledgeSourceError(
+                "invalid_source_profile",
+                f"source_profile must be one of: {', '.join(sorted(_ALLOWED_SOURCE_PROFILES))}",
+            )
         docs_roots = self._normalize_docs_roots(payload.get("docs_roots"))
         include = self._normalize_patterns(payload.get("include"), default=_DEFAULT_INCLUDE)
         exclude = self._normalize_patterns(payload.get("exclude"), default=_DEFAULT_EXCLUDE)
@@ -349,6 +356,7 @@ class KnowledgeSourceManager:
             "repo_url": repo_url,
             "branch": branch,
             "label": str(payload.get("label") or normalized_id.replace("-", " ").title()).strip(),
+            "source_profile": source_profile,
             "content_policy": content_policy,
             "docs_roots": docs_roots,
             "include": include,
@@ -429,6 +437,8 @@ class KnowledgeSourceManager:
         now = self._now_iso()
         slug = f"sources/{source['id']}/{relative_repo_path.with_suffix('').as_posix()}"
         source_path = relative_repo_path.as_posix()
+        document_class = self._infer_document_class(source, relative_repo_path)
+        source_profile = str(source.get("source_profile") or "canonical").strip().lower() or "canonical"
         return {
             "title": title,
             "slug": slug,
@@ -448,6 +458,9 @@ class KnowledgeSourceManager:
             "source_repo": source["repo_url"],
             "source_branch": source["branch"],
             "source_path": source_path,
+            "source_profile": source_profile,
+            "document_class": document_class,
+            "historical": source_profile == "archive",
             "managed_by_repo": True,
         }
 
@@ -592,6 +605,26 @@ class KnowledgeSourceManager:
     def _normalize_patterns(self, value: Any, *, default: tuple[str, ...]) -> list[str]:
         patterns = [str(item).strip() for item in (value or []) if str(item).strip()]
         return patterns or list(default)
+
+    def _infer_document_class(self, source: dict[str, Any], relative_repo_path: Path) -> str:
+        normalized_parts = [part.strip().lower() for part in relative_repo_path.parts]
+        joined = "/".join(normalized_parts)
+        if "meeting notes archive" in joined or "meeting-notes" in joined or "round table" in joined or "round-up" in joined:
+            return "meeting_notes"
+        if any(part in {"rips", "proposals", "proposal"} for part in normalized_parts):
+            return "proposal"
+        if any(part in {"templates", "template"} for part in normalized_parts):
+            return "template"
+        if "cohorts" in normalized_parts:
+            return "cohort_doc"
+        if "projects" in normalized_parts or "raids" in normalized_parts:
+            return "project_doc"
+        if "operations" in joined or "healers (operations)" in joined or "homebase" in joined or "hunters" in joined:
+            return "ops_doc"
+        source_profile = str(source.get("source_profile") or "canonical").strip().lower()
+        if source_profile == "archive":
+            return "archive_doc"
+        return "reference"
 
     def _normalize_source_id(self, value: str) -> str:
         normalized = self._slugify(value)

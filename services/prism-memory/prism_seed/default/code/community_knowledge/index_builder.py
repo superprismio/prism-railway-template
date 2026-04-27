@@ -125,6 +125,14 @@ class KnowledgeIndexBuilder:
                 "stability": metadata.get("stability", ""),
                 "updated": metadata.get("updated", ""),
                 "entities": metadata.get("entities", []),
+                "source_id": metadata.get("source_id"),
+                "source_kind": metadata.get("source_kind"),
+                "source_repo": metadata.get("source_repo"),
+                "source_branch": metadata.get("source_branch"),
+                "source_path": metadata.get("source_path"),
+                "source_profile": metadata.get("source_profile"),
+                "document_class": metadata.get("document_class"),
+                "historical": metadata.get("historical"),
             }
             manifest.append(entry)
 
@@ -178,4 +186,3 @@ class KnowledgeIndexBuilder:
             errors=errors,
             outputs=outputs,
         )
-
