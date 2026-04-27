@@ -2,29 +2,32 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 
-DEFAULT_LOCK_FILE = Path("superprism_poc/raidguild/state/agent_locks.json")
+BASE_DIR = os.environ.get("PRISM_API_BUNDLED_BASE", "prism_seed").strip() or "prism_seed"
+SPACE_SLUG = os.environ.get("PRISM_API_SPACE", "community").strip() or "community"
+DEFAULT_LOCK_FILE = Path(f"{BASE_DIR}/{SPACE_SLUG}/state/agent_locks.json")
 
 MEMORY_ALLOWED_PREFIXES = [
-    "superprism_poc/raidguild/activity/",
-    "superprism_poc/raidguild/buckets/",
-    "superprism_poc/raidguild/memory/",
-    "superprism_poc/raidguild/products/",
-    "superprism_poc/raidguild/state/",
-    "superprism_poc/raidguild/code/community_memory/",
-    "superprism_poc/raidguild/config/",
+    f"{BASE_DIR}/{SPACE_SLUG}/activity/",
+    f"{BASE_DIR}/{SPACE_SLUG}/buckets/",
+    f"{BASE_DIR}/{SPACE_SLUG}/memory/",
+    f"{BASE_DIR}/{SPACE_SLUG}/products/",
+    f"{BASE_DIR}/{SPACE_SLUG}/state/",
+    f"{BASE_DIR}/{SPACE_SLUG}/code/community_memory/",
+    f"{BASE_DIR}/{SPACE_SLUG}/config/",
     "README.md",
     "docs/assistants/memory-manager/",
 ]
 
 KNOWLEDGE_ALLOWED_PREFIXES = [
-    "superprism_poc/raidguild/knowledge/",
-    "superprism_poc/raidguild/code/community_knowledge/",
-    "superprism_poc/raidguild/config/",
+    f"{BASE_DIR}/{SPACE_SLUG}/knowledge/",
+    f"{BASE_DIR}/{SPACE_SLUG}/code/community_knowledge/",
+    f"{BASE_DIR}/{SPACE_SLUG}/config/",
     "README.md",
     "docs/knowledge-source-of-truth.md",
     "docs/assistants/knowledge-manager/",

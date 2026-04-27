@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from datetime import date, datetime, time
 from pathlib import Path
 from typing import List
@@ -167,7 +168,7 @@ def build_pipeline(base_path: Path) -> dict:
     }
 
     try:
-        gh_env = GitHubEnv.from_env(default_root=f"superprism_poc/{config.space_slug}/")
+        gh_env = GitHubEnv.from_env(default_root=f"{base_path.parent.name}/{config.space_slug}/")
         workspace_root = base_path.parent.parent
         extra_paths = []
         code_dir = workspace_root / "community_memory"
@@ -286,7 +287,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "command",
         choices=["collect", "digest", "memory", "seeds", "backup", "run"],
     )
-    parser.add_argument("--base", default="superprism_poc", help="Base data directory")
+    parser.add_argument(
+        "--base",
+        default=(Path(os.environ.get("PRISM_API_BUNDLED_BASE", "prism_seed").strip() or "prism_seed")).as_posix(),
+        help="Base data directory",
+    )
     parser.add_argument("--space", default=None, help="Space slug (defaults to config)")
     parser.add_argument("--date", help="Target date YYYY-MM-DD", default=None)
     parser.add_argument("--backfill-hours", type=int, default=None, help="Override collector backfill window (hours)")
@@ -301,7 +306,7 @@ def main() -> None:
     args = parser.parse_args()
 
     base_dir = Path(args.base)
-    space_slug = args.space or "raidguild"
+    space_slug = args.space or (os.environ.get("PRISM_API_SPACE", "community").strip() or "community")
     base_path = base_dir / space_slug
 
     pipeline = build_pipeline(base_path)

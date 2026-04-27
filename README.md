@@ -21,6 +21,7 @@ Current direction:
 Template authoring notes live in [docs/template-authoring.md](docs/template-authoring.md).
 Post-deploy template operations live in [docs/template-deploy-runbook.md](docs/template-deploy-runbook.md).
 Non-Railway deployment notes live in [docs/local-vps-deployment.md](docs/local-vps-deployment.md).
+Prism Memory storage cleanup planning lives in [docs/prism-memory-path-cleanup.md](docs/prism-memory-path-cleanup.md).
 
 This repo is intentionally split by deployable service instead of using PM2 inside one container.
 
@@ -81,9 +82,9 @@ Consumes:
 Owns:
 
 - normalized message ingest
-- the vendored `prism-memory-starter` runtime under `superprism_poc/raidguild`, seeded into the configured runtime space
+- the vendored `prism-memory-starter` runtime under `prism_seed/default`, seeded into the configured runtime space
 - memory, knowledge, and product retrieval API
-- mounted data volume at `/data/superprism_poc/<PRISM_API_SPACE>`
+- mounted data volume at `/data/prism_seed/<PRISM_API_SPACE>`
 - authenticated `/ops/*` routes for collect, digest, memory, seeds, and knowledge jobs
 
 ### `services/source-adapter`
@@ -250,7 +251,7 @@ If the Prism app needs to reference a local target during development, create th
 - Use watch paths so site changes do not redeploy the API and vice versa.
 - `services/source-adapter` is the preferred place for Discord/Slack/Telegram collection for memory ingest.
 - `services/source-adapter` supports persisted sync checkpoints, `dry_run`, and resettable sync windows.
-- `services/prism-memory` seeds the starter runtime into its mounted volume and keeps the active config at `/data/superprism_poc/<PRISM_API_SPACE>/config/space.json`.
+- `services/prism-memory` seeds the starter runtime into its mounted volume and keeps the active config at `/data/prism_seed/<PRISM_API_SPACE>/config/space.json`.
 - `prism-memory` and `source-adapter` both use explicit Dockerfiles so the deploy runtime stays pinned and reproducible.
 
 Supporting docs:
