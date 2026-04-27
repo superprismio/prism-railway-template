@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -472,25 +474,10 @@ class KnowledgeSourceManager:
     def _checkout_repo(self, source: dict[str, Any], checkout_dir: Path) -> None:
         parent = checkout_dir.parent
         parent.mkdir(parents=True, exist_ok=True)
-        command = [
-            "git",
-            "clone",
-            "--depth",
-            "1",
-            "--branch",
-            source["branch"],
-            source["repo_url"],
-            str(checkout_dir),
-        ]
+        command = ["clone", "--depth", "1", "--branch", source["branch"], source["repo_url"], str(checkout_dir)]
         try:
             logger.info("knowledge source clone start source_id=%s repo=%s branch=%s", source.get("id"), source["repo_url"], source["branch"])
-            subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
-            )
+            self._run_git_read_command(source["repo_url"], command)
             logger.info("knowledge source clone complete source_id=%s", source.get("id"))
         except FileNotFoundError as exc:
             raise KnowledgeSourceError("git_missing", "git is required for knowledge source sync") from exc
@@ -777,6 +764,56 @@ class KnowledgeSourceManager:
             stderr = (exc.stderr or exc.stdout or "").strip()
             raise KnowledgeSourceError("git_failed", stderr or "git command failed") from exc
         return (completed.stdout or "").strip()
+
+    def _run_git_read_command(self, repo_url: str, args: list[str]) -> None:
+        if not self._is_github_https_repo(repo_url):
+            subprocess.run(
+                ["git", *args],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
+            )
+            return
+
+        try:
+            subprocess.run(
+                ["git", *args],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
+            )
+            return
+        except subprocess.CalledProcessError:
+            token = self._github_source_token()
+            if not token:
+                raise
+
+        subprocess.run(
+            ["git", *self._github_auth_args(token), *args],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
+        )
+
+    @staticmethod
+    def _is_github_https_repo(repo_url: str) -> bool:
+        return repo_url.startswith("https://github.com/")
+
+    @staticmethod
+    def _github_source_token() -> str:
+        for name in ("PRISM_GITHUB_TOKEN", "GITHUB_SOURCE_TOKEN", "GITHUB_TOKEN", "GH_TOKEN", "TARGET_REPO_GITHUB_TOKEN"):
+            value = (os.environ.get(name) or "").strip()
+            if value:
+                return value
+        return ""
+
+    @staticmethod
+    def _github_auth_args(token: str) -> list[str]:
+        basic = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
+        return ["-c", f"http.extraheader=AUTHORIZATION: basic {basic}"]
 
     def _update_state(self, source_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         self._write_json(self._state_path(source_id), payload)

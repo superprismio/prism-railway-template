@@ -756,10 +756,14 @@ async function ensureConversationThread(message: Message): Promise<TextBasedChan
     return null;
   }
   try {
-    return await message.startThread({
+    const thread = await message.startThread({
       name: `Prism ${message.member?.displayName ?? message.author.displayName}`.slice(0, 100),
       autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
     });
+    if ("join" in thread && typeof thread.join === "function") {
+      await thread.join().catch(() => {});
+    }
+    return thread;
   } catch (error) {
     const botPermissions = message.guild?.members.me ? message.channel.permissionsFor(message.guild.members.me) : null;
     console.warn("[discord-adapter] thread creation failed", {
