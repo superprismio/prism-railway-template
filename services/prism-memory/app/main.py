@@ -8,8 +8,8 @@ from fastapi import Header, HTTPException
 
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]
-STARTER_BASE = "superprism_poc"
-BUNDLED_SPACE_SLUG = os.environ.get("PRISM_API_BUNDLED_SPACE", "raidguild").strip() or "raidguild"
+STARTER_BASE = os.environ.get("PRISM_API_BUNDLED_BASE", "prism_seed").strip() or "prism_seed"
+BUNDLED_SPACE_SLUG = os.environ.get("PRISM_API_BUNDLED_SPACE", "default").strip() or "default"
 SPACE_SLUG = os.environ.get("PRISM_API_SPACE", "community").strip() or "community"
 CODE_ROOT = SERVICE_ROOT / STARTER_BASE / BUNDLED_SPACE_SLUG / "code"
 

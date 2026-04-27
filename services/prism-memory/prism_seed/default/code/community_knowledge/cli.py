@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,8 +26,8 @@ def _load_space_config(base_path: Path):
 def _arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Community knowledge tools")
     parser.add_argument("command", choices=["validate", "index", "promote", "promote-stub"])
-    parser.add_argument("--base", default="superprism_poc")
-    parser.add_argument("--space", default="raidguild")
+    parser.add_argument("--base", default=os.environ.get("PRISM_API_BUNDLED_BASE", "prism_seed"))
+    parser.add_argument("--space", default=os.environ.get("PRISM_API_SPACE", "community"))
     return parser
 
 

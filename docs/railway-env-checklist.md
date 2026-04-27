@@ -173,7 +173,7 @@ Recommended:
 Notes:
 
 - this service now accepts `POST /ingest/messages`
-- active starter data is stored at `/data/superprism_poc/<PRISM_API_SPACE>`
+- active starter data is stored at `/data/prism_seed/<PRISM_API_SPACE>`
 - `POST /ops/memory/run` performs `collect`, `digest`, `memory`, and `seeds`
 - `POST /ops/knowledge/run` performs `promote`, `validate`, and `index`
 - after deploy, confirm `GET /health`

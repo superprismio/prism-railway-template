@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -125,6 +126,10 @@ def load_config(path: Path) -> SpaceConfig:
     with path.open("r", encoding="utf-8") as f:
         raw = json.load(f)
 
+    base_slug = os.environ.get("PRISM_API_BUNDLED_BASE", "prism_seed").strip() or "prism_seed"
+    space_slug = str(raw.get("space_slug", "default")).strip() or "default"
+    knowledge_root = f"{base_slug}/{space_slug}/knowledge/kb"
+
     collectors = [CollectorConfig.from_dict(c) for c in raw.get("collectors", [])]
     discord_conf = raw.get("discord", {})
     thread_promotion_conf = discord_conf.get("thread_promotion", {})
@@ -176,25 +181,12 @@ def load_config(path: Path) -> SpaceConfig:
     )
     knowledge = KnowledgeConfig(
         enabled=bool(knowledge_conf.get("enabled", False)),
-        docs_root=knowledge_conf.get(
-            "docs_root", "superprism_poc/raidguild/knowledge/kb/docs"
-        ),
-        metadata_root=knowledge_conf.get(
-            "metadata_root", "superprism_poc/raidguild/knowledge/kb/metadata"
-        ),
-        index_root=knowledge_conf.get(
-            "index_root", "superprism_poc/raidguild/knowledge/kb/indexes"
-        ),
-        triage_root=knowledge_conf.get(
-            "triage_root", "superprism_poc/raidguild/knowledge/kb/triage"
-        ),
-        activity_path=knowledge_conf.get(
-            "activity_path",
-            "superprism_poc/raidguild/knowledge/kb/activity/kb_activity.jsonl",
-        ),
-        state_path=knowledge_conf.get(
-            "state_path", "superprism_poc/raidguild/knowledge/kb/state/kb_index_state.json"
-        ),
+        docs_root=knowledge_conf.get("docs_root", f"{knowledge_root}/docs"),
+        metadata_root=knowledge_conf.get("metadata_root", f"{knowledge_root}/metadata"),
+        index_root=knowledge_conf.get("index_root", f"{knowledge_root}/indexes"),
+        triage_root=knowledge_conf.get("triage_root", f"{knowledge_root}/triage"),
+        activity_path=knowledge_conf.get("activity_path", f"{knowledge_root}/activity/kb_activity.jsonl"),
+        state_path=knowledge_conf.get("state_path", f"{knowledge_root}/state/kb_index_state.json"),
         triage_run_time_local=knowledge_conf.get("triage_run_time_local", "18:15"),
         index_run_time_local=knowledge_conf.get("index_run_time_local", "18:25"),
         max_docs_per_triage_run=int(knowledge_conf.get("max_docs_per_triage_run", 20)),

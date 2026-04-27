@@ -31,9 +31,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Settings:
     base_dir: Path
-    base: str = "superprism_poc"
-    space: str = "raidguild"
-    code_space: Optional[str] = None
+    base: str = "prism_seed"
+    space: str = "community"
+    code_space: Optional[str] = "default"
     api_key: Optional[str] = None
     read_api_key: Optional[str] = None
     write_api_key: Optional[str] = None

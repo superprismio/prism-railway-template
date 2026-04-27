@@ -2,14 +2,14 @@
 
 This repo is the canonical home for two things:
 
-1. **Community-memory pipeline code** (under `superprism_poc/raidguild/code`) that collects Discord activity, produces daily digests, updates rolling memory, and syncs results.
-2. **The generated knowledge base** (everything under `superprism_poc/raidguild/{activity,buckets,memory,state}`) so every transcript, digest, memory snapshot, and activity log travels with the code.
+1. **Community-memory pipeline code** (under `prism_seed/default/code`) that collects Discord activity, produces daily digests, updates rolling memory, and syncs results.
+2. **The generated knowledge base** (everything under `prism_seed/default/{activity,buckets,memory,state}`) so every transcript, digest, memory snapshot, and activity log travels with the code.
 
 ## Repository layout
 
 ```
-superprism_poc/
-  raidguild/
+prism_seed/
+  default/
     code/                # Python package + README describing the pipeline
     config/              # space + schedule config (`space.json`)
     activity/            # append-only log of collector/digest/memory runs
@@ -29,13 +29,13 @@ superprism_poc/
 ## Agent Ownership Boundaries
 
 - Memory agent scope:
-  `superprism_poc/raidguild/{activity,buckets,memory,products,state}` plus
+  `prism_seed/default/{activity,buckets,memory,products,state}` plus
   runbook/config updates needed to keep that pipeline healthy.
 - Knowledge agent scope (planned):
-  `superprism_poc/raidguild/knowledge/kb/{docs,metadata,indexes,triage,activity,state}`.
+  `prism_seed/default/knowledge/kb/{docs,metadata,indexes,triage,activity,state}`.
 - Handoff contract:
   memory agent may emit promotion candidates into
-  `superprism_poc/raidguild/knowledge/kb/triage/inbox/` only. Classification,
+  `prism_seed/default/knowledge/kb/triage/inbox/` only. Classification,
   canonical placement, and metadata/index generation are out of scope for the
   memory agent.
 ```
@@ -46,22 +46,22 @@ All commands run from the workspace root (`/home/node/clawd/workspace` here):
 
 ```bash
 # Full run that respects schedule windows
-python3 -m community_memory.pipeline run --base superprism_poc --space raidguild
+python3 -m community_memory.pipeline run --base prism_seed --space community
 
 # Targeted steps
-python3 -m community_memory.pipeline collect --base superprism_poc --space raidguild
-python3 -m community_memory.pipeline digest --base superprism_poc --space raidguild --date YYYY-MM-DD --force
-python3 -m community_memory.pipeline memory --base superprism_poc --space raidguild --date YYYY-MM-DD --force
-python3 -m community_memory.pipeline seeds --base superprism_poc --space raidguild --date YYYY-MM-DD --force
+python3 -m community_memory.pipeline collect --base prism_seed --space community
+python3 -m community_memory.pipeline digest --base prism_seed --space community --date YYYY-MM-DD --force
+python3 -m community_memory.pipeline memory --base prism_seed --space community --date YYYY-MM-DD --force
+python3 -m community_memory.pipeline seeds --base prism_seed --space community --date YYYY-MM-DD --force
 
 # Single-call backfill (e.g., grab the last 72 hours in one shot)
 python3 -m community_memory.pipeline collect \
-  --base superprism_poc --space raidguild \
+  --base prism_seed --space community \
   --backfill-hours 72
 
 # Knowledge validation/indexing (separate from memory heartbeat)
-python3 -m community_knowledge validate --base superprism_poc --space raidguild
-python3 -m community_knowledge index --base superprism_poc --space raidguild
+python3 -m community_knowledge validate --base prism_seed --space community
+python3 -m community_knowledge index --base prism_seed --space community
 
 # Agent coordination helpers
 python3 -m tools.agent_coord status
@@ -77,7 +77,7 @@ bash scripts/knowledge_start.sh
 
 ## Collector Model
 
-`superprism_poc/raidguild/config/space.json` controls which collectors are enabled and their scheduling windows.
+`prism_seed/default/config/space.json` controls which collectors are enabled and their scheduling windows.
 
 The current pipeline only knows how to instantiate these collector keys:
 
@@ -123,7 +123,7 @@ Use `.env.example` as a template.
 
 ## Canonical Discord Bucket Mapping
 
-`superprism_poc/raidguild/config/space.json` is the source of truth:
+`prism_seed/default/config/space.json` is the source of truth:
 
 - `684227450955235329` → `townsquare`
 - `685273857338376246` → `guildhq`
@@ -138,7 +138,7 @@ Additional collector bucket:
 
 ## Knowledge Constraints
 
-`superprism_poc/raidguild/config/space.json` now includes a `knowledge` block with
+`prism_seed/default/config/space.json` now includes a `knowledge` block with
 metadata constraints to limit drift:
 - `allowed_kinds`
 - `allowed_tags`
@@ -166,12 +166,12 @@ When turning a prompt into an answer, follow this retrieval flow:
 
 ## Multi-Agent Coordination
 
-- Shared lock file: `superprism_poc/raidguild/state/agent_locks.json`
+- Shared lock file: `prism_seed/default/state/agent_locks.json`
 - Shared lock resource: `repo_write`
 - Memory heartbeat acquires/releases `repo_write` automatically.
 - Knowledge agent should also acquire/release `repo_write` around any write run.
-- Shared pause/unpause state: `superprism_poc/raidguild/state/agent_control_state.json`
-- Shared intake contract: `superprism_poc/raidguild/inbox/README.md`
+- Shared pause/unpause state: `prism_seed/default/state/agent_control_state.json`
+- Shared intake contract: `prism_seed/default/inbox/README.md`
 - Memory inbox collector reads `inbox/memory/incoming/` and moves handled files to
   `inbox/memory/processed/` or `inbox/memory/rejected/`.
 - Canonical role identities: `docs/assistants/README.md`
@@ -181,13 +181,13 @@ When turning a prompt into an answer, follow this retrieval flow:
 
 ## Operational notes
 
-- **Cadence:** Check `superprism_poc/raidguild/state/collector_state.json` daily. If `last_until` is >6 hours behind UTC, run the `collect → digest → memory → seeds` chain for the most recent full day, then copy `activity/`, `buckets/`, `memory/`, `products/`, and `state/` into this repo and push to `main`.
+- **Cadence:** Check `prism_seed/default/state/collector_state.json` daily. If `last_until` is >6 hours behind UTC, run the `collect → digest → memory → seeds` chain for the most recent full day, then copy `activity/`, `buckets/`, `memory/`, `products/`, and `state/` into this repo and push to `main`.
 - **Backfill:** The collector now supports a forced lookback via `--backfill-hours` and performs a single Discord API call for that span, slicing locally (threads included, archived threads excluded).
 - **Digests:** Daily digests now include structured extraction (`*_structured` keys in JSON) for highlights/decisions/actions, with bounded quote evidence and source links.
 - **Memory:** Rolling memory consumes structured digests for compact context and digest references that can be expanded on demand.
 - **Seeds:** `seeds` now writes both a daily file (`products/suggestions/YYYY-MM-DD.md`) and a weekly file (`products/suggestions/weekly-YYYY-WW.md`).
 - **Logging:** Collector, digest, and memory steps emit detailed log lines (window ranges, chunk sizes, file outputs) so it’s easy to spot stalls in the console.
-- **Git workflow:** Runtime data lives in `superprism_poc/raidguild/…`. After each run, copy those folders into `prism-memory/superprism_poc/raidguild/`, `git add`, commit with the date range, and `git push origin main` (see commits `ad1e4f9` and `e23c027` for examples).
+- **Git workflow:** Runtime data lives in `prism_seed/default/…`. After each run, copy those folders into `prism-memory/prism_seed/default/`, `git add`, commit with the date range, and `git push origin main` (see commits `ad1e4f9` and `e23c027` for examples).
 
 ## Recent changes
 

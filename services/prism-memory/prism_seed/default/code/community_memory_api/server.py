@@ -38,8 +38,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prism Memory API server")
     parser.add_argument("--host", default=os.getenv("PRISM_API_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("PRISM_API_PORT", "8788")))
-    parser.add_argument("--base", default=os.getenv("PRISM_API_BASE_PATH", "superprism_poc"))
-    parser.add_argument("--space", default=os.getenv("PRISM_API_SPACE", "raidguild"))
+    parser.add_argument("--base", default=os.getenv("PRISM_API_BUNDLED_BASE", "prism_seed"))
+    parser.add_argument("--space", default=os.getenv("PRISM_API_SPACE", "community"))
+    parser.add_argument("--code-space", default=os.getenv("PRISM_API_BUNDLED_SPACE", "default"))
     parser.add_argument("--api-key", default=os.getenv("PRISM_API_KEY"))
     parser.add_argument("--read-api-key", default=os.getenv("PRISM_API_READ_KEY"))
     parser.add_argument("--write-api-key", default=os.getenv("PRISM_API_WRITE_KEY"))
@@ -85,6 +86,7 @@ def main() -> None:
         base_dir=base_dir,
         base=args.base,
         space=args.space,
+        code_space=args.code_space,
         api_key=args.api_key,
         read_api_key=args.read_api_key,
         write_api_key=args.write_api_key,
