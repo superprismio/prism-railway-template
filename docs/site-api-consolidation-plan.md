@@ -81,6 +81,59 @@ Then:
 
 This avoids fighting bundler/module-resolution differences between the two service codebases.
 
+## Current Branch Progress
+
+This branch now includes the first additive implementation step:
+
+- extracted a new shared package: `packages/app-core`
+- copied the API-side stateful backend modules needed for read-heavy admin views:
+  - config
+  - SQLite bootstrap
+  - migrations
+  - repository access
+  - home-module and site-content helpers
+- added a small shared read service for:
+  - admin board snapshot
+  - admin setup status
+- updated `site` so it can opt into local backend reads with:
+  - `SITE_USE_LOCAL_APP_API=true`
+
+Current scope of the local read mode:
+
+- `getAdminBoardData()`
+- `getAdminWorkspaceData()`
+- Memory explorer admin access checks
+
+Writes still go through the standalone `api` service. This is deliberate. It gives us a concrete migration surface without forcing a writer cutover.
+
+### What this proved
+
+1. The shared-package extraction is viable.
+2. Next can build against the extracted backend package when:
+   - `@prism-railway/app-core` is a workspace package
+   - `site` transpiles that package
+   - `better-sqlite3` is treated as a server external
+3. The real coupling is exactly what we suspected:
+   - `site` needs the app DB/data root to do meaningful local reads
+   - `site` needs `ADMIN_PASSWORD`
+   - `site` needs the same healthcheck dependency env used by setup status
+
+### What this did not prove yet
+
+- local write parity for change requests, target apps, or target environments
+- session-auth parity with the Express API
+- internal service-token parity for machine callers
+- safe live migration of the SQLite writer from `api` to `site`
+
+### Immediate migration implication
+
+For a real instance upgrade, local read mode alone already implies that `site` must be able to see the app SQLite file. On Railway, that means either:
+
+- attaching the current app volume to `site`, or
+- keeping `api` mounted and continuing to proxy reads through it
+
+That is the main operational cost driver for the consolidation.
+
 ## Migration Checklist
 
 ### 1. Stabilize current split stack
