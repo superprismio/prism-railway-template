@@ -94,11 +94,24 @@ def _rewrite_text(value: str, replacements: list[tuple[str, str]]) -> str:
     return rewritten
 
 
-def copy_tree(source: Path, destination: Path) -> None:
+def copy_tree(source: Path, destination: Path) -> dict[str, int]:
     if not source.exists():
         raise FileNotFoundError(f"Missing legacy Prism data root: {source}")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, destination, dirs_exist_ok=True)
+    destination.mkdir(parents=True, exist_ok=True)
+    copied_files = 0
+    copied_dirs = 0
+    for path in sorted(source.rglob("*")):
+        relative = path.relative_to(source)
+        target = destination / relative
+        if path.is_dir():
+            if not target.exists():
+                target.mkdir(parents=True, exist_ok=True)
+                copied_dirs += 1
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+        copied_files += 1
+    return {"copied_files": copied_files, "created_dirs": copied_dirs}
 
 
 def rewrite_tree(root: Path, replacements: list[tuple[str, str]], apply: bool) -> dict[str, int]:
@@ -195,7 +208,7 @@ def main() -> None:
         raise SystemExit(1)
 
     if args.apply:
-        copy_tree(plan.old_root, plan.new_root)
+        summary["copy"] = copy_tree(plan.old_root, plan.new_root)
         summary["rewrite"] = rewrite_tree(plan.new_root, plan.replacements, apply=True)
         summary["index"] = rebuild_indexes(plan)
     else:
