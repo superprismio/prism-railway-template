@@ -116,16 +116,43 @@ function knowledgeResults(payload: KnowledgeSearchPayload) {
   return [];
 }
 
+function extractErrorMessage(payload: unknown, response: Response) {
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>
+    if (typeof record.error === "string" && record.error.trim()) {
+      return record.error
+    }
+    if (record.error && typeof record.error === "object") {
+      const errorRecord = record.error as Record<string, unknown>
+      if (typeof errorRecord.message === "string" && errorRecord.message.trim()) {
+        return errorRecord.message
+      }
+      if (typeof errorRecord.code === "string" && errorRecord.code.trim()) {
+        return errorRecord.code
+      }
+    }
+    if (typeof record.detail === "string" && record.detail.trim()) {
+      return record.detail
+    }
+    if (record.detail && typeof record.detail === "object") {
+      const detailRecord = record.detail as Record<string, unknown>
+      if (typeof detailRecord.message === "string" && detailRecord.message.trim()) {
+        return detailRecord.message
+      }
+      if (typeof detailRecord.error === "string" && detailRecord.error.trim()) {
+        return detailRecord.error
+      }
+    }
+  }
+  return `Request failed with ${response.status}`
+}
+
 async function fetchJson<T>(path: string): Promise<T> {
   const response = await fetch(path, { cache: "no-store" });
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
-    const error =
-      payload && typeof payload.error === "string"
-        ? payload.error
-        : `Request failed with ${response.status}`;
-    throw new Error(error);
+    throw new Error(extractErrorMessage(payload, response));
   }
 
   return payload as T;

@@ -100,11 +100,42 @@ function prismMemoryReadKey() {
 async function requireAdminAccess() {
   const password = await getAdminPasswordCookie()
   if (!password) {
-    return false
+    return {
+      ok: false as const,
+      status: 401,
+      error: "Unauthorized",
+    }
   }
 
-  const response = await adminFetch("/api/admin/setup/status")
-  return response.ok
+  try {
+    const response = await adminFetch("/api/admin/setup/status")
+    if (response.ok) {
+      return { ok: true as const }
+    }
+
+    if (response.status === 401) {
+      return {
+        ok: false as const,
+        status: 401,
+        error: "Unauthorized",
+      }
+    }
+
+    return {
+      ok: false as const,
+      status: 502,
+      error: `Admin API request failed with ${response.status}`,
+    }
+  } catch (error) {
+    return {
+      ok: false as const,
+      status: 502,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Admin API request failed",
+    }
+  }
 }
 
 function copyAllowedSearchParams(
@@ -126,10 +157,11 @@ export async function proxyPrismMemoryJson(
   incomingSearchParams: URLSearchParams,
   allowedParams: string[] = [],
 ) {
-  if (!(await requireAdminAccess())) {
+  const access = await requireAdminAccess()
+  if (!access.ok) {
     return NextResponse.json(
-      { ok: false, error: "Unauthorized" },
-      { status: 401 },
+      { ok: false, error: access.error },
+      { status: access.status },
     )
   }
 

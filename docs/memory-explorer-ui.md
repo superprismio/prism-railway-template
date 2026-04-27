@@ -101,6 +101,23 @@ PRISM_API_KEY=replace-me
 
 `PRISM_API_READ_KEY` is preferred when the deployment has split Prism Memory read, write, and ops keys. `PRISM_API_KEY` keeps older single-key deployments working.
 
+### Existing Instances And Template Impact
+
+This POC adds new `site`-side Prism Memory wiring.
+
+Existing instances or older template deploys need at least:
+
+```text
+PRISM_MEMORY_BASE_URL=http://<reachable-prism-memory>
+```
+
+For auth:
+
+- preferred: `PRISM_API_READ_KEY`
+- fallback: existing `PRISM_API_KEY`
+
+So the new hard requirement is the Prism Memory base URL on `site`. The read key is only a new requirement when the deployment has already split Prism Memory auth by scope.
+
 The site still needs the normal admin/API env:
 
 ```text
