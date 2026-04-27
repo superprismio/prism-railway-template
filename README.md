@@ -22,6 +22,9 @@ Template authoring notes live in [docs/template-authoring.md](docs/template-auth
 Post-deploy template operations live in [docs/template-deploy-runbook.md](docs/template-deploy-runbook.md).
 Non-Railway deployment notes live in [docs/local-vps-deployment.md](docs/local-vps-deployment.md).
 Prism Memory storage cleanup planning lives in [docs/prism-memory-path-cleanup.md](docs/prism-memory-path-cleanup.md).
+Site/API consolidation planning lives in [docs/site-api-consolidation-plan.md](docs/site-api-consolidation-plan.md).
+Site/API live cutover steps live in [docs/site-api-cutover-checklist.md](docs/site-api-cutover-checklist.md).
+Template env deltas for that cutover live in [docs/template-site-api-env-delta.md](docs/template-site-api-env-delta.md).
 
 This repo is intentionally split by deployable service instead of using PM2 inside one container.
 
