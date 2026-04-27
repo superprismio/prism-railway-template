@@ -755,6 +755,21 @@ async function ensureConversationThread(message: Message): Promise<TextBasedChan
   if (!(message.channel instanceof TextChannel)) {
     return null;
   }
+  if ("hasThread" in message && Boolean((message as Message & { hasThread?: boolean }).hasThread)) {
+    const existingThread = (message as Message & { thread?: TextBasedChannel | null }).thread ?? null;
+    if (existingThread) {
+      if ("join" in existingThread && typeof existingThread.join === "function") {
+        await existingThread.join().catch(() => {});
+      }
+      console.log("[discord-adapter] reusing existing message thread", {
+        guildId: message.guildId,
+        channelId: message.channel.id,
+        messageId: message.id,
+        threadId: "id" in existingThread ? existingThread.id : null,
+      });
+      return existingThread;
+    }
+  }
   try {
     const thread = await message.startThread({
       name: `Prism ${message.member?.displayName ?? message.author.displayName}`.slice(0, 100),
@@ -763,8 +778,29 @@ async function ensureConversationThread(message: Message): Promise<TextBasedChan
     if ("join" in thread && typeof thread.join === "function") {
       await thread.join().catch(() => {});
     }
+    console.log("[discord-adapter] created conversation thread", {
+      guildId: message.guildId,
+      channelId: message.channel.id,
+      messageId: message.id,
+      threadId: thread.id,
+      threadName: thread.name,
+    });
     return thread;
   } catch (error) {
+    const existingThread = (message as Message & { thread?: TextBasedChannel | null }).thread ?? null;
+    if (existingThread) {
+      if ("join" in existingThread && typeof existingThread.join === "function") {
+        await existingThread.join().catch(() => {});
+      }
+      console.warn("[discord-adapter] thread creation failed; using existing thread", {
+        guildId: message.guildId,
+        channelId: message.channel.id,
+        messageId: message.id,
+        threadId: "id" in existingThread ? existingThread.id : null,
+        error: describeError(error),
+      });
+      return existingThread;
+    }
     const botPermissions = message.guild?.members.me ? message.channel.permissionsFor(message.guild.members.me) : null;
     console.warn("[discord-adapter] thread creation failed", {
       guildId: message.guildId,
@@ -993,6 +1029,15 @@ async function handleDiscordChatMessage(message: Message): Promise<void> {
   if (!channelId) {
     return;
   }
+  console.log("[discord-adapter] handling mention prompt", {
+    guildId: message.guildId,
+    messageId: message.id,
+    sourceChannelId: message.channel.id,
+    targetChannelId: "id" in targetChannel ? targetChannel.id : null,
+    targetIsThread: targetChannel.isThread(),
+    threadId,
+    channelId,
+  });
   await runDiscordPrompt(prompt, {
     guildId: message.guildId!,
     channelId,
