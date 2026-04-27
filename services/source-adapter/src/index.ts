@@ -784,6 +784,42 @@ async function sendReply(channel: TextBasedChannel, content: string): Promise<Me
   return (await channel.send(content)) as Message;
 }
 
+const DISCORD_MESSAGE_MAX_LENGTH = 2000;
+
+function splitDiscordMessage(content: string, maxLength = DISCORD_MESSAGE_MAX_LENGTH): string[] {
+  const normalized = content.replace(/\r\n/g, "\n").trim();
+  if (!normalized) {
+    return [""];
+  }
+  if (normalized.length <= maxLength) {
+    return [normalized];
+  }
+
+  const chunks: string[] = [];
+  let remaining = normalized;
+  while (remaining.length > maxLength) {
+    let splitAt = remaining.lastIndexOf("\n\n", maxLength);
+    if (splitAt < Math.floor(maxLength * 0.5)) {
+      splitAt = remaining.lastIndexOf("\n", maxLength);
+    }
+    if (splitAt < Math.floor(maxLength * 0.5)) {
+      splitAt = remaining.lastIndexOf(" ", maxLength);
+    }
+    if (splitAt <= 0) {
+      splitAt = maxLength;
+    }
+    const chunk = remaining.slice(0, splitAt).trim();
+    if (chunk) {
+      chunks.push(chunk);
+    }
+    remaining = remaining.slice(splitAt).trim();
+  }
+  if (remaining) {
+    chunks.push(remaining);
+  }
+  return chunks.length ? chunks : [normalized.slice(0, maxLength)];
+}
+
 type DiscordPromptTransport = {
   guildId: string;
   channelId: string;
@@ -970,8 +1006,15 @@ async function handleDiscordChatMessage(message: Message): Promise<void> {
           }
         : undefined,
     sendAssistantMessage: async (content) => {
-      const sent = await sendReply(targetChannel, content);
-      return { sourceMessageId: sent?.id ?? null };
+      const parts = splitDiscordMessage(content);
+      let firstMessageId: string | null = null;
+      for (const part of parts) {
+        const sent = await sendReply(targetChannel, part);
+        if (!firstMessageId && sent?.id) {
+          firstMessageId = sent.id;
+        }
+      }
+      return { sourceMessageId: firstMessageId };
     },
   });
 }
@@ -1154,15 +1197,25 @@ async function handleSlashPrompt(interaction: ChatInputCommandInteraction, promp
     createdAt: interaction.createdAt.toISOString(),
     sendTyping: async () => {},
     sendAssistantMessage: async (content) => {
-      if (followupCount === 0) {
+      const parts = splitDiscordMessage(content);
+      let firstMessageId: string | null = null;
+      for (const part of parts) {
+        if (followupCount === 0) {
+          followupCount += 1;
+          await interaction.editReply({ content: part });
+          const reply = await interaction.fetchReply();
+          if (!firstMessageId) {
+            firstMessageId = reply.id;
+          }
+          continue;
+        }
+        const followup = await interaction.followUp({ content: part });
         followupCount += 1;
-        await interaction.editReply({ content });
-        const reply = await interaction.fetchReply();
-        return { sourceMessageId: reply.id };
+        if (!firstMessageId) {
+          firstMessageId = followup.id;
+        }
       }
-      const followup = await interaction.followUp({ content });
-      followupCount += 1;
-      return { sourceMessageId: followup.id };
+      return { sourceMessageId: firstMessageId };
     },
   });
 }
