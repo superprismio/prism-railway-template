@@ -1,11 +1,38 @@
 export { loadConfig, type AppConfig, type CommunityProvider } from './config';
 export { getDb, closeDb, runMigrations } from './db';
 export { getAdminBoardSnapshot, getAdminSetupStatus } from './admin-read';
+export { buildTargetEnvironmentDeployPlan, type TargetEnvironmentDeployPlan } from './deploy-adapters';
 export {
+  createAgentMessage,
+  createAgentSession,
+  createAuditLog,
+  createChangeRequest,
+  createChangeRequestExecution,
+  createTargetApp,
+  createTargetEnvironment,
+  findLatestAgentSessionByChangeRequest,
+  getChangeRequest,
+  getChangeRequestExecution,
+  getDefaultTargetEnvironmentForApp,
+  getAgentSession,
+  getTargetApp,
+  getTargetEnvironment,
   listChangeRequests,
+  listAgentMessages,
+  listChangeRequestExecutions,
   listTargetApps,
   listTargetEnvironments,
+  updateAgentSession,
+  updateChangeRequest,
+  updateChangeRequestExecution,
+  type CreateChangeRequestInput,
+  type CreateChangeRequestExecutionInput,
+  type CreateTargetAppInput,
+  type CreateTargetEnvironmentInput,
+  type ChangeRequestExecutionRecord,
   type TargetAppRecord,
   type TargetEnvironmentRecord,
   type ChangeRequestRecord,
+  type CreateAgentSessionInput,
+  type UpdateChangeRequestInput,
 } from './repository';
