@@ -246,12 +246,24 @@ export function ChangeBoard({
               <FilePlus className="h-4 w-4" />
               <span className="hidden sm:inline">Add Change Request</span>
             </Button>
-            <Button asChild variant="outline">
-              <Link href="/admin/memory">
+            {data.setup.prismMemory.configured ? (
+              <Button asChild variant="outline">
+                <Link href="/admin/memory">
+                  <Search className="h-4 w-4" />
+                  <span className="hidden sm:inline">Memory</span>
+                </Link>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                disabled
+                title="Set PRISM_MEMORY_BASE_URL on the site service to enable Memory Explorer."
+              >
                 <Search className="h-4 w-4" />
                 <span className="hidden sm:inline">Memory</span>
-              </Link>
-            </Button>
+              </Button>
+            )}
             <form action="/admin/logout" method="post">
               <Button variant="outline" type="submit">
                 <LogOut className="h-4 w-4" />
