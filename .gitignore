@@ -25,3 +25,5 @@ services/codex-runtime/data/
 services/prism-memory/data/
 services/prism-memory/.venv/
 services/source-adapter/data/
+
+dev-notes/

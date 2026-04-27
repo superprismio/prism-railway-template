@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import {
   BotMessageSquare,
   FilePlus,
   LogOut,
+  Search,
   Rows3,
   Settings,
   X,
@@ -244,6 +246,24 @@ export function ChangeBoard({
               <FilePlus className="h-4 w-4" />
               <span className="hidden sm:inline">Add Change Request</span>
             </Button>
+            {data.setup.prismMemory.configured ? (
+              <Button asChild variant="outline">
+                <Link href="/admin/memory">
+                  <Search className="h-4 w-4" />
+                  <span className="hidden sm:inline">Memory</span>
+                </Link>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                disabled
+                title="Set PRISM_MEMORY_BASE_URL on the site service to enable Memory Explorer."
+              >
+                <Search className="h-4 w-4" />
+                <span className="hidden sm:inline">Memory</span>
+              </Button>
+            )}
             <form action="/admin/logout" method="post">
               <Button variant="outline" type="submit">
                 <LogOut className="h-4 w-4" />
