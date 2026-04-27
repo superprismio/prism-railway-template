@@ -5,8 +5,9 @@ For knowledge answers:
 1. Search first.
 2. Read the top matching docs.
 3. Answer from returned document content and metadata.
-4. Include the exact document slug or path used.
-5. When sharing a document link, prefer the Prism human-readable `doc_url` over raw paths.
+4. Include supporting document references as Prism human-readable `doc_url` links whenever available.
+5. Do not present raw slugs, storage paths, or `/knowledge/docs/{slug}` API paths as the primary citation format in chat replies.
+6. If a `source_url` exists and helps the user, include it as a secondary link after the Prism doc link.
 
 For workflow retrieval:
 

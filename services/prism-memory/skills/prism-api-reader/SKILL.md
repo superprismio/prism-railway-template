@@ -70,6 +70,8 @@ Use a read-scoped key only.
   - use `/knowledge/search` first
   - then fetch top matches with `/knowledge/docs/{slug}`
   - when replying with citations, prefer the Prism `doc_url` returned by search/doc responses
+  - in chat-style answers, do not leave “Relevant docs” as raw slugs or endpoint paths when a Prism `doc_url` is available
+  - if you list supporting docs, format them as human-viewable Prism links first
   - include `source_url` when it exists and adds value, but Prism doc links are the default
   - prefer `guide` and `policy` docs for workflows
   - prefer `reference` docs for templates
