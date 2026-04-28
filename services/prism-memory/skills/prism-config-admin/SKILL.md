@@ -17,6 +17,13 @@ X-Prism-Api-Key: <ops-key>
 
 This skill requires an ops-capable Prism key.
 
+When changing config or triggering ops, also send:
+
+```text
+X-Prism-Actor: codex
+X-Prism-Reason: <short reason>
+```
+
 ## Core workflow
 
 1. Read current config first with `GET /config/space`.
@@ -24,6 +31,7 @@ This skill requires an ops-capable Prism key.
 3. Use `PUT /config/space` only when replacing the full config intentionally.
 4. After config changes, tell the user exactly what changed.
 5. Only run backfill or memory/knowledge ops when the user asks for it or when the change clearly requires recomputation.
+6. Include a short audit reason for every config or ops call.
 
 ## Endpoints
 
@@ -33,6 +41,8 @@ This skill requires an ops-capable Prism key.
   `GET /config/status`
 - Patch space config:
   `PATCH /config/space`
+- Read recent config/ops audit:
+  `GET /ops/audit/recent`
 - Replace space config:
   `PUT /config/space`
 - Run normal memory pipeline:

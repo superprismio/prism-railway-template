@@ -159,6 +159,81 @@ def create_app(settings: Settings) -> FastAPI:
         except Exception:
             return _load_config(bundled_config_path)
 
+    def _now_iso() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    def _audit_log_path() -> Path:
+        return data_root / "ops" / "audit" / "config-admin.jsonl"
+
+    def _is_sensitive_key(key: str) -> bool:
+        normalized = key.lower()
+        return any(token in normalized for token in ("password", "secret", "token", "api_key", "apikey", "key"))
+
+    def _redact_value(value):
+        if isinstance(value, dict):
+            return {
+                str(key): ("<redacted>" if _is_sensitive_key(str(key)) else _redact_value(item))
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [_redact_value(item) for item in value]
+        return value
+
+    def _flatten_changed_keys(before, after, prefix: str = "") -> list[str]:
+        if isinstance(before, dict) and isinstance(after, dict):
+            changed: list[str] = []
+            keys = sorted(set(before.keys()) | set(after.keys()))
+            for key in keys:
+                child_prefix = f"{prefix}.{key}" if prefix else str(key)
+                if key not in before or key not in after:
+                    changed.append(child_prefix)
+                    continue
+                changed.extend(_flatten_changed_keys(before[key], after[key], child_prefix))
+            return changed
+        if before != after:
+            return [prefix] if prefix else []
+        return []
+
+    def _audit_actor(request: Request) -> str:
+        return (
+            request.headers.get("x-prism-actor")
+            or request.headers.get("x-service-name")
+            or request.headers.get("user-agent")
+            or "api"
+        ).strip()
+
+    def _audit_reason(request: Request) -> str | None:
+        raw = request.headers.get("x-prism-reason")
+        return raw.strip() if raw and raw.strip() else None
+
+    def _append_audit_entry(entry: dict) -> None:
+        audit_path = _audit_log_path()
+        audit_path.parent.mkdir(parents=True, exist_ok=True)
+        with audit_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=True) + "\n")
+
+    def _audit_recent(limit: int) -> schemas.OpsAuditRecentResponse:
+        audit_path = _audit_log_path()
+        if not audit_path.is_file():
+            return schemas.OpsAuditRecentResponse(entries=[], total=0, limit=limit)
+        all_entries: list[schemas.OpsAuditEntry] = []
+        with audit_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                raw = line.strip()
+                if not raw:
+                    continue
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                all_entries.append(schemas.OpsAuditEntry(**payload))
+        visible_entries = all_entries[-limit:]
+        return schemas.OpsAuditRecentResponse(
+            entries=list(reversed(visible_entries)),
+            total=len(all_entries),
+            limit=limit,
+        )
+
     def _merge_patch(current: dict, patch: dict) -> dict:
         merged = dict(current)
         for key, value in patch.items():
@@ -168,7 +243,13 @@ def create_app(settings: Settings) -> FastAPI:
                 merged[key] = value
         return merged
 
-    def _write_space_config(config_payload: dict) -> schemas.SpaceConfigUpdateResponse:
+    def _write_space_config(
+        config_payload: dict,
+        *,
+        request: Request,
+        action: str,
+        before_config: dict | None = None,
+    ) -> schemas.SpaceConfigUpdateResponse:
         config_file = data_root / "config" / "space.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         tmp_file = config_file.with_suffix(".json.tmp")
@@ -191,6 +272,22 @@ def create_app(settings: Settings) -> FastAPI:
         tmp_file.replace(config_file)
         _reload_config_state()
         digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        _append_audit_entry(
+            {
+                "ts": _now_iso(),
+                "action": action,
+                "actor": _audit_actor(request),
+                "reason": _audit_reason(request),
+                "status": "ok",
+                "changed_keys": _flatten_changed_keys(before_config or {}, config_payload),
+                "before": _redact_value(before_config) if before_config is not None else None,
+                "after": _redact_value(config_payload),
+                "details": {
+                    "path": str(config_file),
+                    "sha256": digest,
+                },
+            }
+        )
         return schemas.SpaceConfigUpdateResponse(
             path=str(config_file),
             updated_at=datetime.now(timezone.utc).isoformat(),
@@ -561,8 +658,9 @@ def create_app(settings: Settings) -> FastAPI:
         dependencies=[ops_auth_dependency],
         tags=["system"],
     )
-    async def config_space_update(payload: schemas.SpaceConfigUpdateRequest):
-        return _write_space_config(payload.config)
+    async def config_space_update(request: Request, payload: schemas.SpaceConfigUpdateRequest):
+        current = _load_active_config().model_dump(mode="json")
+        return _write_space_config(payload.config, request=request, action="config.put", before_config=current)
 
     @app.patch(
         "/config/space",
@@ -570,12 +668,21 @@ def create_app(settings: Settings) -> FastAPI:
         dependencies=[ops_auth_dependency],
         tags=["system"],
     )
-    async def config_space_patch(payload: schemas.SpaceConfigPatchRequest):
+    async def config_space_patch(request: Request, payload: schemas.SpaceConfigPatchRequest):
         config_file = data_root / "config" / "space.json"
         source_file = config_file if config_file.is_file() else bundled_config_path
         current_raw = json.loads(source_file.read_text(encoding="utf-8"))
         merged = _merge_patch(current_raw, payload.patch)
-        return _write_space_config(merged)
+        return _write_space_config(merged, request=request, action="config.patch", before_config=current_raw)
+
+    @app.get(
+        "/ops/audit/recent",
+        response_model=schemas.OpsAuditRecentResponse,
+        dependencies=[ops_auth_dependency],
+        tags=["ops"],
+    )
+    async def ops_audit_recent(limit: int = Query(50, ge=1, le=500)):
+        return _audit_recent(limit)
 
     @app.get("/skills", dependencies=[read_auth_dependency], tags=["system"])
     async def skills_list():
@@ -895,6 +1002,7 @@ def create_app(settings: Settings) -> FastAPI:
         tags=["ops"],
     )
     async def ops_memory_run(
+        request: Request,
         date: Optional[str] = Query(None, description="Optional YYYY-MM-DD target date for digest/memory/seeds"),
         force: bool = Query(False),
         backfill_hours: Optional[int] = Query(None, ge=1),
@@ -935,6 +1043,26 @@ def create_app(settings: Settings) -> FastAPI:
                 stage_args.append("--force")
             last_result = _run_ops_command(f"memory.{stage}", stage_args)
 
+        if last_result is not None:
+            _append_audit_entry(
+                {
+                    "ts": _now_iso(),
+                    "action": "ops.memory.run",
+                    "actor": _audit_actor(request),
+                    "reason": _audit_reason(request),
+                    "status": "ok" if last_result.exit_code == 0 else "error",
+                    "changed_keys": [],
+                    "before": None,
+                    "after": None,
+                    "details": {
+                        "date": target_date,
+                        "force": force,
+                        "backfill_hours": backfill_hours,
+                        "last_operation": last_result.operation,
+                        "exit_code": last_result.exit_code,
+                    },
+                }
+            )
         return last_result
 
     @app.post(
@@ -944,6 +1072,7 @@ def create_app(settings: Settings) -> FastAPI:
         tags=["ops"],
     )
     async def ops_memory_backfill(
+        request: Request,
         days: int = Query(30, ge=1, le=90, description="Number of days to fully recompute"),
         force: bool = Query(True, description="Force-rebuild digest, memory, and seeds for each day"),
     ):
@@ -987,8 +1116,29 @@ def create_app(settings: Settings) -> FastAPI:
                 results.append(_run_ops_command(f"memory.{stage}", stage_args))
             current += timedelta(days=1)
 
+        ok = collect_result.exit_code == 0 and all(result.exit_code == 0 for result in results)
+        _append_audit_entry(
+            {
+                "ts": _now_iso(),
+                "action": "ops.memory.backfill",
+                "actor": _audit_actor(request),
+                "reason": _audit_reason(request),
+                "status": "ok" if ok else "error",
+                "changed_keys": [],
+                "before": None,
+                "after": None,
+                "details": {
+                    "days": days,
+                    "force": force,
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                    "collect_exit_code": collect_result.exit_code,
+                    "result_count": len(results),
+                },
+            }
+        )
         return schemas.OpsBackfillResponse(
-            ok=True,
+            ok=ok,
             operation="memory.backfill",
             start_date=start_date.isoformat(),
             end_date=end_date.isoformat(),
@@ -1063,8 +1213,8 @@ def create_app(settings: Settings) -> FastAPI:
         dependencies=[ops_auth_dependency],
         tags=["ops"],
     )
-    async def ops_knowledge_run():
-        _run_ops_command(
+    async def ops_knowledge_run(request: Request):
+        promote_result = _run_ops_command(
             "knowledge.promote",
             [
                 "-m",
@@ -1076,7 +1226,7 @@ def create_app(settings: Settings) -> FastAPI:
                 settings.space,
             ],
         )
-        _run_ops_command(
+        validate_result = _run_ops_command(
             "knowledge.validate",
             [
                 "-m",
@@ -1088,7 +1238,7 @@ def create_app(settings: Settings) -> FastAPI:
                 settings.space,
             ],
         )
-        return _run_ops_command(
+        index_result = _run_ops_command(
             "knowledge.index",
             [
                 "-m",
@@ -1100,5 +1250,26 @@ def create_app(settings: Settings) -> FastAPI:
                 settings.space,
             ],
         )
+        _append_audit_entry(
+            {
+                "ts": _now_iso(),
+                "action": "ops.knowledge.run",
+                "actor": _audit_actor(request),
+                "reason": _audit_reason(request),
+                "status": "ok" if index_result.exit_code == 0 else "error",
+                "changed_keys": [],
+                "before": None,
+                "after": None,
+                "details": {
+                    "stages": [promote_result.operation, validate_result.operation, index_result.operation],
+                    "exit_codes": {
+                        promote_result.operation: promote_result.exit_code,
+                        validate_result.operation: validate_result.exit_code,
+                        index_result.operation: index_result.exit_code,
+                    },
+                },
+            }
+        )
+        return index_result
 
     return app

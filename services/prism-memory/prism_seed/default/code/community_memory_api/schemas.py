@@ -237,4 +237,22 @@ class SpaceConfigUpdateResponse(BaseModel):
     knowledge_allowed_tags: list[str]
 
 
+class OpsAuditEntry(BaseModel):
+    ts: str
+    action: str
+    actor: str
+    reason: Optional[str] = None
+    status: str
+    changed_keys: list[str] = Field(default_factory=list)
+    before: Optional[Dict[str, Any]] = None
+    after: Optional[Dict[str, Any]] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class OpsAuditRecentResponse(BaseModel):
+    entries: list[OpsAuditEntry]
+    total: int
+    limit: int
+
+
 JSONMapping = Dict[str, Any]
