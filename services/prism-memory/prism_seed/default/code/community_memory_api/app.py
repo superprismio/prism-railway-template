@@ -128,6 +128,29 @@ def create_app(settings: Settings) -> FastAPI:
 
     _reload_config_state()
 
+    def _absolute_url(request: Request, value: str | None) -> str | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        if raw.startswith(("http://", "https://")):
+            return raw
+        if not raw.startswith("/"):
+            raw = f"/{raw}"
+        return f"{str(request.base_url).rstrip('/')}{raw}"
+
+    def _with_absolute_links(request: Request, payload):
+        if isinstance(payload, dict):
+            result = dict(payload)
+            for key in ("doc_url", "doc_api_url"):
+                if key in result:
+                    result[key] = _absolute_url(request, result.get(key))
+            if "results" in result and isinstance(result["results"], list):
+                result["results"] = [_with_absolute_links(request, item) for item in result["results"]]
+            return result
+        if isinstance(payload, list):
+            return [_with_absolute_links(request, item) for item in payload]
+        return payload
+
     def _load_active_config():
         try:
             return _load_config(config_path)
@@ -560,15 +583,15 @@ def create_app(settings: Settings) -> FastAPI:
         return storage.product_suggestion_weekly(week)
 
     @app.get("/knowledge/docs/{slug:path}", dependencies=[read_auth_dependency], tags=["knowledge"])
-    async def knowledge_doc(slug: str):
-        return storage.knowledge_doc(slug)
+    async def knowledge_doc(slug: str, request: Request):
+        return _with_absolute_links(request, storage.knowledge_doc(slug))
 
     @app.get("/knowledge/view/{slug:path}", tags=["knowledge"], include_in_schema=False)
-    async def knowledge_doc_html(slug: str):
+    async def knowledge_doc_html(slug: str, request: Request):
         doc = storage.knowledge_doc(slug)
         title = str(doc.get("title") or doc.get("slug") or "Knowledge doc")
         content = str(doc.get("content") or "")
-        api_url = f"/knowledge/docs/{html.escape(str(doc.get('slug') or slug), quote=True)}"
+        api_url = _absolute_url(request, f"/knowledge/docs/{str(doc.get('slug') or slug)}") or ""
         source_url = str(doc.get("source_url") or "").strip()
         source_link = f'<dt>Source</dt><dd><a href="{html.escape(source_url, quote=True)}">{html.escape(source_url)}</a></dd>' if source_url else ""
         page = f"""<!doctype html>
@@ -612,13 +635,17 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get("/knowledge/search", dependencies=[read_auth_dependency], tags=["knowledge"])
     async def knowledge_search(
+        request: Request,
         q: Optional[str] = Query(None, min_length=1),
         kind: Optional[str] = None,
         tag: Optional[str] = None,
         entity: Optional[str] = None,
         limit: int = Query(25, ge=1, le=100),
     ):
-        return storage.knowledge_search(query=q, kind=kind, tag=tag, entity=entity, limit=limit)
+        return _with_absolute_links(
+            request,
+            storage.knowledge_search(query=q, kind=kind, tag=tag, entity=entity, limit=limit),
+        )
 
     @app.get("/knowledge/indexes/manifest", dependencies=[read_auth_dependency], tags=["knowledge"])
     async def knowledge_index_manifest():
