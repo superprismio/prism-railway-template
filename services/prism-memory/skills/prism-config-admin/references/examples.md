@@ -33,6 +33,18 @@ Enable agentic ingest for bot-only classification:
 }
 ```
 
+Set the mode directly when the user asks for it:
+
+```json
+{
+  "patch": {
+    "agentic_ingest": {
+      "mode": "bot_only"
+    }
+  }
+}
+```
+
 Important:
 
 - `mode=on` is invalid

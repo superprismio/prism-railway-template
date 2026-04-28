@@ -60,6 +60,7 @@ X-Prism-Reason: <short reason>
 - Do not guess config shape without reading current config first.
 - Prefer minimal recursive patches over full replacements.
 - When changing optional features, preserve unrelated config.
+- If the user names a valid `agentic_ingest.mode` value directly, patch that value directly instead of asking a follow-up.
 - `mode=on` is not a valid `agentic_ingest` mode. Use one of:
   - `off`
   - `bot_only`
@@ -68,6 +69,7 @@ X-Prism-Reason: <short reason>
 - For agentic ingest:
   - default to `mode=off`
   - use `scope=bot_only` for first experiments
+  - treat “enable bot-only agentic ingest” and “set mode to bot_only” as direct patch requests
   - treat provider settings as optional unless the user explicitly wants it enabled now
 - For backfills:
   - explain blast radius in days
