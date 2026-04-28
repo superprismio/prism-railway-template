@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation"
+import { createAuditLog, createTargetApp } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
+import { requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
 
 function slugFromName(value: string) {
   return value
@@ -21,6 +23,42 @@ export async function POST(request: Request) {
     .trim()
   const slug = String(formData.get("slug") ?? "").trim() || slugFromName(name || repoName || "repository")
   const defaultBranch = String(formData.get("defaultBranch") ?? "main").trim() || "main"
+
+  if (useLocalAppApi()) {
+    const access = await requireLocalAdminAccess()
+    if (!access.ok) {
+      redirect("/admin?tab=settings&error=unauthorized")
+    }
+
+    if (!slug || !name) {
+      redirect("/admin?tab=settings&error=target-app")
+    }
+
+    const targetApp = createTargetApp({
+      slug,
+      name,
+      description: String(formData.get("description") ?? "").trim() || null,
+      repoUrl: repoUrl || null,
+      repoProvider: "github",
+      defaultBranch,
+      framework: null,
+      deployBackend: "github",
+      deployConfig: {
+        workspace: "external",
+      },
+      agentEnabled: true,
+    })
+
+    createAuditLog({
+      actorUserId: null,
+      actionType: "admin.target_app.create",
+      targetType: "target_app",
+      targetId: targetApp?.id ?? null,
+      meta: { slug, name, deployBackend: "github" },
+    })
+
+    redirect("/admin?tab=settings")
+  }
 
   const response = await adminFetch("/api/admin/target-apps", {
     method: "POST",

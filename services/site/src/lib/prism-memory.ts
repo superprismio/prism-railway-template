@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { loadConfig } from "@/lib/app-core"
 
 import { adminFetch, getAdminPasswordCookie } from "@/lib/admin"
 
@@ -97,9 +98,26 @@ function prismMemoryReadKey() {
   ).trim()
 }
 
+function useLocalAppApi() {
+  return process.env.SITE_USE_LOCAL_APP_API?.trim() === "true"
+}
+
 async function requireAdminAccess() {
   const password = await getAdminPasswordCookie()
   if (!password) {
+    return {
+      ok: false as const,
+      status: 401,
+      error: "Unauthorized",
+    }
+  }
+
+  if (useLocalAppApi()) {
+    const config = loadConfig()
+    if (password === config.adminPassword) {
+      return { ok: true as const }
+    }
+
     return {
       ok: false as const,
       status: 401,

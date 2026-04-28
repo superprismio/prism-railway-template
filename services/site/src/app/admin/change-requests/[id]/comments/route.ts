@@ -1,6 +1,20 @@
 import { NextResponse } from "next/server"
+import {
+  createAgentMessage,
+  createAgentSession,
+  getChangeRequest,
+  listAgentMessages,
+  findLatestAgentSessionByChangeRequest,
+  updateAgentSession,
+} from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
+import {
+  parseString,
+  readRouteParam,
+  requireLocalAdminAccess,
+  useLocalAppApi,
+} from "@/lib/local-admin-api"
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -16,6 +30,75 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const { id } = await context.params
+
+  if (useLocalAppApi()) {
+    const access = await requireLocalAdminAccess()
+    if (!access.ok) {
+      return NextResponse.json({ ok: false, error: access.error }, { status: access.status })
+    }
+
+    const changeRequestId = readRouteParam(id)
+    const changeRequest = getChangeRequest(changeRequestId)
+    if (!changeRequest) {
+      return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })
+    }
+
+    const body = payload as Record<string, unknown>
+    const content = parseString(body.content)
+    if (!content) {
+      return NextResponse.json({ ok: false, error: "content is required" }, { status: 400 })
+    }
+
+    let session = findLatestAgentSessionByChangeRequest(changeRequestId)
+    if (!session) {
+      session = createAgentSession({
+        source: "admin-console",
+        status: "active",
+        title: changeRequest.title,
+        linkedChangeRequestId: changeRequest.id,
+        linkedTargetEnvironmentId: changeRequest.targetEnvironmentId,
+        createdByUserId: null,
+        meta: {
+          transport: "site",
+        },
+        lastMessageAt: new Date().toISOString(),
+      })
+    }
+
+    if (!session) {
+      return NextResponse.json({ ok: false, error: "AGENT_SESSION_CREATE_FAILED" }, { status: 500 })
+    }
+
+    const message = createAgentMessage({
+      sessionId: session.id,
+      role: "user",
+      source: "site-comment",
+      sourceMessageId: null,
+      content,
+      meta: {
+        transport: "site",
+        kind: "comment",
+      },
+    })
+
+    const updatedSession = updateAgentSession(session.id, {
+      linkedChangeRequestId: changeRequest.id,
+      linkedTargetEnvironmentId: changeRequest.targetEnvironmentId,
+      lastMessageAt: new Date().toISOString(),
+      meta: {
+        ...session.meta,
+        transport: "site",
+      },
+    })
+
+    return NextResponse.json({
+      ok: true,
+      session: updatedSession,
+      message,
+      messages: listAgentMessages(session.id, 100),
+    }, { status: 201 })
+  }
+
   const response = await adminFetch(`/api/admin/change-board/requests/${id}/agent-session/messages`, {
     method: "POST",
     body: JSON.stringify(payload),
