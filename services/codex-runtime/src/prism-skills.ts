@@ -242,6 +242,24 @@ function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>)
   }
 
   if (
+    normalized.includes('config')
+    || normalized.includes('configure')
+    || normalized.includes('space config')
+    || normalized.includes('space.json')
+    || normalized.includes('agentic ingest')
+    || normalized.includes('memory policy')
+    || normalized.includes('priority channel')
+    || normalized.includes('priority topic')
+    || normalized.includes('scoped bucket')
+    || normalized.includes('scoped source')
+    || normalized.includes('turn on bot_only')
+    || normalized.includes('turn off agentic')
+    || normalized.includes('backfill')
+  ) {
+    requested.add('prism-config-admin');
+  }
+
+  if (
     normalized.includes('change request')
     || normalized.includes('change-request')
     || normalized.includes('next request')
