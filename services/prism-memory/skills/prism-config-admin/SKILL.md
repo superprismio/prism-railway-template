@@ -29,9 +29,12 @@ X-Prism-Reason: <short reason>
 1. Read current config first with `GET /config/space`.
 2. Prefer `PATCH /config/space` for narrow changes.
 3. Use `PUT /config/space` only when replacing the full config intentionally.
-4. After config changes, tell the user exactly what changed.
-5. Only run backfill or memory/knowledge ops when the user asks for it or when the change clearly requires recomputation.
-6. Include a short audit reason for every config or ops call.
+4. For config reads, summarize by default instead of dumping the entire file.
+5. If the user asks for a specific section such as `agentic_ingest`, `discord`, `knowledge`, or `memory`, show only that section plus one short explanation.
+6. Only show full raw JSON when the user explicitly asks for the full config.
+7. After config changes, tell the user exactly what changed.
+8. Only run backfill or memory/knowledge ops when the user asks for it or when the change clearly requires recomputation.
+9. Include a short audit reason for every config or ops call.
 
 ## Endpoints
 
@@ -57,6 +60,11 @@ X-Prism-Reason: <short reason>
 - Do not guess config shape without reading current config first.
 - Prefer minimal recursive patches over full replacements.
 - When changing optional features, preserve unrelated config.
+- `mode=on` is not a valid `agentic_ingest` mode. Use one of:
+  - `off`
+  - `bot_only`
+  - `scoped`
+  - `all`
 - For agentic ingest:
   - default to `mode=off`
   - use `scope=bot_only` for first experiments
