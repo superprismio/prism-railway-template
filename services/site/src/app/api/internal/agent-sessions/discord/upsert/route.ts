@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { upsertAgentSessionFromDiscord } from "@prism-railway/app-core"
+import { upsertAgentSessionFromDiscord } from "@/lib/app-core"
 
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
 

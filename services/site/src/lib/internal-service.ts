@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { headers } from "next/headers"
-import { loadConfig } from "@prism-railway/app-core"
+import { loadConfig } from "@/lib/app-core"
 
 export function parseString(value: unknown) {
   return typeof value === "string" ? value.trim() : ""

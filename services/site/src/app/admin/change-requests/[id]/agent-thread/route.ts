@@ -3,7 +3,7 @@ import {
   findLatestAgentSessionByChangeRequest,
   getChangeRequest,
   listAgentMessages,
-} from "@prism-railway/app-core"
+} from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
 import { readRouteParam, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { listHostedSkills, loadConfig } from "@prism-railway/app-core"
+import { listHostedSkills, loadConfig } from "@/lib/app-core"
 
 import { requireServiceAccess } from "@/lib/internal-service"
 

@@ -1,5 +1,5 @@
 import { cookies } from "next/headers"
-import { loadConfig } from "@prism-railway/app-core"
+import { loadConfig } from "@/lib/app-core"
 
 import { adminPasswordCookieName } from "@/lib/admin"
 

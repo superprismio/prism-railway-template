@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { updateChangeRequestExecution } from "@prism-railway/app-core"
+import { updateChangeRequestExecution } from "@/lib/app-core"
 
 import { parseNullableString, requireServiceAccess } from "@/lib/internal-service"
 import { readRouteParam } from "@/lib/local-admin-api"

@@ -5,7 +5,7 @@ import {
   getTargetApp,
   getTargetEnvironment,
   listChangeRequestExecutions,
-} from "@prism-railway/app-core"
+} from "@/lib/app-core"
 
 import { requireServiceAccess } from "@/lib/internal-service"
 

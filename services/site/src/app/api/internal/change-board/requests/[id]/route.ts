@@ -6,7 +6,7 @@ import {
   getTargetEnvironment,
   listChangeRequestExecutions,
   updateChangeRequest,
-} from "@prism-railway/app-core"
+} from "@/lib/app-core"
 
 import { parseNullableString, requireServiceAccess } from "@/lib/internal-service"
 import { readRouteParam, trackedChangeRequestPriorities, trackedChangeRequestStatuses } from "@/lib/local-admin-api"

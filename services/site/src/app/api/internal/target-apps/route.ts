@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { listTargetApps } from "@prism-railway/app-core"
+import { listTargetApps } from "@/lib/app-core"
 
 import { requireServiceAccess } from "@/lib/internal-service"
 

@@ -6,7 +6,7 @@ import {
   listAgentMessages,
   findLatestAgentSessionByChangeRequest,
   updateAgentSession,
-} from "@prism-railway/app-core"
+} from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
 import {

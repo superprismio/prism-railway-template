@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createAuditLog, getChangeRequest, listChangeRequestExecutions, updateChangeRequest } from "@prism-railway/app-core"
+import { createAuditLog, getChangeRequest, listChangeRequestExecutions, updateChangeRequest } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
 import {

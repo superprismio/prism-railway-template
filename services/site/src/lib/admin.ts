@@ -1,5 +1,5 @@
 import { cookies } from "next/headers"
-import { getAdminBoardSnapshot, getAdminSetupStatus, loadConfig } from "@prism-railway/app-core"
+import { getAdminBoardSnapshot, getAdminSetupStatus, loadConfig } from "@/lib/app-core"
 
 export const adminPasswordCookieName = "prism_admin_password"
 

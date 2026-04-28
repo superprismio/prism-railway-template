@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { buildHostedSkillArchive, loadConfig } from "@prism-railway/app-core"
+import { buildHostedSkillArchive, loadConfig } from "@/lib/app-core"
 
 import { requireServiceAccess } from "@/lib/internal-service"
 import { readRouteParam } from "@/lib/local-admin-api"

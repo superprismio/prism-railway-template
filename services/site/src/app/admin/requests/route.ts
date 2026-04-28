@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { createAuditLog, createChangeRequest, getDefaultTargetEnvironmentForApp } from "@prism-railway/app-core"
+import { createAuditLog, createChangeRequest, getDefaultTargetEnvironmentForApp } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
 import {

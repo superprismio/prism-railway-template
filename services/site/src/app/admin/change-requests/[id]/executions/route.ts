@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getChangeRequest, listChangeRequestExecutions } from "@prism-railway/app-core"
+import { getChangeRequest, listChangeRequestExecutions } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
 import { readRouteParam, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"

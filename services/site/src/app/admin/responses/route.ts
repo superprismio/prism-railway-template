@@ -15,7 +15,7 @@ import {
   updateAgentSession,
   updateChangeRequest,
   updateChangeRequestExecution,
-} from "@prism-railway/app-core"
+} from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"

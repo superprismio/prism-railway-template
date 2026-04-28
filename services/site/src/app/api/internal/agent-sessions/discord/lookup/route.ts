@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { findAgentSessionByDiscordContext, listAgentMessages } from "@prism-railway/app-core"
+import { findAgentSessionByDiscordContext, listAgentMessages } from "@/lib/app-core"
 
 import { parseNullableString, readOptionalInteger, requireServiceAccess } from "@/lib/internal-service"
 

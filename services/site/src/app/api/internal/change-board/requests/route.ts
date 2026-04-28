@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createChangeRequest, getDefaultTargetEnvironmentForApp } from "@prism-railway/app-core"
+import { createChangeRequest, getDefaultTargetEnvironmentForApp } from "@/lib/app-core"
 
 import {
   parseNullableString,

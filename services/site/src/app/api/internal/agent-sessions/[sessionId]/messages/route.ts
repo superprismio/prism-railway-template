@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createAgentMessage } from "@prism-railway/app-core"
+import { createAgentMessage } from "@/lib/app-core"
 
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
 import { readRouteParam } from "@/lib/local-admin-api"

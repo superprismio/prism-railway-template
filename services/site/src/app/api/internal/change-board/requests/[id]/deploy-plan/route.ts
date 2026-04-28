@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { buildTargetEnvironmentDeployPlan, getChangeRequest, getTargetApp, getTargetEnvironment } from "@prism-railway/app-core"
+import { buildTargetEnvironmentDeployPlan, getChangeRequest, getTargetApp, getTargetEnvironment } from "@/lib/app-core"
 
 import { requireServiceAccess } from "@/lib/internal-service"
 import { readRouteParam } from "@/lib/local-admin-api"

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { loadConfig } from "@prism-railway/app-core"
+import { loadConfig } from "@/lib/app-core"
 
 import { adminFetch, getAdminPasswordCookie } from "@/lib/admin"
 
