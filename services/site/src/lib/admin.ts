@@ -8,9 +8,8 @@ function useLocalAppApi() {
 }
 
 export const siteApiBase =
-  process.env.API_INTERNAL_BASE_URL ||
   process.env.NEXT_PUBLIC_API_BASE_URL ||
-  "http://127.0.0.1:4010"
+  "http://127.0.0.1:3100"
 
 export type TargetAppRecord = {
   id: string

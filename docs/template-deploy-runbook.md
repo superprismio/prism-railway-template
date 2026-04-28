@@ -19,8 +19,7 @@ The deployed project should include:
 
 | Service | Root directory | Volume |
 | --- | --- | --- |
-| `api` | `/services/api` | `/data` |
-| `site` | `/services/site` | none |
+| `site` | `/services/site` | `/data` |
 | `prism-memory` | `/services/prism-memory` | `/data` |
 | `discord-adapter` | `/services/source-adapter` | `/data` |
 | `codex-runtime` | `/services/codex-runtime` | `/data` |
@@ -33,7 +32,6 @@ The deployed project should include:
 Get service domains from Railway, then check:
 
 ```bash
-curl https://<api-domain>/api/health
 curl https://<site-domain>/
 curl https://<prism-memory-domain>/health
 curl https://<discord-adapter-domain>/health
@@ -42,7 +40,7 @@ curl https://<codex-runtime-domain>/health
 
 Expected early results:
 
-- `api` returns `ok: true` and shows applied migrations.
+- `site /api/health` returns `ok: true` and shows applied migrations.
 - `site` returns HTML.
 - `prism-memory` returns `ok: true` and `space: community`.
 - `discord-adapter` returns `ok: true`; Discord may show `discordReady: false` until Discord credentials are set.
@@ -50,10 +48,10 @@ Expected early results:
 - `memory-cron` and `knowledge-cron` should stop after successful one-shot runs.
 - `discord-sync-cron` should stop cleanly with `PRISM_TRIGGER_DISABLED=true`.
 
-## 4. Bootstrap The API
+## 4. Bootstrap The App
 
 ```bash
-bash scripts/railway-bootstrap-api.sh --environment production --service api
+bash scripts/railway-bootstrap-api.sh --environment production --service site
 ```
 
 Expected:
@@ -204,29 +202,19 @@ ${{ secret(64) }}
 
 Use these blocks in the Railway template composer raw variable editor when descriptions need to be carried by inline comments.
 
-### API
-
-```text
-PORT="4010" # Port the API service listens on.
-NODE_ENV="production" # Runtime environment for the API service.
-APP_BASE_URL="https://${{api.RAILWAY_PUBLIC_DOMAIN}}" # Public URL for the API service.
-PRISM_AGENT_DATA_ROOT="/data" # Mounted data directory for API runtime state.
-ADMIN_EMAIL="admin@local.agent" # Initial admin account email.
-ADMIN_PASSWORD="${{ secret(32) }}" # Generated initial admin password.
-SESSION_SECRET="${{ secret(64) }}" # Secret used to sign API sessions.
-INTERNAL_SERVICE_TOKEN="${{ secret(64) }}" # Shared token for internal service-to-service API calls.
-PRISM_MEMORY_BASE_URL="http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}" # Private URL for Prism Memory using its internal port.
-CODEX_RUNTIME_BASE_URL="http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}" # Private URL for Codex Runtime using its internal port.
-COMMUNITY_PROVIDER="discord" # Community adapter provider enabled for this stack.
-```
-
-### Site
-
 ```text
 PORT="3100" # Port the site service listens on.
 NODE_ENV="production" # Runtime environment for the site service.
-NEXT_PUBLIC_API_BASE_URL="https://${{api.RAILWAY_PUBLIC_DOMAIN}}" # Browser-facing API URL used by the site.
-API_INTERNAL_BASE_URL="http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}" # Server-side API URL used by the site.
+NEXT_PUBLIC_API_BASE_URL="https://${{site.RAILWAY_PUBLIC_DOMAIN}}" # Browser-facing API URL used by the site.
+API_INTERNAL_BASE_URL="http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}" # Server-side API URL used by the site.
+SITE_USE_LOCAL_APP_API="true" # Site owns the app API and SQLite runtime state.
+PRISM_AGENT_DATA_ROOT="/data" # Mounted data directory for site runtime state.
+ADMIN_EMAIL="admin@local.agent" # Initial admin account email.
+ADMIN_PASSWORD="changeme" # Temporary admin password; change after deploy.
+SESSION_SECRET="${{ secret(32) }}" # Secret used to sign site sessions.
+INTERNAL_SERVICE_TOKEN="${{ secret(32) }}" # Shared token for internal service-to-service API calls.
+CODEX_RUNTIME_BASE_URL="http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}" # Private URL for Codex Runtime using its internal port.
+COMMUNITY_PROVIDER="discord" # Community adapter provider enabled for this stack.
 ```
 
 ### Prism Memory
@@ -252,8 +240,8 @@ SOURCE_CHECKPOINT_OVERLAP_MINUTES="5" # Minutes of overlap when resuming Discord
 PRISM_API_BASE="https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}" # Public URL for Prism Memory ingest calls.
 PRISM_API_KEY="${{prism-memory.PRISM_API_KEY}}" # Prism Memory API key reference.
 PRISM_INGEST_PATH="/ingest/messages" # Prism Memory ingest endpoint path.
-APP_API_BASE_URL="http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}" # Private URL for the API service using its internal port.
-INTERNAL_SERVICE_TOKEN="${{api.INTERNAL_SERVICE_TOKEN}}" # Internal API service token reference.
+APP_API_BASE_URL="http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}" # Private URL for the site app API using its internal port.
+INTERNAL_SERVICE_TOKEN="${{site.INTERNAL_SERVICE_TOKEN}}" # Internal site service token reference.
 CODEX_RUNTIME_BASE_URL="http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}" # Private URL for Codex Runtime using its internal port.
 DISCORD_BOT_TOKEN="" # Discord bot token. Required to enable Discord sync/chat.
 DISCORD_GUILD_ID="" # Discord guild ID to sync and serve. Required to enable Discord.

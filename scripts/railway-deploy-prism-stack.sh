@@ -6,13 +6,11 @@ cd "$repo_root"
 
 project_arg=""
 environment_arg="production"
-api_service="api"
 site_service="site"
 prism_memory_service="prism-memory"
 prism_base=""
 prism_key=""
 bootstrap_api=true
-deploy_api=true
 deploy_site=true
 run_memory=false
 run_knowledge=false
@@ -25,22 +23,19 @@ Usage:
     --prism-api-base https://prism-memory-production.up.railway.app \
     --prism-api-key <key> \
     [--environment production] \
-    [--api-service api] \
     [--site-service site] \
     [--prism-memory-service prism-memory] \
     [--target-manifest /app/config/target-apps.default.json] \
-    [--skip-api] \
     [--skip-site] \
     [--skip-api-bootstrap] \
     [--run-memory] \
     [--run-knowledge]
 
 What it does:
-  1. Deploys api from services/api
-  2. Optionally bootstraps the API with migrate/admin/targets
-  3. Deploys site from services/site
-  4. Deploys prism-memory from services/prism-memory
-  5. Optionally triggers memory and knowledge ops runs
+  1. Deploys site from services/site
+  2. Optionally bootstraps the app with migrate/admin/targets
+  3. Deploys prism-memory from services/prism-memory
+  4. Optionally triggers memory and knowledge ops runs
 
 Required:
   --prism-api-base   Prism Memory base URL
@@ -67,10 +62,6 @@ while [[ $# -gt 0 ]]; do
       environment_arg="$2"
       shift 2
       ;;
-    --api-service)
-      api_service="$2"
-      shift 2
-      ;;
     --site-service)
       site_service="$2"
       shift 2
@@ -90,10 +81,6 @@ while [[ $# -gt 0 ]]; do
     --target-manifest)
       target_manifest="$2"
       shift 2
-      ;;
-    --skip-api)
-      deploy_api=false
-      shift 1
       ;;
     --skip-site)
       deploy_site=false
@@ -144,16 +131,11 @@ railway status
 
 common_railway_args=(-e "$environment_arg")
 
-if [[ "$deploy_api" == true ]]; then
-  echo "[railway-deploy-prism-stack] deploying $api_service"
-  railway up "${common_railway_args[@]}" --service "$api_service" --path-as-root services/api --ci
-fi
-
 if [[ "$bootstrap_api" == true ]]; then
-  echo "[railway-deploy-prism-stack] bootstrapping API"
+  echo "[railway-deploy-prism-stack] bootstrapping app"
   api_bootstrap_args=(
     --environment "$environment_arg"
-    --service "$api_service"
+    --service "$site_service"
   )
   if [[ -n "$project_arg" ]]; then
     api_bootstrap_args=(--project "$project_arg" "${api_bootstrap_args[@]}")

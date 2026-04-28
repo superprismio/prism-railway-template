@@ -5,6 +5,9 @@
   "scripts": {
     "build": "next build",
     "dev": "next dev --hostname 0.0.0.0 --port ${SITE_PORT:-3100}",
+    "migrate": "tsx src/cli/migrate.ts",
+    "bootstrap:admin": "tsx src/cli/bootstrap-admin.ts",
+    "bootstrap:targets": "tsx src/cli/bootstrap-targets.ts",
     "start": "next start --hostname 0.0.0.0 --port ${PORT:-3100}",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -29,6 +32,7 @@
     "@radix-ui/react-toast": "^1.2.15",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tailwindcss/postcss": "^4.2.2",
+    "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.8.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -45,9 +49,11 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^24.7.2",
     "@types/react": "^19.1.13",
     "@types/react-dom": "^19.1.9",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }
 }

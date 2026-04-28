@@ -19,7 +19,6 @@ The main difference outside Railway is that you must provide:
 
 Portable parts:
 
-- `api`
 - `site`
 - `codex-runtime`
 - `prism-memory`
@@ -48,9 +47,9 @@ Then copy or adjust `.env` from `.env.example`.
 For local development, use loopback URLs and your normal Codex home:
 
 ```env
-API_INTERNAL_BASE_URL=http://127.0.0.1:4010
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:4010
-APP_API_BASE_URL=http://127.0.0.1:4010
+API_INTERNAL_BASE_URL=http://127.0.0.1:3100
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:3100
+APP_API_BASE_URL=http://127.0.0.1:3100
 CODEX_RUNTIME_BASE_URL=http://127.0.0.1:3030
 PRISM_API_BASE=http://127.0.0.1:8788
 PRISM_API_KEY=replace-me
@@ -69,7 +68,6 @@ Do not set local `CODEX_HOME` to Railway-style `/data/codex` unless you intentio
 
 Default local ports:
 
-- `api`: `4010`
 - `site`: `3100`
 - `codex-runtime`: `3030`
 - `prism-memory`: `8788`
@@ -84,7 +82,6 @@ npm run dev:all
 Or run services individually:
 
 ```bash
-npm run dev --workspace @prism-railway/api
 npm run dev --workspace @prism-railway/site
 CODEX_HOME="$HOME/.codex" PORT=3030 npm run dev --workspace @prism-railway/codex-runtime
 PORT=8789 npm run dev --workspace @prism-railway/source-adapter
@@ -108,7 +105,7 @@ Minimum requirements:
 
 Recommended persistent paths:
 
-- `api`: `/srv/prism/api-data`
+- `site`: `/srv/prism/site-data`
 - `codex-runtime`: `/srv/prism/codex`
 - `codex-runtime` workspaces: `/srv/prism/workspaces`
 - `prism-memory`: `/srv/prism/prism-memory`
@@ -117,10 +114,9 @@ Recommended persistent paths:
 Example VPS env values:
 
 ```env
-APP_BASE_URL=https://api.example.com
-API_INTERNAL_BASE_URL=http://127.0.0.1:4010
-NEXT_PUBLIC_API_BASE_URL=https://api.example.com
-APP_API_BASE_URL=http://127.0.0.1:4010
+API_INTERNAL_BASE_URL=http://127.0.0.1:3100
+NEXT_PUBLIC_API_BASE_URL=https://app.example.com
+APP_API_BASE_URL=http://127.0.0.1:3100
 CODEX_RUNTIME_BASE_URL=http://127.0.0.1:3030
 PRISM_API_BASE=https://memory.example.com
 PRISM_API_KEY=replace-me
@@ -129,7 +125,7 @@ SOURCE_ADAPTER_TOKEN=replace-me
 
 CODEX_HOME=/srv/prism/codex
 CODEX_TARGET_WORKSPACE_ROOT=/srv/prism/workspaces
-PRISM_AGENT_DATA_ROOT=/srv/prism/api-data
+PRISM_AGENT_DATA_ROOT=/srv/prism/site-data
 PRISM_API_DATA_ROOT=/srv/prism/prism-memory
 SOURCE_ADAPTER_DATA_ROOT=/srv/prism/discord-adapter
 ```
@@ -141,7 +137,6 @@ If you want local-only access between services on the VPS, keep the service-to-s
 Typical public routes:
 
 - `site`
-- `api`
 - `prism-memory` if you want human-shareable artifact and knowledge links
 - `discord-adapter` if Discord or external webhook callbacks need public reachability
 

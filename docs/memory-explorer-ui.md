@@ -62,9 +62,7 @@ Those handlers:
 - return Prism Memory JSON to the browser
 - avoid exposing Prism Memory keys or internal base URLs
 
-This keeps the first POC scoped to the site app while preserving the existing `site` and `api` split.
-
-If the explorer becomes a stable backend contract, the proxy routes can move into `services/api` later.
+This keeps the explorer scoped to the `site` app, which now also owns the app API and SQLite runtime state.
 
 ## Implemented Proxy Routes
 
@@ -121,8 +119,8 @@ So the new hard requirement is the Prism Memory base URL on `site`. The read key
 The site still needs the normal admin/API env:
 
 ```text
-API_INTERNAL_BASE_URL=http://127.0.0.1:4010
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:4010
+API_INTERNAL_BASE_URL=http://127.0.0.1:3100
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:3100
 ```
 
 ## Artifact Explorer

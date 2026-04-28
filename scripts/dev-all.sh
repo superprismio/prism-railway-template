@@ -38,8 +38,7 @@ start_service() {
 pids=()
 trap cleanup INT TERM EXIT
 
-start_service api env PORT="${PORT:-4010}" npm run dev --workspace @prism-railway/api
-start_service site env SITE_PORT="${SITE_PORT:-3100}" npm run dev --workspace @prism-railway/site
+start_service site env SITE_PORT="${SITE_PORT:-3100}" PORT="${SITE_PORT:-3100}" npm run dev --workspace @prism-railway/site
 start_service codex-runtime env PORT="${CODEX_RUNTIME_PORT:-3030}" npm run dev --workspace @prism-railway/codex-runtime
 
 if [[ -x "$repo_root/services/prism-memory/.venv/bin/python" ]]; then
@@ -56,7 +55,7 @@ fi
 start_service source-adapter \
   env \
   PORT="${SOURCE_ADAPTER_PORT:-8789}" \
-  APP_API_BASE_URL="${APP_API_BASE_URL:-http://127.0.0.1:${PORT:-4010}}" \
+  APP_API_BASE_URL="${APP_API_BASE_URL:-http://127.0.0.1:${SITE_PORT:-3100}}" \
   CODEX_RUNTIME_BASE_URL="${CODEX_RUNTIME_BASE_URL:-http://127.0.0.1:${CODEX_RUNTIME_PORT:-3030}}" \
   PRISM_API_BASE="${PRISM_API_BASE:-http://127.0.0.1:${PRISM_API_PORT:-8788}}" \
   npm run dev --workspace @prism-railway/source-adapter

@@ -16,8 +16,7 @@ This repo is the source code for a Railway template. The template itself should 
 
 | Railway service | Source directory | Notes |
 | --- | --- | --- |
-| `api` | `services/api` | Requires persistent `/data` volume for SQLite/runtime state unless moved to external Postgres. |
-| `site` | `services/site` | Browser-facing app/admin UI. |
+| `site` | `services/site` | Browser-facing app/admin UI and app API. Requires persistent `/data` volume for SQLite/runtime state. |
 | `prism-memory` | `services/prism-memory` | Requires persistent `/data` volume. |
 | `discord-adapter` | `services/source-adapter` | Discord sync, chat, slash commands, and voice recording. Requires persistent `/data` volume for recordings/recovery. |
 | `codex-runtime` | `services/codex-runtime` | Requires persistent `/data` volume for Codex auth and target workspaces. |
@@ -31,12 +30,12 @@ Use Railway reference variables wherever possible so the canvas shows service ed
 
 Good reference variable examples:
 
-- `site.NEXT_PUBLIC_API_BASE_URL=https://${{api.RAILWAY_PUBLIC_DOMAIN}}`
-- `site.API_INTERNAL_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`
-- `discord-adapter.APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`
+- `site.NEXT_PUBLIC_API_BASE_URL=https://${{site.RAILWAY_PUBLIC_DOMAIN}}`
+- `site.API_INTERNAL_BASE_URL=http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}`
+- `discord-adapter.APP_API_BASE_URL=http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}`
 - `discord-adapter.CODEX_RUNTIME_BASE_URL=http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}`
 - `discord-adapter.PRISM_API_BASE=https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}`
-- `codex-runtime.APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`
+- `codex-runtime.APP_API_BASE_URL=http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}`
 - `codex-runtime.PRISM_API_BASE=http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}`
 - `discord-sync-cron.PRISM_API_BASE=https://${{discord-adapter.RAILWAY_PUBLIC_DOMAIN}}`
 - `memory-cron.PRISM_API_BASE=https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}`
@@ -62,7 +61,7 @@ Template-generated secrets:
 After deploying the template into a new project:
 
 1. Link the local CLI to the new project and environment.
-2. Run the API bootstrap script to migrate and seed admin/catalog/target state.
+2. Run the site bootstrap script to migrate and seed admin/catalog/target state.
 3. Register Discord slash commands if automatic registration is disabled or failed.
 4. SSH into `codex-runtime` and run `codex login --device-auth` with `CODEX_HOME` on the mounted volume.
 5. Run health checks for `api`, `site`, `prism-memory`, `discord-adapter`, and `codex-runtime`.
@@ -74,4 +73,4 @@ After deploying the template into a new project:
 - Railway CLI volume creation was unreliable in smoke testing; attach volumes in the template source project instead of relying on post-deploy CLI volume creation.
 - Codex device auth is intentionally manual because it writes account auth into the mounted `CODEX_HOME`.
 - Target app GitHub/Railway tokens remain operator-provided. Do not bake target repo credentials into the template.
-- The POC docs still contain some historical migration notes. Clean public-facing docs before publishing the template broadly.
+- Some planning docs still describe the old split topology. Keep operator-facing setup docs aligned to the merged `site`-owned app API shape.

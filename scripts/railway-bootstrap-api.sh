@@ -3,7 +3,7 @@ set -euo pipefail
 
 project_arg=""
 environment_arg=""
-service_name="api"
+service_name="site"
 manifest_path=""
 skip_admin=false
 skip_targets=false
@@ -14,7 +14,7 @@ Usage:
   bash scripts/railway-bootstrap-api.sh \
     [--project <railway-project-id>] \
     [--environment <railway-environment>] \
-    [--service api] \
+    [--service site] \
     [--manifest /app/config/target-apps.default.json] \
     [--skip-admin] \
     [--skip-targets]
@@ -27,7 +27,7 @@ What it does:
 Optional:
   --project       Railway project id/name if not using linked project
   --environment   Railway environment id/name if not using linked env
-  --service       Railway service name for the API (default: api)
+  --service       Railway service name for the app service (default: site)
   --manifest      Override target manifest path for bootstrap:targets
   --skip-admin    Skip `bootstrap:admin`
   --skip-targets  Skip `bootstrap:targets`
@@ -106,7 +106,7 @@ if [[ "$skip_targets" != true ]]; then
   fi
 fi
 
-echo "[railway-bootstrap-api] bootstrapping API on service '$service_name'"
+echo "[railway-bootstrap-api] bootstrapping app on service '$service_name'"
 echo "[railway-bootstrap-api] Railway target:"
 railway status
 railway ssh "${ssh_args[@]}" sh -lc "$remote_cmd"

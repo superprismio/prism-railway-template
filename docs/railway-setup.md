@@ -4,14 +4,13 @@
 
 Create these Railway services from this repo:
 
-1. `api` from `/services/api`
-2. `site` from `/services/site`
-3. `prism-memory` from `/services/prism-memory`
-4. `discord-adapter` from `/services/source-adapter`
-5. `codex-runtime` from `/services/codex-runtime`
-6. `discord-sync-cron` from `/services/prism-trigger`
-7. `memory-cron` from `/services/prism-trigger`
-8. `knowledge-cron` from `/services/prism-trigger`
+1. `site` from `/services/site`
+2. `prism-memory` from `/services/prism-memory`
+3. `discord-adapter` from `/services/source-adapter`
+4. `codex-runtime` from `/services/codex-runtime`
+5. `discord-sync-cron` from `/services/prism-trigger`
+6. `memory-cron` from `/services/prism-trigger`
+7. `knowledge-cron` from `/services/prism-trigger`
 
 ## Recommended Provisioning Path
 
@@ -40,7 +39,6 @@ Set each Railway service root directory to the matching service folder.
 
 Suggested watch paths:
 
-- `api`: `/services/api/**` and `/packages/**`
 - `site`: `/services/site/**` and `/packages/**`
 - `prism-memory`: `/services/prism-memory/**`
 - `discord-adapter`: `/services/source-adapter/**`
@@ -51,12 +49,10 @@ Suggested watch paths:
 
 ## Stack Bring-Up Checklist
 
-1. Deploy `api` and confirm `/api/health`.
-2. Run `npm run migrate --workspace @prism-railway/api`.
-3. Run `npm run bootstrap:admin --workspace @prism-railway/api`.
-4. Run `npm run bootstrap:targets --workspace @prism-railway/api`.
-5. Optionally run `npm run seed:catalog --workspace @prism-railway/api` only if `docs/data/*` is present in that deploy artifact.
-6. Deploy `site` with `NEXT_PUBLIC_API_BASE_URL` and `API_INTERNAL_BASE_URL` pointing at `api`.
+1. Deploy `site` and confirm `/api/health`.
+2. Run `npm run migrate --workspace @prism-railway/site`.
+3. Run `npm run bootstrap:admin --workspace @prism-railway/site`.
+4. Run `npm run bootstrap:targets --workspace @prism-railway/site`.
 7. Deploy `prism-memory` with a persistent volume and `PRISM_API_KEY`.
 8. Deploy `codex-runtime` from `services/codex-runtime`, attach a persistent volume, set `CODEX_HOME=/data/codex`, and complete `codex login` once inside the running service.
 9. Deploy `discord-adapter` from `services/source-adapter` with `SOURCE_KIND=discord`, `PRISM_API_BASE`, `PRISM_API_KEY`, Discord credentials, `APP_API_BASE_URL`, `INTERNAL_SERVICE_TOKEN`, and `CODEX_RUNTIME_BASE_URL`.
@@ -69,12 +65,12 @@ Codex login/bootstrap reference:
 
 ## CLI Shortcuts
 
-Bootstrap the deployed API service from your local terminal:
+Bootstrap the deployed site service from your local terminal:
 
 ```bash
-npm run railway:bootstrap-api -- \
+npm run railway:bootstrap-site -- \
   --environment production \
-  --service api
+  --service site
 ```
 
 The bootstrap helper prints `railway status` before running remote commands. Confirm the project is correct before continuing.
@@ -89,11 +85,7 @@ npm run railway:deploy-prism-stack -- \
   --run-knowledge
 ```
 
-This wrapper now also:
-
-- deploys `api`
-- runs `migrate`, `bootstrap:admin`, and `bootstrap:targets` on `api`
-- deploys `site`
+This wrapper now also deploys `site`, runs `migrate`, `bootstrap:admin`, and `bootstrap:targets` on `site`, and deploys `prism-memory`.
 
 These wrappers do not replace:
 
@@ -109,7 +101,7 @@ See [Railway Stack Smoke - 2026-04-21](railway-stack-smoke-2026-04-21.md) for th
 
 Expected internal/public URLs:
 
-- `site -> api`: `NEXT_PUBLIC_API_BASE_URL`, `API_INTERNAL_BASE_URL`
+- `site -> site`: `NEXT_PUBLIC_API_BASE_URL`, `API_INTERNAL_BASE_URL`
 - `api -> prism-memory`: `PRISM_API_BASE_URL`
 - `source-adapter -> prism-memory`: `PRISM_API_BASE`, `PRISM_API_KEY`, `PRISM_INGEST_PATH`
 - `discord-sync-cron -> source-adapter`: `PRISM_API_BASE`, `PRISM_TRIGGER_PATH`, `PRISM_TRIGGER_AUTH_HEADER`, `PRISM_TRIGGER_AUTH_TOKEN`

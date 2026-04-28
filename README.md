@@ -2,8 +2,7 @@
 
 Railway template source for a Codex-first community agent platform:
 
-- `services/api` for the current application API
-- `services/site` for the current public and admin web app
+- `services/site` for the public/admin web app and app API
 - `services/prism-memory` for the Prism memory API
 - `services/source-adapter` for source-specific ingestion into Prism memory
 - `services/prism-trigger` for one-shot cron/ops triggers
@@ -13,8 +12,8 @@ Current direction:
 - Codex CLI is the primary agent/operator runtime
 - `discord-adapter` is the supported Discord bridge for sync plus live chat transport
 - `codex-runtime` is the shared Codex CLI runtime for Discord and future adapters
-- `site` and `api` stay split for the next iteration
-- the first admin Codex console should be added to `site`, backed by `api`
+- `site` owns the app API and SQLite-backed runtime state
+- `codex-runtime` and `discord-adapter` call `site` over the internal network
 
 ## Architecture
 
@@ -30,7 +29,6 @@ This repo is intentionally split by deployable service instead of using PM2 insi
 
 The current folders reflect the work in progress, not the final target shape.
 
-- Railway service: `api`
 - Railway service: `site`
 - Railway service: `prism-memory`
 - Railway service: `discord-adapter`
@@ -47,38 +45,21 @@ Recommended deployment model:
 4. Keep `prism-memory` on a persistent volume.
 5. Use `services/prism-trigger` twice for the cron jobs with different env vars.
 6. Route operator chat through the Discord-to-Codex bridge.
-7. Keep `site` and `api` separate until the bridge and admin console are both proved out.
+7. Mount the app SQLite/data volume on `site` at `/data`.
 
 ## Service Map
-
-### `services/api`
-
-Owns:
-
-- auth and sessions
-- profiles, points, badges, admin flows
-- internal integration endpoints
-- change requests, execution records, targets, and deploy metadata as the system of record
-- agent chat sessions and Discord thread linkage as durable conversation state
-
-Expected backing storage:
-
-- Postgres for app data
-- object storage for uploads if needed
 
 ### `services/site`
 
 Owns:
 
-- public marketing shell
-- member directory
-- app/admin routes
-- the first lightweight admin Codex console UI
-
-Consumes:
-
-- `API_INTERNAL_BASE_URL` for server-side requests
-- `NEXT_PUBLIC_API_BASE_URL` for browser requests
+- public/admin routes
+- auth and sessions
+- profiles, points, badges, and admin flows
+- change requests, executions, targets, and deploy metadata as the system of record
+- agent chat sessions and Discord thread linkage as durable conversation state
+- the internal app API surface consumed by Codex runtime and Discord
+- the app SQLite/runtime volume at `/data`
 
 ### `services/prism-memory`
 
@@ -171,7 +152,6 @@ That will:
 
 Default local ports:
 
-- API: `4010`
 - Site: `3100`
 - Source adapter: `8789`
 - Prism memory: `8788`
@@ -179,7 +159,6 @@ Default local ports:
 Then work service-by-service:
 
 ```bash
-npm run dev --workspace @prism-railway/api
 npm run dev --workspace @prism-railway/site
 ```
 
@@ -194,9 +173,9 @@ For local development, use concrete loopback URLs in `.env`; Railway template re
 Minimum local values:
 
 ```text
-API_INTERNAL_BASE_URL=http://127.0.0.1:4010
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:4010
-APP_API_BASE_URL=http://127.0.0.1:4010
+API_INTERNAL_BASE_URL=http://127.0.0.1:3100
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:3100
+APP_API_BASE_URL=http://127.0.0.1:3100
 CODEX_RUNTIME_BASE_URL=http://127.0.0.1:3030
 PRISM_API_BASE=http://127.0.0.1:8788
 PRISM_API_KEY=replace-me
@@ -229,7 +208,7 @@ Do not commit machine-specific local target values such as:
 - local app ports
 - local dev commands
 
-For example, if you want to work against a local target app checkout, start that app in its own repo and keep the path and port as operator-local knowledge rather than baking them into `services/api/config/target-apps.default.json`.
+For example, if you want to work against a local target app checkout, start that app in its own repo and keep the path and port as operator-local knowledge rather than baking them into `services/site/config/target-apps.default.json`.
 
 Current local example:
 
@@ -251,7 +230,6 @@ If the Prism app needs to reference a local target during development, create th
 - Each service directory includes its own `railway.json`.
 - Do not use one repo-level `startCommand` for every service.
 - Set service-specific env vars in Railway, not in source control.
-- Use watch paths so site changes do not redeploy the API and vice versa.
 - `services/source-adapter` is the preferred place for Discord/Slack/Telegram collection for memory ingest.
 - `services/source-adapter` supports persisted sync checkpoints, `dry_run`, and resettable sync windows.
 - `services/prism-memory` seeds the starter runtime into its mounted volume and keeps the active config at `/data/prism_seed/<PRISM_API_SPACE>/config/space.json`.
@@ -268,15 +246,15 @@ Supporting docs:
 
 For a first Railway bring-up:
 
-1. Create services for `api`, `site`, `prism-memory`, `discord-adapter`, `codex-runtime`, `discord-sync-cron`, `memory-cron`, and `knowledge-cron`.
+1. Create services for `site`, `prism-memory`, `discord-adapter`, `codex-runtime`, `discord-sync-cron`, `memory-cron`, and `knowledge-cron`.
 2. Set each service root directory to its matching folder under `services/`.
-3. Deploy `api`, then run `migrate`, `bootstrap:admin`, and `bootstrap:targets`.
+3. Deploy `site`, then run `migrate`, `bootstrap:admin`, and `bootstrap:targets`.
 4. For `prism-memory`, mount a persistent volume for runtime state.
 5. Configure `discord-adapter` to post normalized batches into `prism-memory` and persist checkpoints on its service volume or data root.
 6. Configure `discord-sync-cron` to call `discord-adapter /sync` with `X-Adapter-Token`.
 7. Deploy `codex-runtime` with persistent `CODEX_HOME` storage and complete `codex login` once in the running service.
 8. Deploy `discord-adapter` with Discord bot credentials, app API base URL, internal service token, and `CODEX_RUNTIME_BASE_URL`.
-9. Set shared URLs so `site` points to `api`, and `api`, adapters, runtime services, and cron jobs point to `prism-memory` where needed.
+9. Set shared URLs so `codex-runtime` and `discord-adapter` point to `site`, and services point to `prism-memory` where needed.
 10. Set secrets in Railway, especially `SESSION_SECRET`, `INTERNAL_SERVICE_TOKEN`, `ADMIN_PASSWORD`, `PRISM_API_KEY`, `SOURCE_ADAPTER_TOKEN`, and Codex/Discord credentials.
 10. Deploy `site` and confirm `/admin` loads.
 
