@@ -38,6 +38,28 @@ Important:
 - `mode=on` is invalid
 - use `mode=bot_only` for the first enabled rollout
 
+Add policy guidance for important and low-signal discussions:
+
+```json
+{
+  "patch": {
+    "agentic_ingest": {
+      "policy": {
+        "priority_topics": ["funding", "partnerships", "roadmap"],
+        "deprioritized_topics": ["sync errors", "link formatting"],
+        "priority_channels": ["cohort-planning", "governance"],
+        "deprioritized_channels": ["bot-debug", "support-scratch"],
+        "channel_labels": {
+          "ops-war-room": "ops",
+          "cohort-planning": "planning"
+        },
+        "custom_guidance": "Treat planning discussions in cohort channels as high-signal. Treat bot troubleshooting as low-signal unless it changes project direction."
+      }
+    }
+  }
+}
+```
+
 Turn agentic ingest off:
 
 ```json

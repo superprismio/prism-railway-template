@@ -115,12 +115,20 @@ class AgenticIngestEnricher:
             "metadata": metadata,
             "content": record.get("content"),
         }
+        policy_prompt = self._policy_prompt()
         body = {
             "model": provider.model,
             "temperature": 0,
             "response_format": {"type": "json_object"},
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {
+                    "role": "system",
+                    "content": (
+                        SYSTEM_PROMPT
+                        if not policy_prompt
+                        else f"{SYSTEM_PROMPT}\n\nCommunity policy:\n{policy_prompt}"
+                    ),
+                },
                 {"role": "user", "content": json.dumps(user_payload, ensure_ascii=True)},
             ],
         }
@@ -144,6 +152,35 @@ class AgenticIngestEnricher:
         content = self._extract_message_content(payload)
         parsed = json.loads(content)
         return self._normalize_result(parsed)
+
+    def _policy_prompt(self) -> str:
+        policy = self.config.agentic_ingest.policy
+        parts: List[str] = []
+        if policy.priority_channels:
+            parts.append(
+                "Priority channels: " + ", ".join(policy.priority_channels[:20])
+            )
+        if policy.deprioritized_channels:
+            parts.append(
+                "Deprioritized channels: " + ", ".join(policy.deprioritized_channels[:20])
+            )
+        if policy.priority_topics:
+            parts.append(
+                "Priority topics: " + ", ".join(policy.priority_topics[:20])
+            )
+        if policy.deprioritized_topics:
+            parts.append(
+                "Deprioritized topics: " + ", ".join(policy.deprioritized_topics[:20])
+            )
+        if policy.channel_labels:
+            labels = [
+                f"{channel}={label}"
+                for channel, label in sorted(policy.channel_labels.items())
+            ]
+            parts.append("Channel labels: " + ", ".join(labels[:20]))
+        if policy.custom_guidance:
+            parts.append("Custom guidance: " + policy.custom_guidance)
+        return "\n".join(parts)
 
     @staticmethod
     def _extract_message_content(payload: Dict[str, Any]) -> str:

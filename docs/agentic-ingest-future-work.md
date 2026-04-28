@@ -22,12 +22,15 @@ This is the follow-up list after the first optional Prism Memory agentic ingest 
 - manual promotion of assistant interactions into memory
 - manual promotion into knowledge candidates
 
-3. Add structured community policy config
+3. Expand structured community policy config
 - priority channels
 - deprioritized channels
 - priority topics
 - deprioritized topics
+- channel labels
 - short custom guidance field
+- keep the base classifier prompt fixed in code
+- do not expose raw prompt editing
 
 4. Improve classifier schema
 - decision extraction

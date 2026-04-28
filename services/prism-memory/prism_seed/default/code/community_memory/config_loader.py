@@ -117,12 +117,23 @@ class AgenticIngestProviderConfig:
 
 
 @dataclass
+class AgenticIngestPolicyConfig:
+    priority_channels: List[str]
+    deprioritized_channels: List[str]
+    priority_topics: List[str]
+    deprioritized_topics: List[str]
+    channel_labels: Dict[str, str]
+    custom_guidance: str
+
+
+@dataclass
 class AgenticIngestConfig:
     mode: str
     scope: str
     scoped_sources: List[str]
     scoped_buckets: List[str]
     provider: AgenticIngestProviderConfig
+    policy: AgenticIngestPolicyConfig
 
 
 @dataclass
@@ -215,6 +226,7 @@ def load_config(path: Path) -> SpaceConfig:
     )
     agentic_conf = raw.get("agentic_ingest", {})
     provider_conf = agentic_conf.get("provider", {}) if isinstance(agentic_conf, dict) else {}
+    policy_conf = agentic_conf.get("policy", {}) if isinstance(agentic_conf, dict) else {}
     agentic_ingest = AgenticIngestConfig(
         mode=str(os.environ.get("AGENTIC_INGEST_MODE", agentic_conf.get("mode", "off"))).strip() or "off",
         scope=str(os.environ.get("AGENTIC_INGEST_SCOPE", agentic_conf.get("scope", "bot_only"))).strip() or "bot_only",
@@ -269,6 +281,34 @@ def load_config(path: Path) -> SpaceConfig:
                     provider_conf.get("timeout_seconds", 30),
                 )
             ),
+        ),
+        policy=AgenticIngestPolicyConfig(
+            priority_channels=[
+                str(item).strip()
+                for item in policy_conf.get("priority_channels", [])
+                if str(item).strip()
+            ],
+            deprioritized_channels=[
+                str(item).strip()
+                for item in policy_conf.get("deprioritized_channels", [])
+                if str(item).strip()
+            ],
+            priority_topics=[
+                str(item).strip()
+                for item in policy_conf.get("priority_topics", [])
+                if str(item).strip()
+            ],
+            deprioritized_topics=[
+                str(item).strip()
+                for item in policy_conf.get("deprioritized_topics", [])
+                if str(item).strip()
+            ],
+            channel_labels={
+                str(key).strip(): str(value).strip()
+                for key, value in (policy_conf.get("channel_labels", {}) or {}).items()
+                if str(key).strip() and str(value).strip()
+            },
+            custom_guidance=str(policy_conf.get("custom_guidance", "")).strip(),
         ),
     )
     run_conf = raw.get("run", {})

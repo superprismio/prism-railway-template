@@ -145,6 +145,14 @@
       "api_key": "",
       "model": "gpt-5.5",
       "timeout_seconds": 30
+    },
+    "policy": {
+      "priority_channels": [],
+      "deprioritized_channels": [],
+      "priority_topics": [],
+      "deprioritized_topics": [],
+      "channel_labels": {},
+      "custom_guidance": ""
     }
   },
   "state": {
