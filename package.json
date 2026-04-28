@@ -14,6 +14,7 @@
     "dev:local": "bash scripts/dev-local-stack.sh",
     "lint": "npm run lint --workspaces --if-present",
     "railway:deploy-prism-stack": "bash scripts/railway-deploy-prism-stack.sh",
+    "railway:bootstrap-site": "bash scripts/railway-bootstrap-api.sh",
     "railway:bootstrap-api": "bash scripts/railway-bootstrap-api.sh",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }

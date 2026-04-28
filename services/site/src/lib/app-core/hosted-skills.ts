@@ -50,7 +50,7 @@ function ensureDirectoryPath(candidatePath: string, rootPath: string) {
 }
 
 export function getHostedSkillsRoot(repoRoot: string) {
-  return path.resolve(repoRoot, 'services/api/skills');
+  return path.resolve(repoRoot, 'services/site/skills');
 }
 
 export function listHostedSkills(repoRoot: string) {

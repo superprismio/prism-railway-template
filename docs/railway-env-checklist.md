@@ -12,7 +12,7 @@ Use these rules:
 
 - use `http://${{service.RAILWAY_PRIVATE_DOMAIN}}:${{service.PORT}}` for internal server-to-server calls after connectivity has been verified from the calling service
 - use `https://${{service.RAILWAY_PUBLIC_DOMAIN}}` only when a browser or external webhook needs the value
-- for `site -> api`, `discord-adapter` voice summaries, and Prism inbox writes, use public Railway URLs until private-domain connectivity is confirmed from the deployed caller
+- for browser flows and human-shareable links, use public Railway URLs; for internal runtime calls, use private Railway domains
 - use shared references for secrets that must stay identical across services
 - keep ports, booleans, timeouts, local paths, and target-app-specific values manual
 
@@ -20,15 +20,15 @@ Recommended shared references in this project:
 
 | Consumer | Variable | Recommended value |
 | --- | --- | --- |
-| `site` | `API_INTERNAL_BASE_URL` | `https://${{api.RAILWAY_PUBLIC_DOMAIN}}` |
-| `site` | `NEXT_PUBLIC_API_BASE_URL` | `https://${{api.RAILWAY_PUBLIC_DOMAIN}}` |
-| `codex-runtime` | `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}` |
+| `site` | `API_INTERNAL_BASE_URL` | `http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}` |
+| `site` | `NEXT_PUBLIC_API_BASE_URL` | `https://${{site.RAILWAY_PUBLIC_DOMAIN}}` |
+| `codex-runtime` | `APP_API_BASE_URL` | `http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}` |
 | `codex-runtime` | `PRISM_API_BASE` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}` |
-| `codex-runtime` | `APP_API_SERVICE_TOKEN` | `${{api.INTERNAL_SERVICE_TOKEN}}` |
-| `discord-adapter` | `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}` |
+| `codex-runtime` | `APP_API_SERVICE_TOKEN` | `${{site.INTERNAL_SERVICE_TOKEN}}` |
+| `discord-adapter` | `APP_API_BASE_URL` | `http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}` |
 | `discord-adapter` | `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}` |
 | `discord-adapter` | `PRISM_API_BASE` | `https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}` |
-| `discord-adapter` | `INTERNAL_SERVICE_TOKEN` | `${{api.INTERNAL_SERVICE_TOKEN}}` |
+| `discord-adapter` | `INTERNAL_SERVICE_TOKEN` | `${{site.INTERNAL_SERVICE_TOKEN}}` |
 | `discord-adapter` | `PRISM_API_KEY` | `${{prism-memory.PRISM_API_KEY}}` |
 | `discord-sync-cron` | `PRISM_API_BASE` | `https://${{discord-adapter.RAILWAY_PUBLIC_DOMAIN}}` |
 | `discord-sync-cron` | `PRISM_TRIGGER_AUTH_TOKEN` | `${{discord-adapter.SOURCE_ADAPTER_TOKEN}}` |
@@ -37,42 +37,25 @@ Recommended shared references in this project:
 | `knowledge-cron` | `PRISM_API_BASE` | `https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}` |
 | `knowledge-cron` | `PRISM_TRIGGER_AUTH_TOKEN` | `${{prism-memory.PRISM_API_KEY}}` |
 
-## `api`
-
-Required:
-
-- `PORT=4010`
-- `APP_BASE_URL=https://<your-api-domain>`
-- `SESSION_SECRET=<strong-secret>`
-- `INTERNAL_SERVICE_TOKEN=<strong-secret>`
-- `ADMIN_PASSWORD=<shared-admin-password>`
-
-Current scaffold defaults:
-
-- `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/prism_agent`
-- `PRISM_AGENT_DATA_ROOT=/data` when a Railway volume is attached
-
-Notes:
-
-- the current API code still uses local SQLite paths in practice, so `DATABASE_URL` is not the real backing store yet
-- attach a persistent volume to `api` and set `PRISM_AGENT_DATA_ROOT=/data` before relying on production board state
-- after deploy, confirm `GET /api/health`
-- the new target-management and change-board endpoints also accept `x-admin-password: <ADMIN_PASSWORD>` for bootstrap admin access
-- deploy-time bootstrap order is `migrate`, `bootstrap:admin`, then `bootstrap:targets`
-- `bootstrap:targets` reads `services/api/config/target-apps.default.json` unless `TARGET_APPS_MANIFEST` overrides it
-
 ## `site`
 
 Required:
 
 - `PORT=3100`
-- `NEXT_PUBLIC_API_BASE_URL=https://${{api.RAILWAY_PUBLIC_DOMAIN}}`
-- `API_INTERNAL_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`
+- `NEXT_PUBLIC_API_BASE_URL=https://${{site.RAILWAY_PUBLIC_DOMAIN}}`
+- `API_INTERNAL_BASE_URL=http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}`
+- `SITE_USE_LOCAL_APP_API=true`
+- `PRISM_AGENT_DATA_ROOT=/data`
+- `SESSION_SECRET=<strong-secret>`
+- `INTERNAL_SERVICE_TOKEN=<strong-secret>`
+- `ADMIN_PASSWORD=<shared-admin-password>`
 
 Notes:
 
-- after deploy, confirm the home page renders and the API health panel resolves
-- `/admin` now uses a simple password form that stores the shared admin password in an HTTP-only cookie and forwards it to the API as `x-admin-password`
+- after deploy, confirm `GET /api/health`
+- `/admin` uses a simple password form that stores the shared admin password in an HTTP-only cookie
+- deploy-time bootstrap order is `migrate`, `bootstrap:admin`, then `bootstrap:targets`
+- `bootstrap:targets` reads `services/site/config/target-apps.default.json` unless `TARGET_APPS_MANIFEST` overrides it
 
 ## `codex-runtime`
 
@@ -89,8 +72,8 @@ Recommended:
 - `CODEX_TARGET_WORKSPACE_ROOT=/data/workspaces`
 - `PRISM_API_BASE=http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}`
 - `PRISM_API_KEY=<read-or-limited prism api key>`
-- `APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`
-- `APP_API_SERVICE_TOKEN=${{api.INTERNAL_SERVICE_TOKEN}}`
+- `APP_API_BASE_URL=http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}`
+- `APP_API_SERVICE_TOKEN=${{site.INTERNAL_SERVICE_TOKEN}}`
 
 Notes:
 
@@ -115,8 +98,8 @@ Required:
 - `DISCORD_BOT_TOKEN=<discord bot token>`
 - `DISCORD_GUILD_ID=<discord guild id>`
 - `DISCORD_CHAT_ENABLED=true`
-- `APP_API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}`
-- `INTERNAL_SERVICE_TOKEN=${{api.INTERNAL_SERVICE_TOKEN}}`
+- `APP_API_BASE_URL=http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}`
+- `INTERNAL_SERVICE_TOKEN=${{site.INTERNAL_SERVICE_TOKEN}}`
 - `CODEX_RUNTIME_BASE_URL=http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}`
 
 Recommended first-pass values:

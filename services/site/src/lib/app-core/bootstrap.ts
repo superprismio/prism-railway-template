@@ -1,74 +1,77 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import bcrypt from 'bcryptjs';
-import { loadConfig } from './config.js';
-import { getDb, runMigrations } from './db.js';
+import fs from "node:fs"
+import path from "node:path"
+import { randomUUID } from "node:crypto"
+import bcrypt from "bcryptjs"
 
-const { hash } = bcrypt;
+import { loadConfig } from "./config"
+import { getDb, runMigrations } from "./db"
+
+const { hash } = bcrypt
 
 export interface TargetAppBootstrapRecord {
-  id: string;
-  slug: string;
-  name: string;
-  description?: string | null;
-  repoUrl?: string | null;
-  repoProvider?: string | null;
-  defaultBranch?: string | null;
-  framework?: string | null;
-  deployBackend: string;
-  deployConfig?: Record<string, unknown>;
-  agentEnabled?: boolean;
+  id: string
+  slug: string
+  name: string
+  description?: string | null
+  repoUrl?: string | null
+  repoProvider?: string | null
+  defaultBranch?: string | null
+  framework?: string | null
+  deployBackend: string
+  deployConfig?: Record<string, unknown>
+  agentEnabled?: boolean
 }
 
 export interface TargetEnvironmentBootstrapRecord {
-  id: string;
-  targetAppId: string;
-  slug: string;
-  name: string;
-  kind: string;
-  branch?: string | null;
-  baseUrl?: string | null;
-  deployBackend: string;
-  deployConfig?: Record<string, unknown>;
-  agentWritable?: boolean;
-  autoDeployEnabled?: boolean;
-  humanReviewRequired?: boolean;
-  isDefaultForAgent?: boolean;
+  id: string
+  targetAppId: string
+  slug: string
+  name: string
+  kind: string
+  branch?: string | null
+  baseUrl?: string | null
+  deployBackend: string
+  deployConfig?: Record<string, unknown>
+  agentWritable?: boolean
+  autoDeployEnabled?: boolean
+  humanReviewRequired?: boolean
+  isDefaultForAgent?: boolean
 }
 
 export interface TargetBootstrapManifest {
-  targetApps: TargetAppBootstrapRecord[];
-  targetEnvironments: TargetEnvironmentBootstrapRecord[];
+  targetApps: TargetAppBootstrapRecord[]
+  targetEnvironments: TargetEnvironmentBootstrapRecord[]
 }
 
 function readJsonFile<T>(filePath: string) {
-  return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
+  return JSON.parse(fs.readFileSync(filePath, "utf8")) as T
 }
 
 function slugify(input: string) {
   return input
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
 }
 
 function defaultManifestPath() {
-  return path.resolve(process.cwd(), 'config/target-apps.default.json');
+  return path.resolve(process.cwd(), "config/target-apps.default.json")
 }
 
 export function loadTargetBootstrapManifest(manifestPath?: string | null) {
-  return readJsonFile<TargetBootstrapManifest>(path.resolve(manifestPath?.trim() || defaultManifestPath()));
+  return readJsonFile<TargetBootstrapManifest>(
+    path.resolve(manifestPath?.trim() || defaultManifestPath()),
+  )
 }
 
 export async function bootstrapAdminAccount() {
-  const config = loadConfig();
-  const db = getDb();
-  runMigrations(db);
+  const config = loadConfig()
+  const db = getDb()
+  runMigrations(db)
 
-  const now = new Date().toISOString();
-  const adminPasswordHash = await hash(config.adminPassword, 10);
+  const now = new Date().toISOString()
+  const adminPasswordHash = await hash(config.adminPassword, 10)
 
   const transaction = db.transaction(() => {
     const upsertRole = db.prepare(
@@ -78,22 +81,22 @@ export async function bootstrapAdminAccount() {
          label = excluded.label,
          description = excluded.description,
          updated_at = excluded.updated_at`,
-    );
+    )
 
     for (const role of [
-      { slug: 'admin', label: 'Admin', description: 'Full administrative access.' },
-      { slug: 'moderator', label: 'Moderator', description: 'Moderation and review access.' },
-      { slug: 'member', label: 'Member', description: 'Standard authenticated member access.' },
+      { slug: "admin", label: "Admin", description: "Full administrative access." },
+      { slug: "moderator", label: "Moderator", description: "Moderation and review access." },
+      { slug: "member", label: "Member", description: "Standard authenticated member access." },
     ]) {
-      upsertRole.run({ ...role, createdAt: now, updatedAt: now });
+      upsertRole.run({ ...role, createdAt: now, updatedAt: now })
     }
 
-    const adminEmail = config.adminEmail;
-    const existingAdminUser = db.prepare('SELECT id FROM users WHERE email = ?').get(adminEmail) as
+    const adminEmail = config.adminEmail
+    const existingAdminUser = db.prepare("SELECT id FROM users WHERE email = ?").get(adminEmail) as
       | { id: string }
-      | undefined;
-    const adminUserId = existingAdminUser?.id || randomUUID();
-    const adminHandle = slugify(adminEmail.split('@')[0] || 'admin') || 'admin';
+      | undefined
+    const adminUserId = existingAdminUser?.id || randomUUID()
+    const adminHandle = slugify(adminEmail.split("@")[0] || "admin") || "admin"
 
     db.prepare(
       `INSERT INTO users (id, email, password_hash, created_at, updated_at, last_seen_at, is_seeded)
@@ -110,7 +113,7 @@ export async function bootstrapAdminAccount() {
       createdAt: now,
       updatedAt: now,
       lastSeenAt: now,
-    });
+    })
 
     db.prepare(
       `INSERT INTO profiles (
@@ -133,40 +136,40 @@ export async function bootstrapAdminAccount() {
       id: adminUserId,
       userId: adminUserId,
       handle: adminHandle,
-      displayName: 'Administrator',
-      bio: 'Template admin account.',
+      displayName: "Administrator",
+      bio: "Template admin account.",
       email: adminEmail,
       claimedAt: now,
       createdAt: now,
       updatedAt: now,
-    });
+    })
 
-    const adminRoleId = (db.prepare("SELECT id FROM roles WHERE slug = 'admin'").get() as { id: number }).id;
-    const memberRoleId = (db.prepare("SELECT id FROM roles WHERE slug = 'member'").get() as { id: number }).id;
+    const adminRoleId = (db.prepare("SELECT id FROM roles WHERE slug = 'admin'").get() as { id: number }).id
+    const memberRoleId = (db.prepare("SELECT id FROM roles WHERE slug = 'member'").get() as { id: number }).id
 
     const upsertUserRole = db.prepare(
       `INSERT INTO user_roles (user_id, role_id, created_at)
        VALUES (?, ?, ?)
        ON CONFLICT(user_id, role_id) DO NOTHING`,
-    );
+    )
 
-    upsertUserRole.run(adminUserId, adminRoleId, now);
-    upsertUserRole.run(adminUserId, memberRoleId, now);
-  });
+    upsertUserRole.run(adminUserId, adminRoleId, now)
+    upsertUserRole.run(adminUserId, memberRoleId, now)
+  })
 
-  transaction();
+  transaction()
 
   return {
     adminEmail: config.adminEmail,
     bootstrappedAt: now,
-  };
+  }
 }
 
 export function bootstrapTargetApps(manifestPath?: string | null) {
-  const db = getDb();
-  runMigrations(db);
-  const manifest = loadTargetBootstrapManifest(manifestPath);
-  const now = new Date().toISOString();
+  const db = getDb()
+  runMigrations(db)
+  const manifest = loadTargetBootstrapManifest(manifestPath)
+  const now = new Date().toISOString()
 
   const transaction = db.transaction(() => {
     const upsertTargetApp = db.prepare(
@@ -186,7 +189,7 @@ export function bootstrapTargetApps(manifestPath?: string | null) {
          deploy_config_json = excluded.deploy_config_json,
          agent_enabled = excluded.agent_enabled,
          updated_at = excluded.updated_at`,
-    );
+    )
 
     for (const targetApp of manifest.targetApps) {
       upsertTargetApp.run(
@@ -196,14 +199,14 @@ export function bootstrapTargetApps(manifestPath?: string | null) {
         targetApp.description ?? null,
         targetApp.repoUrl ?? null,
         targetApp.repoProvider ?? null,
-        targetApp.defaultBranch ?? 'main',
+        targetApp.defaultBranch ?? "main",
         targetApp.framework ?? null,
         targetApp.deployBackend,
         JSON.stringify(targetApp.deployConfig ?? {}),
         targetApp.agentEnabled === false ? 0 : 1,
         now,
         now,
-      );
+      )
     }
 
     const upsertTargetEnvironment = db.prepare(
@@ -226,7 +229,7 @@ export function bootstrapTargetApps(manifestPath?: string | null) {
          human_review_required = excluded.human_review_required,
          is_default_for_agent = excluded.is_default_for_agent,
          updated_at = excluded.updated_at`,
-    );
+    )
 
     for (const targetEnvironment of manifest.targetEnvironments) {
       upsertTargetEnvironment.run(
@@ -239,22 +242,21 @@ export function bootstrapTargetApps(manifestPath?: string | null) {
         targetEnvironment.baseUrl ?? null,
         targetEnvironment.deployBackend,
         JSON.stringify(targetEnvironment.deployConfig ?? {}),
-        targetEnvironment.agentWritable ? 1 : 0,
-        targetEnvironment.autoDeployEnabled ? 1 : 0,
+        targetEnvironment.agentWritable === false ? 0 : 1,
+        targetEnvironment.autoDeployEnabled === true ? 1 : 0,
         targetEnvironment.humanReviewRequired === false ? 0 : 1,
-        targetEnvironment.isDefaultForAgent ? 1 : 0,
+        targetEnvironment.isDefaultForAgent === true ? 1 : 0,
         now,
         now,
-      );
+      )
     }
-  });
+  })
 
-  transaction();
+  transaction()
 
   return {
-    manifestPath: path.resolve(manifestPath?.trim() || defaultManifestPath()),
-    targetAppsSeeded: manifest.targetApps.length,
-    targetEnvironmentsSeeded: manifest.targetEnvironments.length,
+    targetAppCount: manifest.targetApps.length,
+    targetEnvironmentCount: manifest.targetEnvironments.length,
     bootstrappedAt: now,
-  };
+  }
 }
