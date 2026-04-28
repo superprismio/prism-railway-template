@@ -225,6 +225,10 @@ class SpaceConfigUpdateRequest(BaseModel):
     config: Dict[str, Any] = Field(..., description="Full replacement for config/space.json")
 
 
+class SpaceConfigPatchRequest(BaseModel):
+    patch: Dict[str, Any] = Field(..., description="Recursive patch to merge into config/space.json")
+
+
 class SpaceConfigUpdateResponse(BaseModel):
     path: str
     updated_at: str

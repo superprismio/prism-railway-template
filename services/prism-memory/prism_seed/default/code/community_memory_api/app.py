@@ -159,6 +159,48 @@ def create_app(settings: Settings) -> FastAPI:
         except Exception:
             return _load_config(bundled_config_path)
 
+    def _merge_patch(current: dict, patch: dict) -> dict:
+        merged = dict(current)
+        for key, value in patch.items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = _merge_patch(dict(merged[key]), value)
+            else:
+                merged[key] = value
+        return merged
+
+    def _write_space_config(config_payload: dict) -> schemas.SpaceConfigUpdateResponse:
+        config_file = data_root / "config" / "space.json"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp_file = config_file.with_suffix(".json.tmp")
+        serialized = json.dumps(config_payload, indent=2) + "\n"
+        tmp_file.write_text(serialized, encoding="utf-8")
+        try:
+            _load_config(tmp_file)
+        except Exception as exc:
+            tmp_file.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": {
+                        "code": "invalid_config",
+                        "message": f"space.json validation failed: {exc}",
+                    }
+                },
+            )
+
+        tmp_file.replace(config_file)
+        _reload_config_state()
+        digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        return schemas.SpaceConfigUpdateResponse(
+            path=str(config_file),
+            updated_at=datetime.now(timezone.utc).isoformat(),
+            sha256=digest,
+            knowledge_allowed_kinds=allowed_kinds,
+            knowledge_allowed_tags=(
+                list(knowledge_constraints.allowed_tags) if knowledge_constraints is not None else []
+            ),
+        )
+
     knowledge_source_manager = _KnowledgeSourceManager(
         data_root=data_root,
         workspace_root=(data_root.parent.parent if settings.data_root_override is not None else settings.base_dir),
@@ -497,12 +539,8 @@ def create_app(settings: Settings) -> FastAPI:
     @app.get("/config/space", dependencies=[read_auth_dependency], tags=["system"])
     async def config_space():
         config_file = data_root / "config" / "space.json"
-        if not config_file.is_file():
-            raise HTTPException(
-                status_code=404,
-                detail={"error": {"code": "not_found", "message": f"Config not found: {config_file}"}},
-            )
-        return storage._load_json(config_file)
+        source_file = config_file if config_file.is_file() else bundled_config_path
+        return storage._load_json(source_file)
 
     @app.get("/config/status", dependencies=[read_auth_dependency], tags=["system"])
     async def config_status():
@@ -524,38 +562,20 @@ def create_app(settings: Settings) -> FastAPI:
         tags=["system"],
     )
     async def config_space_update(payload: schemas.SpaceConfigUpdateRequest):
+        return _write_space_config(payload.config)
+
+    @app.patch(
+        "/config/space",
+        response_model=schemas.SpaceConfigUpdateResponse,
+        dependencies=[ops_auth_dependency],
+        tags=["system"],
+    )
+    async def config_space_patch(payload: schemas.SpaceConfigPatchRequest):
         config_file = data_root / "config" / "space.json"
-        config_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp_file = config_file.with_suffix(".json.tmp")
-        serialized = json.dumps(payload.config, indent=2) + "\n"
-        tmp_file.write_text(serialized, encoding="utf-8")
-        try:
-            _load_config(tmp_file)
-        except Exception as exc:
-            tmp_file.unlink(missing_ok=True)
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": {
-                        "code": "invalid_config",
-                        "message": f"space.json validation failed: {exc}",
-                    }
-                },
-            )
-
-        tmp_file.replace(config_file)
-        _reload_config_state()
-
-        digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-        return schemas.SpaceConfigUpdateResponse(
-            path=str(config_file),
-            updated_at=datetime.now(timezone.utc).isoformat(),
-            sha256=digest,
-            knowledge_allowed_kinds=allowed_kinds,
-            knowledge_allowed_tags=(
-                list(knowledge_constraints.allowed_tags) if knowledge_constraints is not None else []
-            ),
-        )
+        source_file = config_file if config_file.is_file() else bundled_config_path
+        current_raw = json.loads(source_file.read_text(encoding="utf-8"))
+        merged = _merge_patch(current_raw, payload.patch)
+        return _write_space_config(merged)
 
     @app.get("/skills", dependencies=[read_auth_dependency], tags=["system"])
     async def skills_list():
