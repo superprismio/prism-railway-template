@@ -109,6 +109,23 @@ class KnowledgeConfig:
 
 
 @dataclass
+class AgenticIngestProviderConfig:
+    base_url: str
+    api_key: Optional[str]
+    model: Optional[str]
+    timeout_seconds: int
+
+
+@dataclass
+class AgenticIngestConfig:
+    mode: str
+    scope: str
+    scoped_sources: List[str]
+    scoped_buckets: List[str]
+    provider: AgenticIngestProviderConfig
+
+
+@dataclass
 class SpaceConfig:
     space_slug: str
     timezone: str
@@ -119,6 +136,7 @@ class SpaceConfig:
     memory: Dict[str, Any]
     state: Dict[str, Any]
     knowledge: KnowledgeConfig
+    agentic_ingest: AgenticIngestConfig
     run: RunSchedule
 
 
@@ -195,6 +213,64 @@ def load_config(path: Path) -> SpaceConfig:
         ),
         constraints=constraints,
     )
+    agentic_conf = raw.get("agentic_ingest", {})
+    provider_conf = agentic_conf.get("provider", {}) if isinstance(agentic_conf, dict) else {}
+    agentic_ingest = AgenticIngestConfig(
+        mode=str(os.environ.get("AGENTIC_INGEST_MODE", agentic_conf.get("mode", "off"))).strip() or "off",
+        scope=str(os.environ.get("AGENTIC_INGEST_SCOPE", agentic_conf.get("scope", "bot_only"))).strip() or "bot_only",
+        scoped_sources=[
+            item.strip()
+            for item in str(
+                os.environ.get(
+                    "AGENTIC_INGEST_SCOPED_SOURCES",
+                    ",".join(agentic_conf.get("scoped_sources", [])),
+                )
+            ).split(",")
+            if item.strip()
+        ],
+        scoped_buckets=[
+            item.strip()
+            for item in str(
+                os.environ.get(
+                    "AGENTIC_INGEST_SCOPED_BUCKETS",
+                    ",".join(agentic_conf.get("scoped_buckets", [])),
+                )
+            ).split(",")
+            if item.strip()
+        ],
+        provider=AgenticIngestProviderConfig(
+            base_url=str(
+                os.environ.get(
+                    "AGENTIC_INGEST_PROVIDER_BASE_URL",
+                    provider_conf.get("base_url", ""),
+                )
+            ).strip(),
+            api_key=(
+                str(
+                    os.environ.get(
+                        "AGENTIC_INGEST_PROVIDER_API_KEY",
+                        provider_conf.get("api_key", ""),
+                    )
+                ).strip()
+                or None
+            ),
+            model=(
+                str(
+                    os.environ.get(
+                        "AGENTIC_INGEST_MODEL",
+                        provider_conf.get("model", ""),
+                    )
+                ).strip()
+                or None
+            ),
+            timeout_seconds=int(
+                os.environ.get(
+                    "AGENTIC_INGEST_TIMEOUT_SECONDS",
+                    provider_conf.get("timeout_seconds", 30),
+                )
+            ),
+        ),
+    )
     run_conf = raw.get("run", {})
     run = RunSchedule(
         digest_run_time_local=run_conf.get("digest_run_time_local", "17:30"),
@@ -212,5 +288,6 @@ def load_config(path: Path) -> SpaceConfig:
         memory=memory,
         state=state,
         knowledge=knowledge,
+        agentic_ingest=agentic_ingest,
         run=run,
     )

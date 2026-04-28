@@ -135,6 +135,18 @@
       "upcoming": 5
     }
   },
+  "agentic_ingest": {
+    "mode": "off",
+    "scope": "bot_only",
+    "scoped_sources": [],
+    "scoped_buckets": [],
+    "provider": {
+      "base_url": "",
+      "api_key": "",
+      "model": "",
+      "timeout_seconds": 30
+    }
+  },
   "state": {
     "projects": {
       "enabled": true,

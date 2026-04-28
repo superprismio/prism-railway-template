@@ -67,3 +67,36 @@ Sync semantics:
 - other knowledge docs and sources are left untouched
 
 The existing knowledge query interface does not change. Source sync feeds the same `knowledge/search` and `knowledge/docs/{slug}` read paths.
+
+## Optional Agentic Ingest
+
+Prism Memory can optionally run an OpenAI-compatible classification pass on memory inbox items before default digest and rolling-memory synthesis.
+
+Intended use:
+
+- keep raw inbox capture deterministic
+- enrich selected items with derived metadata
+- exclude low-signal assistant/retrieval chatter from default synthesis when configured
+
+Default posture:
+
+- disabled by default
+- provider target can point at `codex-runtime` or any OpenAI-compatible service
+
+Optional envs:
+
+- `AGENTIC_INGEST_MODE=off|bot_only|scoped|all`
+- `AGENTIC_INGEST_SCOPE=bot_only|scoped|all`
+- `AGENTIC_INGEST_PROVIDER_BASE_URL=http://codex-runtime.../v1`
+- `AGENTIC_INGEST_PROVIDER_API_KEY=...`
+- `AGENTIC_INGEST_MODEL=...`
+- `AGENTIC_INGEST_TIMEOUT_SECONDS=30`
+- `AGENTIC_INGEST_SCOPED_SOURCES=discord,...`
+- `AGENTIC_INGEST_SCOPED_BUCKETS=cohort,...`
+
+Current behavior:
+
+- mode `off` does nothing
+- scope `bot_only` targets Discord thread/bot-context inbox items based on structural metadata
+- scope `scoped` limits enrichment to configured sources and/or buckets
+- records classified with `memory_include_default=false` remain stored in raw transcripts but are excluded from default digest generation

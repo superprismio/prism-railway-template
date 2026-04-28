@@ -16,6 +16,7 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from .agentic_ingest import AgenticIngestEnricher
 from .activity import ActivityLogger
 from .config_loader import CollectorConfig, SpaceConfig
 from .state_manager import StateManager
@@ -908,6 +909,7 @@ class InboxMemoryCollector:
             ext if ext.startswith(".") else f".{ext}"
             for ext in memory_conf.get("allowed_extensions", [".md", ".json"])
         }
+        self.agentic_ingest = AgenticIngestEnricher(config=config, activity=activity)
 
     def run(
         self,
@@ -940,6 +942,7 @@ class InboxMemoryCollector:
             try:
                 payload = self._read_payload(path)
                 record = self._validate_payload(payload, path)
+                record = self.agentic_ingest.enrich(record)
                 output = self._write_transcript(record, path)
                 outputs.append(output)
                 self._move_with_suffix(path, self.processed_dir)
@@ -1044,6 +1047,7 @@ class InboxMemoryCollector:
                 normalized_count = int(participant_count)
             except (TypeError, ValueError):
                 raise ValueError("participant_count must be an integer")
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
         return {
             "bucket": bucket,
             "author": author,
@@ -1055,6 +1059,7 @@ class InboxMemoryCollector:
             "source_file": source_path.name,
             "participants": participants,
             "participant_count": normalized_count,
+            "metadata": metadata,
         }
 
     def _safe_slug(self, value: str) -> str:
@@ -1096,6 +1101,17 @@ class InboxMemoryCollector:
                 "utf-8"
             )
         ).hexdigest()[:16]
+        message_metadata = {
+            **dict(record.get("metadata") or {}),
+            **{
+                key: value
+                for key, value in {
+                    "participants": record.get("participants", []),
+                    "participant_count": record.get("participant_count"),
+                }.items()
+                if value not in (None, [])
+            },
+        }
         message = {
             "id": message_id,
             "author": {
@@ -1108,14 +1124,7 @@ class InboxMemoryCollector:
             "jump_url": record["jump_url"],
             "attachments": [],
             "embeds": [],
-            "metadata": {
-                key: value
-                for key, value in {
-                    "participants": record.get("participants", []),
-                    "participant_count": record.get("participant_count"),
-                }.items()
-                if value not in (None, [])
-            },
+            "metadata": message_metadata,
         }
         window_key = f"{to_iso(since).replace(':', '')}_{to_iso(until).replace(':', '')}"
 
@@ -1168,6 +1177,7 @@ class InboxMemoryCollector:
                 "source_file": record["source_file"],
                 "since": to_iso(since),
                 "until": to_iso(until),
+                "agentic_ingest": (record.get("metadata") or {}).get("agentic_ingest"),
             },
         )
         print(

@@ -190,7 +190,14 @@ def ingest_messages(payload: dict, x_prism_api_key: str | None = Header(default=
             "author": display_name,
             "url": metadata.get("messageUrl"),
             "participant_count": 1,
-            "metadata": metadata,
+            "metadata": {
+                **metadata,
+                "guildId": candidate.get("guildId") or candidate.get("guild_id"),
+                "channelId": channel_id,
+                "threadId": candidate.get("threadId") or candidate.get("thread_id"),
+                "messageId": message_id,
+                "authorBot": bool(author.get("bot")),
+            },
         }
         if metadata.get("bucketHint"):
             inbox_payload["bucket_hint"] = metadata["bucketHint"]

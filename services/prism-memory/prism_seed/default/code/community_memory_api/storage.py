@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 _BUCKET_RE = re.compile(r"^[a-z0-9_-]+$")
+_SAFE_DOC_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 _SAFE_ARTIFACT_ID_RE = re.compile(r"^[a-zA-Z0-9._~-]+$")
 
 

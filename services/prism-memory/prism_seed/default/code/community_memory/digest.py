@@ -127,13 +127,24 @@ def _load_raw_records(raw_dir: Path) -> List[Dict[str, Any]]:
                         "created_at": message.get("created_at"),
                         "jump_url": message.get("jump_url"),
                         "attachments": message.get("attachments", []),
+                        "metadata": message.get("metadata", {}),
                     }
                 )
     return records
 
 
+def _include_in_default_memory(record: Dict[str, Any]) -> bool:
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    agentic = metadata.get("agentic_ingest") if isinstance(metadata.get("agentic_ingest"), dict) else {}
+    if agentic.get("memory_include_default") is False:
+        return False
+    return True
+
+
 def _message_tags(record: Dict[str, Any]) -> List[str]:
     tags: List[str] = []
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    agentic = metadata.get("agentic_ingest") if isinstance(metadata.get("agentic_ingest"), dict) else {}
     text = record.get("content", "")
     if _contains_keyword(text, KEYWORDS_HIGHLIGHT):
         tags.append("highlight")
@@ -151,6 +162,9 @@ def _message_tags(record: Dict[str, Any]) -> List[str]:
         tags.append("attachment")
     if record.get("thread_id"):
         tags.append("thread")
+    interaction_kind = str(agentic.get("interaction_kind") or "").strip()
+    if interaction_kind:
+        tags.append(f"agentic:{interaction_kind}")
     return sorted(set(tags))
 
 
@@ -168,6 +182,7 @@ def _message_score(record: Dict[str, Any]) -> int:
 
 
 def _overview_summary(records: List[Dict[str, Any]]) -> List[str]:
+    records = [record for record in records if _include_in_default_memory(record)]
     if not records:
         return ["No activity captured for this bucket."]
     channels: Dict[str, int] = {}
@@ -218,6 +233,11 @@ def _to_structured_entry(
         "author": record.get("author"),
         "created_at": record.get("created_at"),
         "jump_url": record.get("jump_url"),
+        "agentic_ingest": (
+            (record.get("metadata") or {}).get("agentic_ingest")
+            if isinstance(record.get("metadata"), dict)
+            else None
+        ),
         "score": _message_score(record),
         "tags": _message_tags(record),
         "reason": reason,
@@ -329,6 +349,10 @@ class DigestGenerator:
             records = _load_raw_records(raw_dir)
             if not records:
                 print(f"[digest] no records found for bucket {bucket}; skipping")
+                continue
+            records = [record for record in records if _include_in_default_memory(record)]
+            if not records:
+                print(f"[digest] all records filtered for bucket {bucket}; skipping")
                 continue
 
             mode_conf = self._bucket_mode(bucket)

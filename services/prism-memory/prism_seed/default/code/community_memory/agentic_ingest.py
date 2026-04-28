@@ -1,0 +1,195 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+from .activity import ActivityLogger
+from .config_loader import AgenticIngestConfig, SpaceConfig
+
+
+SYSTEM_PROMPT = """You classify Prism Memory inbox records for downstream synthesis.
+Return JSON only.
+
+Decide:
+- interaction_kind: retrieval | ops | planning | decision_support | artifact_generation | discussion
+- memory_relevance: low | review | high
+- adoption_signal: none | candidate | adopted
+- memory_include_default: true if this should be included in default digest and rolling-memory synthesis
+- summary: one short sentence
+- topics: short topic strings
+- action_items: short action item strings
+- reason: brief explanation
+
+Guidance:
+- Simple bot lookups, link requests, sync/debug chatter, and retrieval questions should usually be memory_include_default=false.
+- Planning or decision-support threads should usually be memory_include_default=false unless there is clear adopted working state.
+- Adopted outputs that materially change project state may be memory_include_default=true.
+"""
+
+
+@dataclass
+class AgenticIngestEnricher:
+    config: SpaceConfig
+    activity: ActivityLogger
+
+    def enrich(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        settings = self.config.agentic_ingest
+        if settings.mode == "off":
+            return record
+        if not self._matches_scope(record):
+            return record
+        if not settings.provider.base_url or not settings.provider.model:
+            self.activity.log(
+                "agentic_ingest.skipped",
+                collector_key="inbox_memory",
+                run_key=record.get("source_file", "unknown"),
+                meta={
+                    "reason": "provider_not_configured",
+                    "mode": settings.mode,
+                    "scope": settings.scope,
+                },
+            )
+            return record
+        try:
+            derived = self._classify(record)
+        except Exception as exc:  # pragma: no cover - defensive runtime path
+            self.activity.log(
+                "agentic_ingest.error",
+                collector_key="inbox_memory",
+                run_key=record.get("source_file", "unknown"),
+                meta={"error": str(exc), "mode": settings.mode, "scope": settings.scope},
+            )
+            return record
+        metadata = dict(record.get("metadata") or {})
+        metadata["agentic_ingest"] = derived
+        record["metadata"] = metadata
+        self.activity.log(
+            "agentic_ingest.classified",
+            collector_key="inbox_memory",
+            run_key=record.get("source_file", "unknown"),
+            meta={
+                "mode": settings.mode,
+                "scope": settings.scope,
+                "interaction_kind": derived.get("interaction_kind"),
+                "memory_include_default": derived.get("memory_include_default"),
+                "adoption_signal": derived.get("adoption_signal"),
+            },
+        )
+        return record
+
+    def _matches_scope(self, record: Dict[str, Any]) -> bool:
+        settings = self.config.agentic_ingest
+        if settings.scope == "all":
+            return True
+        source = str(record.get("source") or "").strip()
+        bucket = str(record.get("bucket") or "").strip()
+        metadata = record.get("metadata") or {}
+        in_thread = bool(metadata.get("threadId") or metadata.get("discordThreadId"))
+        author_bot = bool(metadata.get("authorBot"))
+        if settings.scope == "bot_only":
+            return source == "discord" and (author_bot or in_thread)
+        if settings.scope == "scoped":
+            return (settings.scoped_sources and source in settings.scoped_sources) or (
+                settings.scoped_buckets and bucket in settings.scoped_buckets
+            )
+        return False
+
+    def _classify(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        settings = self.config.agentic_ingest
+        provider = settings.provider
+        base = provider.base_url.rstrip("/")
+        if not base.endswith("/v1"):
+            base = f"{base}/v1"
+        url = f"{base}/chat/completions"
+        metadata = record.get("metadata") or {}
+        user_payload = {
+            "source": record.get("source"),
+            "type": record.get("type"),
+            "bucket": record.get("bucket"),
+            "author": record.get("author"),
+            "participant_count": record.get("participant_count"),
+            "participants": record.get("participants"),
+            "metadata": metadata,
+            "content": record.get("content"),
+        }
+        body = {
+            "model": provider.model,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=True)},
+            ],
+        }
+        headers = {"Content-Type": "application/json"}
+        if provider.api_key:
+            headers["Authorization"] = f"Bearer {provider.api_key}"
+        request = Request(
+            url,
+            method="POST",
+            headers=headers,
+            data=json.dumps(body, ensure_ascii=True).encode("utf-8"),
+        )
+        try:
+            with urlopen(request, timeout=provider.timeout_seconds) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:  # pragma: no cover - runtime path
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"provider_http_error:{exc.code}:{detail}") from exc
+        except URLError as exc:  # pragma: no cover - runtime path
+            raise RuntimeError(f"provider_unreachable:{exc.reason}") from exc
+        content = self._extract_message_content(payload)
+        parsed = json.loads(content)
+        return self._normalize_result(parsed)
+
+    @staticmethod
+    def _extract_message_content(payload: Dict[str, Any]) -> str:
+        choices = payload.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise RuntimeError("provider_missing_choices")
+        message = choices[0].get("message")
+        if not isinstance(message, dict):
+            raise RuntimeError("provider_missing_message")
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: List[str] = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text = item.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+            if parts:
+                return "\n".join(parts)
+        raise RuntimeError("provider_missing_content")
+
+    @staticmethod
+    def _normalize_result(raw: Dict[str, Any]) -> Dict[str, Any]:
+        def _as_list(value: Any) -> List[str]:
+            if not isinstance(value, list):
+                return []
+            out: List[str] = []
+            for item in value:
+                text = str(item).strip()
+                if text:
+                    out.append(text)
+            return out[:12]
+
+        interaction_kind = str(raw.get("interaction_kind") or "discussion").strip() or "discussion"
+        memory_relevance = str(raw.get("memory_relevance") or "low").strip() or "low"
+        adoption_signal = str(raw.get("adoption_signal") or "none").strip() or "none"
+        memory_include_default = bool(raw.get("memory_include_default", False))
+        return {
+            "interaction_kind": interaction_kind,
+            "memory_relevance": memory_relevance,
+            "adoption_signal": adoption_signal,
+            "memory_include_default": memory_include_default,
+            "summary": str(raw.get("summary") or "").strip(),
+            "reason": str(raw.get("reason") or "").strip(),
+            "topics": _as_list(raw.get("topics")),
+            "action_items": _as_list(raw.get("action_items")),
+        }
