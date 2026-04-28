@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import shutil
 from typing import Callable, Optional
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -136,7 +137,8 @@ def create_app(settings: Settings) -> FastAPI:
             return raw
         if not raw.startswith("/"):
             raw = f"/{raw}"
-        return f"{str(request.base_url).rstrip('/')}{raw}"
+        encoded = quote(raw, safe="/-._~")
+        return f"{str(request.base_url).rstrip('/')}{encoded}"
 
     def _with_absolute_links(request: Request, payload):
         if isinstance(payload, dict):

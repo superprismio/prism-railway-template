@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 _BUCKET_RE = re.compile(r"^[a-z0-9_-]+$")
-_SAFE_DOC_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 _SAFE_ARTIFACT_ID_RE = re.compile(r"^[a-zA-Z0-9._~-]+$")
 
 
@@ -972,10 +971,10 @@ class FilesystemStorageBackend:
             raise StorageError("invalid_slug", "Slug is required")
         parts = [part for part in cleaned.split("/") if part]
         for part in parts:
-            if not _SAFE_DOC_RE.fullmatch(part):
+            if part in {".", ".."} or "\\" in part or "\x00" in part:
                 raise StorageError(
                     "invalid_slug",
-                    "Slug components may contain letters, numbers, '.', '_' or '-' only",
+                    "Slug contains invalid path components",
                 )
         return "/".join(parts)
 
