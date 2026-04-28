@@ -243,6 +243,16 @@ def create_app(settings: Settings) -> FastAPI:
                 merged[key] = value
         return merged
 
+    def _normalize_space_config(config_payload: dict) -> dict:
+        normalized = dict(config_payload)
+        agentic = normalized.get("agentic_ingest")
+        if isinstance(agentic, dict):
+            agentic_normalized = dict(agentic)
+            if "enabled" in agentic_normalized:
+                agentic_normalized.pop("mode", None)
+            normalized["agentic_ingest"] = agentic_normalized
+        return normalized
+
     def _write_space_config(
         config_payload: dict,
         *,
@@ -250,6 +260,7 @@ def create_app(settings: Settings) -> FastAPI:
         action: str,
         before_config: dict | None = None,
     ) -> schemas.SpaceConfigUpdateResponse:
+        config_payload = _normalize_space_config(config_payload)
         config_file = data_root / "config" / "space.json"
         config_file.parent.mkdir(parents=True, exist_ok=True)
         tmp_file = config_file.with_suffix(".json.tmp")
