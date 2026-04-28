@@ -37,9 +37,9 @@ Use this while filling out the Railway template composer.
 | `PRISM_API_SPACE` | `community` | Runtime Prism Memory space slug. | No |
 | `AGENTIC_INGEST_MODE` | `off` | Optional agentic inbox enrichment mode. Leave off for deterministic default behavior. | Yes |
 | `AGENTIC_INGEST_SCOPE` | `bot_only` | Optional agentic enrichment scope when enabled. | Yes |
-| `AGENTIC_INGEST_PROVIDER_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}/v1` | Optional OpenAI-compatible provider base URL. Default target can point at Codex Runtime. | Yes |
+| `AGENTIC_INGEST_PROVIDER_BASE_URL` | empty | Optional override for the provider base URL in `space.json`. Bundled default already points at Codex Runtime. | Yes |
 | `AGENTIC_INGEST_PROVIDER_API_KEY` | empty | Optional provider API key for agentic enrichment. | Yes |
-| `AGENTIC_INGEST_MODEL` | empty | Optional provider model name used for agentic enrichment. | Yes |
+| `AGENTIC_INGEST_MODEL` | empty | Optional override for the provider model in `space.json`. Bundled default is `gpt-5.5`. | Yes |
 | `AGENTIC_INGEST_TIMEOUT_SECONDS` | `30` | Optional request timeout for provider calls. | Yes |
 | `AGENTIC_INGEST_SCOPED_SOURCES` | empty | Optional comma-separated source allowlist used when scope is `scoped`. | Yes |
 | `AGENTIC_INGEST_SCOPED_BUCKETS` | empty | Optional comma-separated bucket allowlist used when scope is `scoped`. | Yes |

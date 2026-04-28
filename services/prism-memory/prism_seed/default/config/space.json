@@ -141,9 +141,9 @@
     "scoped_sources": [],
     "scoped_buckets": [],
     "provider": {
-      "base_url": "",
+      "base_url": "http://codex-runtime.railway.internal:3030/v1",
       "api_key": "",
-      "model": "",
+      "model": "gpt-5.5",
       "timeout_seconds": 30
     }
   },

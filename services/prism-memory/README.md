@@ -81,15 +81,17 @@ Intended use:
 Default posture:
 
 - disabled by default
-- provider target can point at `codex-runtime` or any OpenAI-compatible service
+- bundled `space.json` points at `codex-runtime` by default
+- bundled `space.json` uses `gpt-5.5` as the default model
+- provider target can be swapped to any OpenAI-compatible service
 
 Optional envs:
 
 - `AGENTIC_INGEST_MODE=off|bot_only|scoped|all`
 - `AGENTIC_INGEST_SCOPE=bot_only|scoped|all`
-- `AGENTIC_INGEST_PROVIDER_BASE_URL=http://codex-runtime.../v1`
+- `AGENTIC_INGEST_PROVIDER_BASE_URL=...` overrides `space.json`
 - `AGENTIC_INGEST_PROVIDER_API_KEY=...`
-- `AGENTIC_INGEST_MODEL=...`
+- `AGENTIC_INGEST_MODEL=...` overrides `space.json`
 - `AGENTIC_INGEST_TIMEOUT_SECONDS=30`
 - `AGENTIC_INGEST_SCOPED_SOURCES=discord,...`
 - `AGENTIC_INGEST_SCOPED_BUCKETS=cohort,...`
