@@ -22,7 +22,7 @@ Enable agentic ingest for bot-only classification:
 {
   "patch": {
     "agentic_ingest": {
-      "mode": "bot_only",
+      "enabled": true,
       "scope": "bot_only",
       "provider": {
         "base_url": "http://codex-runtime.railway.internal:3030/v1",
@@ -33,13 +33,14 @@ Enable agentic ingest for bot-only classification:
 }
 ```
 
-Set the mode directly when the user asks for it:
+Enable it directly when the user asks for bot-only agentic ingest:
 
 ```json
 {
   "patch": {
     "agentic_ingest": {
-      "mode": "bot_only"
+      "enabled": true,
+      "scope": "bot_only"
     }
   }
 }
@@ -47,8 +48,8 @@ Set the mode directly when the user asks for it:
 
 Important:
 
-- `mode=on` is invalid
-- use `mode=bot_only` for the first enabled rollout
+- prefer `enabled=true|false` plus `scope=...` in new config
+- treat legacy `mode` as compatibility only
 
 Add policy guidance for important and low-signal discussions:
 
@@ -78,7 +79,7 @@ Turn agentic ingest off:
 {
   "patch": {
     "agentic_ingest": {
-      "mode": "off"
+      "enabled": false
     }
   }
 }
@@ -90,7 +91,7 @@ Prioritize a bucket by narrowing scoped enrichment:
 {
   "patch": {
     "agentic_ingest": {
-      "mode": "scoped",
+      "enabled": true,
       "scope": "scoped",
       "scoped_buckets": ["governance", "cohort"]
     }

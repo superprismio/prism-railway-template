@@ -37,7 +37,7 @@ class AgenticIngestEnricher:
 
     def enrich(self, record: Dict[str, Any]) -> Dict[str, Any]:
         settings = self.config.agentic_ingest
-        if settings.mode == "off":
+        if not settings.enabled:
             return record
         if not self._matches_scope(record):
             return record
@@ -48,7 +48,7 @@ class AgenticIngestEnricher:
                 run_key=record.get("source_file", "unknown"),
                 meta={
                     "reason": "provider_not_configured",
-                    "mode": settings.mode,
+                    "enabled": settings.enabled,
                     "scope": settings.scope,
                 },
             )
@@ -60,7 +60,7 @@ class AgenticIngestEnricher:
                 "agentic_ingest.error",
                 collector_key="inbox_memory",
                 run_key=record.get("source_file", "unknown"),
-                meta={"error": str(exc), "mode": settings.mode, "scope": settings.scope},
+                meta={"error": str(exc), "enabled": settings.enabled, "scope": settings.scope},
             )
             return record
         metadata = dict(record.get("metadata") or {})
@@ -71,7 +71,7 @@ class AgenticIngestEnricher:
             collector_key="inbox_memory",
             run_key=record.get("source_file", "unknown"),
             meta={
-                "mode": settings.mode,
+                "enabled": settings.enabled,
                 "scope": settings.scope,
                 "interaction_kind": derived.get("interaction_kind"),
                 "memory_include_default": derived.get("memory_include_default"),

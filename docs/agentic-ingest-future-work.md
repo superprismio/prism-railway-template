@@ -5,7 +5,7 @@ This is the follow-up list after the first optional Prism Memory agentic ingest 
 ## Done in current slice
 
 - optional OpenAI-compatible enrichment hook in Prism Memory
-- default mode `off`
+- default `enabled=false`
 - `bot_only`, `scoped`, and `all` config plumbing
 - derived `agentic_ingest` metadata on inbox-derived records
 - default digest exclusion when `memory_include_default=false`

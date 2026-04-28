@@ -35,7 +35,7 @@ Use this while filling out the Railway template composer.
 | `PRISM_API_KEY` | `${{ secret(64) }}` | API key used to authorize Prism Memory API calls. | No |
 | `PRISM_API_DATA_ROOT` | `/data` | Mounted data directory for Prism Memory runtime state. | No |
 | `PRISM_API_SPACE` | `community` | Runtime Prism Memory space slug. | No |
-| `AGENTIC_INGEST_MODE` | `off` | Optional agentic inbox enrichment mode. Leave off for deterministic default behavior. | Yes |
+| `AGENTIC_INGEST_ENABLED` | `false` | Optional enable switch for agentic inbox enrichment. Leave false for deterministic default behavior. | Yes |
 | `AGENTIC_INGEST_SCOPE` | `bot_only` | Optional agentic enrichment scope when enabled. | Yes |
 | `AGENTIC_INGEST_PROVIDER_BASE_URL` | empty | Optional override for the provider base URL in `space.json`. Bundled default already points at Codex Runtime. | Yes |
 | `AGENTIC_INGEST_PROVIDER_API_KEY` | empty | Optional provider API key for agentic enrichment. | Yes |

@@ -136,7 +136,7 @@
     }
   },
   "agentic_ingest": {
-    "mode": "off",
+    "enabled": false,
     "scope": "bot_only",
     "scoped_sources": [],
     "scoped_buckets": [],

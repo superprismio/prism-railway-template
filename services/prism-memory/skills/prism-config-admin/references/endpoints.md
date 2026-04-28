@@ -16,7 +16,7 @@ curl -X PATCH \
   -H "X-Prism-Reason: enable bot-only agentic ingest" \
   -H "Content-Type: application/json" \
   "$PRISM_API_BASE/config/space" \
-  -d '{"patch":{"agentic_ingest":{"mode":"bot_only","scope":"bot_only"}}}'
+  -d '{"patch":{"agentic_ingest":{"enabled":true,"scope":"bot_only"}}}'
 ```
 
 Replace full config:

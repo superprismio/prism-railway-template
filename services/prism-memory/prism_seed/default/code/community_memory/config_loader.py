@@ -128,7 +128,7 @@ class AgenticIngestPolicyConfig:
 
 @dataclass
 class AgenticIngestConfig:
-    mode: str
+    enabled: bool
     scope: str
     scoped_sources: List[str]
     scoped_buckets: List[str]
@@ -225,11 +225,26 @@ def load_config(path: Path) -> SpaceConfig:
         constraints=constraints,
     )
     agentic_conf = raw.get("agentic_ingest", {})
+    raw_mode = str(agentic_conf.get("mode", "off")).strip() if isinstance(agentic_conf, dict) else "off"
+    raw_scope = str(agentic_conf.get("scope", "")).strip() if isinstance(agentic_conf, dict) else ""
+    env_enabled = os.environ.get("AGENTIC_INGEST_ENABLED")
+    env_scope = os.environ.get("AGENTIC_INGEST_SCOPE")
+    env_mode = os.environ.get("AGENTIC_INGEST_MODE")
+    enabled_default = raw_mode != "off"
+    if isinstance(agentic_conf, dict) and "enabled" in agentic_conf:
+        enabled_default = bool(agentic_conf.get("enabled"))
+    if env_enabled is not None:
+        enabled_value = env_enabled.strip().lower() in ("1", "true", "yes", "on")
+    elif env_mode is not None:
+        enabled_value = env_mode.strip() != "off"
+    else:
+        enabled_value = enabled_default
+    scope_default = raw_scope or (raw_mode if raw_mode in ("bot_only", "scoped", "all") else "bot_only")
     provider_conf = agentic_conf.get("provider", {}) if isinstance(agentic_conf, dict) else {}
     policy_conf = agentic_conf.get("policy", {}) if isinstance(agentic_conf, dict) else {}
     agentic_ingest = AgenticIngestConfig(
-        mode=str(os.environ.get("AGENTIC_INGEST_MODE", agentic_conf.get("mode", "off"))).strip() or "off",
-        scope=str(os.environ.get("AGENTIC_INGEST_SCOPE", agentic_conf.get("scope", "bot_only"))).strip() or "bot_only",
+        enabled=enabled_value,
+        scope=str(env_scope if env_scope is not None else scope_default).strip() or "bot_only",
         scoped_sources=[
             item.strip()
             for item in str(

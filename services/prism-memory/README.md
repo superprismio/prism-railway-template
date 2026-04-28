@@ -87,7 +87,7 @@ Default posture:
 
 Optional envs:
 
-- `AGENTIC_INGEST_MODE=off|bot_only|scoped|all`
+- `AGENTIC_INGEST_ENABLED=true|false`
 - `AGENTIC_INGEST_SCOPE=bot_only|scoped|all`
 - `AGENTIC_INGEST_PROVIDER_BASE_URL=...` overrides `space.json`
 - `AGENTIC_INGEST_PROVIDER_API_KEY=...`
@@ -98,7 +98,7 @@ Optional envs:
 
 Current behavior:
 
-- mode `off` does nothing
+- `enabled=false` does nothing
 - scope `bot_only` targets Discord thread/bot-context inbox items based on structural metadata
 - scope `scoped` limits enrichment to configured sources and/or buckets
 - records classified with `memory_include_default=false` remain stored in raw transcripts but are excluded from default digest generation
