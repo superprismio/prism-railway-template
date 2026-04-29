@@ -751,13 +751,60 @@ export class DiscordVoiceManager {
     const metadataPath = path.join(this.recordingsRoot, path.basename(sessionId), "metadata.json");
     const existing = await fs.readFile(metadataPath, "utf8").catch(() => null);
     if (existing) {
-      return JSON.parse(existing) as RecordingSessionMetadata;
+      const metadata = JSON.parse(existing) as RecordingSessionMetadata;
+      return this.recoverPrismMemoryArtifacts(metadata, metadataPath);
     }
     const session = await this.recoverSessionFromDisk(sessionId);
     if (!session) {
       throw new Error(`Recording session not recoverable: ${sessionId}`);
     }
     return this.finalizeSession(session);
+  }
+
+  private async recoverPrismMemoryArtifacts(
+    metadata: RecordingSessionMetadata,
+    metadataPath: string,
+  ): Promise<RecordingSessionMetadata> {
+    if (metadata.artifacts?.prismMemoryTranscriptPath || metadata.artifacts?.prismMemorySummaryPath) {
+      return metadata;
+    }
+    const transcriptArtifacts = await this.loadPersistedTranscriptArtifacts(metadata);
+    const summary = await this.loadPersistedSummary(metadata);
+    const memoryIngest = await this.ingestArtifactsToPrismMemory(metadata, transcriptArtifacts, summary);
+    metadata.artifacts = {
+      ...(metadata.artifacts ?? {}),
+      prismMemoryTranscriptPath: memoryIngest.transcriptPath ?? undefined,
+      prismMemorySummaryPath: memoryIngest.summaryPath ?? undefined,
+    };
+    await fs.writeFile(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+    console.log(
+      `[discord-adapter] recovered prism memory artifacts session=${metadata.sessionId} transcript=${metadata.artifacts.prismMemoryTranscriptPath ?? "none"} summary=${metadata.artifacts.prismMemorySummaryPath ?? "none"}`,
+    );
+    return metadata;
+  }
+
+  private async loadPersistedTranscriptArtifacts(metadata: RecordingSessionMetadata): Promise<SessionTranscriptArtifacts | null> {
+    const transcriptJsonPath = metadata.artifacts?.transcriptJsonPath;
+    if (!transcriptJsonPath) {
+      return null;
+    }
+    const raw = await fs.readFile(transcriptJsonPath, "utf8").catch(() => null);
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw) as SessionTranscriptArtifacts;
+  }
+
+  private async loadPersistedSummary(metadata: RecordingSessionMetadata): Promise<SessionSummary | null> {
+    const summaryJsonPath = metadata.artifacts?.summaryJsonPath;
+    if (!summaryJsonPath) {
+      return null;
+    }
+    const raw = await fs.readFile(summaryJsonPath, "utf8").catch(() => null);
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw) as SessionSummary;
   }
 
   private parseRawSpeakerFileName(filename: string): { userId: string; username: string; startedAt?: number } {
