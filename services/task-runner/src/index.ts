@@ -233,6 +233,10 @@ async function registerTaskWithSite(task: BuiltInTask): Promise<void> {
   }
 }
 
+async function ensureTasksRegisteredWithSite(tasks: BuiltInTask[]): Promise<void> {
+  await Promise.all(tasks.map((task) => registerTaskWithSite(task)));
+}
+
 async function fetchTasksFromSite(): Promise<AppTask[] | null> {
   try {
     const payload = await appApiRequest("/api/internal/tasks", { method: "GET" });
@@ -488,6 +492,7 @@ function requireRunnerToken(request: Request, response: Response): boolean {
 async function schedulerLoop(tasks: BuiltInTask[], pollSeconds: number): Promise<void> {
   while (true) {
     if (!parseBoolEnv("TASK_RUNNER_DISABLED", false)) {
+      await ensureTasksRegisteredWithSite(tasks);
       await syncTasksFromSite(tasks);
       const now = new Date();
       for (const task of tasks) {
@@ -511,7 +516,7 @@ async function main(): Promise<void> {
   for (const task of tasks) {
     state.set(task.key, initState(task));
   }
-  await Promise.all(tasks.map((task) => registerTaskWithSite(task)));
+  await ensureTasksRegisteredWithSite(tasks);
   await syncTasksFromSite(tasks);
 
   const app = express();
