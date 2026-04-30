@@ -157,20 +157,7 @@ PRISM_MEMORY_BASE_URL=http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-m
 PRISM_API_KEY=${{prism-memory.PRISM_API_KEY}}
 ```
 
-Do not enable schedules yet.
-
-These are transitional bootstrap defaults, not the desired long-term source of truth:
-
-```env
-TASK_DISCORD_SYNC_ENABLED=false
-TASK_DISCORD_SYNC_CRON=0 * * * *
-TASK_MEMORY_RUN_ENABLED=false
-TASK_MEMORY_RUN_CRON=45 * * * *
-TASK_KNOWLEDGE_RUN_ENABLED=false
-TASK_KNOWLEDGE_RUN_CRON=55 * * * *
-```
-
-Long term, `site` DB should own enabled state and schedules.
+Do not enable schedules yet. Built-in task defaults are now code-backed and are seeded into `site` only when a task row does not already exist. After startup, `site` DB owns enabled state and schedules.
 
 ## Next validation steps
 
@@ -255,13 +242,7 @@ Recommended sequence:
 
 ## Known follow-up
 
-Current branch still uses env-backed built-in task schedules at boot, then registers them into `site`.
-
-Better next step:
-
-- make `site` DB the source of truth for enabled state and schedules
-- have `task-runner` fetch tasks from `site`
-- keep env values only as first-boot bootstrap defaults and service credentials
+The runner now treats `site` DB as the source of truth for built-in enabled state and schedules. Remaining follow-up is to add a UI/API workflow for operators to edit task rows without using internal API calls.
 
 ## Verification already run
 

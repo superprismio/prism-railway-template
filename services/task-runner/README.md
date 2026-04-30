@@ -8,7 +8,7 @@ For the initial slice, it can replace the fixed Railway cron workers by running 
 - Prism Memory run
 - Prism Knowledge run
 
-It does not yet own prompt-driven automations, task definitions in `site`, or run history in the app DB. Those are later phases.
+It does not yet own prompt-driven automations. Built-in task definitions and run history live in the `site` app DB.
 
 ## Endpoints
 
@@ -27,14 +27,20 @@ Manual runs require `X-Task-Runner-Token` when `TASK_RUNNER_TOKEN` is configured
 - `APP_API_BASE_URL=http://site.railway.internal:3100`
 - `APP_API_SERVICE_TOKEN=${{site.INTERNAL_SERVICE_TOKEN}}`
 
-When `APP_API_BASE_URL` is set, the runner registers its built-in tasks and writes task run history into the `site` SQLite DB through internal APIs.
+When `APP_API_BASE_URL` is set, the runner idempotently registers built-in task defaults, reads effective enabled state and cron schedules from `site`, and writes task run history through internal APIs.
 
-## Built-in task env
+## Built-in Tasks
+
+The built-in task defaults are seeded into `site` on startup only when a row does not already exist:
+
+- `discord-sync`: disabled, `0 * * * *`
+- `memory-run`: disabled, `45 * * * *`
+- `knowledge-run`: disabled, `55 * * * *`
+
+After seeding, `site` DB values are the scheduler source of truth. The runner refreshes task rows on each poll.
 
 ### Discord sync
 
-- `TASK_DISCORD_SYNC_ENABLED=false`
-- `TASK_DISCORD_SYNC_CRON="0 * * * *"`
 - `DISCORD_ADAPTER_BASE_URL=http://discord-adapter.railway.internal:8789`
 - `SOURCE_ADAPTER_TOKEN=...`
 
@@ -45,8 +51,6 @@ The runner calls:
 
 ### Memory run
 
-- `TASK_MEMORY_RUN_ENABLED=false`
-- `TASK_MEMORY_RUN_CRON="45 * * * *"`
 - `PRISM_MEMORY_BASE_URL=http://prism-memory.railway.internal:8788`
 - `PRISM_API_KEY=...`
 
@@ -57,8 +61,6 @@ The runner calls:
 
 ### Knowledge run
 
-- `TASK_KNOWLEDGE_RUN_ENABLED=false`
-- `TASK_KNOWLEDGE_RUN_CRON="55 * * * *"`
 - `PRISM_MEMORY_BASE_URL=http://prism-memory.railway.internal:8788`
 - `PRISM_API_KEY=...`
 

@@ -9,13 +9,7 @@ from typing import List
 from zoneinfo import ZoneInfo
 
 from .activity import ActivityLogger
-from .collector import (
-    DiscordEnv,
-    DiscordLatestCollector,
-    InboxMemoryCollector,
-    LatestMeetingsCollector,
-    LatestMeetingsEnv,
-)
+from .collector import InboxMemoryCollector
 from .config_loader import CollectorConfig, SpaceConfig, load_config
 from .custom_collectors import CollectorLoadError, CommandCollector, load_python_collector
 from .digest import DigestGenerator
@@ -55,6 +49,9 @@ def _collector_objects(
 ) -> List[object]:
     collectors: List[object] = []
     for collector_conf in config.collectors:
+        if not collector_conf.enabled:
+            continue
+
         if collector_conf.type == "python":
             try:
                 collectors.append(
@@ -86,42 +83,6 @@ def _collector_objects(
             print(
                 f"[warn] unknown collector type '{collector_conf.type}' "
                 f"for key '{collector_conf.key}'; skipping"
-            )
-            continue
-
-        if collector_conf.key == "discord_latest":
-            try:
-                env = DiscordEnv.from_env()
-            except RuntimeError as exc:
-                print(f"[warn] {exc}. Discord collector disabled.")
-                continue
-            collectors.append(
-                DiscordLatestCollector(
-                    base_path=base_path,
-                    config=config,
-                    collector_conf=collector_conf,
-                    env=env,
-                    state=state,
-                    activity=activity,
-                )
-            )
-            continue
-
-        if collector_conf.key == "latest_meetings":
-            try:
-                env = LatestMeetingsEnv.from_env()
-            except RuntimeError as exc:
-                print(f"[warn] {exc}. Latest meetings collector disabled.")
-                continue
-            collectors.append(
-                LatestMeetingsCollector(
-                    base_path=base_path,
-                    config=config,
-                    collector_conf=collector_conf,
-                    env=env,
-                    state=state,
-                    activity=activity,
-                )
             )
             continue
 

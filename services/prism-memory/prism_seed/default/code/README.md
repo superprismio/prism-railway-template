@@ -79,10 +79,8 @@ bash scripts/knowledge_start.sh
 
 `prism_seed/default/config/space.json` controls which collectors are enabled and their scheduling windows.
 
-The current pipeline only knows how to instantiate these collector keys:
+The default pipeline uses this collector key:
 
-- `discord_latest`
-- `latest_meetings`
 - `inbox_memory`
 
 It also supports fork-defined collectors through:
@@ -96,7 +94,6 @@ You can safely customize:
 - `window_minutes`
 - `initial_backfill_hours`
 - bucket mappings under `discord.category_to_bucket`
-- endpoint env vars like `DISCORD_LATEST_URL` and `MEETINGS_LATEST_URL`
 
 If you add another builtin collector key in config without adding code in `community_memory.pipeline`, it will be skipped with:
 
@@ -105,17 +102,6 @@ If you add another builtin collector key in config without adding code in `commu
 ```
 
 Custom collector authoring is documented in `docs/collectors.md` at repo root.
-
-Required environment variables (Discord latest messages collector `discord_latest`):
-
-- `DISCORD_LATEST_URL`
-- `DISCORD_LATEST_KEY`
-- `SPACE_HEAP_ID`
-- `DISCORD_GUILD_ID`
-
-Optional environment variables (latest meetings collector `latest_meetings`):
-- `MEETINGS_LATEST_URL`; may point at any HTTP wrapper that returns the payload shape expected by the built-in meetings collector
-- `SPACE_HEAP_ID`
 
 GitHub backup/push uses `GITHUB_OWNER`, `GITHUB_REPO`, and `GITHUB_TOKEN` (already configured in this environment).
 The CLI autoloads repo-root `.env` values if present.
@@ -133,7 +119,6 @@ Use `.env.example` as a template.
 - `724249951005179915` → `knowledge`
 
 Additional collector bucket:
-- `latest_meetings` → `meetings` (configured in `config.space.json.meetings.bucket`)
 - `inbox_memory` → bucket from inbox payload `bucket_hint` (default from `config.space.json.inbox.memory.default_bucket`)
 
 ## Knowledge Constraints

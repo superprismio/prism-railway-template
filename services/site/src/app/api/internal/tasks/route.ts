@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server"
-import { listTasks, upsertTask } from "@/lib/app-core"
+import { getTaskByKey, listTasks, upsertTask } from "@/lib/app-core"
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
 
 function parseBoolean(value: unknown, fallback = false) {
   if (typeof value === "boolean") return value
   if (typeof value === "string") return new Set(["1", "true", "yes", "on"]).has(value.trim().toLowerCase())
   return fallback
+}
+
+function parseBooleanFlag(value: unknown) {
+  return parseBoolean(value, false)
 }
 
 function parseConfig(value: unknown) {
@@ -41,6 +45,13 @@ export async function POST(request: Request) {
   const name = parseString(body.name)
   if (!key || !name) {
     return NextResponse.json({ ok: false, error: "key and name are required" }, { status: 400 })
+  }
+
+  if (parseBooleanFlag(body.preserveExisting ?? body.preserve_existing)) {
+    const existing = getTaskByKey(key)
+    if (existing) {
+      return NextResponse.json({ ok: true, task: existing, preserved: true })
+    }
   }
 
   const task = upsertTask({

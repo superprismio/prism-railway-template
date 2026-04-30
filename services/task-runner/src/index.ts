@@ -10,6 +10,8 @@ type TaskStatus = "idle" | "running" | "succeeded" | "failed" | "disabled";
 type BuiltInTask = {
   key: TaskKey;
   name: string;
+  defaultEnabled: boolean;
+  defaultCron: string;
   enabled: boolean;
   cron: string;
   run: () => Promise<TaskRunResult>;
@@ -36,6 +38,12 @@ type TaskRunResult = {
 
 type AppTaskRun = {
   id: string;
+};
+
+type AppTask = {
+  key: string;
+  enabled: boolean;
+  scheduleCron: string | null;
 };
 
 type TaskState = {
@@ -189,6 +197,18 @@ async function appApiRequest(path: string, init: RequestInit): Promise<Record<st
   return text ? JSON.parse(text) as Record<string, unknown> : {};
 }
 
+function isAppTask(value: unknown): value is AppTask {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as { key?: unknown; enabled?: unknown; scheduleCron?: unknown };
+  return (
+    typeof candidate.key === "string"
+    && typeof candidate.enabled === "boolean"
+    && (candidate.scheduleCron === null || typeof candidate.scheduleCron === "string")
+  );
+}
+
 async function registerTaskWithSite(task: BuiltInTask): Promise<void> {
   try {
     await appApiRequest("/api/internal/tasks", {
@@ -197,18 +217,78 @@ async function registerTaskWithSite(task: BuiltInTask): Promise<void> {
         key: task.key,
         name: task.name,
         description: `Built-in scheduled task: ${task.name}`,
-        enabled: task.enabled,
+        enabled: task.defaultEnabled,
         triggerType: "schedule",
-        scheduleCron: task.cron,
+        scheduleCron: task.defaultCron,
         timezone: "UTC",
         taskType: "builtin",
         inputConfig: {},
         instructionConfig: {},
         outputConfig: {},
+        preserveExisting: true,
       }),
     });
   } catch (error) {
     console.warn(JSON.stringify({ event: "task.site_register_failed", task: task.key, error: describeError(error) }));
+  }
+}
+
+async function fetchTasksFromSite(): Promise<AppTask[] | null> {
+  try {
+    const payload = await appApiRequest("/api/internal/tasks", { method: "GET" });
+    const rows = payload?.tasks;
+    if (!Array.isArray(rows)) {
+      return null;
+    }
+    return rows.filter(isAppTask);
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "task.site_fetch_failed", error: describeError(error) }));
+    return null;
+  }
+}
+
+function applyTaskConfig(task: BuiltInTask, config: { enabled: boolean; cron: string }): void {
+  const taskState = state.get(task.key);
+  const previousEnabled = task.enabled;
+  const previousCron = task.cron;
+
+  task.enabled = config.enabled;
+  task.cron = config.cron;
+
+  if (!taskState) {
+    state.set(task.key, initState(task));
+    return;
+  }
+
+  if (!task.enabled) {
+    taskState.status = taskState.running ? "running" : "disabled";
+    taskState.nextRunAt = null;
+    return;
+  }
+
+  if (!previousEnabled || previousCron !== task.cron || !taskState.nextRunAt) {
+    taskState.nextRunAt = nextCronDate(task.cron);
+  }
+  if (!taskState.running && taskState.status === "disabled") {
+    taskState.status = "idle";
+  }
+}
+
+async function syncTasksFromSite(tasks: BuiltInTask[]): Promise<void> {
+  const siteTasks = await fetchTasksFromSite();
+  if (!siteTasks) {
+    return;
+  }
+  for (const task of tasks) {
+    const siteTask = siteTasks.find((candidate) => candidate.key === task.key);
+    try {
+      applyTaskConfig(task, {
+        enabled: siteTask?.enabled ?? task.defaultEnabled,
+        cron: (siteTask?.scheduleCron ?? task.defaultCron).trim() || task.defaultCron,
+      });
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "task.site_config_invalid", task: task.key, error: describeError(error) }));
+    }
   }
 }
 
@@ -271,8 +351,10 @@ function buildTasks(): BuiltInTask[] {
     {
       key: "discord-sync",
       name: "Discord sync",
-      enabled: parseBoolEnv("TASK_DISCORD_SYNC_ENABLED", false),
-      cron: (process.env.TASK_DISCORD_SYNC_CRON ?? "0 * * * *").trim(),
+      defaultEnabled: false,
+      defaultCron: "0 * * * *",
+      enabled: false,
+      cron: "0 * * * *",
       run: async () => {
         const baseUrl = requireBaseUrl("DISCORD_ADAPTER_BASE_URL", discordAdapterBaseUrl);
         const headers: Record<string, string> = {};
@@ -285,8 +367,10 @@ function buildTasks(): BuiltInTask[] {
     {
       key: "memory-run",
       name: "Prism memory run",
-      enabled: parseBoolEnv("TASK_MEMORY_RUN_ENABLED", false),
-      cron: (process.env.TASK_MEMORY_RUN_CRON ?? "45 * * * *").trim(),
+      defaultEnabled: false,
+      defaultCron: "45 * * * *",
+      enabled: false,
+      cron: "45 * * * *",
       run: async () => {
         const baseUrl = requireBaseUrl("PRISM_MEMORY_BASE_URL", prismMemoryBaseUrl);
         const headers: Record<string, string> = {};
@@ -299,8 +383,10 @@ function buildTasks(): BuiltInTask[] {
     {
       key: "knowledge-run",
       name: "Prism knowledge run",
-      enabled: parseBoolEnv("TASK_KNOWLEDGE_RUN_ENABLED", false),
-      cron: (process.env.TASK_KNOWLEDGE_RUN_CRON ?? "55 * * * *").trim(),
+      defaultEnabled: false,
+      defaultCron: "55 * * * *",
+      enabled: false,
+      cron: "55 * * * *",
       run: async () => {
         const baseUrl = requireBaseUrl("PRISM_MEMORY_BASE_URL", prismMemoryBaseUrl);
         const headers: Record<string, string> = {};
@@ -402,6 +488,7 @@ function requireRunnerToken(request: Request, response: Response): boolean {
 async function schedulerLoop(tasks: BuiltInTask[], pollSeconds: number): Promise<void> {
   while (true) {
     if (!parseBoolEnv("TASK_RUNNER_DISABLED", false)) {
+      await syncTasksFromSite(tasks);
       const now = new Date();
       for (const task of tasks) {
         const taskState = state.get(task.key);
@@ -425,6 +512,7 @@ async function main(): Promise<void> {
     state.set(task.key, initState(task));
   }
   await Promise.all(tasks.map((task) => registerTaskWithSite(task)));
+  await syncTasksFromSite(tasks);
 
   const app = express();
   app.use(express.json({ limit: "1mb" }));

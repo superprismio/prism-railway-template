@@ -4,18 +4,6 @@
   "timezone": "America/Denver",
   "collectors": [
     {
-      "key": "discord_latest",
-      "enabled": false,
-      "window_minutes": 60,
-      "initial_backfill_hours": 72
-    },
-    {
-      "key": "latest_meetings",
-      "enabled": false,
-      "window_minutes": 60,
-      "initial_backfill_hours": 24
-    },
-    {
       "key": "inbox_memory",
       "enabled": true,
       "window_minutes": 60,
