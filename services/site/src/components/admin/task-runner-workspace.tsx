@@ -79,6 +79,7 @@ function taskDescription(key: string) {
   if (key === "discord-sync") return "Pulls Discord activity into Prism.";
   if (key === "memory-run") return "Runs the Prism Memory pipeline.";
   if (key === "knowledge-run") return "Refreshes Prism Knowledge artifacts.";
+  if (key === "knowledge-source-sync") return "Checks configured GitHub knowledge sources and syncs changed branches.";
   return "Scheduled task";
 }
 

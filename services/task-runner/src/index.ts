@@ -3,7 +3,7 @@ import { CronExpressionParser } from "cron-parser";
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 
-type TaskKey = "discord-sync" | "memory-run" | "knowledge-run";
+type TaskKey = "discord-sync" | "memory-run" | "knowledge-run" | "knowledge-source-sync";
 
 type TaskStatus = "idle" | "running" | "succeeded" | "failed" | "disabled";
 
@@ -398,6 +398,22 @@ function buildTasks(): BuiltInTask[] {
           headers["X-Prism-Api-Key"] = prismApiKey;
         }
         return postJson(baseUrl, "/ops/knowledge/run", headers);
+      },
+    },
+    {
+      key: "knowledge-source-sync",
+      name: "Prism knowledge source sync",
+      defaultEnabled: false,
+      defaultCron: "15 * * * *",
+      enabled: false,
+      cron: "15 * * * *",
+      run: async () => {
+        const baseUrl = requireBaseUrl("PRISM_MEMORY_BASE_URL", prismMemoryBaseUrl);
+        const headers: Record<string, string> = {};
+        if (prismApiKey) {
+          headers["X-Prism-Api-Key"] = prismApiKey;
+        }
+        return postJson(baseUrl, "/ops/knowledge/sources/sync", headers);
       },
     },
   ];

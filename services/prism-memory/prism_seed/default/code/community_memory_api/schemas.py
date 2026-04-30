@@ -115,6 +115,26 @@ class KnowledgeSourceListResponse(BaseModel):
     total: int
 
 
+class KnowledgeSourceSyncResult(BaseModel):
+    source_id: str
+    status: str
+    remote_head: Optional[str] = None
+    last_synced_commit: Optional[str] = None
+    change_summary: Dict[str, int] = Field(default_factory=dict)
+    error: Optional[Dict[str, str]] = None
+
+
+class KnowledgeSourceSyncChangedResponse(BaseModel):
+    ok: bool
+    operation: str = "knowledge.sources.sync_changed"
+    checked: int
+    changed: int
+    synced: int
+    skipped: int
+    failed: int
+    results: list[KnowledgeSourceSyncResult]
+
+
 class MemoryInboxRequest(BaseModel):
     source: str
     ts: datetime

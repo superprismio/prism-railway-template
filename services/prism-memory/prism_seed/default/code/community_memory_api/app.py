@@ -858,6 +858,37 @@ def create_app(settings: Settings) -> FastAPI:
         except _KnowledgeSourceError as exc:
             return _error_response(exc.code, exc.message, 404 if exc.code == "not_found" else 400)
 
+    @app.post(
+        "/ops/knowledge/sources/sync",
+        response_model=schemas.KnowledgeSourceSyncChangedResponse,
+        dependencies=[ops_auth_dependency],
+        tags=["ops", "knowledge"],
+    )
+    async def ops_knowledge_sources_sync(request: Request):
+        result = knowledge_source_manager.sync_changed_sources()
+        _append_audit_entry(
+            {
+                "ts": _now_iso(),
+                "action": "ops.knowledge.sources.sync",
+                "actor": _audit_actor(request),
+                "reason": _audit_reason(request),
+                "status": "ok" if result["ok"] else "error",
+                "changed_keys": [],
+                "before": None,
+                "after": None,
+                "details": {
+                    "checked": result["checked"],
+                    "changed": result["changed"],
+                    "synced": result["synced"],
+                    "skipped": result["skipped"],
+                    "failed": result["failed"],
+                },
+            }
+        )
+        if result["failed"]:
+            return JSONResponse(status_code=500, content={**result, "operation": "knowledge.sources.sync_changed"})
+        return {**result, "operation": "knowledge.sources.sync_changed"}
+
     @app.get("/api/artifacts", response_model=schemas.ArtifactListResponse, dependencies=[read_auth_dependency], tags=["artifacts"])
     async def artifacts_list(
         category: Optional[str] = Query(None, description="memory or knowledge"),

@@ -6,6 +6,7 @@ For the initial slice, it can replace the fixed Railway cron workers by running 
 
 - Discord sync
 - Prism Memory run
+- Prism Knowledge source sync
 - Prism Knowledge run
 
 It does not yet own prompt-driven automations. Built-in task definitions and run history live in the `site` app DB.
@@ -31,10 +32,11 @@ When `APP_API_BASE_URL` is set, the runner idempotently registers built-in task 
 
 ## Built-in Tasks
 
-The built-in task defaults are seeded into `site` on startup only when a row does not already exist:
+The built-in task defaults are seeded into `site` on startup and on scheduler polls only when a row does not already exist:
 
 - `discord-sync`: disabled, `0 * * * *`
 - `memory-run`: disabled, `45 * * * *`
+- `knowledge-source-sync`: disabled, `15 * * * *`
 - `knowledge-run`: disabled, `55 * * * *`
 
 After seeding, `site` DB values are the scheduler source of truth. The runner refreshes task rows on each poll.
@@ -68,6 +70,18 @@ The runner calls:
 
 - `POST /ops/knowledge/run`
 - header: `X-Prism-Api-Key`
+
+### Knowledge source sync
+
+- `PRISM_MEMORY_BASE_URL=http://prism-memory.railway.internal:8788`
+- `PRISM_API_KEY=...`
+
+The runner calls:
+
+- `POST /ops/knowledge/sources/sync`
+- header: `X-Prism-Api-Key`
+
+The Prism Memory endpoint checks each configured GitHub source remote branch head and only syncs sources whose head differs from `last_synced_commit`.
 
 ## Validation approach
 

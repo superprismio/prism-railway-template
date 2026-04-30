@@ -319,6 +319,83 @@ class KnowledgeSourceManager:
 
         return self.get_source(source_id)
 
+    def resolve_remote_head(self, source_id: str) -> str:
+        record = self.get_source(source_id)
+        record.pop("state", None)
+        return self._resolve_remote_head(record)
+
+    def sync_changed_sources(self) -> dict[str, Any]:
+        checked = 0
+        changed = 0
+        synced = 0
+        skipped = 0
+        failed = 0
+        results: list[dict[str, Any]] = []
+
+        for source in self.list_sources():
+            source_id = str(source.get("id") or "").strip()
+            if not source_id:
+                continue
+            checked += 1
+            try:
+                remote_head = self._resolve_remote_head(source)
+                last_synced_commit = (
+                    source.get("last_synced_commit")
+                    or source.get("state", {}).get("last_synced_commit")
+                )
+                if last_synced_commit and str(last_synced_commit).strip() == remote_head:
+                    skipped += 1
+                    results.append(
+                        {
+                            "source_id": source_id,
+                            "status": "skipped",
+                            "remote_head": remote_head,
+                            "last_synced_commit": last_synced_commit,
+                        }
+                    )
+                    continue
+
+                changed += 1
+                synced_source = self.sync_source(source_id)
+                synced += 1
+                results.append(
+                    {
+                        "source_id": source_id,
+                        "status": "synced",
+                        "remote_head": remote_head,
+                        "last_synced_commit": synced_source.get("last_synced_commit"),
+                        "change_summary": synced_source.get("state", {}).get("change_summary", {}),
+                    }
+                )
+            except KnowledgeSourceError as exc:
+                failed += 1
+                results.append(
+                    {
+                        "source_id": source_id,
+                        "status": "failed",
+                        "error": {"code": exc.code, "message": exc.message},
+                    }
+                )
+            except Exception as exc:
+                failed += 1
+                results.append(
+                    {
+                        "source_id": source_id,
+                        "status": "failed",
+                        "error": {"code": "unexpected_error", "message": str(exc)},
+                    }
+                )
+
+        return {
+            "ok": failed == 0,
+            "checked": checked,
+            "changed": changed,
+            "synced": synced,
+            "skipped": skipped,
+            "failed": failed,
+            "results": results,
+        }
+
     def _build_record(
         self,
         payload: dict[str, Any],
@@ -489,6 +566,35 @@ class KnowledgeSourceManager:
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or exc.stdout or "").strip()
             raise KnowledgeSourceError("git_clone_failed", stderr or "git clone failed") from exc
+
+    def _resolve_remote_head(self, source: dict[str, Any]) -> str:
+        branch = str(source.get("branch") or "").strip()
+        repo_url = str(source.get("repo_url") or "").strip()
+        if not repo_url or not branch:
+            raise KnowledgeSourceError("invalid_source", "repo_url and branch are required")
+
+        command = ["ls-remote", repo_url, f"refs/heads/{branch}"]
+        try:
+            output = self._git_output_with_optional_auth(repo_url, command)
+        except subprocess.CalledProcessError as exc:
+            stderr = (exc.stderr or exc.stdout or "").strip()
+            raise KnowledgeSourceError("git_ls_remote_failed", stderr or "git ls-remote failed") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise KnowledgeSourceError(
+                "git_ls_remote_timeout",
+                f"git ls-remote timed out after {_GIT_COMMAND_TIMEOUT_SECONDS}s",
+            ) from exc
+        except FileNotFoundError as exc:
+            raise KnowledgeSourceError("git_missing", "git is required for knowledge source sync") from exc
+
+        first_line = (output or "").splitlines()[0].strip() if output else ""
+        commit = first_line.split()[0] if first_line else ""
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
+            raise KnowledgeSourceError(
+                "remote_head_not_found",
+                f"Unable to resolve branch '{branch}' for {repo_url}",
+            )
+        return commit
 
     def _infer_docs_roots(self, checkout_dir: Path) -> list[str]:
         candidates: set[str] = set()
@@ -797,6 +903,40 @@ class KnowledgeSourceManager:
             check=True,
             timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
         )
+
+    def _git_output_with_optional_auth(self, repo_url: str, args: list[str]) -> str:
+        if not self._is_github_https_repo(repo_url):
+            completed = subprocess.run(
+                ["git", *args],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
+            )
+            return (completed.stdout or "").strip()
+
+        try:
+            completed = subprocess.run(
+                ["git", *args],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
+            )
+            return (completed.stdout or "").strip()
+        except subprocess.CalledProcessError:
+            token = self._github_source_token()
+            if not token:
+                raise
+
+        completed = subprocess.run(
+            ["git", *self._github_auth_args(token), *args],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=_GIT_COMMAND_TIMEOUT_SECONDS,
+        )
+        return (completed.stdout or "").strip()
 
     @staticmethod
     def _is_github_https_repo(repo_url: str) -> bool:

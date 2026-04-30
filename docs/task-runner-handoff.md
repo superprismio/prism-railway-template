@@ -36,6 +36,7 @@ Built-in tasks:
 
 - `discord-sync`
 - `memory-run`
+- `knowledge-source-sync`
 - `knowledge-run`
 
 Runner behavior:

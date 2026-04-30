@@ -78,6 +78,7 @@ TASK_RUNNER_BASE_URL="http://${{task-runner.RAILWAY_PRIVATE_DOMAIN}}:${{task-run
   - `discord-sync`
   - `memory-run`
   - `knowledge-run`
+  - `knowledge-source-sync`
 
 ## Built-In Task Defaults
 
@@ -87,10 +88,10 @@ These are seeded by `task-runner` only when a task row does not already exist:
 | --- | --- | --- |
 | `discord-sync` | `false` | `0 * * * *` |
 | `memory-run` | `false` | `45 * * * *` |
+| `knowledge-source-sync` | `false` | `15 * * * *` |
 | `knowledge-run` | `false` | `55 * * * *` |
 
-- [ ] Decide whether the template default for `knowledge-run` should stay hourly at `55 * * * *` or match the old cron service daily schedule.
-- [ ] If daily is intended, set the DB task row to the chosen daily cron before enabling it.
+- [ ] Keep `knowledge-run` hourly at `55 * * * *` for new template instances.
 
 ## Singleton / One-Instance Rule
 
@@ -114,6 +115,7 @@ These are seeded by `task-runner` only when a task row does not already exist:
 - [ ] Confirm `task-runner /health` shows all built-in tasks disabled.
 - [ ] Run manual task tests:
   - `POST /tasks/memory-run/run`
+  - `POST /tasks/knowledge-source-sync/run`
   - `POST /tasks/knowledge-run/run`
   - `POST /tasks/discord-sync/run`
 - [ ] Confirm each manual run writes a `succeeded` row to `/api/internal/tasks/runs`.
@@ -142,8 +144,9 @@ Use this for `prism-stack` and any already-created template instances.
 Recommended order:
 
 1. `memory-run`
-2. `knowledge-run`
-3. `discord-sync`
+2. `knowledge-source-sync`
+3. `knowledge-run`
+4. `discord-sync`
 
 For each task:
 
@@ -182,7 +185,7 @@ For each task:
 
 - [ ] Fresh template install has no old cron services.
 - [ ] Fresh template install has one online `task-runner` service.
-- [ ] `site` DB contains three disabled built-in task rows after `task-runner` first boot.
+- [ ] `site` DB contains four disabled built-in task rows after `task-runner` first boot.
 - [ ] Manual runs succeed and write durable run history.
 - [ ] Enabling a task in DB causes exactly one scheduled execution per cron tick.
 - [ ] Redeploying `task-runner` does not overwrite existing DB task schedules.
