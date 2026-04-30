@@ -10,10 +10,12 @@ import type {
   Client,
   Guild,
   GuildMember,
+  PermissionResolvable,
   TextBasedChannel,
   VoiceBasedChannel,
   VoiceState,
 } from "discord.js";
+import { PermissionFlagsBits } from "discord.js";
 import { createWriteStream, type WriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -292,6 +294,26 @@ export class DiscordVoiceManager {
     return { guild: interaction.guild, member, channel };
   }
 
+  private requireBotVoicePermissions(guild: Guild, channel: VoiceBasedChannel) {
+    const me = guild.members.me;
+    if (!me) {
+      throw new Error("Bot membership is not ready in this guild yet. Try again in a few seconds.");
+    }
+    const permissions = channel.permissionsFor(me);
+    const required: Array<[PermissionResolvable, string]> = [
+      [PermissionFlagsBits.ViewChannel, "View Channel"],
+      [PermissionFlagsBits.Connect, "Connect"],
+      [PermissionFlagsBits.Speak, "Speak"],
+      [PermissionFlagsBits.UseVAD, "Use Voice Activity"],
+    ];
+    const missing = required
+      .filter(([permission]) => !permissions?.has(permission))
+      .map(([, label]) => label);
+    if (missing.length > 0) {
+      throw new Error(`Missing voice permissions in **${channel.name}**: ${missing.join(", ")}`);
+    }
+  }
+
   private ensureParticipant(session: RecordingSession, member: GuildMember): ParticipantPresence {
     const existing = session.participants.get(member.user.id);
     if (existing) {
@@ -392,12 +414,14 @@ export class DiscordVoiceManager {
 
   async join(interaction: ChatInputCommandInteraction): Promise<string> {
     const { guild, channel } = await this.resolveMemberVoiceChannel(interaction);
+    this.requireBotVoicePermissions(guild, channel);
     await this.ensureVoiceConnection(guild, channel);
     return `Joined **${channel.name}**.`;
   }
 
   async startRecording(interaction: ChatInputCommandInteraction): Promise<string> {
     const { guild, channel } = await this.resolveMemberVoiceChannel(interaction);
+    this.requireBotVoicePermissions(guild, channel);
     const active = this.sessionsByGuild.get(guild.id);
     if (active) {
       return `Already recording in **${active.channelName}** with session \`${active.sessionId}\`.`;
@@ -1582,6 +1606,14 @@ export class DiscordVoiceManager {
     return baseUrl;
   }
 
+  private prismArtifactBaseUrl(): string {
+    const publicBaseUrl = (process.env.PRISM_ARTIFACT_PUBLIC_BASE_URL ?? "").trim().replace(/\/+$/, "");
+    if (publicBaseUrl) {
+      return publicBaseUrl;
+    }
+    return this.prismApiBaseUrl();
+  }
+
   private prismArtifactReference(artifactPath?: string): { id: string; url: string } | null {
     if (!artifactPath) {
       return null;
@@ -1592,7 +1624,7 @@ export class DiscordVoiceManager {
       return null;
     }
     try {
-      const baseUrl = this.prismApiBaseUrl();
+      const baseUrl = this.prismArtifactBaseUrl();
       return {
         id: artifactId,
         url: `${baseUrl}/artifacts/${encodeURIComponent(artifactId)}`,

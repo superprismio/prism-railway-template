@@ -82,6 +82,13 @@ type CodexRuntimeError = Error & {
   }>;
 };
 
+type GitHubRepoAccess = {
+  login: string | null;
+  repoSlug: string;
+  canPull: boolean | null;
+  canPush: boolean | null;
+};
+
 function slugifySegment(value: string) {
   return value
     .trim()
@@ -139,6 +146,112 @@ function shouldHydrateExternalWorkspace(metadata: Record<string, unknown> | unde
       : null;
 
   return deployConfig?.workspace === 'external';
+}
+
+function parseGitHubRepoSlug(repoUrl: string): { owner: string; repo: string; slug: string } | null {
+  const match = repoUrl.match(/^https:\/\/github\.com\/([^/]+)\/([^/.]+)(?:\.git)?$/);
+  if (!match) {
+    return null;
+  }
+  const [, owner, repo] = match;
+  return { owner, repo, slug: `${owner}/${repo}` };
+}
+
+function looksLikeGitHubAuthError(message: string) {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('github.com') &&
+    (
+      lower.includes('403')
+      || lower.includes('authentication failed')
+      || lower.includes('permission to')
+      || lower.includes('could not read username')
+      || lower.includes('requested url returned error')
+    )
+  );
+}
+
+async function inspectGitHubRepoAccess(repoUrl: string): Promise<GitHubRepoAccess | null> {
+  const parsed = parseGitHubRepoSlug(repoUrl);
+  if (!parsed || !config.githubToken) {
+    return null;
+  }
+
+  const response = await fetch(`https://api.github.com/repos/${parsed.slug}`, {
+    headers: {
+      Authorization: `Bearer ${config.githubToken}`,
+      'User-Agent': 'prism-codex-runtime',
+      Accept: 'application/vnd.github+json',
+    },
+  }).catch(() => null);
+
+  if (!response) {
+    return {
+      login: null,
+      repoSlug: parsed.slug,
+      canPull: null,
+      canPush: null,
+    };
+  }
+
+  const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+  const permissions =
+    payload?.permissions && typeof payload.permissions === 'object' && !Array.isArray(payload.permissions)
+      ? payload.permissions as Record<string, unknown>
+      : null;
+  const owner =
+    payload?.owner && typeof payload.owner === 'object' && !Array.isArray(payload.owner)
+      ? payload.owner as Record<string, unknown>
+      : null;
+
+  return {
+    login: typeof payload?.login === 'string'
+      ? payload.login
+      : typeof owner?.login === 'string'
+        ? owner.login
+        : null,
+    repoSlug: parsed.slug,
+    canPull: typeof permissions?.pull === 'boolean' ? permissions.pull : null,
+    canPush: typeof permissions?.push === 'boolean' ? permissions.push : null,
+  };
+}
+
+async function normalizeGitHubRepoError(
+  repoUrl: string,
+  operation: 'clone' | 'fetch' | 'push',
+  error: unknown,
+): Promise<Error> {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!looksLikeGitHubAuthError(message)) {
+    return error instanceof Error ? error : new Error(message);
+  }
+
+  const parsed = parseGitHubRepoSlug(repoUrl);
+  const access = await inspectGitHubRepoAccess(repoUrl);
+  const repoSlug = access?.repoSlug || parsed?.slug || repoUrl;
+  const login = access?.login || 'configured GitHub token';
+
+  if (access?.canPull === true && access?.canPush === false) {
+    return new Error(
+      `TARGET_REPO_AUTH_FAILED: GitHub token for ${login} can read but cannot push branches to ${repoSlug}. Check TARGET_REPO_GITHUB_TOKEN and repo collaborator/team access.`,
+    );
+  }
+
+  if (access?.canPull === false) {
+    return new Error(
+      `TARGET_REPO_AUTH_FAILED: GitHub token for ${login} cannot read ${repoSlug}. Check TARGET_REPO_GITHUB_TOKEN and repo access.`,
+    );
+  }
+
+  if (operation === 'push') {
+    return new Error(
+      `TARGET_REPO_AUTH_FAILED: GitHub push failed for ${repoSlug} using ${login}. Check TARGET_REPO_GITHUB_TOKEN and repo write access. Original error: ${message}`,
+    );
+  }
+
+  return new Error(
+    `TARGET_REPO_AUTH_FAILED: GitHub ${operation} failed for ${repoSlug} using ${login}. Check TARGET_REPO_GITHUB_TOKEN and repo access. Original error: ${message}`,
+  );
 }
 
 function buildGitHubAuthArgs(repoUrl: string) {
@@ -395,14 +508,18 @@ async function prepareExecutionWorkspace(
 
   if (!(await pathExists(gitDir))) {
     appendTrace(trace, 'workspace.clone', `Cloning ${targetApp.repoUrl} into ${workspacePath}`);
-    await runGitHubReadCommand(targetApp.repoUrl, [
-      'clone',
-      '--branch',
-      repoBranch,
-      '--single-branch',
-      targetApp.repoUrl,
-      workspacePath,
-    ]);
+    try {
+      await runGitHubReadCommand(targetApp.repoUrl, [
+        'clone',
+        '--branch',
+        repoBranch,
+        '--single-branch',
+        targetApp.repoUrl,
+        workspacePath,
+      ]);
+    } catch (error) {
+      throw await normalizeGitHubRepoError(targetApp.repoUrl, 'clone', error);
+    }
   } else {
     appendTrace(trace, 'workspace.reuse', `Reusing existing workspace ${workspacePath}`);
     const remoteOriginUrl = targetApp.repoUrl;
@@ -513,10 +630,14 @@ async function finalizeGitWorkspace(
   }
 
   appendTrace(trace, 'git.push', `Pushing ${currentBranch} to origin`);
-  await runCommand(
-    ['git', ...buildGitHubAuthArgs(preparedWorkspace.repoUrl), 'push', '-u', 'origin', currentBranch],
-    { cwd: workspacePath },
-  );
+  try {
+    await runCommand(
+      ['git', ...buildGitHubAuthArgs(preparedWorkspace.repoUrl), 'push', '-u', 'origin', currentBranch],
+      { cwd: workspacePath },
+    );
+  } catch (error) {
+    throw await normalizeGitHubRepoError(preparedWorkspace.repoUrl, 'push', error);
+  }
 
   const pushed = await remoteBranchExists(preparedWorkspace.repoUrl, currentBranch, workspacePath);
   if (!pushed) {

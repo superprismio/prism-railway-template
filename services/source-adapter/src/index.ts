@@ -1186,10 +1186,17 @@ async function handleDiscordInteraction(interaction: Interaction): Promise<void>
       await interaction.reply({ content: "pong", ephemeral: true });
       return;
     case "prism-health": {
-      const health = await healthPayload();
+      const health = await healthPayload(interaction);
       const discord = health.discord as JsonObject;
+      const textChannel = (health.textChannel ?? {}) as JsonObject;
+      const voiceChannel = (health.voiceChannel ?? {}) as JsonObject;
       await interaction.reply({
-        content: `ok=${health.ok} ready=${discord.discordReady ? "true" : "false"} user=${String(discord.discordUserTag ?? "unknown")}`,
+        content: [
+          `ok=${health.ok} ready=${discord.discordReady ? "true" : "false"} user=${String(discord.discordUserTag ?? "unknown")}`,
+          `text_channel=${String(textChannel.name ?? "unknown")} view=${String(textChannel.canViewChannel ?? "n/a")} send=${String(textChannel.canSendMessages ?? "n/a")} threads=${String(textChannel.canSendMessagesInThreads ?? "n/a")} history=${String(textChannel.canReadMessageHistory ?? "n/a")}`,
+          `voice_channel=${String(voiceChannel.name ?? "none")} view=${String(voiceChannel.canViewChannel ?? "n/a")} connect=${String(voiceChannel.canConnect ?? "n/a")} speak=${String(voiceChannel.canSpeak ?? "n/a")} vad=${String(voiceChannel.canUseVoiceActivity ?? "n/a")}`,
+          `voice_transcription=${String((health.voice as JsonObject).transcriptionConfigured ?? "false")}`,
+        ].join("\n"),
         ephemeral: true,
       });
       return;
@@ -1330,8 +1337,8 @@ async function startDiscordBridge(): Promise<void> {
   }
 }
 
-async function healthPayload(): Promise<JsonObject> {
-  return {
+async function healthPayload(interaction?: ChatInputCommandInteraction): Promise<JsonObject> {
+  const payload: JsonObject = {
     ok: true,
     service: "source-adapter",
     timestamp: nowUtcIso(),
@@ -1346,6 +1353,44 @@ async function healthPayload(): Promise<JsonObject> {
       transcriptionConfigured: voiceTranscriptionConfigured(),
     },
   };
+  if (!interaction?.guild || !interaction.channel) {
+    return payload;
+  }
+  const me = interaction.guild.members.me ?? (await interaction.guild.members.fetchMe().catch(() => null));
+  const textPermissions = me && "permissionsFor" in interaction.channel
+    ? interaction.channel.permissionsFor(me)
+    : null;
+  payload.textChannel = {
+    id: "id" in interaction.channel ? interaction.channel.id : null,
+    name: "name" in interaction.channel ? String(interaction.channel.name ?? "unknown") : "unknown",
+    canViewChannel: textPermissions?.has(PermissionFlagsBits.ViewChannel) ?? null,
+    canSendMessages: textPermissions?.has(PermissionFlagsBits.SendMessages) ?? null,
+    canCreatePublicThreads: textPermissions?.has(PermissionFlagsBits.CreatePublicThreads) ?? null,
+    canSendMessagesInThreads: textPermissions?.has(PermissionFlagsBits.SendMessagesInThreads) ?? null,
+    canReadMessageHistory: textPermissions?.has(PermissionFlagsBits.ReadMessageHistory) ?? null,
+  };
+  const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+  const voiceChannel = member?.voice.channel;
+  if (!voiceChannel) {
+    payload.voiceChannel = {
+      name: null,
+      canViewChannel: null,
+      canConnect: null,
+      canSpeak: null,
+      canUseVoiceActivity: null,
+    };
+    return payload;
+  }
+  const voicePermissions = me ? voiceChannel.permissionsFor(me) : null;
+  payload.voiceChannel = {
+    id: voiceChannel.id,
+    name: voiceChannel.name,
+    canViewChannel: voicePermissions?.has(PermissionFlagsBits.ViewChannel) ?? null,
+    canConnect: voicePermissions?.has(PermissionFlagsBits.Connect) ?? null,
+    canSpeak: voicePermissions?.has(PermissionFlagsBits.Speak) ?? null,
+    canUseVoiceActivity: voicePermissions?.has(PermissionFlagsBits.UseVAD) ?? null,
+  };
+  return payload;
 }
 
 async function runSync(dryRun: boolean, resetCheckpoint: boolean): Promise<JsonObject> {

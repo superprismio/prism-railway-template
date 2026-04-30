@@ -497,6 +497,77 @@ export interface CreateAgentMessageInput {
   createdAt?: string | null;
 }
 
+export interface TaskRecord {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  triggerType: string;
+  scheduleCron: string | null;
+  timezone: string;
+  taskType: string;
+  inputConfig: Record<string, unknown>;
+  instructionConfig: Record<string, unknown>;
+  outputConfig: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaskRunRecord {
+  id: string;
+  taskId: string;
+  taskKey: string | null;
+  taskName: string | null;
+  status: string;
+  triggerSource: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  resultSummary: string | null;
+  errorMessage: string | null;
+  inputSnapshot: Record<string, unknown>;
+  outputSnapshot: Record<string, unknown>;
+  artifactRefs: unknown[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertTaskInput {
+  key: string;
+  name: string;
+  description?: string | null;
+  enabled?: boolean;
+  triggerType?: string;
+  scheduleCron?: string | null;
+  timezone?: string;
+  taskType?: string;
+  inputConfig?: Record<string, unknown>;
+  instructionConfig?: Record<string, unknown>;
+  outputConfig?: Record<string, unknown>;
+}
+
+export interface CreateTaskRunInput {
+  taskKey: string;
+  status?: string;
+  triggerSource?: string;
+  startedAt?: string | null;
+  inputSnapshot?: Record<string, unknown>;
+  outputSnapshot?: Record<string, unknown>;
+  artifactRefs?: unknown[];
+  resultSummary?: string | null;
+  errorMessage?: string | null;
+}
+
+export interface UpdateTaskRunInput {
+  status?: string;
+  finishedAt?: string | null;
+  resultSummary?: string | null;
+  errorMessage?: string | null;
+  inputSnapshot?: Record<string, unknown>;
+  outputSnapshot?: Record<string, unknown>;
+  artifactRefs?: unknown[];
+}
+
 interface HomeModuleRow {
   id: string;
   type: string;
@@ -607,6 +678,80 @@ function normalizeProfileVisibilitySettings(
     ),
     badges: normalizeVisibilityScope(value?.badges, DEFAULT_PROFILE_FIELD_VISIBILITY.badges),
     cohorts: normalizeVisibilityScope(value?.cohorts, DEFAULT_PROFILE_FIELD_VISIBILITY.cohorts),
+  };
+}
+
+interface TaskRow {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  enabled: number;
+  trigger_type: string;
+  schedule_cron: string | null;
+  timezone: string;
+  task_type: string;
+  input_config_json: string;
+  instruction_config_json: string;
+  output_config_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface TaskRunRow {
+  id: string;
+  task_id: string;
+  task_key: string | null;
+  task_name: string | null;
+  status: string;
+  trigger_source: string;
+  started_at: string | null;
+  finished_at: string | null;
+  result_summary: string | null;
+  error_message: string | null;
+  input_snapshot_json: string;
+  output_snapshot_json: string;
+  artifact_refs_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapTaskRow(row: TaskRow): TaskRecord {
+  return {
+    id: row.id,
+    key: row.key,
+    name: row.name,
+    description: row.description,
+    enabled: row.enabled === 1,
+    triggerType: row.trigger_type,
+    scheduleCron: row.schedule_cron,
+    timezone: row.timezone,
+    taskType: row.task_type,
+    inputConfig: parseJsonValue<Record<string, unknown>>(row.input_config_json, {}),
+    instructionConfig: parseJsonValue<Record<string, unknown>>(row.instruction_config_json, {}),
+    outputConfig: parseJsonValue<Record<string, unknown>>(row.output_config_json, {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapTaskRunRow(row: TaskRunRow): TaskRunRecord {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    taskKey: row.task_key,
+    taskName: row.task_name,
+    status: row.status,
+    triggerSource: row.trigger_source,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    resultSummary: row.result_summary,
+    errorMessage: row.error_message,
+    inputSnapshot: parseJsonValue<Record<string, unknown>>(row.input_snapshot_json, {}),
+    outputSnapshot: parseJsonValue<Record<string, unknown>>(row.output_snapshot_json, {}),
+    artifactRefs: parseJsonValue<unknown[]>(row.artifact_refs_json, []),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -3651,4 +3796,184 @@ export function updateUserLastSeen(userId: string) {
   getDb()
     .prepare('UPDATE users SET last_seen_at = ?, updated_at = ? WHERE id = ?')
     .run(new Date().toISOString(), new Date().toISOString(), userId);
+}
+
+export function upsertTask(input: UpsertTaskInput): TaskRecord {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const key = normalizeText(input.key);
+  const name = normalizeText(input.name);
+
+  if (!key || !name) {
+    throw new Error('TASK_KEY_AND_NAME_REQUIRED');
+  }
+
+  const existing = db.prepare('SELECT id, created_at FROM tasks WHERE key = ?').get(key) as
+    | { id: string; created_at: string }
+    | undefined;
+  const id = existing?.id ?? randomUUID();
+  const createdAt = existing?.created_at ?? now;
+
+  db.prepare(
+    `INSERT INTO tasks (
+       id, key, name, description, enabled, trigger_type, schedule_cron, timezone, task_type,
+       input_config_json, instruction_config_json, output_config_json, created_at, updated_at
+     ) VALUES (
+       @id, @key, @name, @description, @enabled, @triggerType, @scheduleCron, @timezone, @taskType,
+       @inputConfigJson, @instructionConfigJson, @outputConfigJson, @createdAt, @updatedAt
+     )
+     ON CONFLICT(key) DO UPDATE SET
+       name = excluded.name,
+       description = excluded.description,
+       enabled = excluded.enabled,
+       trigger_type = excluded.trigger_type,
+       schedule_cron = excluded.schedule_cron,
+       timezone = excluded.timezone,
+       task_type = excluded.task_type,
+       input_config_json = excluded.input_config_json,
+       instruction_config_json = excluded.instruction_config_json,
+       output_config_json = excluded.output_config_json,
+       updated_at = excluded.updated_at`,
+  ).run({
+    id,
+    key,
+    name,
+    description: normalizeText(input.description) || null,
+    enabled: input.enabled ? 1 : 0,
+    triggerType: normalizeText(input.triggerType) || 'schedule',
+    scheduleCron: normalizeText(input.scheduleCron) || null,
+    timezone: normalizeText(input.timezone) || 'UTC',
+    taskType: normalizeText(input.taskType) || 'builtin',
+    inputConfigJson: JSON.stringify(input.inputConfig ?? {}),
+    instructionConfigJson: JSON.stringify(input.instructionConfig ?? {}),
+    outputConfigJson: JSON.stringify(input.outputConfig ?? {}),
+    createdAt,
+    updatedAt: now,
+  });
+
+  const task = getTaskByKey(key);
+  if (!task) {
+    throw new Error('TASK_UPSERT_FAILED');
+  }
+  return task;
+}
+
+export function getTaskByKey(key: string): TaskRecord | null {
+  const row = getDb().prepare('SELECT * FROM tasks WHERE key = ?').get(key) as TaskRow | undefined;
+  return row ? mapTaskRow(row) : null;
+}
+
+export function listTasks(): TaskRecord[] {
+  const rows = getDb().prepare('SELECT * FROM tasks ORDER BY key ASC').all() as TaskRow[];
+  return rows.map(mapTaskRow);
+}
+
+export function createTaskRun(input: CreateTaskRunInput): TaskRunRecord {
+  const task = getTaskByKey(input.taskKey);
+  if (!task) {
+    throw new Error(`TASK_NOT_FOUND:${input.taskKey}`);
+  }
+
+  const now = new Date().toISOString();
+  const id = randomUUID();
+
+  getDb().prepare(
+    `INSERT INTO task_runs (
+       id, task_id, status, trigger_source, started_at, finished_at, result_summary, error_message,
+       input_snapshot_json, output_snapshot_json, artifact_refs_json, created_at, updated_at
+     ) VALUES (
+       @id, @taskId, @status, @triggerSource, @startedAt, NULL, @resultSummary, @errorMessage,
+       @inputSnapshotJson, @outputSnapshotJson, @artifactRefsJson, @createdAt, @updatedAt
+     )`,
+  ).run({
+    id,
+    taskId: task.id,
+    status: normalizeText(input.status) || 'running',
+    triggerSource: normalizeText(input.triggerSource) || 'manual',
+    startedAt: input.startedAt ?? now,
+    resultSummary: normalizeText(input.resultSummary) || null,
+    errorMessage: normalizeText(input.errorMessage) || null,
+    inputSnapshotJson: JSON.stringify(input.inputSnapshot ?? {}),
+    outputSnapshotJson: JSON.stringify(input.outputSnapshot ?? {}),
+    artifactRefsJson: JSON.stringify(input.artifactRefs ?? []),
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  const run = getTaskRun(id);
+  if (!run) {
+    throw new Error('TASK_RUN_CREATE_FAILED');
+  }
+  return run;
+}
+
+export function getTaskRun(id: string): TaskRunRecord | null {
+  const row = getDb().prepare(
+    `SELECT task_runs.*, tasks.key AS task_key, tasks.name AS task_name
+     FROM task_runs
+     LEFT JOIN tasks ON tasks.id = task_runs.task_id
+     WHERE task_runs.id = ?`,
+  ).get(id) as TaskRunRow | undefined;
+  return row ? mapTaskRunRow(row) : null;
+}
+
+export function updateTaskRun(id: string, input: UpdateTaskRunInput): TaskRunRecord {
+  const current = getTaskRun(id);
+  if (!current) {
+    throw new Error('TASK_RUN_NOT_FOUND');
+  }
+
+  const now = new Date().toISOString();
+
+  getDb().prepare(
+    `UPDATE task_runs
+     SET status = @status,
+         finished_at = @finishedAt,
+         result_summary = @resultSummary,
+         error_message = @errorMessage,
+         input_snapshot_json = @inputSnapshotJson,
+         output_snapshot_json = @outputSnapshotJson,
+         artifact_refs_json = @artifactRefsJson,
+         updated_at = @updatedAt
+     WHERE id = @id`,
+  ).run({
+    id,
+    status: normalizeText(input.status) || current.status,
+    finishedAt: input.finishedAt === undefined ? current.finishedAt : input.finishedAt,
+    resultSummary: input.resultSummary === undefined ? current.resultSummary : normalizeText(input.resultSummary) || null,
+    errorMessage: input.errorMessage === undefined ? current.errorMessage : normalizeText(input.errorMessage) || null,
+    inputSnapshotJson: JSON.stringify(input.inputSnapshot ?? current.inputSnapshot),
+    outputSnapshotJson: JSON.stringify(input.outputSnapshot ?? current.outputSnapshot),
+    artifactRefsJson: JSON.stringify(input.artifactRefs ?? current.artifactRefs),
+    updatedAt: now,
+  });
+
+  const updated = getTaskRun(id);
+  if (!updated) {
+    throw new Error('TASK_RUN_UPDATE_FAILED');
+  }
+  return updated;
+}
+
+export function listTaskRuns(input: { taskKey?: string; limit?: number } = {}): TaskRunRecord[] {
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+  const taskKey = normalizeText(input.taskKey);
+  const rows = taskKey
+    ? getDb().prepare(
+        `SELECT task_runs.*, tasks.key AS task_key, tasks.name AS task_name
+         FROM task_runs
+         JOIN tasks ON tasks.id = task_runs.task_id
+         WHERE tasks.key = ?
+         ORDER BY task_runs.created_at DESC
+         LIMIT ?`,
+      ).all(taskKey, limit) as TaskRunRow[]
+    : getDb().prepare(
+        `SELECT task_runs.*, tasks.key AS task_key, tasks.name AS task_name
+         FROM task_runs
+         LEFT JOIN tasks ON tasks.id = task_runs.task_id
+         ORDER BY task_runs.created_at DESC
+         LIMIT ?`,
+      ).all(limit) as TaskRunRow[];
+
+  return rows.map(mapTaskRunRow);
 }

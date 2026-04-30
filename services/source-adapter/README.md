@@ -34,6 +34,7 @@ Recommended envs:
 - `SOURCE_SPACE=community`
 - `SOURCE_SYNC_MODE=manual`
 - `PRISM_API_BASE=https://your-prism-memory.up.railway.app`
+- `PRISM_ARTIFACT_PUBLIC_BASE_URL=https://your-prism-memory.up.railway.app`
 - `PRISM_API_KEY=...`
 - `PRISM_INGEST_PATH=/ingest/messages`
 - `SOURCE_ADAPTER_DATA_ROOT=./services/source-adapter/data`
@@ -156,6 +157,7 @@ The verified Railway path uses:
 - `VOICE_DAVE_ENCRYPTION=true`
 - `CODEX_RUNTIME_BASE_URL=https://codex-runtime-production.up.railway.app` or a verified reachable private URL
 - `PRISM_API_BASE=https://prism-memory-production.up.railway.app` or a verified reachable private URL
+- `PRISM_ARTIFACT_PUBLIC_BASE_URL=https://prism-memory-production.up.railway.app`
 - `PRISM_API_KEY`
 
 If `/prism-stoprecord` reports `Speakers with audio: 0`, check Railway logs for `eager receiver subscribe` and `received first opus chunk`. If voice-channel chat stitching is missing, check for `voice chat transcript messages` or `voice chat transcript skipped` in logs and confirm the bot can read message history in that voice channel. If summary or Prism ingest is skipped, check logs for the detailed fetch cause and verify the runtime/memory service health URLs from outside Railway first.
