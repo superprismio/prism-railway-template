@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   BotMessageSquare,
+  CalendarClock,
   FilePlus,
   LogOut,
   Search,
@@ -18,6 +19,7 @@ import { ChangeRequestList } from "@/components/admin/change-request-list";
 import { RequestDetailsPanel } from "@/components/admin/change-request-details-panel";
 import { CodexConsole } from "@/components/admin/codex-console";
 import { NewChangeRequestDialog } from "@/components/admin/new-change-request-dialog";
+import { TaskRunnerWorkspace } from "@/components/admin/task-runner-workspace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -35,7 +37,7 @@ import {
   type RequestSortValue,
 } from "./change-request-utils";
 
-const workspaceTabs = ["change-requests", "codex-console", "settings"];
+const workspaceTabs = ["change-requests", "codex-console", "tasks", "settings"];
 
 export function ChangeBoard({
   data: initialData,
@@ -299,6 +301,13 @@ export function ChangeBoard({
                 <span className="hidden md:inline">Prism Console</span>
               </TabsTrigger>
               <TabsTrigger
+                value="tasks"
+                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+              >
+                <CalendarClock className="h-4 w-4 md:hidden" />
+                <span className="hidden md:inline">Tasks</span>
+              </TabsTrigger>
+              <TabsTrigger
                 value="settings"
                 className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
               >
@@ -470,6 +479,20 @@ export function ChangeBoard({
             </div>
 
             <CodexConsole />
+          </section>
+        </TabsContent>
+
+        <TabsContent value="tasks" className="mt-0 flex-1">
+          <section className="min-h-full">
+            <div className="border-b border-border/60 px-5 py-4 md:px-6">
+              <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
+              <p className="text-sm text-muted-foreground">
+                View built-in schedules, edit DB-backed cron settings, and run
+                tasks manually.
+              </p>
+            </div>
+
+            <TaskRunnerWorkspace />
           </section>
         </TabsContent>
 

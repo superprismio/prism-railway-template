@@ -65,6 +65,12 @@ PRISM_API_KEY="${{prism-memory.PRISM_API_KEY}}"
 ## Site Requirements
 
 - [ ] Deploy `site` before `task-runner`.
+- [ ] Set this on `site` if the admin Tasks tab should show runner state and support manual runs:
+
+```text
+TASK_RUNNER_BASE_URL="http://${{task-runner.RAILWAY_PRIVATE_DOMAIN}}:${{task-runner.PORT}}"
+```
+
 - [ ] Confirm migration `006_tasks` is applied.
 - [ ] Confirm `/api/health` reports the expected migration count.
 - [ ] Confirm `POST /api/internal/tasks` supports `preserveExisting`.
