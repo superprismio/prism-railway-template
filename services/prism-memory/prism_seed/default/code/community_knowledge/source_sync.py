@@ -178,6 +178,13 @@ class KnowledgeSourceManager:
                 previous_hashes = self._collect_hashes(source_docs_dir, suffix=".md")
                 new_hashes = self._collect_hashes(derived_docs_dir, suffix=".md")
                 change_summary = self._diff_hashes(previous_hashes, new_hashes)
+                knowledge_events = self._build_knowledge_events(
+                    source_id=source_id,
+                    previous_hashes=previous_hashes,
+                    new_hashes=new_hashes,
+                    derived_meta_dir=derived_meta_dir,
+                    completed_at=self._now_iso(),
+                )
 
                 self._update_state(source_id, {**self._load_state(source_id), "current_step": "writing_outputs"})
                 self._replace_tree(source_docs_dir, derived_docs_dir)
@@ -199,6 +206,8 @@ class KnowledgeSourceManager:
                     )
 
                 completed_at = self._now_iso()
+                for event in knowledge_events:
+                    event["changed_at"] = completed_at
                 record["docs_roots"] = inferred_docs_roots
                 record["last_synced_commit"] = commit
                 record["last_synced_at"] = completed_at
@@ -236,6 +245,7 @@ class KnowledgeSourceManager:
                     "file_count": build["file_count"],
                     "doc_count": build["doc_count"],
                     "change_summary": change_summary,
+                    "knowledge_events": knowledge_events,
                     "steps": [
                         "cloning",
                         "resolving_commit",
@@ -255,6 +265,12 @@ class KnowledgeSourceManager:
                     ],
                     meta=history_payload,
                 )
+                for event in knowledge_events:
+                    activity.log(
+                        str(event.get("type") or "knowledge_doc_changed"),
+                        outputs=[str(event.get("doc_path") or "")],
+                        meta=event,
+                    )
         except KnowledgeSourceError as exc:
             completed_at = self._now_iso()
             error_state = {
@@ -826,6 +842,60 @@ class KnowledgeSourceManager:
         removed = previous_keys - current_keys
         changed = {key for key in previous_keys & current_keys if previous[key] != current[key]}
         return {"added": len(added), "changed": len(changed), "removed": len(removed)}
+
+    def _build_knowledge_events(
+        self,
+        *,
+        source_id: str,
+        previous_hashes: dict[str, str],
+        new_hashes: dict[str, str],
+        derived_meta_dir: Path,
+        completed_at: str,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        previous_keys = set(previous_hashes)
+        current_keys = set(new_hashes)
+        added = sorted(current_keys - previous_keys)
+        changed = sorted(key for key in previous_keys & current_keys if previous_hashes[key] != new_hashes[key])
+        removed = sorted(previous_keys - current_keys)
+        events: list[dict[str, Any]] = []
+
+        for event_type, keys in (("knowledge_doc_added", added), ("knowledge_doc_changed", changed)):
+            for rel_path in keys[:limit]:
+                meta_path = derived_meta_dir / Path(rel_path).with_suffix(".meta.json")
+                metadata = self._read_json(meta_path) if meta_path.exists() else {}
+                slug = str(metadata.get("slug") or f"sources/{source_id}/{Path(rel_path).with_suffix('').as_posix()}")
+                events.append(
+                    {
+                        "type": event_type,
+                        "source_id": source_id,
+                        "doc_slug": slug,
+                        "doc_path": f"knowledge/kb/docs/{slug}.md",
+                        "title": str(metadata.get("title") or Path(rel_path).stem),
+                        "kind": str(metadata.get("kind") or metadata.get("document_class") or "reference"),
+                        "summary": str(metadata.get("summary") or ""),
+                        "url": f"/knowledge/view/{slug}",
+                        "changed_at": completed_at,
+                    }
+                )
+
+        for rel_path in removed[:limit]:
+            slug = f"sources/{source_id}/{Path(rel_path).with_suffix('').as_posix()}"
+            events.append(
+                {
+                    "type": "knowledge_doc_removed",
+                    "source_id": source_id,
+                    "doc_slug": slug,
+                    "doc_path": f"knowledge/kb/docs/{slug}.md",
+                    "title": Path(rel_path).stem,
+                    "kind": "reference",
+                    "summary": "Knowledge document removed from source.",
+                    "url": f"/knowledge/view/{slug}",
+                    "changed_at": completed_at,
+                }
+            )
+
+        return events
 
     def _replace_tree(self, target: Path, source: Path) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)

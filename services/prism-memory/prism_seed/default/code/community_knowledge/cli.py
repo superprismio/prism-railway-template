@@ -68,6 +68,23 @@ def _validate_only(builder: KnowledgeIndexBuilder) -> int:
     return 1 if errors else 0
 
 
+def _knowledge_event_from_metadata(metadata: dict, *, event_type: str, changed_at: str) -> dict:
+    slug = str(metadata.get("slug") or "").strip()
+    kind = str(metadata.get("kind") or metadata.get("document_class") or "reference").strip() or "reference"
+    doc_slug = f"{kind}/{slug}" if slug and not slug.startswith(f"{kind}/") else slug
+    return {
+        "type": event_type,
+        "source_id": str(metadata.get("source_id") or "knowledge-inbox"),
+        "doc_slug": doc_slug,
+        "doc_path": f"knowledge/kb/docs/{doc_slug}.md" if doc_slug else "",
+        "title": str(metadata.get("title") or slug or "Knowledge document"),
+        "kind": kind,
+        "summary": str(metadata.get("summary") or ""),
+        "url": f"/knowledge/view/{doc_slug}" if doc_slug else "",
+        "changed_at": changed_at,
+    }
+
+
 def _reviewed_name(path: Path) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"{path.stem}-{ts}{path.suffix}"
@@ -87,6 +104,7 @@ def _promote_inbox(builder: KnowledgeIndexBuilder) -> int:
     promoted = 0
     errors: list[str] = []
     warnings: list[str] = []
+    knowledge_events: list[dict] = []
 
     for doc_path in docs:
         meta_path = doc_path.with_suffix(".meta.json")
@@ -132,6 +150,13 @@ def _promote_inbox(builder: KnowledgeIndexBuilder) -> int:
         shutil.move(str(doc_path), reviewed_doc)
         shutil.move(str(meta_path), reviewed_meta)
 
+        knowledge_events.append(
+            _knowledge_event_from_metadata(
+                metadata,
+                event_type="knowledge_doc_added",
+                changed_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            )
+        )
         promoted += 1
 
     builder.activity.log(
@@ -142,8 +167,15 @@ def _promote_inbox(builder: KnowledgeIndexBuilder) -> int:
             "promoted": promoted,
             "errors": len(errors),
             "warnings": len(warnings),
+            "knowledge_events": knowledge_events,
         },
     )
+    for event in knowledge_events:
+        builder.activity.log(
+            str(event.get("type") or "knowledge_doc_added"),
+            outputs=[str(event.get("doc_path") or "")],
+            meta=event,
+        )
 
     print(
         "[knowledge] promote "

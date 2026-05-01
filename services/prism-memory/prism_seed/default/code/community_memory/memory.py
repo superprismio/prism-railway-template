@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 import re
+import json
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -41,6 +42,7 @@ DEFAULT_STALE_DROP_DAYS = STALE_DROP_DAYS
 NARRATIVE_MAX_CHARS = 1200
 QUOTE_MAX_CHARS = 240
 QUOTE_MAX_PER_ITEM = 2
+KNOWLEDGE_EVENTS_MAX = 10
 
 QUOTE_RE = re.compile(
     r"^\-\s*\[(?P<ts>[^\]]+)\]\s*(?P<author>[^:]+):\s*(?P<body>.*?)(?:\s+\((?P<jump>https?://[^\s)]+)\))?$"
@@ -266,8 +268,13 @@ def _classify_highlight(entry: str) -> Tuple[bool, bool, bool]:
     return open_thread, fact, upcoming
 
 
-def _build_narrative(sections: Dict[str, List[Dict[str, Any]]]) -> str:
+def _build_narrative(
+    sections: Dict[str, List[Dict[str, Any]]],
+    knowledge_events: List[Dict[str, Any]] | None = None,
+) -> str:
     parts: List[str] = []
+    if knowledge_events:
+        parts.append(f"Knowledge updates: {len(knowledge_events)}.")
     if sections["open_threads"]:
         parts.append(f"Open threads: {len(sections['open_threads'])} active.")
     if sections["key_decisions"]:
@@ -279,6 +286,97 @@ def _build_narrative(sections: Dict[str, List[Dict[str, Any]]]) -> str:
     if not parts:
         return "Quiet day across tracked buckets."
     return _shorten(" ".join(parts), NARRATIVE_MAX_CHARS)
+
+
+def _resolve_workspace_root(base_path: Path) -> Path:
+    return base_path.parent.parent
+
+
+def _resolve_knowledge_activity_path(base_path: Path, config: SpaceConfig | None) -> Path:
+    if config is not None and getattr(config, "knowledge", None) is not None:
+        raw_path = str(config.knowledge.activity_path or "").strip()
+        if raw_path:
+            candidate = Path(raw_path)
+            if candidate.is_absolute():
+                return candidate
+            return _resolve_workspace_root(base_path) / candidate
+    return base_path / "knowledge" / "kb" / "activity" / "kb_activity.jsonl"
+
+
+def _event_date(value: str) -> date | None:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+def _normalize_knowledge_event(raw: Dict[str, Any], fallback_ts: str) -> Dict[str, Any] | None:
+    event_type = str(raw.get("type") or "").strip()
+    source_id = str(raw.get("source_id") or "").strip()
+    doc_slug = str(raw.get("doc_slug") or "").strip()
+    title = _shorten(str(raw.get("title") or doc_slug or "Knowledge update"), 160)
+    changed_at = str(raw.get("changed_at") or fallback_ts).strip()
+    if not event_type or not title:
+        return None
+    return {
+        "type": event_type,
+        "source_id": source_id,
+        "doc_slug": doc_slug,
+        "title": title,
+        "kind": str(raw.get("kind") or "reference").strip() or "reference",
+        "summary": _shorten(str(raw.get("summary") or ""), 260),
+        "url": str(raw.get("url") or (f"/knowledge/view/{doc_slug}" if doc_slug else "")).strip(),
+        "changed_at": changed_at,
+    }
+
+
+def _load_knowledge_events(
+    base_path: Path,
+    config: SpaceConfig | None,
+    target_date: date,
+    *,
+    limit: int = KNOWLEDGE_EVENTS_MAX,
+) -> List[Dict[str, Any]]:
+    activity_path = _resolve_knowledge_activity_path(base_path, config)
+    if not activity_path.exists():
+        return []
+
+    events: List[Dict[str, Any]] = []
+    with activity_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            ts = str(payload.get("ts") or "")
+            raw_events: List[Dict[str, Any]] = []
+            meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+            if isinstance(meta.get("knowledge_events"), list):
+                raw_events.extend(item for item in meta["knowledge_events"] if isinstance(item, dict))
+            event_type = str(payload.get("type") or "")
+            if event_type.startswith("knowledge_doc_") and meta:
+                raw_events.append({**meta, "type": str(meta.get("type") or event_type)})
+
+            for raw in raw_events:
+                event = _normalize_knowledge_event(raw, fallback_ts=ts)
+                if not event:
+                    continue
+                if _event_date(str(event.get("changed_at") or ts)) != target_date:
+                    continue
+                events.append(event)
+
+    deduped: Dict[str, Dict[str, Any]] = {}
+    for event in events:
+        key = "|".join([str(event.get("type") or ""), str(event.get("source_id") or ""), str(event.get("doc_slug") or "")])
+        existing = deduped.get(key)
+        if not existing or str(event.get("changed_at") or "") >= str(existing.get("changed_at") or ""):
+            deduped[key] = event
+    return sorted(deduped.values(), key=lambda item: str(item.get("changed_at") or ""), reverse=True)[:limit]
 
 
 def _coerce_positive_int(value: Any, *, minimum: int = 1) -> int | None:
@@ -347,6 +445,8 @@ class RollingMemoryBuilder:
         md_path = memory_dir / f"{target_date.isoformat()}.md"
         latest_json = memory_dir / "latest.json"
         latest_md = memory_dir / "latest.md"
+        knowledge_events = _load_knowledge_events(self.base_path, self.config, target_date)
+        knowledge_activity_path = _resolve_knowledge_activity_path(self.base_path, self.config)
 
         digest_paths = sorted(
             self.base_path.glob(f"buckets/*/digests/{target_date.isoformat()}.json")
@@ -367,10 +467,13 @@ class RollingMemoryBuilder:
         print(
             f"[memory] starting rolling memory build for {target_date.isoformat()} (force={force})"
         )
-        if not force and _digest_paths_are_fresh(digest_paths, [md_path, memory_path]):
+        freshness_paths = list(digest_paths)
+        if knowledge_activity_path.exists():
+            freshness_paths.append(knowledge_activity_path)
+        if not force and _digest_paths_are_fresh(freshness_paths, [md_path, memory_path]):
             print("[memory] existing memory files are newer than source digests; skipping")
             return None
-        if not digest_paths:
+        if not digest_paths and not knowledge_events:
             print("[memory] no digests available; skipping memory build")
             return None
 
@@ -474,10 +577,11 @@ class RollingMemoryBuilder:
             )
             today_sections[key] = _truncate(deduped, limit)
 
-        narrative = _build_narrative(today_sections)
+        narrative = _build_narrative(today_sections, knowledge_events)
         payload = {
             "date": target_date.isoformat(),
             "source_digest_paths": source_digest_paths,
+            "knowledge_events": knowledge_events,
             "sections": today_sections,
             "narrative": narrative,
         }
@@ -488,6 +592,17 @@ class RollingMemoryBuilder:
         md_lines.append("## Source Digests")
         for path in source_digest_paths:
             md_lines.append(f"- {path}")
+        md_lines.append("")
+
+        md_lines.append("## Knowledge Updates")
+        if not knowledge_events:
+            md_lines.append("- (none)")
+        else:
+            for event in knowledge_events:
+                summary = f": {event['summary']}" if event.get("summary") else ""
+                md_lines.append(
+                    f"- {event['title']} _(type: {event['type']}, kind: {event['kind']}, source: {event.get('source_id') or 'unknown'})_{summary}"
+                )
         md_lines.append("")
 
         for section in max_counts:
