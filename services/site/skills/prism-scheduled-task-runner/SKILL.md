@@ -15,6 +15,8 @@ Scheduled execution rules:
 6. Do not store new executable code in the task row or database.
 7. If you need repeatable helper code, create or reference a reviewed script outside the task row.
 8. Summarize actions taken, outputs written/sent, and any failures.
+9. If `metadata.outputConfig.outputDestinations` is present, return the exact content that should be delivered. The task-runner handles adapter delivery after Codex returns.
+10. Do not attempt to post to Discord or another adapter yourself unless the prompt explicitly asks you to bypass configured task output delivery.
 
 Useful environment variables may include:
 

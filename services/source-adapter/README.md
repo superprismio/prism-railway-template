@@ -19,12 +19,15 @@ Current behavior:
 
 - `GET /health` for service health and config visibility
 - `POST /sync` runs a Discord REST sync and posts a normalized batch to `prism-memory`
+- `GET /capabilities`, `GET /destinations`, and `POST /messages` expose the adapter output interface for agent-authored task delivery
 - optional live Discord mention/thread chat forwarding to `codex-runtime`
 - slash commands can now route into the same Discord session/Codex path as mentions
 - Discord sync keeps message text, Discord embed summary text, and text-like attachment body text for small `.md`/`.txt`/similar files
 - sync checkpoints are persisted under `SOURCE_ADAPTER_DATA_ROOT`
 - `POST /sync?dry_run=true` collects and summarizes without posting or advancing checkpoints
 - `POST /sync?reset_checkpoint=true` ignores the saved cursor and re-runs the full configured window
+- `GET /destinations` lists Discord text channels as output destinations
+- `POST /messages` sends text to a resolved Discord channel id; requires `X-Adapter-Token` when `SOURCE_ADAPTER_TOKEN` is configured
 - `POST /recordings/:sessionId/recover` finalizes a known unfinished recording session from the volume; requires `X-Adapter-Token`
 - this service is now being consolidated onto a TypeScript/`discord.js` runtime so Discord-facing code can absorb voice and meeting commands later without a Python split
 

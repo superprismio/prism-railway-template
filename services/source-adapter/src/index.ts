@@ -52,6 +52,15 @@ type AttachmentText = {
   error?: string;
 };
 
+type AdapterDestination = {
+  adapter: string;
+  id: string;
+  type: string;
+  name: string | null;
+  label: string;
+  parentId?: string | null;
+};
+
 let bridgeClient: Client | null = null;
 let voiceManager: DiscordVoiceManager | null = null;
 let discordReady = false;
@@ -449,10 +458,14 @@ async function codexRuntimeRequest(input: {
   }
 }
 
-async function discordApiRequest<T extends JsonValue>(pathname: string, params?: Record<string, string | number | undefined>): Promise<T> {
+async function discordApiRequest<T extends JsonValue>(
+  pathname: string,
+  params?: Record<string, string | number | undefined>,
+  init: RequestInit = {},
+): Promise<T> {
   const token = (process.env.DISCORD_BOT_TOKEN ?? "").trim();
   if (!token) {
-    throw new Error("DISCORD_BOT_TOKEN is required for discord sync");
+    throw new Error("DISCORD_BOT_TOKEN is required for Discord adapter operations");
   }
   const url = new URL(`${DISCORD_API_BASE}${pathname}`);
   for (const [key, value] of Object.entries(params ?? {})) {
@@ -461,16 +474,77 @@ async function discordApiRequest<T extends JsonValue>(pathname: string, params?:
     }
   }
   const response = await fetch(url, {
+    ...init,
     headers: {
       Authorization: `Bot ${token}`,
       "Content-Type": "application/json",
       "User-Agent": "prism-source-adapter/0.1",
+      ...(init.headers ?? {}),
     },
   });
   if (!response.ok) {
     throw new Error(`Discord API failed: ${response.status} ${pathname} ${(await response.text()).slice(0, 200)}`);
   }
   return (await response.json()) as T;
+}
+
+async function listDiscordDestinations(): Promise<AdapterDestination[]> {
+  const config = adapterConfig();
+  if (!config.discordGuildId) {
+    throw new Error("DISCORD_GUILD_ID is required to list Discord destinations");
+  }
+  const channelsPayload = await discordApiRequest<JsonValue[]>(`/guilds/${config.discordGuildId}/channels`);
+  if (!Array.isArray(channelsPayload)) {
+    throw new Error("Discord guild channels response was not a list");
+  }
+  return channelsPayload
+    .filter((item): item is JsonObject => !!item && typeof item === "object" && !Array.isArray(item))
+    .filter((channel) => DISCORD_TEXT_CHANNEL_TYPES.has(Number(channel.type)))
+    .filter((channel) => typeof channel.id === "string")
+    .map((channel) => {
+      const name = typeof channel.name === "string" && channel.name.trim() ? channel.name.trim() : null;
+      return {
+        adapter: "discord",
+        id: String(channel.id),
+        type: "discord-channel",
+        name,
+        label: name ? `#${name}` : String(channel.id),
+        parentId: typeof channel.parent_id === "string" ? channel.parent_id : null,
+      };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+async function sendDiscordMessage(destinationId: string, content: string): Promise<JsonObject> {
+  const normalizedDestinationId = destinationId.trim();
+  const normalizedContent = content.trim();
+  if (!normalizedDestinationId) {
+    throw new Error("destinationId is required");
+  }
+  if (!normalizedContent) {
+    throw new Error("content is required");
+  }
+  const sent: JsonObject[] = [];
+  for (const part of splitDiscordMessage(normalizedContent)) {
+    const message = await discordApiRequest<JsonObject>(
+      `/channels/${encodeURIComponent(normalizedDestinationId)}/messages`,
+      undefined,
+      {
+        method: "POST",
+        body: JSON.stringify({ content: part }),
+      },
+    );
+    sent.push({
+      id: typeof message.id === "string" ? message.id : null,
+      channelId: typeof message.channel_id === "string" ? message.channel_id : normalizedDestinationId,
+    });
+  }
+  return {
+    adapter: "discord",
+    destinationId: normalizedDestinationId,
+    messageCount: sent.length,
+    messages: sent,
+  };
 }
 
 async function postBatchToPrism(payload: JsonObject): Promise<JsonObject> {
@@ -941,6 +1015,15 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
           discordGuildId: transport.guildId,
           discordChannelId: transport.channelId,
           discordThreadId: transport.threadId,
+          adapterCapabilities: {
+            adapter: "discord",
+            capabilities: ["list-destinations", "send-message"],
+            destinationTypes: ["discord-channel"],
+          },
+          availableOutputDestinations: await listDiscordDestinations().catch((error) => {
+            console.warn("[discord-adapter] destination discovery failed", describeError(error));
+            return [];
+          }),
         },
       });
       const reply = result.responseText;
@@ -1433,6 +1516,53 @@ async function main(): Promise<void> {
 
   app.get("/health", async (_request: Request, response: Response) => {
     response.json(await healthPayload());
+  });
+
+  app.get("/capabilities", (_request: Request, response: Response) => {
+    response.json({
+      ok: true,
+      adapter: "discord",
+      capabilities: ["list-destinations", "send-message"],
+      destinationTypes: ["discord-channel"],
+      routes: {
+        destinations: "/destinations",
+        messages: "/messages",
+      },
+    });
+  });
+
+  app.get("/destinations", async (request: Request, response: Response) => {
+    try {
+      requireAdapterToken(request);
+      response.json({
+        ok: true,
+        adapter: "discord",
+        destinations: await listDiscordDestinations(),
+      });
+    } catch (error) {
+      const message = describeError(error);
+      response.status(message === "Unauthorized" ? 401 : 500).json({ ok: false, error: message });
+    }
+  });
+
+  app.post("/messages", async (request: Request, response: Response) => {
+    try {
+      requireAdapterToken(request);
+      const body = request.body && typeof request.body === "object" ? request.body as JsonObject : {};
+      const destinationId = typeof body.destinationId === "string"
+        ? body.destinationId
+        : typeof body.destination_id === "string"
+          ? body.destination_id
+          : "";
+      const content = typeof body.content === "string" ? body.content : "";
+      response.json({
+        ok: true,
+        result: await sendDiscordMessage(destinationId, content),
+      });
+    } catch (error) {
+      const message = describeError(error);
+      response.status(message === "Unauthorized" ? 401 : 500).json({ ok: false, error: message });
+    }
   });
 
   app.post("/sync", async (request: Request, response: Response) => {

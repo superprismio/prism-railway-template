@@ -13,6 +13,7 @@ type RunnableTask = {
   enabled: boolean;
   cron: string;
   taskType: string;
+  outputConfig: Record<string, unknown>;
   run: () => Promise<TaskRunResult>;
 };
 
@@ -38,6 +39,25 @@ type TaskRunResult = {
   status: number;
   url: string;
   body: string;
+  delivery?: OutputDeliveryResult[];
+};
+
+type OutputDestination = {
+  adapter: string;
+  type: string;
+  id: string;
+  label?: string | null;
+};
+
+type OutputDeliveryResult = {
+  adapter: string;
+  destinationId: string;
+  label: string | null;
+  ok: boolean;
+  status?: number;
+  url?: string;
+  body?: string;
+  error?: string;
 };
 
 type AppTaskRun = {
@@ -317,6 +337,108 @@ function requestedSkillsFromConfig(config: Record<string, unknown>): string[] {
   return raw.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
 }
 
+function outputDestinationsFromConfig(config: Record<string, unknown>): OutputDestination[] {
+  const raw = config.outputDestinations ?? config.output_destinations;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((item) => ({
+      adapter: typeof item.adapter === "string" ? item.adapter.trim() : "",
+      type: typeof item.type === "string" ? item.type.trim() : "",
+      id: typeof item.id === "string" ? item.id.trim() : "",
+      label: typeof item.label === "string" ? item.label : null,
+    }))
+    .filter((item) => item.adapter && item.type && item.id);
+}
+
+function responseTextFromResult(result: TaskRunResult): string {
+  try {
+    const body = JSON.parse(result.body) as Record<string, unknown>;
+    const direct =
+      body.responseText ??
+      body.output_text ??
+      body.text;
+    if (typeof direct === "string" && direct.trim()) {
+      return direct.trim();
+    }
+  } catch {
+    // The task may return plain text.
+  }
+  return result.body.trim();
+}
+
+function adapterBaseUrl(adapter: string): string {
+  if (adapter === "discord") {
+    return trimBaseUrl(process.env.DISCORD_ADAPTER_BASE_URL);
+  }
+  return "";
+}
+
+function adapterHeaders(adapter: string): Record<string, string> {
+  if (adapter === "discord") {
+    const token = (process.env.SOURCE_ADAPTER_TOKEN ?? "").trim();
+    return token ? { "X-Adapter-Token": token } : {};
+  }
+  return {};
+}
+
+async function deliverTaskOutput(task: RunnableTask, result: TaskRunResult): Promise<OutputDeliveryResult[]> {
+  const destinations = outputDestinationsFromConfig(task.outputConfig);
+  if (!destinations.length) {
+    return [];
+  }
+  const content = responseTextFromResult(result);
+  if (!content) {
+    return destinations.map((destination) => ({
+      adapter: destination.adapter,
+      destinationId: destination.id,
+      label: destination.label ?? null,
+      ok: false,
+      error: "Task response was empty",
+    }));
+  }
+  const deliveries: OutputDeliveryResult[] = [];
+  for (const destination of destinations) {
+    const baseUrl = adapterBaseUrl(destination.adapter);
+    if (!baseUrl) {
+      deliveries.push({
+        adapter: destination.adapter,
+        destinationId: destination.id,
+        label: destination.label ?? null,
+        ok: false,
+        error: `No adapter base URL configured for ${destination.adapter}`,
+      });
+      continue;
+    }
+    try {
+      const delivery = await postJson(baseUrl, "/messages", adapterHeaders(destination.adapter), {
+        destinationId: destination.id,
+        content,
+      });
+      deliveries.push({
+        adapter: destination.adapter,
+        destinationId: destination.id,
+        label: destination.label ?? null,
+        ok: true,
+        status: delivery.status,
+        url: delivery.url,
+        body: delivery.body,
+      });
+    } catch (error) {
+      deliveries.push({
+        adapter: destination.adapter,
+        destinationId: destination.id,
+        label: destination.label ?? null,
+        ok: false,
+        error: describeError(error),
+      });
+    }
+  }
+  return deliveries;
+}
+
 function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
   const prompt = typeof siteTask.instructionConfig.prompt === "string"
     ? siteTask.instructionConfig.prompt.trim()
@@ -353,6 +475,7 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
       });
       return response;
     },
+    outputConfig: siteTask.outputConfig,
   };
 }
 
@@ -478,6 +601,7 @@ function buildBuiltInTasks(): BuiltInTask[] {
       enabled: false,
       cron: "0 * * * *",
       taskType: "builtin",
+      outputConfig: {},
       run: async () => {
         const baseUrl = requireBaseUrl("DISCORD_ADAPTER_BASE_URL", discordAdapterBaseUrl);
         const headers: Record<string, string> = {};
@@ -495,6 +619,7 @@ function buildBuiltInTasks(): BuiltInTask[] {
       enabled: false,
       cron: "45 * * * *",
       taskType: "builtin",
+      outputConfig: {},
       run: async () => {
         const baseUrl = requireBaseUrl("PRISM_MEMORY_BASE_URL", prismMemoryBaseUrl);
         const headers: Record<string, string> = {};
@@ -512,6 +637,7 @@ function buildBuiltInTasks(): BuiltInTask[] {
       enabled: false,
       cron: "55 * * * *",
       taskType: "builtin",
+      outputConfig: {},
       run: async () => {
         const baseUrl = requireBaseUrl("PRISM_MEMORY_BASE_URL", prismMemoryBaseUrl);
         const headers: Record<string, string> = {};
@@ -529,6 +655,7 @@ function buildBuiltInTasks(): BuiltInTask[] {
       enabled: false,
       cron: "15 * * * *",
       taskType: "builtin",
+      outputConfig: {},
       run: async () => {
         const baseUrl = requireBaseUrl("PRISM_MEMORY_BASE_URL", prismMemoryBaseUrl);
         const headers: Record<string, string> = {};
@@ -562,6 +689,8 @@ async function runTask(task: RunnableTask, source: "schedule" | "manual"): Promi
 
   try {
     const result = await task.run();
+    const delivery = await deliverTaskOutput(task, result);
+    result.delivery = delivery;
     taskState.status = "succeeded";
     taskState.lastSuccessAt = nowIso();
     taskState.nextRunAt = nextCronDate(task.cron);
@@ -571,6 +700,7 @@ async function runTask(task: RunnableTask, source: "schedule" | "manual"): Promi
         status: result.status,
         url: result.url,
         body: result.body,
+        delivery,
       },
     });
     console.log(
