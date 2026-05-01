@@ -50,7 +50,13 @@ function ensureDirectoryPath(candidatePath: string, rootPath: string) {
 }
 
 export function getHostedSkillsRoot(repoRoot: string) {
-  return path.resolve(repoRoot, 'services/site/skills');
+  const candidates = [
+    path.resolve(repoRoot, 'services/site/skills'),
+    path.resolve(repoRoot, 'skills'),
+    path.resolve(process.cwd(), 'services/site/skills'),
+    path.resolve(process.cwd(), 'skills'),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
 }
 
 export function listHostedSkills(repoRoot: string) {
