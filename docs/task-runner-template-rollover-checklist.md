@@ -51,6 +51,7 @@ DISCORD_ADAPTER_BASE_URL="http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{
 SOURCE_ADAPTER_TOKEN="${{discord-adapter.SOURCE_ADAPTER_TOKEN}}"
 PRISM_MEMORY_BASE_URL="http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}"
 PRISM_API_KEY="${{prism-memory.PRISM_API_KEY}}"
+CODEX_RUNTIME_BASE_URL="http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}"
 ```
 
 - [ ] Do not set `TASK_DISCORD_SYNC_ENABLED`.

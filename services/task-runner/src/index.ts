@@ -3,23 +3,27 @@ import { CronExpressionParser } from "cron-parser";
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 
-type TaskKey = "discord-sync" | "memory-run" | "knowledge-run" | "knowledge-source-sync";
-
 type TaskStatus = "idle" | "running" | "succeeded" | "failed" | "disabled";
 
-type BuiltInTask = {
-  key: TaskKey;
+type RunnableTask = {
+  key: string;
   name: string;
   defaultEnabled: boolean;
   defaultCron: string;
   enabled: boolean;
   cron: string;
+  taskType: string;
   run: () => Promise<TaskRunResult>;
 };
 
+type BuiltInTask = RunnableTask & {
+  taskType: "builtin";
+};
+
 type TaskSnapshot = {
-  key: TaskKey;
+  key: string;
   name: string;
+  taskType: string;
   enabled: boolean;
   cron: string;
   status: TaskStatus;
@@ -42,8 +46,13 @@ type AppTaskRun = {
 
 type AppTask = {
   key: string;
+  name: string;
   enabled: boolean;
   scheduleCron: string | null;
+  taskType: string;
+  inputConfig: Record<string, unknown>;
+  instructionConfig: Record<string, unknown>;
+  outputConfig: Record<string, unknown>;
 };
 
 type TaskState = {
@@ -55,7 +64,7 @@ type TaskState = {
   running: boolean;
 };
 
-const state = new Map<TaskKey, TaskState>();
+const state = new Map<string, TaskState>();
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -109,7 +118,7 @@ function nextCronDate(cron: string, from = new Date()): Date {
   return expression.next().toDate();
 }
 
-function initState(task: BuiltInTask): TaskState {
+function initState(task: RunnableTask): TaskState {
   if (!task.enabled) {
     return {
       status: "disabled",
@@ -144,6 +153,10 @@ function appApiBaseUrl(): string | null {
 
 function appApiServiceToken(): string {
   return (process.env.APP_API_SERVICE_TOKEN ?? process.env.INTERNAL_SERVICE_TOKEN ?? "").trim();
+}
+
+function codexRuntimeBaseUrl(): string {
+  return trimBaseUrl(process.env.CODEX_RUNTIME_BASE_URL);
 }
 
 async function postJson(
@@ -201,12 +214,30 @@ function isAppTask(value: unknown): value is AppTask {
   if (!value || typeof value !== "object") {
     return false;
   }
-  const candidate = value as { key?: unknown; enabled?: unknown; scheduleCron?: unknown };
+  const candidate = value as {
+    key?: unknown;
+    name?: unknown;
+    enabled?: unknown;
+    scheduleCron?: unknown;
+    taskType?: unknown;
+    inputConfig?: unknown;
+    instructionConfig?: unknown;
+    outputConfig?: unknown;
+  };
   return (
     typeof candidate.key === "string"
+    && typeof candidate.name === "string"
     && typeof candidate.enabled === "boolean"
     && (candidate.scheduleCron === null || typeof candidate.scheduleCron === "string")
+    && typeof candidate.taskType === "string"
+    && isRecord(candidate.inputConfig)
+    && isRecord(candidate.instructionConfig)
+    && isRecord(candidate.outputConfig)
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 async function registerTaskWithSite(task: BuiltInTask): Promise<void> {
@@ -251,7 +282,7 @@ async function fetchTasksFromSite(): Promise<AppTask[] | null> {
   }
 }
 
-function applyTaskConfig(task: BuiltInTask, config: { enabled: boolean; cron: string }): void {
+function applyTaskConfig(task: RunnableTask, config: { enabled: boolean; cron: string }): void {
   const taskState = state.get(task.key);
   const previousEnabled = task.enabled;
   const previousCron = task.cron;
@@ -278,12 +309,98 @@ function applyTaskConfig(task: BuiltInTask, config: { enabled: boolean; cron: st
   }
 }
 
-async function syncTasksFromSite(tasks: BuiltInTask[]): Promise<void> {
+function requestedSkillsFromConfig(config: Record<string, unknown>): string[] {
+  const raw = config.requestedSkills ?? config.requested_skills;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+}
+
+function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
+  const prompt = typeof siteTask.instructionConfig.prompt === "string"
+    ? siteTask.instructionConfig.prompt.trim()
+    : "";
+  if (!prompt) {
+    console.warn(JSON.stringify({ event: "task.codex_prompt_missing", task: siteTask.key }));
+    return null;
+  }
+  const cron = (siteTask.scheduleCron ?? "").trim() || "0 * * * *";
+  return {
+    key: siteTask.key,
+    name: siteTask.name,
+    taskType: "codex-prompt",
+    defaultEnabled: false,
+    defaultCron: cron,
+    enabled: siteTask.enabled,
+    cron,
+    run: async () => {
+      const baseUrl = requireBaseUrl("CODEX_RUNTIME_BASE_URL", codexRuntimeBaseUrl());
+      const response = await postJson(baseUrl, "/v1/responses", {}, {
+        prompt,
+        sessionId: `scheduled-task:${siteTask.key}:${Date.now()}`,
+        codexThreadId: null,
+        recentHistory: [],
+        metadata: {
+          transport: "task-runner",
+          taskKey: siteTask.key,
+          taskName: siteTask.name,
+          taskType: siteTask.taskType,
+          inputConfig: siteTask.inputConfig,
+          outputConfig: siteTask.outputConfig,
+          requestedSkills: requestedSkillsFromConfig(siteTask.instructionConfig),
+        },
+      });
+      return response;
+    },
+  };
+}
+
+function syncCodexPromptTasks(runnableTasks: RunnableTask[], siteTasks: AppTask[]): void {
+  const seen = new Set<string>();
+  for (const siteTask of siteTasks) {
+    if (siteTask.taskType !== "codex-prompt") {
+      continue;
+    }
+    seen.add(siteTask.key);
+    const nextTask = buildCodexPromptTask(siteTask);
+    if (!nextTask) {
+      continue;
+    }
+    const existingIndex = runnableTasks.findIndex((task) => task.key === nextTask.key);
+    if (existingIndex >= 0) {
+      runnableTasks[existingIndex] = nextTask;
+    } else {
+      runnableTasks.push(nextTask);
+    }
+    try {
+      applyTaskConfig(nextTask, {
+        enabled: siteTask.enabled,
+        cron: nextTask.cron,
+      });
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "task.site_config_invalid", task: nextTask.key, error: describeError(error) }));
+    }
+  }
+
+  for (let index = runnableTasks.length - 1; index >= 0; index -= 1) {
+    const task = runnableTasks[index];
+    if (task.taskType === "codex-prompt" && !seen.has(task.key)) {
+      runnableTasks.splice(index, 1);
+      state.delete(task.key);
+    }
+  }
+}
+
+async function syncTasksFromSite(tasks: RunnableTask[]): Promise<void> {
   const siteTasks = await fetchTasksFromSite();
   if (!siteTasks) {
     return;
   }
   for (const task of tasks) {
+    if (task.taskType !== "builtin") {
+      continue;
+    }
     const siteTask = siteTasks.find((candidate) => candidate.key === task.key);
     try {
       applyTaskConfig(task, {
@@ -294,9 +411,10 @@ async function syncTasksFromSite(tasks: BuiltInTask[]): Promise<void> {
       console.warn(JSON.stringify({ event: "task.site_config_invalid", task: task.key, error: describeError(error) }));
     }
   }
+  syncCodexPromptTasks(tasks, siteTasks);
 }
 
-async function createTaskRunInSite(task: BuiltInTask, source: "schedule" | "manual"): Promise<AppTaskRun | null> {
+async function createTaskRunInSite(task: RunnableTask, source: "schedule" | "manual"): Promise<AppTaskRun | null> {
   try {
     const payload = await appApiRequest("/api/internal/tasks/runs", {
       method: "POST",
@@ -345,7 +463,7 @@ async function updateTaskRunInSite(
   }
 }
 
-function buildTasks(): BuiltInTask[] {
+function buildBuiltInTasks(): BuiltInTask[] {
   const prismMemoryBaseUrl = trimBaseUrl(process.env.PRISM_MEMORY_BASE_URL ?? process.env.PRISM_API_BASE);
   const prismApiKey = (process.env.PRISM_API_KEY ?? "").trim();
   const discordAdapterBaseUrl = trimBaseUrl(process.env.DISCORD_ADAPTER_BASE_URL);
@@ -359,6 +477,7 @@ function buildTasks(): BuiltInTask[] {
       defaultCron: "0 * * * *",
       enabled: false,
       cron: "0 * * * *",
+      taskType: "builtin",
       run: async () => {
         const baseUrl = requireBaseUrl("DISCORD_ADAPTER_BASE_URL", discordAdapterBaseUrl);
         const headers: Record<string, string> = {};
@@ -375,6 +494,7 @@ function buildTasks(): BuiltInTask[] {
       defaultCron: "45 * * * *",
       enabled: false,
       cron: "45 * * * *",
+      taskType: "builtin",
       run: async () => {
         const baseUrl = requireBaseUrl("PRISM_MEMORY_BASE_URL", prismMemoryBaseUrl);
         const headers: Record<string, string> = {};
@@ -391,6 +511,7 @@ function buildTasks(): BuiltInTask[] {
       defaultCron: "55 * * * *",
       enabled: false,
       cron: "55 * * * *",
+      taskType: "builtin",
       run: async () => {
         const baseUrl = requireBaseUrl("PRISM_MEMORY_BASE_URL", prismMemoryBaseUrl);
         const headers: Record<string, string> = {};
@@ -407,6 +528,7 @@ function buildTasks(): BuiltInTask[] {
       defaultCron: "15 * * * *",
       enabled: false,
       cron: "15 * * * *",
+      taskType: "builtin",
       run: async () => {
         const baseUrl = requireBaseUrl("PRISM_MEMORY_BASE_URL", prismMemoryBaseUrl);
         const headers: Record<string, string> = {};
@@ -419,7 +541,7 @@ function buildTasks(): BuiltInTask[] {
   ];
 }
 
-async function runTask(task: BuiltInTask, source: "schedule" | "manual"): Promise<TaskRunResult> {
+async function runTask(task: RunnableTask, source: "schedule" | "manual"): Promise<TaskRunResult> {
   const taskState = state.get(task.key);
   if (!taskState) {
     throw new Error(`Unknown task state for ${task.key}`);
@@ -477,11 +599,12 @@ async function runTask(task: BuiltInTask, source: "schedule" | "manual"): Promis
   }
 }
 
-function taskSnapshot(task: BuiltInTask): TaskSnapshot {
+function taskSnapshot(task: RunnableTask): TaskSnapshot {
   const taskState = state.get(task.key) ?? initState(task);
   return {
     key: task.key,
     name: task.name,
+    taskType: task.taskType,
     enabled: task.enabled,
     cron: task.cron,
     status: task.enabled ? taskState.status : "disabled",
@@ -505,10 +628,10 @@ function requireRunnerToken(request: Request, response: Response): boolean {
   return false;
 }
 
-async function schedulerLoop(tasks: BuiltInTask[], pollSeconds: number): Promise<void> {
+async function schedulerLoop(tasks: RunnableTask[], builtInTasks: BuiltInTask[], pollSeconds: number): Promise<void> {
   while (true) {
     if (!parseBoolEnv("TASK_RUNNER_DISABLED", false)) {
-      await ensureTasksRegisteredWithSite(tasks);
+      await ensureTasksRegisteredWithSite(builtInTasks);
       await syncTasksFromSite(tasks);
       const now = new Date();
       for (const task of tasks) {
@@ -528,11 +651,12 @@ async function schedulerLoop(tasks: BuiltInTask[], pollSeconds: number): Promise
 }
 
 async function main(): Promise<void> {
-  const tasks = buildTasks();
+  const builtInTasks = buildBuiltInTasks();
+  const tasks: RunnableTask[] = [...builtInTasks];
   for (const task of tasks) {
     state.set(task.key, initState(task));
   }
-  await ensureTasksRegisteredWithSite(tasks);
+  await ensureTasksRegisteredWithSite(builtInTasks);
   await syncTasksFromSite(tasks);
 
   const app = express();
@@ -551,14 +675,21 @@ async function main(): Promise<void> {
     if (!requireRunnerToken(request, response)) {
       return;
     }
-    response.json({ ok: true, tasks: tasks.map(taskSnapshot) });
+    syncTasksFromSite(tasks)
+      .then(() => {
+        response.json({ ok: true, tasks: tasks.map(taskSnapshot) });
+      })
+      .catch((error) => {
+        response.status(500).json({ ok: false, error: describeError(error) });
+      });
   });
 
   app.post("/tasks/:key/run", async (request, response) => {
     if (!requireRunnerToken(request, response)) {
       return;
     }
-    const key = request.params.key as TaskKey;
+    const key = request.params.key;
+    await syncTasksFromSite(tasks);
     const task = tasks.find((candidate) => candidate.key === key);
     if (!task) {
       response.status(404).json({ ok: false, error: `Unknown task: ${key}` });
@@ -578,7 +709,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify({ event: "task-runner.started", port, pollSeconds, tasks: tasks.map(taskSnapshot) }));
   });
 
-  schedulerLoop(tasks, pollSeconds).catch((error) => {
+  schedulerLoop(tasks, builtInTasks, pollSeconds).catch((error) => {
     console.error(JSON.stringify({ event: "task-runner.scheduler_failed", error: describeError(error) }));
     process.exitCode = 1;
   });

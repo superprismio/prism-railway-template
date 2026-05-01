@@ -83,6 +83,16 @@ function taskDescription(key: string) {
   return "Scheduled task";
 }
 
+function taskTypeBadge(taskType: string) {
+  if (taskType === "builtin") {
+    return <Badge variant="secondary">System</Badge>;
+  }
+  if (taskType === "codex-prompt") {
+    return <Badge variant="outline">Custom</Badge>;
+  }
+  return <Badge variant="muted">{taskType || "task"}</Badge>;
+}
+
 export function TaskRunnerWorkspace() {
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [runs, setRuns] = useState<TaskRunRecord[]>([]);
@@ -288,6 +298,7 @@ export function TaskRunnerWorkspace() {
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-base font-semibold">{task.name}</h2>
                   <Badge variant="outline">{task.key}</Badge>
+                  {taskTypeBadge(task.taskType)}
                   {statusBadge(runnerTask?.status ?? latestRun?.status ?? (task.enabled ? "idle" : "disabled"))}
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">

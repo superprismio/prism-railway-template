@@ -27,6 +27,7 @@ Manual runs require `X-Task-Runner-Token` when `TASK_RUNNER_TOKEN` is configured
 - `TASK_RUNNER_TOKEN=<optional internal admin token>`
 - `APP_API_BASE_URL=http://site.railway.internal:3100`
 - `APP_API_SERVICE_TOKEN=${{site.INTERNAL_SERVICE_TOKEN}}`
+- `CODEX_RUNTIME_BASE_URL=http://codex-runtime.railway.internal:3030`
 
 When `APP_API_BASE_URL` is set, the runner idempotently registers built-in task defaults, reads effective enabled state and cron schedules from `site`, and writes task run history through internal APIs.
 
@@ -40,6 +41,21 @@ The built-in task defaults are seeded into `site` on startup and on scheduler po
 - `knowledge-run`: disabled, `55 * * * *`
 
 After seeding, `site` DB values are the scheduler source of truth. The runner refreshes task rows on each poll.
+
+## Custom prompt tasks
+
+User-authored scheduled prompt tasks use `taskType=codex-prompt` in the `site` DB. The runner loads these rows from `site`, reads `instructionConfig.prompt`, and replays the prompt through `codex-runtime`.
+
+Supported config:
+
+- `instructionConfig.prompt`: required prompt text
+- `instructionConfig.requestedSkills`: optional skill names forwarded to `codex-runtime`
+- `inputConfig`: optional metadata passed to the runtime
+- `outputConfig`: optional metadata passed to the runtime
+
+The runner calls:
+
+- `POST /v1/responses` on `CODEX_RUNTIME_BASE_URL`
 
 ### Discord sync
 
