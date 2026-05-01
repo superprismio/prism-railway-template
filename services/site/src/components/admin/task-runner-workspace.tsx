@@ -5,6 +5,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock3,
+  Plus,
   Play,
   RefreshCw,
   Save,
@@ -12,9 +13,18 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import type { TaskRecord, TaskRunRecord } from "@/lib/app-core";
 
 type RunnerTask = {
@@ -106,6 +116,13 @@ export function TaskRunnerWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [runningKey, setRunningKey] = useState<string | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    name: "",
+    scheduleCron: "0 9 * * *",
+    prompt: "",
+  });
   const [isRefreshing, startRefresh] = useTransition();
 
   async function loadTasks() {
@@ -215,6 +232,29 @@ export function TaskRunnerWorkspace() {
     }
   }
 
+  async function createCustomTask() {
+    setError(null);
+    setIsCreating(true);
+    try {
+      const response = await fetch("/admin/tasks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(createForm),
+      });
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || "Could not create task");
+      }
+      setCreateForm({ name: "", scheduleCron: "0 9 * * *", prompt: "" });
+      setIsCreateOpen(false);
+      await loadTasks();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Could not create task");
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
   return (
     <div className="grid gap-5 px-5 py-5 md:px-6">
       <section className="grid gap-3 md:grid-cols-3">
@@ -260,10 +300,16 @@ export function TaskRunnerWorkspace() {
             DB rows are the source of truth. The task-runner refreshes them on each poll.
           </p>
         </div>
-        <Button type="button" variant="outline" onClick={refresh} disabled={isRefreshing}>
-          <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={() => setIsCreateOpen(true)}>
+            <Plus className="h-4 w-4" />
+            New Custom Task
+          </Button>
+          <Button type="button" variant="outline" onClick={refresh} disabled={isRefreshing}>
+            <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {error ? (
@@ -425,6 +471,60 @@ export function TaskRunnerWorkspace() {
           </table>
         </div>
       </section>
+
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>New Custom Task</DialogTitle>
+            <DialogDescription>
+              Create a disabled scheduled prompt task. Enable it after a manual run succeeds.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="custom-task-name">Name</Label>
+              <Input
+                id="custom-task-name"
+                value={createForm.name}
+                onChange={(event) => setCreateForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Daily memory brief"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="custom-task-cron">Cron</Label>
+              <Input
+                id="custom-task-cron"
+                value={createForm.scheduleCron}
+                onChange={(event) => setCreateForm((current) => ({ ...current, scheduleCron: event.target.value }))}
+                placeholder="0 9 * * *"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="custom-task-prompt">Prompt</Label>
+              <Textarea
+                id="custom-task-prompt"
+                value={createForm.prompt}
+                onChange={(event) => setCreateForm((current) => ({ ...current, prompt: event.target.value }))}
+                rows={8}
+                placeholder="Create a concise daily brief from Prism Memory. Do not ask follow-up questions. Return the brief and a short summary of what sources you used."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={createCustomTask}
+              disabled={isCreating || !createForm.name.trim() || !createForm.scheduleCron.trim() || !createForm.prompt.trim()}
+            >
+              <Plus className="h-4 w-4" />
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
