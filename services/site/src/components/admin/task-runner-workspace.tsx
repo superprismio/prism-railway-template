@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -162,6 +162,7 @@ export function TaskRunnerWorkspace() {
     scheduleCron: "0 9 * * *",
     prompt: "",
   });
+  const hasLoadedTasksRef = useRef(false);
   const [isRefreshing, startRefresh] = useTransition();
 
   async function loadTasks() {
@@ -174,6 +175,8 @@ export function TaskRunnerWorkspace() {
     setTasks(payload.tasks);
     setRuns(payload.runs);
     setRunner(payload.runner);
+    hasLoadedTasksRef.current = true;
+    setError(null);
     setDrafts((current) => {
       const next = { ...current };
       for (const task of payload.tasks) {
@@ -194,7 +197,9 @@ export function TaskRunnerWorkspace() {
       try {
         await loadTasks();
       } catch (nextError) {
-        setError(nextError instanceof Error ? nextError.message : "Could not load tasks");
+        if (!hasLoadedTasksRef.current) {
+          setError(nextError instanceof Error ? nextError.message : "Could not load tasks");
+        }
       }
     });
   }
