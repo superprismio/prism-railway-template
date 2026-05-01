@@ -949,6 +949,28 @@ type DiscordPromptTransport = {
   sendAssistantMessage: (content: string) => Promise<{ sourceMessageId: string | null }>;
 };
 
+function startTypingHeartbeat(sendTyping: (() => Promise<void>) | undefined): () => void {
+  if (!sendTyping) {
+    return () => undefined;
+  }
+  let stopped = false;
+  const tick = () => {
+    void sendTyping().catch((error) => {
+      console.warn("[discord-adapter] sendTyping failed", describeError(error));
+    });
+  };
+  tick();
+  const timer = setInterval(() => {
+    if (!stopped) {
+      tick();
+    }
+  }, 8_000);
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
 async function runDiscordPrompt(prompt: string, transport: DiscordPromptTransport): Promise<void> {
   let existing: JsonObject | null = null;
   try {
@@ -1002,10 +1024,8 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
     (typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
 
   const runAndSendCodexReply = async () => {
+    const stopTyping = startTypingHeartbeat(transport.sendTyping);
     try {
-      if (transport.sendTyping) {
-        await transport.sendTyping();
-      }
       const result = await codexRuntimeRequest({
         prompt,
         sessionId: String(session.id),
@@ -1073,6 +1093,8 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         meta: { inThread: Boolean(transport.threadId), codexThreadId, failed: true },
         createdAt: nowUtcIso(),
       });
+    } finally {
+      stopTyping();
     }
   };
 
