@@ -5,6 +5,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock3,
+  Eye,
   Plus,
   Play,
   RefreshCw,
@@ -103,6 +104,43 @@ function taskTypeBadge(taskType: string) {
   return <Badge variant="muted">{taskType || "task"}</Badge>;
 }
 
+function formatSnapshot(value: unknown) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function parseJsonObject(value: unknown) {
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function runResponseText(run: TaskRunRecord | null) {
+  const body = run?.outputSnapshot?.body;
+  const parsedBody = parseJsonObject(body);
+  const directText =
+    parsedBody?.responseText ??
+    parsedBody?.output_text ??
+    parsedBody?.text ??
+    run?.outputSnapshot?.responseText ??
+    run?.outputSnapshot?.output_text;
+
+  return typeof directText === "string" && directText.trim()
+    ? directText.trim()
+    : null;
+}
+
 export function TaskRunnerWorkspace() {
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [runs, setRuns] = useState<TaskRunRecord[]>([]);
@@ -118,6 +156,7 @@ export function TaskRunnerWorkspace() {
   const [runningKey, setRunningKey] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [selectedRun, setSelectedRun] = useState<TaskRunRecord | null>(null);
   const [createForm, setCreateForm] = useState({
     name: "",
     scheduleCron: "0 9 * * *",
@@ -184,6 +223,7 @@ export function TaskRunnerWorkspace() {
     }
     return map;
   }, [runner.tasks]);
+  const selectedRunResponse = runResponseText(selectedRun);
 
   async function saveTask(task: TaskRecord) {
     const draft = drafts[task.key];
@@ -445,6 +485,7 @@ export function TaskRunnerWorkspace() {
                 <th className="px-4 py-3 font-medium">Started</th>
                 <th className="px-4 py-3 font-medium">Finished</th>
                 <th className="px-4 py-3 font-medium">Summary</th>
+                <th className="px-4 py-3 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -458,11 +499,22 @@ export function TaskRunnerWorkspace() {
                   <td className="max-w-[280px] truncate px-4 py-3 text-muted-foreground">
                     {run.errorMessage || run.resultSummary || ""}
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedRun(run)}
+                    >
+                      <Eye className="h-4 w-4" />
+                      View
+                    </Button>
+                  </td>
                 </tr>
               ))}
               {!runs.length ? (
                 <tr>
-                  <td className="px-4 py-6 text-center text-muted-foreground" colSpan={6}>
+                  <td className="px-4 py-6 text-center text-muted-foreground" colSpan={7}>
                     No task runs recorded yet.
                   </td>
                 </tr>
@@ -523,6 +575,65 @@ export function TaskRunnerWorkspace() {
               Create
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(selectedRun)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedRun(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Task Run</DialogTitle>
+            <DialogDescription>
+              {selectedRun?.taskKey ?? "unknown"} - {selectedRun?.triggerSource ?? "unknown"} -{" "}
+              {selectedRun ? formatDate(selectedRun.startedAt) : "Not recorded"}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedRun ? (
+            <div className="grid gap-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {statusBadge(selectedRun.status)}
+                <Badge variant="outline">{selectedRun.taskName ?? selectedRun.taskKey ?? "unknown"}</Badge>
+              </div>
+
+              {selectedRun.resultSummary ? (
+                <div className="grid gap-2">
+                  <p className="text-sm font-medium">Summary</p>
+                  <p className="whitespace-pre-wrap border border-border/70 bg-muted/30 p-3 text-sm text-muted-foreground">
+                    {selectedRun.resultSummary}
+                  </p>
+                </div>
+              ) : null}
+
+              {selectedRun.errorMessage ? (
+                <div className="grid gap-2">
+                  <p className="text-sm font-medium text-destructive">Error</p>
+                  <p className="whitespace-pre-wrap border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                    {selectedRun.errorMessage}
+                  </p>
+                </div>
+              ) : null}
+
+              {selectedRunResponse ? (
+                <div className="grid gap-2">
+                  <p className="text-sm font-medium">Response</p>
+                  <pre className="max-h-80 overflow-auto whitespace-pre-wrap border border-border/70 bg-muted/30 p-3 text-sm text-muted-foreground">
+                    {selectedRunResponse}
+                  </pre>
+                </div>
+              ) : null}
+
+              <div className="grid gap-2">
+                <p className="text-sm font-medium">Output Snapshot</p>
+                <pre className="max-h-80 overflow-auto border border-border/70 bg-muted/30 p-3 text-xs text-muted-foreground">
+                  {formatSnapshot(selectedRun.outputSnapshot)}
+                </pre>
+              </div>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>
