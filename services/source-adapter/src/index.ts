@@ -65,6 +65,7 @@ let bridgeClient: Client | null = null;
 let voiceManager: DiscordVoiceManager | null = null;
 let discordReady = false;
 let discordUserTag: string | null = null;
+const discordPromptQueues = new Map<string, Promise<void>>();
 
 function nowUtcIso(): string {
   return new Date().toISOString();
@@ -1094,6 +1095,20 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
   await runAndSendCodexReply();
 }
 
+async function enqueueDiscordPrompt(queueKey: string, run: () => Promise<void>): Promise<void> {
+  const previous = discordPromptQueues.get(queueKey) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(run);
+  discordPromptQueues.set(
+    queueKey,
+    next.finally(() => {
+      if (discordPromptQueues.get(queueKey) === next) {
+        discordPromptQueues.delete(queueKey);
+      }
+    }),
+  );
+  return next;
+}
+
 async function handleDiscordChatMessage(message: Message): Promise<void> {
   if (!bridgeClient?.user) {
     return;
@@ -1121,33 +1136,35 @@ async function handleDiscordChatMessage(message: Message): Promise<void> {
     threadId,
     channelId,
   });
-  await runDiscordPrompt(prompt, {
-    guildId: message.guildId!,
-    channelId,
-    threadId,
-    channelName: "name" in message.channel ? message.channel.name : null,
-    threadName: targetChannel.isThread() ? targetChannel.name : null,
-    authorId: message.author.id,
-    authorName: message.member?.displayName ?? message.author.displayName,
-    userSourceMessageId: message.id,
-    createdAt: message.createdAt.toISOString(),
-    sendTyping:
-      "sendTyping" in targetChannel && typeof targetChannel.sendTyping === "function"
-        ? async () => {
-            await targetChannel.sendTyping();
+  await enqueueDiscordPrompt(threadId ?? channelId, async () => {
+    await runDiscordPrompt(prompt, {
+      guildId: message.guildId!,
+      channelId,
+      threadId,
+      channelName: "name" in message.channel ? message.channel.name : null,
+      threadName: targetChannel.isThread() ? targetChannel.name : null,
+      authorId: message.author.id,
+      authorName: message.member?.displayName ?? message.author.displayName,
+      userSourceMessageId: message.id,
+      createdAt: message.createdAt.toISOString(),
+      sendTyping:
+        "sendTyping" in targetChannel && typeof targetChannel.sendTyping === "function"
+          ? async () => {
+              await targetChannel.sendTyping();
+            }
+          : undefined,
+      sendAssistantMessage: async (content) => {
+        const parts = splitDiscordMessage(content);
+        let firstMessageId: string | null = null;
+        for (const part of parts) {
+          const sent = await sendReply(targetChannel, part);
+          if (!firstMessageId && sent?.id) {
+            firstMessageId = sent.id;
           }
-        : undefined,
-    sendAssistantMessage: async (content) => {
-      const parts = splitDiscordMessage(content);
-      let firstMessageId: string | null = null;
-      for (const part of parts) {
-        const sent = await sendReply(targetChannel, part);
-        if (!firstMessageId && sent?.id) {
-          firstMessageId = sent.id;
         }
-      }
-      return { sourceMessageId: firstMessageId };
-    },
+        return { sourceMessageId: firstMessageId };
+      },
+    });
   });
 }
 
