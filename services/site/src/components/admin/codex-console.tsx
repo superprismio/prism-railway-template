@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useTransition } from "react"
-import { Bot, LoaderCircle, Wrench } from "lucide-react"
+import { useEffect, useState, useTransition } from "react"
+import { Bot, LoaderCircle, Plus, Wrench } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,11 +13,19 @@ type ConsoleMessage = {
   content: string
 }
 
+type StoredConsoleMessage = {
+  id: string
+  role: string
+  content: string
+}
+
 const skillOptions = [
   { id: "prism-api-reader", label: "Reader" },
   { id: "prism-api-writer", label: "Writer" },
   { id: "prism-api-ops", label: "Ops" },
 ] as const
+
+const consoleSessionStorageKey = "prism-console-session-id"
 
 function randomMessageId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
@@ -29,7 +37,43 @@ export function CodexConsole() {
   const [messages, setMessages] = useState<ConsoleMessage[]>([])
   const [requestedSkills, setRequestedSkills] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [isPending, startTransition] = useTransition()
+
+  useEffect(() => {
+    const storedSessionId = window.localStorage.getItem(consoleSessionStorageKey)
+    if (!storedSessionId) return
+
+    setIsLoadingHistory(true)
+    fetch(`/admin/responses?session_id=${encodeURIComponent(storedSessionId)}`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          ok?: boolean
+          messages?: StoredConsoleMessage[]
+          error?: string
+        }
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "Could not load console history")
+        }
+        const restoredMessages = Array.isArray(payload.messages)
+          ? payload.messages
+              .filter((message) => message.role === "user" || message.role === "assistant")
+              .map((message) => ({
+                id: message.id,
+                role: message.role as "user" | "assistant",
+                content: message.content,
+              }))
+          : []
+        setSessionId(storedSessionId)
+        setMessages(restoredMessages)
+      })
+      .catch(() => {
+        window.localStorage.removeItem(consoleSessionStorageKey)
+      })
+      .finally(() => setIsLoadingHistory(false))
+  }, [])
 
   function toggleSkill(skillId: string) {
     setRequestedSkills((current) =>
@@ -75,7 +119,11 @@ export function CodexConsole() {
           throw new Error(payload.error || "The response endpoint did not return output_text")
         }
 
-        setSessionId(payload.session_id ?? sessionId)
+        const nextSessionId = payload.session_id ?? sessionId
+        setSessionId(nextSessionId)
+        if (nextSessionId) {
+          window.localStorage.setItem(consoleSessionStorageKey, nextSessionId)
+        }
         setMessages((current) => [
           ...current,
           {
@@ -89,6 +137,13 @@ export function CodexConsole() {
         setError(message)
       }
     })
+  }
+
+  function startNewSession() {
+    window.localStorage.removeItem(consoleSessionStorageKey)
+    setSessionId(null)
+    setMessages([])
+    setError(null)
   }
 
   return (
@@ -115,15 +170,27 @@ export function CodexConsole() {
           })}
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Bot className="h-4 w-4" />
-          <span>{sessionId ? "Session live" : "New session"}</span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Bot className="h-4 w-4" />
+            <span>{sessionId ? "Session live" : "New session"}</span>
+          </div>
+          {sessionId ? (
+            <Button type="button" variant="outline" size="sm" onClick={startNewSession}>
+              <Plus className="h-4 w-4" />
+              New
+            </Button>
+          ) : null}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
         <div className="space-y-3 px-5 py-5 md:px-6">
-          {messages.length ? (
+          {isLoadingHistory ? (
+            <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+              Loading console history...
+            </div>
+          ) : messages.length ? (
             messages.map((message) => (
               <div
                 key={message.id}
@@ -143,7 +210,7 @@ export function CodexConsole() {
             ))
           ) : (
             <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              Start a session from the admin board. Session state stays in the API and resumes through Codex runtime.
+              Start a session from the admin board. Session history is stored in the API and restored in this browser.
             </div>
           )}
         </div>

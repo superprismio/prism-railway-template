@@ -20,6 +20,44 @@ import {
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
 
+export async function GET(request: Request) {
+  if (!useLocalAppApi()) {
+    const url = new URL(request.url)
+    const response = await adminFetch(`/api/v1/responses?${url.searchParams.toString()}`)
+    const text = await response.text()
+    const contentType = response.headers.get("content-type") ?? "application/json"
+
+    return new NextResponse(text, {
+      status: response.status,
+      headers: {
+        "content-type": contentType,
+      },
+    })
+  }
+
+  const auth = await requireLocalAdminAccess()
+  if (!auth.ok) {
+    return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
+  }
+
+  const url = new URL(request.url)
+  const sessionId = parseNullableString(url.searchParams.get("session_id") ?? url.searchParams.get("sessionId")) ?? null
+  if (!sessionId) {
+    return NextResponse.json({ ok: false, error: "session_id is required" }, { status: 400 })
+  }
+
+  const session = getAgentSession(sessionId)
+  if (!session || session.source !== "admin-console") {
+    return NextResponse.json({ ok: false, error: "Agent session not found" }, { status: 404 })
+  }
+
+  return NextResponse.json({
+    ok: true,
+    session,
+    messages: listAgentMessages(session.id, 100),
+  })
+}
+
 type ResponseInputMessage = {
   role: string
   content: string
