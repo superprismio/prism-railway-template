@@ -534,7 +534,9 @@ export function TaskRunnerWorkspace() {
           <DialogHeader>
             <DialogTitle>New Custom Task</DialogTitle>
             <DialogDescription>
-              Create a disabled scheduled prompt task. Enable it after a manual run succeeds.
+              Create a disabled scheduled prompt task. Use chat for tasks that need to
+              resolve output destinations like Discord channels, then enable after a
+              manual run succeeds.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
