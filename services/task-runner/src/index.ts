@@ -45,7 +45,7 @@ type TaskRunResult = {
 type OutputDestination = {
   adapter: string;
   type: string;
-  id: string;
+  id: string | null;
   label?: string | null;
 };
 
@@ -347,10 +347,10 @@ function outputDestinationsFromConfig(config: Record<string, unknown>): OutputDe
     .map((item) => ({
       adapter: typeof item.adapter === "string" ? item.adapter.trim() : "",
       type: typeof item.type === "string" ? item.type.trim() : "",
-      id: typeof item.id === "string" ? item.id.trim() : "",
+      id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : null,
       label: typeof item.label === "string" ? item.label : null,
     }))
-    .filter((item) => item.adapter && item.type && item.id);
+    .filter((item) => item.adapter && item.type && (item.id || item.label));
 }
 
 function responseTextFromResult(result: TaskRunResult): string {
@@ -384,6 +384,39 @@ function adapterHeaders(adapter: string): Record<string, string> {
   return {};
 }
 
+async function resolveOutputDestinationId(destination: OutputDestination): Promise<string | null> {
+  if (destination.id) {
+    return destination.id;
+  }
+  const baseUrl = adapterBaseUrl(destination.adapter);
+  if (!baseUrl || !destination.label) {
+    return null;
+  }
+  const response = await fetch(`${baseUrl}/destinations`, {
+    headers: adapterHeaders(destination.adapter),
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} from ${baseUrl}/destinations: ${text.slice(0, 500)}`);
+  }
+  const payload = text ? JSON.parse(text) as Record<string, unknown> : {};
+  const destinations = Array.isArray(payload.destinations) ? payload.destinations : [];
+  const normalizedLabel = destination.label.trim().toLowerCase();
+  const normalizedName = normalizedLabel.replace(/^#/, "");
+  const match = destinations
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .find((item) => {
+      const itemType = typeof item.type === "string" ? item.type : "";
+      const itemLabel = typeof item.label === "string" ? item.label.trim().toLowerCase() : "";
+      const itemName = typeof item.name === "string" ? item.name.trim().toLowerCase() : "";
+      return (
+        itemType === destination.type
+        && (itemLabel === normalizedLabel || itemName === normalizedName)
+      );
+    });
+  return typeof match?.id === "string" && match.id.trim() ? match.id.trim() : null;
+}
+
 async function deliverTaskOutput(task: RunnableTask, result: TaskRunResult): Promise<OutputDeliveryResult[]> {
   const destinations = outputDestinationsFromConfig(task.outputConfig);
   if (!destinations.length) {
@@ -393,7 +426,7 @@ async function deliverTaskOutput(task: RunnableTask, result: TaskRunResult): Pro
   if (!content) {
     return destinations.map((destination) => ({
       adapter: destination.adapter,
-      destinationId: destination.id,
+      destinationId: destination.id ?? "",
       label: destination.label ?? null,
       ok: false,
       error: "Task response was empty",
@@ -402,24 +435,47 @@ async function deliverTaskOutput(task: RunnableTask, result: TaskRunResult): Pro
   const deliveries: OutputDeliveryResult[] = [];
   for (const destination of destinations) {
     const baseUrl = adapterBaseUrl(destination.adapter);
+    let destinationId: string | null = null;
+    try {
+      destinationId = await resolveOutputDestinationId(destination);
+    } catch (error) {
+      deliveries.push({
+        adapter: destination.adapter,
+        destinationId: destination.id ?? "",
+        label: destination.label ?? null,
+        ok: false,
+        error: describeError(error),
+      });
+      continue;
+    }
     if (!baseUrl) {
       deliveries.push({
         adapter: destination.adapter,
-        destinationId: destination.id,
+        destinationId: destinationId ?? "",
         label: destination.label ?? null,
         ok: false,
         error: `No adapter base URL configured for ${destination.adapter}`,
       });
       continue;
     }
+    if (!destinationId) {
+      deliveries.push({
+        adapter: destination.adapter,
+        destinationId: "",
+        label: destination.label ?? null,
+        ok: false,
+        error: `Could not resolve destination ${destination.label ?? destination.type}`,
+      });
+      continue;
+    }
     try {
       const delivery = await postJson(baseUrl, "/messages", adapterHeaders(destination.adapter), {
-        destinationId: destination.id,
+        destinationId,
         content,
       });
       deliveries.push({
         adapter: destination.adapter,
-        destinationId: destination.id,
+        destinationId,
         label: destination.label ?? null,
         ok: true,
         status: delivery.status,
@@ -429,7 +485,7 @@ async function deliverTaskOutput(task: RunnableTask, result: TaskRunResult): Pro
     } catch (error) {
       deliveries.push({
         adapter: destination.adapter,
-        destinationId: destination.id,
+        destinationId,
         label: destination.label ?? null,
         ok: false,
         error: describeError(error),

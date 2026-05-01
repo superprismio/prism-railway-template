@@ -16,7 +16,8 @@ Task authoring rules:
 7. If repeatable code is needed, create or reference a reviewed script outside the DB, then mention that script in the prompt.
 8. Include required destination/config assumptions in `inputConfig` or `outputConfig`.
 9. If the user asks to send output to a destination such as Discord `#updates`, resolve the destination during task creation when possible. Use `availableOutputDestinations` from session metadata first. Store resolved destinations in `outputConfig.outputDestinations`; do not leave channel matching for scheduled run time if the channel can be resolved now.
-10. If a requested destination cannot be resolved, create the task disabled and state that delivery is unresolved.
+10. A resolved output destination must include `adapter`, `type`, `id`, and `label`. If you only know the label, the destination is unresolved.
+11. If a requested destination cannot be resolved, create the task disabled and state that delivery is unresolved.
 
 Recommended task row shape:
 
