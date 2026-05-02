@@ -196,7 +196,37 @@ Content-Type: application/json
 { "key": "<workflow-key>" }
 ```
 
-The route reads `/data/workflows/<workflow-key>/manifest.proposal.json`, validates that all workflow and step instruction paths stay under `/data/workflows/<workflow-key>/`, then upserts the `workflows` row. This is intentionally a registration step, not a separate promotion lifecycle.
+The route reads `/data/workflows/<workflow-key>/manifest.proposal.json`, validates that all workflow and step instruction paths stay under `/data/workflows/<workflow-key>/`, then upserts the `workflows` row.
+
+Codex Runtime usually cannot write the site service volume directly. For chat-authored workflows, send the files to the same endpoint:
+
+```json
+{
+  "key": "blog-post-draft-review-publish",
+  "manifest": {
+    "key": "blog-post-draft-review-publish",
+    "name": "Blog Post Draft Review Publish",
+    "entrypoint": "intake",
+    "workflowPath": "workflow.md",
+    "steps": [
+      {
+        "key": "intake",
+        "label": "Intake",
+        "type": "agent",
+        "statusMap": ["submitted", "triaging"],
+        "instructionPath": "steps/intake.md",
+        "next": "draft"
+      }
+    ]
+  },
+  "files": {
+    "workflow.md": "# Blog Post Draft Review Publish\n...",
+    "steps/intake.md": "# Intake\n..."
+  }
+}
+```
+
+The site writes `files` under `/data/workflows/<workflow-key>/`, normalizes manifest paths to the site volume, writes `manifest.proposal.json`, and registers the workflow. This is intentionally a direct write/register step, not a separate promotion lifecycle.
 
 ## Execution Flow
 

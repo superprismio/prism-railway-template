@@ -34,6 +34,35 @@ Instance custom workflows should use the site-owned volume when that API/storage
 
 Do not store runtime approval state, current step, retry state, or execution history in workflow files.
 
+Codex Runtime should not assume it can write the site service volume directly. To install a chat-authored workflow, call the site workflow endpoint with the manifest and files:
+
+```json
+{
+  "key": "example-workflow",
+  "manifest": {
+    "key": "example-workflow",
+    "name": "Example Workflow",
+    "entrypoint": "triage",
+    "workflowPath": "workflow.md",
+    "steps": [
+      {
+        "key": "triage",
+        "label": "Triage",
+        "type": "agent",
+        "statusMap": ["submitted", "triaging"],
+        "instructionPath": "steps/triage.md"
+      }
+    ]
+  },
+  "files": {
+    "workflow.md": "# Example Workflow\n...",
+    "steps/triage.md": "# Triage\n..."
+  }
+}
+```
+
+Use `POST /admin/workflows` with admin auth or internal service auth. The site service writes the files under `/data/workflows/<workflow-key>/`, normalizes manifest paths, and registers the workflow.
+
 ## Manifest Rules
 
 The manifest is stored in `workflows.definition_json`. Keep it small.
