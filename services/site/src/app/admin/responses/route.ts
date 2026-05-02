@@ -24,6 +24,7 @@ import {
 } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
+import { requireServiceAccess } from "@/lib/internal-service"
 import { parseNullableString, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
 
 export async function GET(request: Request) {
@@ -378,7 +379,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const auth = await requireLocalAdminAccess()
+  const auth = await requireResponseAccess()
   if (!auth.ok) {
     return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
   }
@@ -835,4 +836,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: false, error: message }, { status: 502 })
   }
+}
+
+async function requireResponseAccess() {
+  const adminAccess = await requireLocalAdminAccess()
+  if (adminAccess.ok) {
+    return adminAccess
+  }
+
+  return requireServiceAccess()
 }

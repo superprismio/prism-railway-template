@@ -63,6 +63,23 @@ Codex Runtime should not assume it can write the site service volume directly. T
 
 Use `POST /admin/workflows` with admin auth or internal service auth. The site service writes the files under `/data/workflows/<workflow-key>/`, normalizes manifest paths, and registers the workflow.
 
+To run a request workflow step from another service, use the site response route with internal service auth:
+
+```json
+{
+  "input": [
+    {
+      "role": "user",
+      "content": "Run the current workflow step using the request context and step instructions."
+    }
+  ],
+  "linked_change_request_id": "<request-id>",
+  "workflow_action": null
+}
+```
+
+Send that body to `POST /admin/responses`. For gate steps, set `workflow_action` to the route key, such as `approved` or `changesRequested`.
+
 ## Manifest Rules
 
 The manifest is stored in `workflows.definition_json`. Keep it small.

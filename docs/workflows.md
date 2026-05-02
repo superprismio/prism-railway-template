@@ -228,6 +228,27 @@ Codex Runtime usually cannot write the site service volume directly. For chat-au
 
 The site writes `files` under `/data/workflows/<workflow-key>/`, normalizes manifest paths to the site volume, writes `manifest.proposal.json`, and registers the workflow. This is intentionally a direct write/register step, not a separate promotion lifecycle.
 
+Run the current workflow step with the same response route the UI uses:
+
+```http
+POST /admin/responses
+Content-Type: application/json
+x-service-token: <internal-service-token>
+
+{
+  "input": [
+    {
+      "role": "user",
+      "content": "Run the current workflow step for request #3 using the request description and workflow step instructions."
+    }
+  ],
+  "linked_change_request_id": "<request-id>",
+  "workflow_action": null
+}
+```
+
+For a gate step, set `workflow_action` to `approved`, `changesRequested`, or another route key defined by the workflow manifest. The route records workflow events and execution rows.
+
 ## Execution Flow
 
 The workflow-aware request flow is:
