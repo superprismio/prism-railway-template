@@ -24,6 +24,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { TaskRecord, TaskRunRecord } from "@/lib/app-core";
@@ -53,6 +60,77 @@ type TaskPayload = {
   runner: RunnerStatus;
   error?: string;
 };
+
+const cronPresets = [
+  { label: "Hourly at :55", value: "55 * * * *", preview: "Runs hourly at minute 55 UTC" },
+  { label: "Every hour", value: "0 * * * *", preview: "Runs hourly at minute 0 UTC" },
+  { label: "Daily at 9:00 UTC", value: "0 9 * * *", preview: "Runs daily at 09:00 UTC" },
+  { label: "Weekdays at 9:00 UTC", value: "0 9 * * 1-5", preview: "Runs Monday-Friday at 09:00 UTC" },
+  { label: "Weekly Monday 9:00 UTC", value: "0 9 * * 1", preview: "Runs every Monday at 09:00 UTC" },
+  { label: "Monthly on the 1st 9:00 UTC", value: "0 9 1 * *", preview: "Runs monthly on day 1 at 09:00 UTC" },
+];
+
+const cronAllowedPattern = /^[\d*\/,\-\s]+$/;
+const weekdayLabels: Record<string, string> = {
+  "0": "Sunday",
+  "1": "Monday",
+  "2": "Tuesday",
+  "3": "Wednesday",
+  "4": "Thursday",
+  "5": "Friday",
+  "6": "Saturday",
+  "7": "Sunday",
+};
+
+function padTime(value: string) {
+  return value.padStart(2, "0");
+}
+
+function cronDetails(value: string) {
+  const cron = value.trim().replace(/\s+/g, " ");
+  if (!cron) {
+    return { valid: false, preview: "Cron is required." };
+  }
+  const preset = cronPresets.find((item) => item.value === cron);
+  if (preset) {
+    return { valid: true, preview: preset.preview };
+  }
+  const parts = cron.split(" ");
+  if (parts.length !== 5) {
+    return { valid: false, preview: "Use five fields: minute hour day month weekday." };
+  }
+  if (!cronAllowedPattern.test(cron)) {
+    return { valid: false, preview: "Only numbers, *, /, comma, and ranges are supported here." };
+  }
+
+  const [minute, hour, day, month, weekday] = parts;
+  const fixedMinute = /^\d+$/.test(minute) ? Number(minute) : null;
+  const fixedHour = /^\d+$/.test(hour) ? Number(hour) : null;
+  if (fixedMinute !== null && (fixedMinute < 0 || fixedMinute > 59)) {
+    return { valid: false, preview: "Minute must be between 0 and 59." };
+  }
+  if (fixedHour !== null && (fixedHour < 0 || fixedHour > 23)) {
+    return { valid: false, preview: "Hour must be between 0 and 23." };
+  }
+
+  if (fixedMinute !== null && hour === "*" && day === "*" && month === "*" && weekday === "*") {
+    return { valid: true, preview: `Runs hourly at minute ${fixedMinute} UTC` };
+  }
+  if (fixedMinute !== null && fixedHour !== null && day === "*" && month === "*" && weekday === "*") {
+    return { valid: true, preview: `Runs daily at ${padTime(String(fixedHour))}:${padTime(String(fixedMinute))} UTC` };
+  }
+  if (fixedMinute !== null && fixedHour !== null && day === "*" && month === "*" && weekday === "1-5") {
+    return { valid: true, preview: `Runs Monday-Friday at ${padTime(String(fixedHour))}:${padTime(String(fixedMinute))} UTC` };
+  }
+  if (fixedMinute !== null && fixedHour !== null && day === "*" && month === "*" && weekdayLabels[weekday]) {
+    return { valid: true, preview: `Runs every ${weekdayLabels[weekday]} at ${padTime(String(fixedHour))}:${padTime(String(fixedMinute))} UTC` };
+  }
+  if (fixedMinute !== null && fixedHour !== null && /^\d+$/.test(day) && month === "*" && weekday === "*") {
+    return { valid: true, preview: `Runs monthly on day ${day} at ${padTime(String(fixedHour))}:${padTime(String(fixedMinute))} UTC` };
+  }
+
+  return { valid: true, preview: "Custom schedule. Times are interpreted as UTC." };
+}
 
 function formatDate(value: string | null) {
   if (!value) return "Not recorded";
@@ -229,6 +307,7 @@ export function TaskRunnerWorkspace() {
     return map;
   }, [runner.tasks]);
   const selectedRunResponse = runResponseText(selectedRun);
+  const createCron = cronDetails(createForm.scheduleCron);
 
   async function saveTask(task: TaskRecord) {
     const draft = drafts[task.key];
@@ -374,6 +453,7 @@ export function TaskRunnerWorkspace() {
             enabled: task.enabled,
             scheduleCron: task.scheduleCron ?? "",
           };
+          const cron = cronDetails(draft.scheduleCron);
           const latestRun = latestRunByTask.get(task.key);
           const runnerTask = runnerByTask.get(task.key);
           const dirty =
@@ -421,6 +501,26 @@ export function TaskRunnerWorkspace() {
                     <Clock3 className="h-4 w-4" />
                     Cron
                   </Label>
+                  <Select
+                    value={cronPresets.some((preset) => preset.value === draft.scheduleCron.trim()) ? draft.scheduleCron.trim() : ""}
+                    onValueChange={(value) =>
+                      setDrafts((current) => ({
+                        ...current,
+                        [task.key]: { ...draft, scheduleCron: value },
+                      }))
+                    }
+                  >
+                    <SelectTrigger aria-label={`Cron preset for ${task.name}`}>
+                      <SelectValue placeholder="Choose a preset" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cronPresets.map((preset) => (
+                        <SelectItem key={preset.value} value={preset.value}>
+                          {preset.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Input
                     id={`${task.key}-cron`}
                     value={draft.scheduleCron}
@@ -432,6 +532,9 @@ export function TaskRunnerWorkspace() {
                       }))
                     }
                   />
+                  <p className={`text-xs ${cron.valid ? "text-muted-foreground" : "text-destructive"}`}>
+                    {cron.preview}
+                  </p>
                 </div>
               </div>
 
@@ -461,7 +564,7 @@ export function TaskRunnerWorkspace() {
                   <Button
                     type="button"
                     onClick={() => saveTask(task)}
-                    disabled={!dirty || savingKey === task.key}
+                    disabled={!dirty || !cron.valid || savingKey === task.key}
                   >
                     <Save className="h-4 w-4" />
                     Save
@@ -551,12 +654,30 @@ export function TaskRunnerWorkspace() {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="custom-task-cron">Cron</Label>
+              <Select
+                value={cronPresets.some((preset) => preset.value === createForm.scheduleCron.trim()) ? createForm.scheduleCron.trim() : ""}
+                onValueChange={(value) => setCreateForm((current) => ({ ...current, scheduleCron: value }))}
+              >
+                <SelectTrigger aria-label="Custom task cron preset">
+                  <SelectValue placeholder="Choose a preset" />
+                </SelectTrigger>
+                <SelectContent>
+                  {cronPresets.map((preset) => (
+                    <SelectItem key={preset.value} value={preset.value}>
+                      {preset.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Input
                 id="custom-task-cron"
                 value={createForm.scheduleCron}
                 onChange={(event) => setCreateForm((current) => ({ ...current, scheduleCron: event.target.value }))}
                 placeholder="0 9 * * *"
               />
+              <p className={`text-xs ${createCron.valid ? "text-muted-foreground" : "text-destructive"}`}>
+                {createCron.preview}
+              </p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="custom-task-prompt">Prompt</Label>
@@ -576,7 +697,7 @@ export function TaskRunnerWorkspace() {
             <Button
               type="button"
               onClick={createCustomTask}
-              disabled={isCreating || !createForm.name.trim() || !createForm.scheduleCron.trim() || !createForm.prompt.trim()}
+              disabled={isCreating || !createForm.name.trim() || !createCron.valid || !createForm.prompt.trim()}
             >
               <Plus className="h-4 w-4" />
               Create
