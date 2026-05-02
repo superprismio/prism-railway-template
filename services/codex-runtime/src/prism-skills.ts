@@ -242,6 +242,18 @@ function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>)
   }
 
   if (
+    normalized.includes('create skill')
+    || normalized.includes('custom skill')
+    || normalized.includes('update skill')
+    || normalized.includes('install skill')
+    || normalized.includes('skill author')
+    || normalized.includes('skill file')
+    || normalized.includes('skill.md')
+  ) {
+    requested.add('prism-skill-author');
+  }
+
+  if (
     normalized.includes('config')
     || normalized.includes('configure')
     || normalized.includes('space config')

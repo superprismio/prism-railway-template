@@ -12,6 +12,8 @@ export interface HostedSkillSummary {
   readOnly: boolean;
 }
 
+const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
 function readSkillDescription(skillFilePath: string) {
   const lines = fs.readFileSync(skillFilePath, 'utf8').split(/\r?\n/);
   let inFrontmatter = false;
@@ -127,7 +129,7 @@ export function listHostedSkills(repoRoot: string, customSkillsRoot?: string) {
 
 export function resolveHostedSkillDirectory(repoRoot: string, skillName: string, customSkillsRoot?: string) {
   const normalizedSkillName = skillName.trim();
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(normalizedSkillName)) {
+  if (!SKILL_NAME_PATTERN.test(normalizedSkillName)) {
     return null;
   }
 
@@ -142,6 +144,62 @@ export function resolveHostedSkillDirectory(repoRoot: string, skillName: string,
   }
 
   return null;
+}
+
+function customSkillDirectory(customSkillsRoot: string, skillName: string) {
+  const normalizedSkillName = skillName.trim();
+  if (!SKILL_NAME_PATTERN.test(normalizedSkillName)) {
+    throw new Error('Invalid skill name');
+  }
+  return ensureDirectoryPath(path.join(customSkillsRoot, normalizedSkillName), customSkillsRoot);
+}
+
+function skillNameFromMarkdown(content: string) {
+  const lines = content.split(/\r?\n/);
+  let inFrontmatter = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === '---') {
+      if (inFrontmatter) {
+        return null;
+      }
+      inFrontmatter = true;
+      continue;
+    }
+    if (!inFrontmatter) {
+      continue;
+    }
+    const match = trimmed.match(/^name:\s*(.*)$/);
+    if (match) {
+      return match[1].trim().replace(/^['"]|['"]$/g, '') || null;
+    }
+  }
+  return null;
+}
+
+export function upsertCustomSkill(customSkillsRoot: string, skillName: string, content: string) {
+  const normalizedSkillName = skillName.trim();
+  const frontmatterName = skillNameFromMarkdown(content);
+  if (frontmatterName && frontmatterName !== normalizedSkillName) {
+    throw new Error('Skill frontmatter name must match skill name');
+  }
+  if (!content.trim().startsWith('---') || !content.includes('name:')) {
+    throw new Error('Skill content must include SKILL.md frontmatter with a name');
+  }
+
+  const skillDir = customSkillDirectory(customSkillsRoot, normalizedSkillName);
+  fs.mkdirSync(skillDir, { recursive: true });
+  const skillFilePath = path.join(skillDir, 'SKILL.md');
+  fs.writeFileSync(skillFilePath, content.trimEnd() + '\n', 'utf8');
+
+  return {
+    name: normalizedSkillName,
+    path: skillDir,
+    description: readSkillDescription(skillFilePath),
+    source: 'custom',
+    kind: 'custom',
+    readOnly: true,
+  } satisfies HostedSkillSummary;
 }
 
 export function readHostedSkillMarkdown(repoRoot: string, skillName: string, customSkillsRoot?: string) {
