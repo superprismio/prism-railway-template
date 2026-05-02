@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FilePlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,23 @@ function workflowRequiresTargetApp(workflow: WorkflowRecord | null | undefined) 
   );
 }
 
+function workflowSteps(workflow: WorkflowRecord | null) {
+  return Array.isArray(workflow?.definition.steps)
+    ? workflow.definition.steps.filter(
+        (step): step is Record<string, unknown> =>
+          Boolean(step) && typeof step === "object" && !Array.isArray(step),
+      )
+    : [];
+}
+
+function workflowStepLabel(step: Record<string, unknown>) {
+  return typeof step.label === "string" && step.label.trim()
+    ? step.label.trim()
+    : typeof step.key === "string"
+      ? step.key
+      : "Step";
+}
+
 export function NewChangeRequestDialog({
   open,
   onOpenChange,
@@ -45,8 +62,20 @@ export function NewChangeRequestDialog({
     ?? enabledWorkflows[0]?.key
     ?? "change-request-default";
   const [workflowKey, setWorkflowKey] = useState(defaultWorkflowKey);
+  const [targetAppId, setTargetAppId] = useState("");
   const selectedWorkflow = enabledWorkflows.find((workflow) => workflow.key === workflowKey) ?? null;
   const targetRequired = workflowRequiresTargetApp(selectedWorkflow);
+  const selectedWorkflowSteps = workflowSteps(selectedWorkflow);
+
+  useEffect(() => {
+    if (!enabledWorkflows.some((workflow) => workflow.key === workflowKey)) {
+      setWorkflowKey(defaultWorkflowKey);
+    }
+  }, [defaultWorkflowKey, enabledWorkflows, workflowKey]);
+
+  useEffect(() => {
+    setTargetAppId(targetRequired ? targetApps[0]?.id ?? "" : "");
+  }, [targetRequired, targetApps]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -56,8 +85,7 @@ export function NewChangeRequestDialog({
             New Request
           </DialogTitle>
           <DialogDescription>
-            Capture the request, workflow, and review context before routing it
-            into the workspace.
+            Capture a request and route it through a workflow.
           </DialogDescription>
         </DialogHeader>
 
@@ -71,26 +99,60 @@ export function NewChangeRequestDialog({
             <Input
               id="new-request-title"
               name="title"
-              placeholder="Fix mobile treasury panel spacing"
+              placeholder="Draft a blog post from recent memory"
               required
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="new-request-workflow">Workflow</Label>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              id="new-request-workflow"
+              name="workflowKey"
+              value={workflowKey}
+              onChange={(event) => setWorkflowKey(event.target.value)}
+            >
+              {enabledWorkflows.map((workflow) => (
+                <option key={workflow.id} value={workflow.key}>
+                  {workflow.name}
+                </option>
+              ))}
+            </select>
+            {selectedWorkflow ? (
+              <div className="border border-border/70 bg-muted/20 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {selectedWorkflowSteps.slice(0, 6).map((step) => (
+                    <span
+                      key={String(step.key ?? workflowStepLabel(step))}
+                      className="border border-border/70 bg-background px-2 py-1 text-xs font-medium"
+                    >
+                      {workflowStepLabel(step)}
+                    </span>
+                  ))}
+                </div>
+                {selectedWorkflow.description ? (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {selectedWorkflow.description}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="new-request-workflow">Workflow</Label>
+              <Label htmlFor="new-request-priority">Priority</Label>
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                id="new-request-workflow"
-                name="workflowKey"
-                value={workflowKey}
-                onChange={(event) => setWorkflowKey(event.target.value)}
+                defaultValue="normal"
+                id="new-request-priority"
+                name="priority"
               >
-                {enabledWorkflows.map((workflow) => (
-                  <option key={workflow.id} value={workflow.key}>
-                    {workflow.name}
-                  </option>
-                ))}
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
               </select>
             </div>
 
@@ -110,36 +172,22 @@ export function NewChangeRequestDialog({
                 <option value="ops">Ops</option>
               </select>
             </div>
-
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="new-request-priority">Priority</Label>
-              <select
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                defaultValue="normal"
-                id="new-request-priority"
-                name="priority"
-              >
-                <option value="low">Low</option>
-                <option value="normal">Normal</option>
-                <option value="high">High</option>
-                <option value="urgent">Urgent</option>
-              </select>
-            </div>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="new-request-target-app">
-              Target repository{targetRequired ? "" : " (optional)"}
+              Target context{targetRequired ? "" : " (optional)"}
             </Label>
             <select
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               id="new-request-target-app"
               name="targetAppId"
               required={targetRequired}
-              defaultValue={targetRequired ? targetApps[0]?.id ?? "" : ""}
+              value={targetAppId}
+              onChange={(event) => setTargetAppId(event.target.value)}
             >
               {!targetRequired ? (
-                <option value="">No repository target</option>
+                <option value="">No target context</option>
               ) : null}
               {targetApps.map((targetApp) => (
                 <option key={targetApp.id} value={targetApp.id}>
@@ -154,7 +202,7 @@ export function NewChangeRequestDialog({
             <Textarea
               id="new-request-description"
               name="description"
-              placeholder="Describe the issue, expected behavior, and any review constraints."
+              placeholder="Describe the desired output, source context, constraints, and review expectations."
               required
             />
           </div>
@@ -169,7 +217,7 @@ export function NewChangeRequestDialog({
             </Button>
             <Button type="submit">
               <FilePlus className="h-4 w-4" />
-              Create draft request
+              Create request
             </Button>
           </div>
         </form>
