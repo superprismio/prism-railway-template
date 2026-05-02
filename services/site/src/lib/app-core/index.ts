@@ -2,7 +2,7 @@ export { loadConfig, type AppConfig, type CommunityProvider } from './config';
 export { getDb, closeDb, runMigrations } from './db';
 export { getAdminBoardSnapshot, getAdminSetupStatus } from './admin-read';
 export { buildTargetEnvironmentDeployPlan, type TargetEnvironmentDeployPlan } from './deploy-adapters';
-export { buildHostedSkillArchive, listHostedSkills, type HostedSkillSummary } from './hosted-skills';
+export { buildHostedSkillArchive, listHostedSkills, readHostedSkillMarkdown, type HostedSkillSummary } from './hosted-skills';
 export {
   createAgentMessage,
   createAgentSession,

@@ -7,12 +7,16 @@ export interface HostedSkillSummary {
   name: string;
   path: string;
   description: string | null;
+  source: 'site' | 'custom';
+  kind: 'built-in' | 'custom';
+  readOnly: boolean;
 }
 
 function readSkillDescription(skillFilePath: string) {
   const lines = fs.readFileSync(skillFilePath, 'utf8').split(/\r?\n/);
   let inFrontmatter = false;
   let frontmatterConsumed = false;
+  let frontmatterDescription: string | null = null;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -26,6 +30,10 @@ function readSkillDescription(skillFilePath: string) {
     }
 
     if (inFrontmatter) {
+      const match = trimmed.match(/^description:\s*(.*)$/);
+      if (match) {
+        frontmatterDescription = match[1].trim().replace(/^['"]|['"]$/g, '') || null;
+      }
       continue;
     }
 
@@ -33,10 +41,10 @@ function readSkillDescription(skillFilePath: string) {
       continue;
     }
 
-    return trimmed;
+    return frontmatterDescription ?? trimmed;
   }
 
-  return null;
+  return frontmatterDescription;
 }
 
 function ensureDirectoryPath(candidatePath: string, rootPath: string) {
@@ -49,6 +57,10 @@ function ensureDirectoryPath(candidatePath: string, rootPath: string) {
   return resolved;
 }
 
+function isHostedSkillSummary(entry: HostedSkillSummary | null): entry is HostedSkillSummary {
+  return entry !== null;
+}
+
 export function getHostedSkillsRoot(repoRoot: string) {
   const candidates = [
     path.resolve(repoRoot, 'services/site/skills'),
@@ -59,8 +71,15 @@ export function getHostedSkillsRoot(repoRoot: string) {
   return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
 }
 
-export function listHostedSkills(repoRoot: string) {
-  const rootPath = getHostedSkillsRoot(repoRoot);
+function listSkillsFromRoot(
+  rootPath: string,
+  options: {
+    repoRoot: string;
+    source: HostedSkillSummary['source'];
+    kind: HostedSkillSummary['kind'];
+  },
+) : HostedSkillSummary[] {
+  const { repoRoot, source, kind } = options;
   if (!fs.existsSync(rootPath)) {
     return [];
   }
@@ -68,7 +87,7 @@ export function listHostedSkills(repoRoot: string) {
   return fs
     .readdirSync(rootPath, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
-    .map((entry) => {
+    .map((entry): HostedSkillSummary | null => {
       const skillDir = ensureDirectoryPath(path.join(rootPath, entry.name), rootPath);
       const skillFilePath = path.join(skillDir, 'SKILL.md');
       if (!fs.existsSync(skillFilePath)) {
@@ -77,33 +96,64 @@ export function listHostedSkills(repoRoot: string) {
 
       return {
         name: entry.name,
-        path: path.relative(repoRoot, skillDir),
+        path: source === 'custom' ? skillDir : path.relative(repoRoot, skillDir),
         description: readSkillDescription(skillFilePath),
+        source,
+        kind,
+        readOnly: true,
       } satisfies HostedSkillSummary;
     })
-    .filter((entry): entry is HostedSkillSummary => Boolean(entry))
+    .filter(isHostedSkillSummary)
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-export function resolveHostedSkillDirectory(repoRoot: string, skillName: string) {
+export function listHostedSkills(repoRoot: string, customSkillsRoot?: string) {
+  const builtIns = listSkillsFromRoot(getHostedSkillsRoot(repoRoot), {
+    repoRoot,
+    source: 'site',
+    kind: 'built-in',
+  });
+  const builtInNames = new Set(builtIns.map((skill) => skill.name));
+  const custom = customSkillsRoot
+    ? listSkillsFromRoot(customSkillsRoot, {
+        repoRoot,
+        source: 'custom',
+        kind: 'custom',
+      }).filter((skill) => !builtInNames.has(skill.name))
+    : [];
+
+  return [...builtIns, ...custom].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export function resolveHostedSkillDirectory(repoRoot: string, skillName: string, customSkillsRoot?: string) {
   const normalizedSkillName = skillName.trim();
   if (!/^[a-z0-9][a-z0-9-]*$/.test(normalizedSkillName)) {
     return null;
   }
 
-  const rootPath = getHostedSkillsRoot(repoRoot);
-  const skillDir = ensureDirectoryPath(path.join(rootPath, normalizedSkillName), rootPath);
-  const skillFilePath = path.join(skillDir, 'SKILL.md');
+  const roots = [getHostedSkillsRoot(repoRoot), ...(customSkillsRoot ? [customSkillsRoot] : [])];
+  for (const rootPath of roots) {
+    const skillDir = ensureDirectoryPath(path.join(rootPath, normalizedSkillName), rootPath);
+    const skillFilePath = path.join(skillDir, 'SKILL.md');
 
-  if (!fs.existsSync(skillFilePath)) {
-    return null;
+    if (fs.existsSync(skillFilePath)) {
+      return skillDir;
+    }
   }
 
-  return skillDir;
+  return null;
 }
 
-export function buildHostedSkillArchive(repoRoot: string, skillName: string) {
-  const skillDir = resolveHostedSkillDirectory(repoRoot, skillName);
+export function readHostedSkillMarkdown(repoRoot: string, skillName: string, customSkillsRoot?: string) {
+  const skillDir = resolveHostedSkillDirectory(repoRoot, skillName, customSkillsRoot);
+  if (!skillDir) {
+    return null;
+  }
+  return fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+}
+
+export function buildHostedSkillArchive(repoRoot: string, skillName: string, customSkillsRoot?: string) {
+  const skillDir = resolveHostedSkillDirectory(repoRoot, skillName, customSkillsRoot);
   if (!skillDir) {
     return null;
   }

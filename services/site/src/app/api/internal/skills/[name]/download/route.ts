@@ -17,7 +17,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const { name } = await context.params
   const config = loadConfig()
   const skillName = readRouteParam(name)
-  const archive = buildHostedSkillArchive(config.repoRoot, skillName)
+  const archive = buildHostedSkillArchive(config.repoRoot, skillName, config.customSkillsRoot)
 
   if (!archive) {
     return NextResponse.json({ ok: false, error: "Hosted skill not found" }, { status: 404 })

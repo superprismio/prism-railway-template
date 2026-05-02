@@ -10,7 +10,7 @@ export async function GET() {
   }
 
   const config = loadConfig()
-  const skills = listHostedSkills(config.repoRoot).map((skill) => ({
+  const skills = listHostedSkills(config.repoRoot, config.customSkillsRoot).map((skill) => ({
     ...skill,
     downloadPath: `/api/internal/skills/${skill.name}/download`,
   }))

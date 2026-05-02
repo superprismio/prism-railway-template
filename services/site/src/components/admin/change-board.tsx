@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   BotMessageSquare,
+  BookOpen,
   CalendarClock,
   FilePlus,
   LogOut,
@@ -19,6 +20,7 @@ import { ChangeRequestList } from "@/components/admin/change-request-list";
 import { RequestDetailsPanel } from "@/components/admin/change-request-details-panel";
 import { CodexConsole } from "@/components/admin/codex-console";
 import { NewChangeRequestDialog } from "@/components/admin/new-change-request-dialog";
+import { SkillsWorkspace } from "@/components/admin/skills-workspace";
 import { TaskRunnerWorkspace } from "@/components/admin/task-runner-workspace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,7 +39,7 @@ import {
   type RequestSortValue,
 } from "./change-request-utils";
 
-const workspaceTabs = ["change-requests", "codex-console", "tasks", "settings"];
+const workspaceTabs = ["change-requests", "codex-console", "tasks", "skills", "settings"];
 
 export function ChangeBoard({
   data: initialData,
@@ -308,6 +310,13 @@ export function ChangeBoard({
                 <span className="hidden md:inline">Tasks</span>
               </TabsTrigger>
               <TabsTrigger
+                value="skills"
+                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+              >
+                <BookOpen className="h-4 w-4 md:hidden" />
+                <span className="hidden md:inline">Skills</span>
+              </TabsTrigger>
+              <TabsTrigger
                 value="settings"
                 className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
               >
@@ -493,6 +502,19 @@ export function ChangeBoard({
             </div>
 
             <TaskRunnerWorkspace />
+          </section>
+        </TabsContent>
+
+        <TabsContent value="skills" className="mt-0 flex-1">
+          <section className="min-h-full">
+            <div className="border-b border-border/60 px-5 py-4 md:px-6">
+              <h1 className="text-2xl font-semibold tracking-tight">Skills</h1>
+              <p className="text-sm text-muted-foreground">
+                View built-in and instance custom Codex skills available to Prism.
+              </p>
+            </div>
+
+            <SkillsWorkspace />
           </section>
         </TabsContent>
 

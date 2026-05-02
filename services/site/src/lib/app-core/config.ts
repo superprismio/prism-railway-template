@@ -6,6 +6,7 @@ export interface AppConfig {
   workspaceRoot: string;
   repoRoot: string;
   dataRoot: string;
+  customSkillsRoot: string;
   docsDataDir: string;
   dbPath: string;
   port: number;
@@ -94,6 +95,7 @@ export function loadConfig(): AppConfig {
     workspaceRoot,
     repoRoot,
     dataRoot,
+    customSkillsRoot: path.resolve(dataRoot, 'skills'),
     docsDataDir: resolveDocsDataDir(repoRoot),
     dbPath: path.resolve(dataRoot, 'prism-agent.db'),
     port: Number(process.env.PORT || 4010),
