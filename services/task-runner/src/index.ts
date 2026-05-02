@@ -73,6 +73,7 @@ type AppTask = {
   inputConfig: Record<string, unknown>;
   instructionConfig: Record<string, unknown>;
   outputConfig: Record<string, unknown>;
+  agentConfig: Record<string, unknown>;
 };
 
 type TaskState = {
@@ -243,6 +244,7 @@ function isAppTask(value: unknown): value is AppTask {
     inputConfig?: unknown;
     instructionConfig?: unknown;
     outputConfig?: unknown;
+    agentConfig?: unknown;
   };
   return (
     typeof candidate.key === "string"
@@ -253,6 +255,7 @@ function isAppTask(value: unknown): value is AppTask {
     && isRecord(candidate.inputConfig)
     && isRecord(candidate.instructionConfig)
     && isRecord(candidate.outputConfig)
+    && isRecord(candidate.agentConfig)
   );
 }
 
@@ -276,6 +279,12 @@ async function registerTaskWithSite(task: BuiltInTask): Promise<void> {
         inputConfig: {},
         instructionConfig: {},
         outputConfig: {},
+        agentConfig: {
+          runtime: "task-runner",
+          mode: "builtin",
+          identity: "prism-task-runner",
+          skills: [],
+        },
         preserveExisting: true,
       }),
     });
@@ -330,11 +339,17 @@ function applyTaskConfig(task: RunnableTask, config: { enabled: boolean; cron: s
 }
 
 function requestedSkillsFromConfig(config: Record<string, unknown>): string[] {
-  const raw = config.requestedSkills ?? config.requested_skills;
+  const raw = config.requestedSkills ?? config.requested_skills ?? config.skills;
   if (!Array.isArray(raw)) {
     return [];
   }
   return raw.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+}
+
+function mergeRequestedSkills(siteTask: AppTask): string[] {
+  const instructionSkills = requestedSkillsFromConfig(siteTask.instructionConfig);
+  const agentSkills = requestedSkillsFromConfig(siteTask.agentConfig);
+  return Array.from(new Set([...instructionSkills, ...agentSkills]));
 }
 
 function outputDestinationsFromConfig(config: Record<string, unknown>): OutputDestination[] {
@@ -526,7 +541,8 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
           taskType: siteTask.taskType,
           inputConfig: siteTask.inputConfig,
           outputConfig: siteTask.outputConfig,
-          requestedSkills: requestedSkillsFromConfig(siteTask.instructionConfig),
+          agentConfig: siteTask.agentConfig,
+          requestedSkills: mergeRequestedSkills(siteTask),
         },
       });
       return response;

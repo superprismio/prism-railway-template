@@ -36,6 +36,7 @@ export async function POST(request: Request) {
     const changeRequest = createChangeRequest({
       title,
       description,
+      workflowKey: "change-request-default",
       requestType,
       priority,
       status: "submitted",

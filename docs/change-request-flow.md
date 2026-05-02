@@ -1,52 +1,58 @@
-# Change Request Flow
+# Request Workflow Flow
 
-This document shows the current Prism change-request flow as visual diagrams.
+This document shows the current Prism request flow as visual diagrams.
 
-It focuses on:
+The older change-request board is now backed by the workflow engine. The database table is still named `change_requests`, but product language and UI should use **Requests**.
 
-- board state changes
+This focuses on:
+
+- workflow state and board projection
 - Codex execution flow
 - GitHub branch and PR flow
 - Railway PR preview paths
+- workflow run/event records
 
 ## At A Glance
 
 ```mermaid
 flowchart TD
-    A[New CR created] --> B[submitted / Inbox]
-    B --> C[Codex triage pass]
-    C --> D[ready-for-agent]
-    D --> E[Admin review]
-    E --> F[Continue agent]
-    F --> G[in-progress]
-    G --> H[Codex edits target repo]
-    H --> I[Commit on CR branch]
-    I --> J[Push branch to GitHub]
-    J --> K[Deploy preview]
-    K --> L[awaiting-review]
-    L --> M{Needs more work?}
-    M -- Yes --> N[changes-requested]
-    N --> F
-    M -- No --> O[Human PR / merge flow]
-    O --> P[approved / closed]
+    A[New request created] --> B[workflow_run created]
+    B --> C[triage agent step]
+    C --> D[ready-for-agent board projection]
+    D --> E{Human approve-for-work gate}
+    E -- approved --> F[implement agent step]
+    F --> G[Codex edits target repo]
+    G --> H[Commit and push request branch]
+    H --> I[awaiting-review board projection]
+    I --> J{Human review gate}
+    J -- changes requested --> K[changes-requested board projection]
+    K --> F
+    J -- approved --> L[closed terminal step]
 ```
 
-## Board State Machine
+## Workflow Steps And Board Projection
 
 ```mermaid
 stateDiagram-v2
-    [*] --> submitted
-    submitted --> triaging: Codex triage starts
-    triaging --> ready-for-agent: Triage complete
-    ready-for-agent --> in-progress: Admin continues run
-    in-progress --> awaiting-review: Run completes
-    in-progress --> ready-for-agent: Run fails / retry needed
-    awaiting-review --> changes-requested: Review asks for changes
-    changes-requested --> in-progress: Admin continues same CR branch
-    awaiting-review --> approved: Human accepts result
-    approved --> closed
-    rejected --> closed
+    [*] --> triage
+    triage --> approve_for_work: triage complete
+    approve_for_work --> implement: approved
+    implement --> review: run complete
+    implement --> approve_for_work: run failed / retry needed
+    review --> implement: changes requested
+    review --> closed: approved
+    closed --> [*]
 ```
+
+The request `status` is still present because the board needs simple filters and labels. It is now a projection of the workflow step:
+
+- `submitted`, `triaging`, `needs-human-input`: Triage
+- `ready-for-agent`: Approve
+- `in-progress`, `changes-requested`: Work
+- `awaiting-review`: Review
+- `approved`, `rejected`, `closed`: Closed
+
+The workflow run and event records are the durable workflow state. Manual Advanced status changes remain an escape hatch and sync the workflow run by this projection.
 
 ## Runtime Sequence
 
@@ -54,25 +60,25 @@ stateDiagram-v2
 sequenceDiagram
     participant Admin as Admin UI / Discord
     participant Site as site
-    participant API as api
     participant Runtime as codex-runtime
     participant Repo as Target Repo
     participant GH as GitHub
     participant Railway as Railway
 
-    Admin->>Site: Create or continue CR
-    Site->>API: POST /responses or PATCH request
-    API->>API: Create execution record
-    API->>Runtime: POST /v1/responses
-    Runtime->>Repo: Clone or reuse CR workspace
-    Runtime->>Repo: Checkout CR branch from target base branch
-    Runtime->>Runtime: Run Codex with request context
+    Admin->>Site: Create or continue request
+    Site->>Site: Load workflow + workflow_run
+    Site->>Site: Resolve current step + markdown instructions
+    Site->>Site: Record workflow_event
+    Site->>Runtime: POST /v1/responses with workflow metadata
+    Runtime->>Repo: Clone or reuse request workspace
+    Runtime->>Repo: Checkout request branch from target base branch
+    Runtime->>Runtime: Run Codex with request context and step instructions
     Runtime->>Repo: Commit workspace changes
-    Runtime->>GH: Push CR branch
+    Runtime->>GH: Push request branch
     Runtime->>Railway: Report PR preview when available
-    Runtime-->>API: responseText + branch + commit + trace + deploy info
-    API->>API: Update execution and CR status
-    API-->>Site: Updated board data
+    Runtime-->>Site: responseText + branch + commit + trace + deploy info
+    Site->>Site: Record execution + workflow_event
+    Site->>Site: Advance workflow_run and status projection
     Site-->>Admin: Review status, links, logs
 ```
 
@@ -80,13 +86,13 @@ sequenceDiagram
 
 Current working rule:
 
-- new CRs should branch from the configured target environment branch first
+- new requests should branch from the configured target environment branch first
 - the target environment branch is operator-configured per app
-- existing CRs resume from their own branch first
+- existing requests resume from their own branch first
 
 ```mermaid
 flowchart LR
-    A[Target base branch] --> B[codex/cr-<number>-<slug>]
+    A[Target base branch] --> B[codex/request-<number>-<slug>]
     B --> C[Codex commits]
     C --> D[Push to GitHub origin]
     D --> E[Review from branch]
@@ -103,7 +109,7 @@ The template uses GitHub branches and Railway PR environments as the preferred p
 
 ```mermaid
 flowchart TD
-    A[CR branch pushed] --> B[Human opens PR to target branch]
+    A[Request branch pushed] --> B[Human opens PR to target branch]
     B --> C[Railway PR environment created]
     C --> D[Preview URL generated by Railway]
     D --> E[Review happens on PR preview]
@@ -124,12 +130,12 @@ PR environment notes:
 flowchart TD
     A[in-progress execution] --> B{Run succeeded?}
     B -- No --> C[Execution marked failed]
-    C --> D[CR moves back to ready-for-agent]
+    C --> D[Request moves back to ready-for-agent]
     D --> E[Admin reviews logs and comments]
     E --> F[Continue agent]
     F --> A
     B -- Yes --> G[Execution completed]
-    G --> H[CR moves to awaiting-review]
+    G --> H[Request moves to awaiting-review]
 ```
 
 Typical failure classes:
@@ -143,16 +149,43 @@ Typical failure classes:
 
 ```mermaid
 erDiagram
+    WORKFLOW ||--o{ WORKFLOW_RUN : has
+    WORKFLOW_RUN ||--o{ WORKFLOW_EVENT : records
+    CHANGE_REQUEST ||--|| WORKFLOW_RUN : drives
     CHANGE_REQUEST ||--o{ CHANGE_REQUEST_EXECUTION : has
     CHANGE_REQUEST }o--|| TARGET_APP : targets
     CHANGE_REQUEST }o--|| TARGET_ENVIRONMENT : runs_in
     CHANGE_REQUEST ||--o{ AGENT_SESSION : links
     AGENT_SESSION ||--o{ AGENT_MESSAGE : contains
 
+    WORKFLOW {
+      string key
+      string name
+      int version
+      json definitionJson
+    }
+
+    WORKFLOW_RUN {
+      string id
+      string workflowKey
+      string requestId
+      string currentStepKey
+      string status
+    }
+
+    WORKFLOW_EVENT {
+      string id
+      string workflowRunId
+      string eventType
+      string stepKey
+      json payload
+    }
+
     CHANGE_REQUEST {
       string id
       int requestNumber
       string status
+      string workflowKey
       string title
       string targetAppId
       string targetEnvironmentId
@@ -187,7 +220,10 @@ erDiagram
 
 Today the board should surface:
 
-- CR status
+- request status
+- workflow step label
+- workflow subway map
+- workflow events in History
 - latest execution summary
 - runtime trace
 - GitHub branch link

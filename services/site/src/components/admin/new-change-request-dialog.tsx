@@ -27,7 +27,7 @@ export function NewChangeRequestDialog({
       <DialogContent className="max-w-2xl rounded-[28px] border-border/70 bg-background p-0 shadow-[0_28px_90px_-42px_rgba(26,31,44,0.7)]">
         <DialogHeader className="border-b border-border/70 px-6 py-5 text-left">
           <DialogTitle className="text-2xl tracking-tight">
-            New Change Request
+            New Request
           </DialogTitle>
           <DialogDescription>
             Capture the task, target repository, and review context before

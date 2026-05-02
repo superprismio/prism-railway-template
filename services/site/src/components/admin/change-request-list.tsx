@@ -15,6 +15,7 @@ import type {
   ChangeRequestRecord,
   TargetAppRecord,
   TargetEnvironmentRecord,
+  WorkflowRecord,
 } from "@/lib/admin";
 
 import {
@@ -27,6 +28,7 @@ export function ChangeRequestList({
   requests,
   targetApps,
   targetEnvironments,
+  workflows,
   requestTypeOptions,
   statusFilter,
   typeFilter,
@@ -43,6 +45,7 @@ export function ChangeRequestList({
   requests: ChangeRequestRecord[];
   targetApps: TargetAppRecord[];
   targetEnvironments: TargetEnvironmentRecord[];
+  workflows: WorkflowRecord[];
   requestTypeOptions: string[];
   statusFilter: string;
   typeFilter: string;
@@ -170,6 +173,9 @@ export function ChangeRequestList({
                 request={request}
                 targetApps={targetApps}
                 targetEnvironments={targetEnvironments}
+                workflow={
+                  workflows.find((workflow) => workflow.key === request.workflowKey) ?? null
+                }
                 onOpen={onOpenRequest}
               />
             ))

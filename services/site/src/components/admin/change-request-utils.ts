@@ -3,6 +3,7 @@ import type {
   ChangeRequestRecord,
   TargetAppRecord,
   TargetEnvironmentRecord,
+  WorkflowRecord,
 } from "@/lib/admin";
 
 export const triageStatuses = [
@@ -33,6 +34,98 @@ export type AgentThreadMessage = {
 export type AgentThreadSession = {
   id: string;
 };
+
+export type WorkflowStep = {
+  key: string;
+  label: string;
+  type: string;
+  statusMap: string[];
+  instructionPath: string | null;
+};
+
+export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
+  {
+    key: "triage",
+    label: "Triage",
+    type: "agent",
+    statusMap: ["submitted", "triaging", "needs-human-input"],
+    instructionPath: "workflows/change-request-default/steps/triage.md",
+  },
+  {
+    key: "approve-for-work",
+    label: "Approve",
+    type: "gate",
+    statusMap: ["ready-for-agent"],
+    instructionPath: null,
+  },
+  {
+    key: "implement",
+    label: "Work",
+    type: "agent",
+    statusMap: ["in-progress", "changes-requested"],
+    instructionPath: "workflows/change-request-default/steps/implement.md",
+  },
+  {
+    key: "review",
+    label: "Review",
+    type: "gate",
+    statusMap: ["awaiting-review"],
+    instructionPath: "workflows/change-request-default/steps/review.md",
+  },
+  {
+    key: "closed",
+    label: "Closed",
+    type: "terminal",
+    statusMap: ["approved", "rejected", "closed"],
+    instructionPath: null,
+  },
+];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function workflowSteps(workflow: WorkflowRecord | null | undefined): WorkflowStep[] {
+  const rawSteps = Array.isArray(workflow?.definition?.steps) ? workflow.definition.steps : [];
+  const steps = rawSteps
+    .filter(isRecord)
+    .map((step): WorkflowStep | null => {
+      const key = typeof step.key === "string" && step.key.trim() ? step.key.trim() : "";
+      if (!key) return null;
+      const label =
+        typeof step.label === "string" && step.label.trim()
+          ? step.label.trim()
+          : typeof step.name === "string" && step.name.trim()
+            ? step.name.trim()
+            : key;
+      const type = typeof step.type === "string" && step.type.trim() ? step.type.trim() : "agent";
+      const statusMap = Array.isArray(step.statusMap)
+        ? step.statusMap.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        : [];
+      const instructionPath =
+        typeof step.instructionPath === "string" && step.instructionPath.trim()
+          ? step.instructionPath.trim()
+          : null;
+      return { key, label, type, statusMap, instructionPath };
+    })
+    .filter((step): step is WorkflowStep => Boolean(step));
+
+  return steps.length ? steps : fallbackRequestWorkflowSteps;
+}
+
+export function workflowStepForStatus(
+  status: string,
+  steps: WorkflowStep[],
+): { step: WorkflowStep; index: number } {
+  const index = steps.findIndex((step) => step.statusMap.includes(status));
+  if (index >= 0) {
+    return { step: steps[index], index };
+  }
+
+  const fallbackIndex = steps.findIndex((step) => step.type === "terminal");
+  const safeIndex = fallbackIndex >= 0 ? fallbackIndex : Math.max(0, steps.length - 1);
+  return { step: steps[safeIndex] ?? fallbackRequestWorkflowSteps[0], index: safeIndex };
+}
 
 export function priorityVariant(priority: string) {
   if (priority === "urgent") return "default";

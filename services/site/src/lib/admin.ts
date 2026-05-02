@@ -49,6 +49,7 @@ export type TargetEnvironmentRecord = {
 export type ChangeRequestRecord = {
   id: string
   requestNumber: number
+  workflowKey: string
   title: string
   description: string
   requestType: string
@@ -99,6 +100,32 @@ export type ChangeRequestExecutionRecord = {
   finishedAt: string | null
 }
 
+export type WorkflowRecord = {
+  id: string
+  key: string
+  name: string
+  description: string | null
+  version: number
+  definition: Record<string, unknown>
+  systemDefault: boolean
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type WorkflowEventRecord = {
+  id: string
+  workflowRunId: string
+  requestId: string
+  stepKey: string | null
+  eventType: string
+  actorType: string
+  actorId: string | null
+  note: string | null
+  payload: Record<string, unknown>
+  createdAt: string
+}
+
 export type AdminSetupStatus = {
   prismMemory: {
     configured: boolean
@@ -128,6 +155,7 @@ export type AdminBoardData = {
   targetApps: TargetAppRecord[]
   targetEnvironments: TargetEnvironmentRecord[]
   changeRequests: ChangeRequestRecord[]
+  workflows?: WorkflowRecord[]
 }
 
 export type AdminWorkspaceData = AdminBoardData & {
@@ -227,6 +255,7 @@ export async function getAdminBoardData(): Promise<
         targetApps: targetAppsJson.targetApps,
         targetEnvironments: targetEnvironmentsJson.targetEnvironments,
         changeRequests: changeRequestsJson.changeRequests,
+        workflows: [],
       },
     }
   } catch {

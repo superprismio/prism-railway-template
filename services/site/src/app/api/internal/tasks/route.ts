@@ -66,6 +66,7 @@ export async function POST(request: Request) {
     inputConfig: parseConfig(body.inputConfig ?? body.input_config),
     instructionConfig: parseConfig(body.instructionConfig ?? body.instruction_config),
     outputConfig: parseConfig(body.outputConfig ?? body.output_config),
+    agentConfig: parseConfig(body.agentConfig ?? body.agent_config),
   })
 
   return NextResponse.json({ ok: true, task })

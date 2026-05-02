@@ -35,6 +35,8 @@ import type {
   ChangeRequestRecord,
   TargetAppRecord,
   TargetEnvironmentRecord,
+  WorkflowEventRecord,
+  WorkflowRecord,
 } from "@/lib/admin";
 
 import {
@@ -46,34 +48,16 @@ import {
   isoLabel,
   priorityVariant,
   triageStatuses,
+  workflowStepForStatus,
+  workflowSteps,
+  type WorkflowStep,
   type AgentThreadMessage,
   type AgentThreadSession,
 } from "./change-request-utils";
 
-const commandCenterSteps = [
-  { status: "submitted", label: "Inbox" },
-  { status: "triaging", label: "Triage" },
-  { status: "ready-for-agent", label: "Ready" },
-  { status: "in-progress", label: "Working" },
-  { status: "awaiting-review", label: "Awaiting Review" },
-  { status: "approved", label: "Approved" },
-];
-
-function commandCenterStepIndex(status: string) {
-  if (status === "changes-requested") {
-    return commandCenterSteps.findIndex((step) => step.status === "triaging");
-  }
-
-  if (status === "closed") {
-    return commandCenterSteps.length;
-  }
-
-  const index = commandCenterSteps.findIndex((step) => step.status === status);
-  return index >= 0 ? index : 0;
-}
-
 function CommandCenter({
   status,
+  steps,
   triageSummary,
   agentRecommendation,
   targetApp,
@@ -88,6 +72,7 @@ function CommandCenter({
   onCloseRequest,
 }: {
   status: string;
+  steps: WorkflowStep[];
   triageSummary: string;
   agentRecommendation: string;
   targetApp: TargetAppRecord | null;
@@ -102,33 +87,55 @@ function CommandCenter({
   onCloseRequest: () => void;
 }) {
   const [reviewComment, setReviewComment] = useState("");
-  const currentStepIndex = commandCenterStepIndex(status);
+  const currentWorkflowPosition = workflowStepForStatus(status, steps);
+  const currentStepIndex = currentWorkflowPosition.index;
+  const currentStep = currentWorkflowPosition.step;
   const isReviewCommentRequired = status === "awaiting-review";
   const canRequestChanges = reviewComment.trim().length > 0;
+  const isRunning = ["triaging", "in-progress", "changes-requested"].includes(status);
+  const isTerminal = currentStep.type === "terminal" || ["approved", "rejected", "closed"].includes(status);
+  const isReviewGate = currentStep.type === "gate" && status === "awaiting-review";
+  const isApprovalGate = currentStep.type === "gate" && status === "ready-for-agent";
+  const canRunAgentStep = currentStep.type === "agent" && !isRunning && !isTerminal;
 
   return (
     <Card className="rounded-none border-border/70 bg-background shadow-none">
       <CardHeader className="space-y-4">
-        <div className="relative grid gap-3 md:grid-cols-6">
-          <div className="absolute left-[calc(100%/12)] right-[calc(100%/12)] top-4 hidden h-px bg-border md:block" />
+        <div
+          className="relative flex flex-col gap-3 md:grid"
+          style={{
+            gridTemplateColumns:
+              steps.length > 1
+                ? `repeat(${steps.length}, minmax(0, 1fr))`
+                : "minmax(0, 1fr)",
+          }}
+        >
           <div
-            className="absolute left-[calc(100%/12)] top-4 hidden h-px bg-primary md:block"
+            className="absolute top-4 hidden h-px bg-border md:block"
             style={{
+              left: `calc(100% / ${steps.length * 2})`,
+              right: `calc(100% / ${steps.length * 2})`,
+            }}
+          />
+          <div
+            className="absolute top-4 hidden h-px bg-primary md:block"
+            style={{
+              left: `calc(100% / ${steps.length * 2})`,
               width:
-                currentStepIndex >= commandCenterSteps.length
-                  ? "calc(100% - (100% / 6))"
-                  : `calc((100% - (100% / 6)) * ${
-                      currentStepIndex / (commandCenterSteps.length - 1)
+                currentStepIndex >= steps.length
+                  ? `calc(100% - (100% / ${steps.length}))`
+                  : `calc((100% - (100% / ${steps.length})) * ${
+                      currentStepIndex / Math.max(1, steps.length - 1)
                     })`,
             }}
           />
-          {commandCenterSteps.map((step, index) => {
+          {steps.map((step, index) => {
             const isComplete = status === "closed" || currentStepIndex > index;
             const isCurrent = currentStepIndex === index;
 
             return (
-              <div key={step.status} className="relative flex gap-3 md:block">
-                {index < commandCenterSteps.length - 1 ? (
+              <div key={step.key} className="relative flex gap-3 md:block">
+                {index < steps.length - 1 ? (
                   <div
                     className={`absolute left-4 top-8 h-[calc(100%+0.75rem)] w-px md:hidden ${
                       isComplete ? "bg-primary" : "bg-border"
@@ -160,6 +167,7 @@ function CommandCenter({
                   >
                     {step.label}
                   </p>
+                  <p className="text-xs text-muted-foreground">{step.type}</p>
                 </div>
               </div>
             );
@@ -168,47 +176,57 @@ function CommandCenter({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {status === "submitted" ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium">{currentStep.label}</p>
+              <Badge variant="outline">{currentStep.type}</Badge>
+              <Badge variant="outline">{status}</Badge>
+            </div>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              {currentStep.type === "agent" && isRunning
+                ? "The agent is running this workflow step."
+                : currentStep.type === "agent"
+                  ? "This workflow step is ready for an agent run."
+                  : currentStep.type === "gate"
+                    ? "This workflow step is waiting for a human decision."
+                    : currentStep.type === "terminal"
+                      ? "This workflow has reached a terminal step."
+                      : "This workflow step is active."}
+            </p>
+            {currentStep.instructionPath ? (
+              <p className="mt-1 truncate text-xs text-muted-foreground">
+                {currentStep.instructionPath}
+              </p>
+            ) : null}
+          </div>
+          {canRunAgentStep ? (
+            <Button type="button" onClick={onTriage} disabled={isPending}>
+              {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+              Run {currentStep.label}
+            </Button>
+          ) : null}
+        </div>
+
+        {isRunning ? (
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
             <div>
-              <p className="font-medium">New change request</p>
+              <p className="font-medium">Step running</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                This request is waiting for triage. Prism can review the
-                request, summarize the scope, and propose the implementation
-                path.
-              </p>
-            </div>
-            <Button type="button" onClick={onTriage} disabled={isPending}>
-              {isPending ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-              ) : null}
-              Triage
-            </Button>
-          </div>
-        ) : null}
-
-        {status === "triaging" || status === "changes-requested" ? (
-          <div className="space-y-4">
-            <div>
-              <p className="font-medium">
-                {status === "changes-requested"
-                  ? "Changes requested"
-                  : "Triage in progress"}
-              </p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                The agent is preparing or revising the implementation plan.
+                Prism is working through the current workflow step. The request
+                will move to the next mapped status when the run completes.
               </p>
             </div>
           </div>
         ) : null}
 
-        {status === "ready-for-agent" ? (
+        {isApprovalGate ? (
           <div className="space-y-4">
             <div>
-              <p className="font-medium">Ready for approval</p>
+              <p className="font-medium">{currentStep.label}</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Review the triage output, then approve it to start
-                implementation.
+                Review the agent output, then approve this gate to continue to
+                the next workflow step.
               </p>
             </div>
             <div className="space-y-4">
@@ -238,28 +256,19 @@ function CommandCenter({
                 {isPending ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                 ) : null}
-                Approve
+                Approve and continue
               </Button>
             </div>
           </div>
         ) : null}
 
-        {status === "in-progress" ? (
-          <div>
-            <p className="font-medium">Working</p>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              The agent is implementing this request.
-            </p>
-          </div>
-        ) : null}
-
-        {status === "awaiting-review" ? (
+        {isReviewGate ? (
           <div className="space-y-4">
             <div>
-              <p className="font-medium">Awaiting review</p>
+              <p className="font-medium">{currentStep.label}</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                The code is ready for review. Check the branch, then approve or
-                request changes with feedback for the agent.
+                Review the latest execution artifacts. Approve the workflow or
+                route feedback back to the agent.
               </p>
             </div>
 
@@ -334,7 +343,7 @@ function CommandCenter({
                 {isPending ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                 ) : null}
-                Request changes
+                Send back to agent
               </Button>
               <Button
                 type="button"
@@ -344,7 +353,7 @@ function CommandCenter({
                 {isPending ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                 ) : null}
-                Approve
+                Approve workflow
               </Button>
             </div>
           </div>
@@ -381,20 +390,11 @@ function CommandCenter({
           </div>
         ) : null}
 
-        {![
-          "submitted",
-          "triaging",
-          "changes-requested",
-          "ready-for-agent",
-          "in-progress",
-          "awaiting-review",
-          "approved",
-          "closed",
-        ].includes(status) ? (
+        {!canRunAgentStep && !isRunning && !isApprovalGate && !isReviewGate && !["approved", "closed"].includes(status) ? (
           <div>
-            <p className="font-medium">{status}</p>
+            <p className="font-medium">{currentStep.label}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              This request is in a custom state.
+              This workflow step has no specialized controls yet.
             </p>
           </div>
         ) : null}
@@ -407,6 +407,7 @@ export function RequestDetailsPanel({
   request,
   targetApp,
   targetEnvironment,
+  workflow,
   isPending,
   error,
   onSave,
@@ -414,6 +415,7 @@ export function RequestDetailsPanel({
   request: ChangeRequestRecord;
   targetApp: TargetAppRecord | null;
   targetEnvironment: TargetEnvironmentRecord | null;
+  workflow: WorkflowRecord | null;
   isPending: boolean;
   error: string | null;
   onSave: (payload: {
@@ -424,7 +426,12 @@ export function RequestDetailsPanel({
 }) {
   const configuredBaseBranch =
     targetEnvironment?.branch ?? targetApp?.defaultBranch ?? null;
+  const currentWorkflowSteps = useMemo(() => workflowSteps(workflow), [workflow]);
   const [status, setStatus] = useState(request.status);
+  const currentWorkflowStep = useMemo(
+    () => workflowStepForStatus(status, currentWorkflowSteps).step,
+    [currentWorkflowSteps, status],
+  );
   const [triageSummary, setTriageSummary] = useState(
     request.triageSummary ?? "",
   );
@@ -444,6 +451,9 @@ export function RequestDetailsPanel({
   const [commentDraft, setCommentDraft] = useState("");
   const [threadError, setThreadError] = useState<string | null>(null);
   const [executions, setExecutions] = useState<ChangeRequestExecutionRecord[]>(
+    [],
+  );
+  const [workflowEvents, setWorkflowEvents] = useState<WorkflowEventRecord[]>(
     [],
   );
   const [isDraftDirty, setIsDraftDirty] = useState(false);
@@ -527,16 +537,19 @@ export function RequestDetailsPanel({
 
     async function pollLiveState() {
       try {
-        const [threadResponse, executionResponse] = await Promise.all([
+        const [threadResponse, executionResponse, workflowEventResponse] = await Promise.all([
           fetch(`/admin/change-requests/${request.id}/agent-thread`, {
             cache: "no-store",
           }),
           fetch(`/admin/change-requests/${request.id}/executions`, {
             cache: "no-store",
           }),
+          fetch(`/admin/change-requests/${request.id}/workflow-events`, {
+            cache: "no-store",
+          }),
         ]);
 
-        if (!threadResponse.ok || !executionResponse.ok || cancelled) {
+        if (!threadResponse.ok || !executionResponse.ok || !workflowEventResponse.ok || cancelled) {
           return;
         }
 
@@ -546,6 +559,9 @@ export function RequestDetailsPanel({
         };
         const executionPayload = (await executionResponse.json()) as {
           executions?: ChangeRequestExecutionRecord[];
+        };
+        const workflowEventPayload = (await workflowEventResponse.json()) as {
+          events?: WorkflowEventRecord[];
         };
 
         if (cancelled) return;
@@ -557,6 +573,11 @@ export function RequestDetailsPanel({
         setExecutions(
           Array.isArray(executionPayload.executions)
             ? executionPayload.executions
+            : [],
+        );
+        setWorkflowEvents(
+          Array.isArray(workflowEventPayload.events)
+            ? workflowEventPayload.events
             : [],
         );
       } catch {
@@ -678,6 +699,50 @@ export function RequestDetailsPanel({
     };
   }, [request.id]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadWorkflowEvents() {
+      try {
+        const response = await fetch(
+          `/admin/change-requests/${request.id}/workflow-events`,
+          { cache: "no-store" },
+        );
+        if (!response.ok) {
+          throw new Error("Could not load workflow events");
+        }
+
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          events?: WorkflowEventRecord[];
+          error?: string;
+        };
+
+        if (cancelled) return;
+        if (payload.ok === false) {
+          throw new Error(payload.error || "Could not load workflow events");
+        }
+
+        setWorkflowEvents(Array.isArray(payload.events) ? payload.events : []);
+      } catch (error) {
+        if (!cancelled) {
+          setThreadError(
+            (current) =>
+              current ??
+              (error instanceof Error
+                ? error.message
+                : "Could not load workflow events"),
+          );
+        }
+      }
+    }
+
+    loadWorkflowEvents();
+    return () => {
+      cancelled = true;
+    };
+  }, [request.id]);
+
   async function refreshThread() {
     const response = await fetch(
       `/admin/change-requests/${request.id}/agent-thread`,
@@ -710,6 +775,21 @@ export function RequestDetailsPanel({
     setExecutions(Array.isArray(payload.executions) ? payload.executions : []);
   }
 
+  async function refreshWorkflowEvents() {
+    const response = await fetch(
+      `/admin/change-requests/${request.id}/workflow-events`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) {
+      throw new Error("Could not refresh workflow events");
+    }
+
+    const payload = (await response.json()) as {
+      events?: WorkflowEventRecord[];
+    };
+    setWorkflowEvents(Array.isArray(payload.events) ? payload.events : []);
+  }
+
   async function addRequestComment(content: string) {
     const response = await fetch(
       `/admin/change-requests/${request.id}/comments`,
@@ -738,7 +818,11 @@ export function RequestDetailsPanel({
     return payload.session ?? threadSession;
   }
 
-  async function runAgent(prompt: string, session?: AgentThreadSession | null) {
+  async function runAgent(
+    prompt: string,
+    session?: AgentThreadSession | null,
+    workflowAction?: string,
+  ) {
     const response = await fetch("/admin/responses", {
       method: "POST",
       headers: {
@@ -749,6 +833,7 @@ export function RequestDetailsPanel({
         session_id: session?.id ?? threadSession?.id ?? null,
         linked_change_request_id: request.id,
         linked_target_environment_id: request.targetEnvironmentId,
+        workflow_action: workflowAction ?? null,
         requested_skills: ["change-request-ops", "target-deploy-ops"],
       }),
     });
@@ -767,6 +852,7 @@ export function RequestDetailsPanel({
     }
     await refreshThread();
     await refreshExecutions();
+    await refreshWorkflowEvents();
   }
 
   function saveRequestState(nextStatus: string) {
@@ -804,8 +890,9 @@ export function RequestDetailsPanel({
         ?.content.trim() ?? null;
 
     const prompt = [
-      `Continue work on change request #${request.requestNumber}: ${request.title}.`,
+      `Continue workflow step ${currentWorkflowStep.key} for request #${request.requestNumber}: ${request.title}.`,
       `Current request status: ${request.status}.`,
+      `Workflow step label: ${currentWorkflowStep.label}.`,
       latestComment
         ? `Most recent admin comment to follow: ${latestComment}`
         : "No new admin comment was provided; continue from the existing request context and thread history.",
@@ -828,14 +915,19 @@ export function RequestDetailsPanel({
 
   function handleCommandTriage() {
     const prompt = [
-      `Triage change request #${request.requestNumber}: ${request.title}.`,
-      "Review the request context, identify the implementation scope, update the triage summary and suggested changes, and set the request state appropriately when triage is complete.",
+      `Run workflow step ${currentWorkflowStep.key} for request #${request.requestNumber}: ${request.title}.`,
+      `Step label: ${currentWorkflowStep.label}.`,
+      currentWorkflowStep.instructionPath
+        ? `Use the workflow step instructions at ${currentWorkflowStep.instructionPath}.`
+        : "Use the current workflow step instructions from runtime metadata.",
+      "Use the request context and thread history. Return a concise summary of what changed or what should happen next.",
     ].join("\n");
 
     setThreadError(null);
     startCommandTransition(async () => {
       try {
-        saveRequestState("triaging");
+        setStatus("triaging");
+        setManualStatus("triaging");
         await runAgent(prompt);
       } catch (error) {
         setThreadError(
@@ -847,15 +939,16 @@ export function RequestDetailsPanel({
 
   function handleApproveSolution() {
     const prompt = [
-      `Implement approved change request #${request.requestNumber}: ${request.title}.`,
-      "The proposed solution has been approved. Use the triage summary, suggested changes, request context, and thread history to implement the work. Move the request through Working and leave a summary when it is ready for review.",
+      `Approve current gate and continue workflow for request #${request.requestNumber}: ${request.title}.`,
+      "Use the workflow manifest to route to the next agent step. Use the triage summary, suggested changes, request context, and thread history.",
     ].join("\n");
 
     setThreadError(null);
     startCommandTransition(async () => {
       try {
-        saveRequestState("in-progress");
-        await runAgent(prompt);
+        setStatus("in-progress");
+        setManualStatus("in-progress");
+        await runAgent(prompt, null, "approved");
       } catch (error) {
         setThreadError(
           error instanceof Error
@@ -875,17 +968,18 @@ export function RequestDetailsPanel({
     if (!content) return;
 
     const prompt = [
-      `Review changes were requested for change request #${request.requestNumber}: ${request.title}.`,
+      `Route review feedback back to the workflow agent for request #${request.requestNumber}: ${request.title}.`,
       `Review feedback to address: ${content}`,
-      "Apply the feedback, update the request state if appropriate, and leave a detailed summary comment when the request is ready for review again.",
+      "Use the workflow manifest to return to the appropriate agent step. Apply the feedback and leave a detailed summary when the request is ready for review again.",
     ].join("\n");
 
     setThreadError(null);
     startCommandTransition(async () => {
       try {
-        saveRequestState("changes-requested");
+        setStatus("changes-requested");
+        setManualStatus("changes-requested");
         const session = await addRequestComment(content);
-        await runAgent(prompt, session);
+        await runAgent(prompt, session, "changesRequested");
       } catch (error) {
         setThreadError(
           error instanceof Error ? error.message : "Could not request changes",
@@ -920,6 +1014,7 @@ export function RequestDetailsPanel({
         <div className="space-y-6">
           <CommandCenter
             status={status}
+            steps={currentWorkflowSteps}
             triageSummary={triageSummary}
             agentRecommendation={agentRecommendation}
             targetApp={targetApp}
@@ -1305,10 +1400,57 @@ export function RequestDetailsPanel({
             <CardHeader>
               <CardTitle>History</CardTitle>
               <CardDescription>
-                Lifecycle timestamps sorted newest to oldest.
+                Workflow events and lifecycle timestamps.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  Workflow Events
+                </p>
+                {workflowEvents.length ? (
+                  workflowEvents.map((event) => (
+                    <div
+                      key={event.id}
+                      className="rounded-none border border-border/70 bg-background/70 p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">{event.eventType}</Badge>
+                          {event.stepKey ? (
+                            <Badge variant="secondary">{event.stepKey}</Badge>
+                          ) : null}
+                          <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            {event.actorType}
+                          </span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {isoLabel(event.createdAt) ?? ""}
+                        </span>
+                      </div>
+                      {event.note ? (
+                        <p className="mt-3 whitespace-pre-wrap leading-6">
+                          {event.note}
+                        </p>
+                      ) : null}
+                      {Object.keys(event.payload).length ? (
+                        <pre className="mt-3 max-h-40 overflow-auto rounded-none border border-border/60 bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+                          {JSON.stringify(event.payload, null, 2)}
+                        </pre>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                    No workflow events recorded yet.
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 pt-3">
+                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  Lifecycle
+                </p>
               {lifecycleEvents.map((event) => (
                 <div
                   key={event.label}
@@ -1320,6 +1462,7 @@ export function RequestDetailsPanel({
                   <p className="mt-2">{isoLabel(event.value) ?? "Not yet"}</p>
                 </div>
               ))}
+              </div>
             </CardContent>
           </Card>
             </TabsContent>

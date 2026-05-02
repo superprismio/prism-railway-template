@@ -1,20 +1,26 @@
 import { randomUUID } from "node:crypto"
+import fs from "node:fs"
+import path from "node:path"
 import { NextResponse } from "next/server"
 import {
   buildTargetEnvironmentDeployPlan,
   createAgentMessage,
   createAgentSession,
   createChangeRequestExecution,
+  createWorkflowEvent,
+  ensureWorkflowRunForRequest,
   getAgentSession,
   getChangeRequest,
   getTargetApp,
   getTargetEnvironment,
+  getWorkflowByKey,
   listAgentMessages,
   listChangeRequestExecutions,
   loadConfig,
   updateAgentSession,
   updateChangeRequest,
   updateChangeRequestExecution,
+  updateWorkflowRun,
 } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
@@ -141,30 +147,6 @@ function parseResponseInputMessages(input: unknown) {
     .filter((entry): entry is ResponseInputMessage => Boolean(entry))
 }
 
-function getLinkedChangeRequestPhase(status: string | null | undefined) {
-  if (!status) {
-    return null
-  }
-
-  if (["submitted", "triaging", "needs-human-input"].includes(status)) {
-    return "triage" as const
-  }
-
-  if (["ready-for-agent", "in-progress", "awaiting-review", "changes-requested"].includes(status)) {
-    return "execution" as const
-  }
-
-  return null
-}
-
-function getRunningStatusForPhase(phase: "triage" | "execution") {
-  return phase === "triage" ? "triaging" : "in-progress"
-}
-
-function getCompletedStatusForPhase(phase: "triage" | "execution") {
-  return phase === "triage" ? "ready-for-agent" : "awaiting-review"
-}
-
 function hasActiveExecution(changeRequestId: string, excludeExecutionId?: string | null) {
   return listChangeRequestExecutions(changeRequestId).some((execution) => {
     if (excludeExecutionId && execution.id === excludeExecutionId) {
@@ -173,18 +155,6 @@ function hasActiveExecution(changeRequestId: string, excludeExecutionId?: string
 
     return ["planned", "running"].includes(execution.status)
   })
-}
-
-function getPhaseInstruction(phase: "triage" | "execution" | null) {
-  if (phase === "triage") {
-    return "This request is currently in triage. Use this turn only to analyze scope, write triage details, and stop after moving it to ready-for-agent. Do not start implementation, deploy work, or execution in this same turn."
-  }
-
-  if (phase === "execution") {
-    return "This request is already approved for agent work. Treat recent user comments as execution instructions and report what changed, what is blocked, and what should happen next."
-  }
-
-  return null
 }
 
 function formatTraceSummary(trace: RuntimeTraceEntry[] | undefined) {
@@ -196,6 +166,82 @@ function formatTraceSummary(trace: RuntimeTraceEntry[] | undefined) {
     .slice(-8)
     .map((entry) => `[${entry.at}] ${entry.kind}: ${entry.message}`)
     .join("\n")
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+function workflowSteps(definition: Record<string, unknown> | undefined) {
+  const raw = Array.isArray(definition?.steps) ? definition.steps : []
+  return raw.filter(isRecord).filter((step) => typeof step.key === "string" && step.key.trim())
+}
+
+function stepKey(step: Record<string, unknown>) {
+  return typeof step.key === "string" ? step.key.trim() : ""
+}
+
+function stepType(step: Record<string, unknown>) {
+  return typeof step.type === "string" && step.type.trim() ? step.type.trim() : "agent"
+}
+
+function statusMap(step: Record<string, unknown>) {
+  return Array.isArray(step.statusMap)
+    ? step.statusMap.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : []
+}
+
+function statusForStep(step: Record<string, unknown>, preference: "running" | "waiting" | "complete" = "waiting") {
+  const statuses = statusMap(step)
+  if (!statuses.length) return null
+  if (preference === "running") {
+    return statuses.find((status) => ["triaging", "in-progress"].includes(status)) ?? statuses[0]
+  }
+  return statuses[0]
+}
+
+function findStepByKey(steps: Record<string, unknown>[], key: string | null | undefined) {
+  return steps.find((step) => stepKey(step) === key) ?? null
+}
+
+function findStepForStatus(steps: Record<string, unknown>[], status: string | null | undefined) {
+  if (!status) return null
+  return steps.find((step) => statusMap(step).includes(status)) ?? null
+}
+
+function nextStepForAction(steps: Record<string, unknown>[], step: Record<string, unknown>, action: string | null) {
+  if (action && isRecord(step.routes)) {
+    const routeValue = step.routes[action]
+    if (typeof routeValue === "string") {
+      return findStepByKey(steps, routeValue)
+    }
+  }
+  const next = typeof step.next === "string" ? step.next : null
+  return next ? findStepByKey(steps, next) : null
+}
+
+function readInstructionFile(instructionPath: unknown) {
+  if (typeof instructionPath !== "string" || !instructionPath.trim()) {
+    return null
+  }
+  const config = loadConfig()
+  const normalized = instructionPath.replace(/^\/+/, "")
+  const absolutePath = path.resolve(config.repoRoot, "services/site", normalized)
+  const allowedRoot = path.resolve(config.repoRoot, "services/site/workflows")
+  if (!absolutePath.startsWith(allowedRoot)) {
+    return null
+  }
+  try {
+    return fs.readFileSync(absolutePath, "utf8").trim()
+  } catch {
+    return null
+  }
+}
+
+function requestedSkillsFromAgentConfig(config: unknown) {
+  if (!isRecord(config)) return []
+  const skills = Array.isArray(config.skills) ? config.skills : []
+  return skills.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim())
 }
 
 function summarizeGitPushState(trace: RuntimeTraceEntry[] | undefined) {
@@ -390,6 +436,32 @@ export async function POST(request: Request) {
   const linkedLatestExecution = activeLinkedChangeRequestId
     ? listChangeRequestExecutions(activeLinkedChangeRequestId)[0] ?? null
     : null
+  const workflowAction = parseNullableString(body.workflow_action ?? body.workflowAction) ?? null
+  const linkedWorkflow = linkedChangeRequest ? getWorkflowByKey(linkedChangeRequest.workflowKey) : null
+  const linkedWorkflowSteps = workflowSteps(linkedWorkflow?.definition)
+  const linkedWorkflowRun = linkedChangeRequest
+    ? ensureWorkflowRunForRequest({
+        requestId: linkedChangeRequest.id,
+        workflowKey: linkedChangeRequest.workflowKey,
+        status: linkedChangeRequest.status,
+      })
+    : null
+  const currentWorkflowStep =
+    linkedWorkflowRun
+      ? findStepByKey(linkedWorkflowSteps, linkedWorkflowRun.currentStepKey) ??
+        findStepForStatus(linkedWorkflowSteps, linkedChangeRequest?.status)
+      : null
+  const runnableWorkflowStep =
+    currentWorkflowStep && stepType(currentWorkflowStep) === "gate"
+      ? nextStepForAction(linkedWorkflowSteps, currentWorkflowStep, workflowAction || "approved")
+      : currentWorkflowStep
+  const workflowStepInstruction = runnableWorkflowStep
+    ? readInstructionFile(runnableWorkflowStep.instructionPath)
+    : null
+  const workflowAgentConfig = {
+    ...(isRecord(linkedWorkflow?.definition?.agentConfig) ? linkedWorkflow.definition.agentConfig : {}),
+    ...(isRecord(runnableWorkflowStep?.agentConfig) ? runnableWorkflowStep?.agentConfig : {}),
+  }
   const requestedSkillsInput: unknown[] = Array.isArray(body.requested_skills ?? body.requestedSkills)
     ? (body.requested_skills ?? body.requestedSkills) as unknown[]
     : []
@@ -398,7 +470,7 @@ export async function POST(request: Request) {
       ...requestedSkillsInput
         .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
         .map((entry: string) => entry.trim()),
-      ...(activeLinkedChangeRequestId ? ["change-request-ops", "target-deploy-ops"] : []),
+      ...requestedSkillsFromAgentConfig(workflowAgentConfig),
     ]),
   )
 
@@ -413,19 +485,43 @@ export async function POST(request: Request) {
     },
   })
 
-  const linkedRequestPhase = getLinkedChangeRequestPhase(linkedChangeRequest?.status ?? null)
   const requestStartedFromStatus = linkedChangeRequest?.status ?? null
-  const requestRunningStatus = linkedRequestPhase ? getRunningStatusForPhase(linkedRequestPhase) : null
-  const linkedChangeRequestPhaseInstruction = getPhaseInstruction(linkedRequestPhase)
+  const requestRunningStatus = runnableWorkflowStep ? statusForStep(runnableWorkflowStep, "running") : null
+  const requestCompletedStatus = runnableWorkflowStep
+    ? statusForStep(nextStepForAction(linkedWorkflowSteps, runnableWorkflowStep, "approved") ?? runnableWorkflowStep, "waiting")
+    : null
+  const runnableStepKey = runnableWorkflowStep ? stepKey(runnableWorkflowStep) : null
   let activeExecutionId: string | null = null
-  let activeExecutionCreatedAt: string | null = null
 
-  if (activeLinkedChangeRequestId && linkedChangeRequest && linkedRequestPhase && requestRunningStatus) {
-    if (linkedRequestPhase === "execution" && hasActiveExecution(activeLinkedChangeRequestId)) {
+  if (activeLinkedChangeRequestId && linkedChangeRequest && linkedWorkflowRun && runnableWorkflowStep && requestRunningStatus) {
+    if (stepType(runnableWorkflowStep) !== "agent") {
+      return NextResponse.json(
+        { ok: false, error: "WORKFLOW_STEP_NOT_RUNNABLE" },
+        { status: 409 },
+      )
+    }
+
+    if (hasActiveExecution(activeLinkedChangeRequestId)) {
       return NextResponse.json(
         { ok: false, error: "CHANGE_REQUEST_EXECUTION_ALREADY_RUNNING" },
         { status: 409 },
       )
+    }
+
+    if (currentWorkflowStep && stepType(currentWorkflowStep) === "gate") {
+      createWorkflowEvent({
+        workflowRunId: linkedWorkflowRun.id,
+        requestId: activeLinkedChangeRequestId,
+        stepKey: stepKey(currentWorkflowStep),
+        eventType: `gate.${workflowAction || "approved"}`,
+        actorType: "admin",
+        note: latestUserMessage.content,
+        payload: {
+          fromStepKey: stepKey(currentWorkflowStep),
+          toStepKey: runnableStepKey,
+          startedFromStatus: requestStartedFromStatus,
+        },
+      })
     }
 
     if (linkedChangeRequest.status !== requestRunningStatus) {
@@ -433,6 +529,23 @@ export async function POST(request: Request) {
         status: requestRunningStatus,
       })
     }
+    updateWorkflowRun({
+      requestId: activeLinkedChangeRequestId,
+      currentStepKey: runnableStepKey ?? linkedWorkflowRun.currentStepKey,
+      status: "active",
+      completedAt: null,
+    })
+    createWorkflowEvent({
+      workflowRunId: linkedWorkflowRun.id,
+      requestId: activeLinkedChangeRequestId,
+      stepKey: runnableStepKey,
+      eventType: "agent.started",
+      actorType: "codex",
+      payload: {
+        status: requestRunningStatus,
+        action: workflowAction,
+      },
+    })
 
     const execution = createChangeRequestExecution({
       changeRequestId: activeLinkedChangeRequestId,
@@ -441,14 +554,15 @@ export async function POST(request: Request) {
       actorType: "codex",
       startedAt: new Date().toISOString(),
       meta: {
-        phase: linkedRequestPhase,
+        workflowKey: linkedChangeRequest.workflowKey,
+        workflowRunId: linkedWorkflowRun.id,
+        workflowStepKey: runnableStepKey,
         transport: "site",
         sessionId: session.id,
         startedFromStatus: requestStartedFromStatus,
       },
     })
     activeExecutionId = execution?.id ?? null
-    activeExecutionCreatedAt = execution?.createdAt ?? null
   }
 
   try {
@@ -459,7 +573,17 @@ export async function POST(request: Request) {
       recentHistory,
       metadata: {
         transport: "site",
-        requestedSkills,
+          requestedSkills,
+          workflow: linkedWorkflow
+            ? {
+                key: linkedWorkflow.key,
+                name: linkedWorkflow.name,
+                currentStepKey: runnableStepKey,
+                action: workflowAction,
+                agentConfig: workflowAgentConfig,
+                stepInstruction: workflowStepInstruction,
+              }
+            : null,
         linkedChangeRequestId: activeLinkedChangeRequestId,
         linkedTargetEnvironmentId: activeLinkedTargetEnvironmentId,
         linkedTargetApp,
@@ -485,8 +609,13 @@ export async function POST(request: Request) {
             }
           : null,
         linkedChangeRequestInstruction: activeLinkedChangeRequestId
-          ? linkedChangeRequestPhaseInstruction ??
-            "This response is linked to a tracked change request. Treat recent user comments as instructions on that request. If you continue work, explain what changed or what blocked you."
+          ? [
+              workflowStepInstruction
+                ? `Workflow step instructions:\n${workflowStepInstruction}`
+                : "This response is linked to a tracked request workflow step.",
+              runnableStepKey ? `Current workflow step: ${runnableStepKey}.` : null,
+              requestCompletedStatus ? `When this step is complete, the request should move toward ${requestCompletedStatus}.` : null,
+            ].filter(Boolean).join("\n\n")
           : null,
       },
     })
@@ -531,7 +660,9 @@ export async function POST(request: Request) {
         summary: traceSummary ?? responseText.slice(0, 1200),
         finishedAt: new Date().toISOString(),
         meta: {
-          phase: linkedRequestPhase,
+          workflowKey: linkedChangeRequest?.workflowKey ?? null,
+          workflowRunId: linkedWorkflowRun?.id ?? null,
+          workflowStepKey: runnableStepKey,
           transport: "site",
           sessionId: session.id,
           startedFromStatus: requestStartedFromStatus,
@@ -547,43 +678,31 @@ export async function POST(request: Request) {
       })
     }
 
-    if (activeLinkedChangeRequestId && linkedRequestPhase) {
-      if (linkedRequestPhase === "triage") {
-        const strayExecutions = listChangeRequestExecutions(activeLinkedChangeRequestId).filter((execution) => {
-          if (execution.id === activeExecutionId) {
-            return false
-          }
-
-          if (!["planned", "running"].includes(execution.status)) {
-            return false
-          }
-
-          if (!activeExecutionCreatedAt) {
-            return true
-          }
-
-          return execution.createdAt >= activeExecutionCreatedAt
-        })
-
-        for (const execution of strayExecutions) {
-          updateChangeRequestExecution(execution.id, {
-            status: "failed",
-            errorMessage: "Execution was started during a triage-only turn and has been suppressed.",
-            summary: "Suppressed execution created before admin review.",
-            finishedAt: new Date().toISOString(),
-          })
-        }
-
+    if (activeLinkedChangeRequestId && linkedWorkflowRun && runnableStepKey) {
+      createWorkflowEvent({
+        workflowRunId: linkedWorkflowRun.id,
+        requestId: activeLinkedChangeRequestId,
+        stepKey: runnableStepKey,
+        eventType: "agent.completed",
+        actorType: "codex",
+        payload: {
+          status: requestCompletedStatus,
+          executionId: activeExecutionId,
+          branchName: runtimeResponse.branchName ?? null,
+          commitSha: runtimeResponse.commitSha ?? null,
+        },
+      })
+      if (requestCompletedStatus) {
         updateChangeRequest(activeLinkedChangeRequestId, {
-          status: "ready-for-agent",
+          status: requestCompletedStatus,
         })
-      } else if (requestRunningStatus) {
-        const refreshedChangeRequest = getChangeRequest(activeLinkedChangeRequestId)
-        if (refreshedChangeRequest?.status === requestRunningStatus) {
-          updateChangeRequest(activeLinkedChangeRequestId, {
-            status: getCompletedStatusForPhase(linkedRequestPhase),
-          })
-        }
+        const nextStep = findStepForStatus(linkedWorkflowSteps, requestCompletedStatus)
+        updateWorkflowRun({
+          requestId: activeLinkedChangeRequestId,
+          currentStepKey: nextStep ? stepKey(nextStep) : runnableStepKey,
+          status: ["approved", "rejected", "closed"].includes(requestCompletedStatus) ? "completed" : "active",
+          completedAt: ["approved", "rejected", "closed"].includes(requestCompletedStatus) ? new Date().toISOString() : null,
+        })
       }
     }
 
@@ -618,7 +737,7 @@ export async function POST(request: Request) {
     const failureTrace = Array.isArray(runtimeError.trace) ? runtimeError.trace : []
     const failureSummary = formatTraceSummary(failureTrace)
 
-    if (activeLinkedChangeRequestId && linkedChangeRequest && linkedRequestPhase && requestRunningStatus) {
+    if (activeLinkedChangeRequestId && linkedChangeRequest && linkedWorkflowRun && runnableStepKey && requestRunningStatus) {
       if (activeExecutionId) {
         updateChangeRequestExecution(activeExecutionId, {
           status: "failed",
@@ -634,7 +753,9 @@ export async function POST(request: Request) {
           summary: failureSummary,
           finishedAt: failedAt,
           meta: {
-            phase: linkedRequestPhase,
+            workflowKey: linkedChangeRequest.workflowKey,
+            workflowRunId: linkedWorkflowRun.id,
+            workflowStepKey: runnableStepKey,
             transport: "site",
             sessionId: session.id,
             startedFromStatus: requestStartedFromStatus,
@@ -656,17 +777,23 @@ export async function POST(request: Request) {
         })
       }
 
-      if (linkedRequestPhase === "triage") {
+      createWorkflowEvent({
+        workflowRunId: linkedWorkflowRun.id,
+        requestId: activeLinkedChangeRequestId,
+        stepKey: runnableStepKey,
+        eventType: "agent.failed",
+        actorType: "codex",
+        note: message,
+        payload: {
+          executionId: activeExecutionId,
+          runtimeTrace: failureTrace,
+        },
+      })
+      const refreshedChangeRequest = getChangeRequest(activeLinkedChangeRequestId)
+      if (refreshedChangeRequest?.status === requestRunningStatus) {
         updateChangeRequest(activeLinkedChangeRequestId, {
-          status: requestStartedFromStatus ?? "submitted",
+          status: requestStartedFromStatus ?? linkedChangeRequest.status,
         })
-      } else {
-        const refreshedChangeRequest = getChangeRequest(activeLinkedChangeRequestId)
-        if (refreshedChangeRequest?.status === requestRunningStatus) {
-          updateChangeRequest(activeLinkedChangeRequestId, {
-            status: requestStartedFromStatus ?? "ready-for-agent",
-          })
-        }
       }
     }
 

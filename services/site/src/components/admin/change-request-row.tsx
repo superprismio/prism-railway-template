@@ -5,6 +5,7 @@ import type {
   ChangeRequestRecord,
   TargetAppRecord,
   TargetEnvironmentRecord,
+  WorkflowRecord,
 } from "@/lib/admin";
 
 import {
@@ -14,21 +15,29 @@ import {
   statusLabel,
   statusVariant,
   targetAppForRequest,
+  workflowStepForStatus,
+  workflowSteps,
 } from "./change-request-utils";
 
 export function ChangeRequestRow({
   request,
   targetApps,
   targetEnvironments,
+  workflow,
   onOpen,
 }: {
   request: ChangeRequestRecord;
   targetApps: TargetAppRecord[];
   targetEnvironments: TargetEnvironmentRecord[];
+  workflow: WorkflowRecord | null;
   onOpen: (request: ChangeRequestRecord) => void;
 }) {
   const targetApp = targetAppForRequest(request, targetApps);
   const targetEnvironment = environmentForRequest(request, targetEnvironments);
+  const workflowStep = workflowStepForStatus(
+    request.status,
+    workflowSteps(workflow),
+  ).step;
   const targetBranch =
     targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch";
 
@@ -40,7 +49,7 @@ export function ChangeRequestRow({
     >
       <div>
         <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-          CR
+          Request
         </p>
         <p className="mt-1 text-lg font-semibold">#{request.requestNumber}</p>
       </div>
@@ -48,8 +57,9 @@ export function ChangeRequestRow({
       <div className="min-w-0 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={statusVariant(request.status)}>
-            {statusLabel(request.status)}
+            {workflowStep.label}
           </Badge>
+          <Badge variant="outline">{statusLabel(request.status)}</Badge>
           <Badge variant={priorityVariant(request.priority)}>
             {request.priority}
           </Badge>

@@ -45,6 +45,7 @@ export async function POST(request: Request) {
   const changeRequest = createChangeRequest({
     title,
     description,
+    workflowKey: parseString(body.workflowKey ?? body.workflow_key) || "change-request-default",
     requestType,
     status,
     priority,
