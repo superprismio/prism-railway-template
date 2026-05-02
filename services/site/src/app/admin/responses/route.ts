@@ -225,10 +225,24 @@ function readInstructionFile(instructionPath: unknown) {
     return null
   }
   const config = loadConfig()
-  const normalized = instructionPath.replace(/^\/+/, "")
-  const absolutePath = path.resolve(config.repoRoot, "services/site", normalized)
-  const allowedRoot = path.resolve(config.repoRoot, "services/site/workflows")
-  if (!absolutePath.startsWith(allowedRoot)) {
+  const normalized = instructionPath.trim()
+  const siteWorkflowRoots = [
+    path.resolve(config.workspaceRoot, "workflows"),
+    path.resolve(config.repoRoot, "services/site/workflows"),
+  ]
+  const dataWorkflowRoot = path.resolve(config.dataRoot, "workflows")
+  const candidates = path.isAbsolute(normalized)
+    ? [path.resolve(normalized)]
+    : [
+        path.resolve(config.workspaceRoot, normalized),
+        path.resolve(config.workspaceRoot, "workflows", normalized.replace(/^workflows\/+/, "")),
+        path.resolve(config.repoRoot, "services/site", normalized.replace(/^\/+/, "")),
+      ]
+  const allowedRoots = [...siteWorkflowRoots, dataWorkflowRoot]
+  const absolutePath = candidates.find((candidate) => {
+    return allowedRoots.some((allowedRoot) => candidate === allowedRoot || candidate.startsWith(`${allowedRoot}${path.sep}`))
+  })
+  if (!absolutePath) {
     return null
   }
   try {
@@ -419,7 +433,7 @@ export async function POST(request: Request) {
   const activeLinkedChangeRequestId = linkedChangeRequestId ?? session.linkedChangeRequestId ?? null
   const activeLinkedTargetEnvironmentId = linkedTargetEnvironmentId ?? session.linkedTargetEnvironmentId ?? null
   const linkedChangeRequest = activeLinkedChangeRequestId ? getChangeRequest(activeLinkedChangeRequestId) : null
-  const linkedTargetApp = linkedChangeRequest ? getTargetApp(linkedChangeRequest.targetAppId) : null
+  const linkedTargetApp = linkedChangeRequest?.targetAppId ? getTargetApp(linkedChangeRequest.targetAppId) : null
   const linkedTargetEnvironment = activeLinkedTargetEnvironmentId
     ? getTargetEnvironment(activeLinkedTargetEnvironmentId)
     : linkedChangeRequest?.targetEnvironmentId

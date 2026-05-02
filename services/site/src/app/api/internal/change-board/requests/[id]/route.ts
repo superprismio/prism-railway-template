@@ -35,7 +35,7 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })
   }
 
-  const targetApp = getTargetApp(changeRequest.targetAppId)
+  const targetApp = changeRequest.targetAppId ? getTargetApp(changeRequest.targetAppId) : null
   const targetEnvironment = changeRequest.targetEnvironmentId ? getTargetEnvironment(changeRequest.targetEnvironmentId) : null
   const latestExecution = listChangeRequestExecutions(changeRequest.id)[0] ?? null
   const deployPlan = targetApp && targetEnvironment

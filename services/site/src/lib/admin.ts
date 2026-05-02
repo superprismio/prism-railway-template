@@ -29,7 +29,7 @@ export type TargetAppRecord = {
 
 export type TargetEnvironmentRecord = {
   id: string
-  targetAppId: string
+  targetAppId: string | null
   targetAppSlug: string | null
   slug: string
   name: string
@@ -58,7 +58,7 @@ export type ChangeRequestRecord = {
   source: string
   requestedByUserId: string | null
   requestedByDisplayName: string | null
-  targetAppId: string
+  targetAppId: string | null
   targetAppSlug: string | null
   targetAppName: string | null
   targetEnvironmentId: string | null

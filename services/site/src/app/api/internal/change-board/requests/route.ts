@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createChangeRequest, getDefaultTargetEnvironmentForApp } from "@/lib/app-core"
+import { createChangeRequest, getDefaultTargetEnvironmentForApp, getWorkflowByKey } from "@/lib/app-core"
 
 import {
   parseNullableString,
@@ -7,6 +7,10 @@ import {
   requireServiceAccess,
 } from "@/lib/internal-service"
 import { trackedChangeRequestPriorities, trackedChangeRequestStatuses, trackedChangeRequestTypes } from "@/lib/local-admin-api"
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
 
 export async function POST(request: Request) {
   const access = await requireServiceAccess()
@@ -26,11 +30,16 @@ export async function POST(request: Request) {
   const description = parseString(body.description)
   const requestType = parseString(body.requestType ?? body.request_type)
   const targetAppId = parseString(body.targetAppId ?? body.target_app_id)
+  const workflowKey = parseString(body.workflowKey ?? body.workflow_key) || "change-request-default"
   const status = parseString(body.status) || "submitted"
   const priority = parseString(body.priority) || "normal"
+  const workflow = getWorkflowByKey(workflowKey)
+  const target = workflow?.definition?.target
+  const targetRequired = workflowKey === "change-request-default"
+    || (isRecord(target) && target.required === true)
 
-  if (!title || !description || !requestType || !targetAppId) {
-    return NextResponse.json({ ok: false, error: "title, description, requestType, and targetAppId are required" }, { status: 400 })
+  if (!title || !description || !requestType || !workflow || (targetRequired && !targetAppId)) {
+    return NextResponse.json({ ok: false, error: "title, description, requestType, workflowKey, and required targetAppId are required" }, { status: 400 })
   }
   if (!trackedChangeRequestTypes.includes(requestType as typeof trackedChangeRequestTypes[number])) {
     return NextResponse.json({ ok: false, error: "Invalid request type" }, { status: 400 })
@@ -45,17 +54,19 @@ export async function POST(request: Request) {
   const changeRequest = createChangeRequest({
     title,
     description,
-    workflowKey: parseString(body.workflowKey ?? body.workflow_key) || "change-request-default",
+    workflowKey,
     requestType,
     status,
     priority,
     source: parseString(body.source) || "chat",
     requestedByUserId: null,
-    targetAppId,
+    targetAppId: targetAppId || null,
     targetEnvironmentId:
-      parseNullableString(body.targetEnvironmentId ?? body.target_environment_id)
-      ?? getDefaultTargetEnvironmentForApp(targetAppId)?.id
-      ?? null,
+      targetAppId
+        ? parseNullableString(body.targetEnvironmentId ?? body.target_environment_id)
+          ?? getDefaultTargetEnvironmentForApp(targetAppId)?.id
+          ?? null
+        : null,
     triageSummary: parseNullableString(body.triageSummary ?? body.triage_summary) ?? null,
     acceptanceCriteria: Array.isArray(body.acceptanceCriteria) ? body.acceptanceCriteria : [],
     constraints: body.constraints && typeof body.constraints === "object" && !Array.isArray(body.constraints) ? body.constraints as Record<string, unknown> : {},

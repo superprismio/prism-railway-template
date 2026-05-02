@@ -6,6 +6,7 @@ import { agentSessionsMigration } from './005_agent_sessions';
 import { tasksMigration } from './006_tasks';
 import { workflowsMigration } from './007_workflows';
 import { workflowRunsMigration } from './008_workflow_runs';
+import { nullableRequestTargetsMigration } from './009_nullable_request_targets';
 
 export interface Migration {
   name: string;
@@ -21,4 +22,5 @@ export const migrations: Migration[] = [
   tasksMigration,
   workflowsMigration,
   workflowRunsMigration,
+  nullableRequestTargetsMigration,
 ];

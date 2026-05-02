@@ -159,7 +159,7 @@ export function ChangeRequestList({
       <div className="hidden border-b border-border/60 bg-muted/30 px-5 py-3 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground md:grid md:grid-cols-[84px_minmax(0,1fr)_180px_150px_140px] md:gap-4 md:px-6">
         <span>Number</span>
         <span>Request</span>
-        <span>Repository</span>
+        <span>Target</span>
         <span>Agent</span>
         <span>Updated</span>
       </div>

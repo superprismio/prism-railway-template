@@ -28,9 +28,9 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ ok: false, error: "Target environment not found" }, { status: 404 })
   }
 
-  const targetApp = getTargetApp(changeRequest.targetAppId)
+  const targetApp = changeRequest.targetAppId ? getTargetApp(changeRequest.targetAppId) : null
   if (!targetApp) {
-    return NextResponse.json({ ok: false, error: "Target app not found" }, { status: 404 })
+    return NextResponse.json({ ok: false, error: "Request has no target app" }, { status: 400 })
   }
 
   return NextResponse.json({

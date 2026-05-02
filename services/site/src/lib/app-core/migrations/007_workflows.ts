@@ -5,6 +5,10 @@ const defaultChangeRequestWorkflow = {
   description: "Default human-reviewed request flow for repository-backed changes.",
   entrypoint: "triage",
   workflowPath: "workflows/change-request-default/workflow.md",
+  target: {
+    kind: "repository",
+    required: true,
+  },
   agentConfig: {
     runtime: "codex-runtime",
     mode: "main-agent",

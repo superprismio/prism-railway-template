@@ -10,6 +10,7 @@ The first implementation is intentionally small:
 - The admin UI exposes a read-only Workflows tab.
 - Tasks and workflows share the same `agentConfig` shape.
 - Workflow runs/events are the runtime record; request status is a board projection.
+- Requests may have no target repository. Target apps are optional context for workflows that need repository/deploy helpers.
 
 ## Naming
 
@@ -80,6 +81,7 @@ The manifest answers deterministic app questions:
 - which statuses map to which workflow step
 - whether a step is an agent step, human gate, or terminal state
 - where to find the markdown instructions for agent-facing steps
+- whether the workflow requires a target repository
 
 The markdown answers judgment-heavy agent questions:
 
@@ -106,6 +108,8 @@ The UI renders this as:
 - workflow events in the request History tab
 
 Existing request rows are not deleted by the workflow migration. A workflow run is created when a request is created or first touched by the workflow-aware code path. Workflow events only exist from that point forward.
+
+The default request workflow declares a repository target because it uses branch, commit, and deploy-preview helpers. Other workflows can omit a repository target and produce artifacts, Discord notifications, summaries, or other outputs through step instructions.
 
 ## Step Types
 
@@ -171,6 +175,29 @@ The request `status` remains a board projection derived from the workflow step. 
 
 Manual status changes in the Advanced request controls are an escape hatch. They sync the workflow run by status and record a step-change event when the mapped step changes, but they can bypass explicit gate-decision events.
 
+## Custom Workflow Registration
+
+Instance-authored workflows can live on the site volume:
+
+```text
+/data/workflows/<workflow-key>/
+  manifest.proposal.json
+  workflow.md
+  steps/
+    <step-key>.md
+```
+
+Register a volume workflow with:
+
+```http
+POST /admin/workflows
+Content-Type: application/json
+
+{ "key": "<workflow-key>" }
+```
+
+The route reads `/data/workflows/<workflow-key>/manifest.proposal.json`, validates that all workflow and step instruction paths stay under `/data/workflows/<workflow-key>/`, then upserts the `workflows` row. This is intentionally a registration step, not a separate promotion lifecycle.
+
 ## Execution Flow
 
 The workflow-aware request flow is:
@@ -191,6 +218,7 @@ Workflow state is split across two migrations:
 
 - `007_workflows`: adds `tasks.agent_config_json`, `change_requests.workflow_key`, and the `workflows` registry table; seeds `change-request-default`.
 - `008_workflow_runs`: adds `workflow_runs` and `workflow_events`.
+- `009_nullable_request_targets`: makes `change_requests.target_app_id` nullable and marks the default workflow as repository-targeted.
 
 ## Near-Term Path
 

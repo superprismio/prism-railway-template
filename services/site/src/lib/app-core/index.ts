@@ -36,6 +36,7 @@ export {
   listTasks,
   listWorkflowEventsForRequest,
   listWorkflows,
+  upsertWorkflow,
   upsertTask,
   upsertAgentSessionFromDiscord,
   ensureWorkflowRunForRequest,

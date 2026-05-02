@@ -261,7 +261,7 @@ export interface TargetAppRecord {
 
 export interface TargetEnvironmentRecord {
   id: string;
-  targetAppId: string;
+  targetAppId: string | null;
   targetAppSlug: string | null;
   slug: string;
   name: string;
@@ -290,7 +290,7 @@ export interface ChangeRequestRecord {
   source: string;
   requestedByUserId: string | null;
   requestedByDisplayName: string | null;
-  targetAppId: string;
+  targetAppId?: string | null;
   targetAppSlug: string | null;
   targetAppName: string | null;
   targetEnvironmentId: string | null;
@@ -374,7 +374,7 @@ export interface CreateChangeRequestInput {
   priority?: string;
   source?: string;
   requestedByUserId?: string | null;
-  targetAppId: string;
+  targetAppId?: string | null;
   targetEnvironmentId?: string | null;
   triageSummary?: string | null;
   acceptanceCriteria?: unknown[];
@@ -1015,7 +1015,7 @@ function parseTargetAppRow(row: {
 
 function parseTargetEnvironmentRow(row: {
   id: string;
-  target_app_id: string;
+  target_app_id: string | null;
   target_app_slug: string | null;
   slug: string;
   name: string;
@@ -1063,7 +1063,7 @@ function parseTrackedChangeRequestRow(row: {
   source: string;
   requested_by_user_id: string | null;
   requested_by_display_name: string | null;
-  target_app_id: string;
+  target_app_id: string | null;
   target_app_slug: string | null;
   target_app_name: string | null;
   target_environment_id: string | null;
@@ -2274,7 +2274,7 @@ export function listTargetEnvironments(targetAppId?: string) {
 
   const rows = getDb().prepare(sql).all(...params) as Array<{
     id: string;
-    target_app_id: string;
+    target_app_id: string | null;
     target_app_slug: string | null;
     slug: string;
     name: string;
@@ -2354,7 +2354,7 @@ export function getTargetEnvironment(targetEnvironmentId: string) {
     .get(targetEnvironmentId) as
     | {
         id: string;
-        target_app_id: string;
+        target_app_id: string | null;
         target_app_slug: string | null;
         slug: string;
         name: string;
@@ -2413,7 +2413,7 @@ export function getDefaultTargetEnvironmentForApp(targetAppId: string) {
     .get(targetAppId) as
     | {
         id: string;
-        target_app_id: string;
+        target_app_id: string | null;
         target_app_slug: string | null;
         slug: string;
         name: string;
@@ -2499,7 +2499,7 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     source: string;
     requested_by_user_id: string | null;
     requested_by_display_name: string | null;
-    target_app_id: string;
+    target_app_id: string | null;
     target_app_slug: string | null;
     target_app_name: string | null;
     target_environment_id: string | null;
@@ -2612,7 +2612,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
         source: string;
         requested_by_user_id: string | null;
         requested_by_display_name: string | null;
-        target_app_id: string;
+        target_app_id: string | null;
         target_app_slug: string | null;
         target_app_name: string | null;
         target_environment_id: string | null;
@@ -2764,7 +2764,7 @@ export function getChangeRequest(changeRequestId: string) {
         source: string;
         requested_by_user_id: string | null;
         requested_by_display_name: string | null;
-        target_app_id: string;
+        target_app_id: string | null;
         target_app_slug: string | null;
         target_app_name: string | null;
         target_environment_id: string | null;
@@ -2822,7 +2822,7 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
       input.priority ?? 'normal',
       input.source ?? 'manual',
       input.requestedByUserId ?? null,
-      input.targetAppId,
+      input.targetAppId ?? null,
       input.targetEnvironmentId ?? null,
       input.triageSummary ?? null,
       JSON.stringify(input.acceptanceCriteria ?? []),
@@ -3970,6 +3970,54 @@ export function getWorkflowByKey(key: string): WorkflowRecord | null {
     .get(key) as WorkflowRow | undefined;
 
   return row ? mapWorkflowRow(row) : null;
+}
+
+export function upsertWorkflow(input: {
+  key: string;
+  name: string;
+  description?: string | null;
+  version?: number;
+  definition: Record<string, unknown>;
+  systemDefault?: boolean;
+  enabled?: boolean;
+}): WorkflowRecord {
+  const now = new Date().toISOString();
+  const existing = getWorkflowByKey(input.key);
+  const id = existing?.id ?? randomUUID();
+
+  getDb()
+    .prepare(
+      `INSERT INTO workflows (
+         id, key, name, description, version, definition_json, system_default, enabled, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         name = excluded.name,
+         description = excluded.description,
+         version = excluded.version,
+         definition_json = excluded.definition_json,
+         system_default = excluded.system_default,
+         enabled = excluded.enabled,
+         updated_at = excluded.updated_at`,
+    )
+    .run(
+      id,
+      input.key,
+      input.name,
+      input.description ?? null,
+      input.version ?? 1,
+      JSON.stringify(input.definition),
+      input.systemDefault ? 1 : 0,
+      input.enabled === false ? 0 : 1,
+      existing?.createdAt ?? now,
+      now,
+    );
+
+  const workflow = getWorkflowByKey(input.key);
+  if (!workflow) {
+    throw new Error('WORKFLOW_UPSERT_FAILED');
+  }
+
+  return workflow;
 }
 
 function workflowStepsFromDefinition(workflow: WorkflowRecord | null | undefined) {

@@ -1,3 +1,6 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import { FilePlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -11,17 +14,40 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { TargetAppRecord } from "@/lib/admin";
+import type { TargetAppRecord, WorkflowRecord } from "@/lib/admin";
+
+function workflowRequiresTargetApp(workflow: WorkflowRecord | null | undefined) {
+  if (!workflow) return true;
+  if (workflow.key === "change-request-default") return true;
+  const target = workflow.definition.target;
+  return Boolean(
+    target &&
+    typeof target === "object" &&
+    !Array.isArray(target) &&
+    "required" in target &&
+    target.required === true,
+  );
+}
 
 export function NewChangeRequestDialog({
   open,
   onOpenChange,
   targetApps,
+  workflows,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   targetApps: TargetAppRecord[];
+  workflows: WorkflowRecord[];
 }) {
+  const enabledWorkflows = useMemo(() => workflows.filter((workflow) => workflow.enabled), [workflows]);
+  const defaultWorkflowKey = enabledWorkflows.find((workflow) => workflow.key === "change-request-default")?.key
+    ?? enabledWorkflows[0]?.key
+    ?? "change-request-default";
+  const [workflowKey, setWorkflowKey] = useState(defaultWorkflowKey);
+  const selectedWorkflow = enabledWorkflows.find((workflow) => workflow.key === workflowKey) ?? null;
+  const targetRequired = workflowRequiresTargetApp(selectedWorkflow);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl rounded-[28px] border-border/70 bg-background p-0 shadow-[0_28px_90px_-42px_rgba(26,31,44,0.7)]">
@@ -30,8 +56,8 @@ export function NewChangeRequestDialog({
             New Request
           </DialogTitle>
           <DialogDescription>
-            Capture the task, target repository, and review context before
-            routing it into the workspace.
+            Capture the request, workflow, and review context before routing it
+            into the workspace.
           </DialogDescription>
         </DialogHeader>
 
@@ -52,6 +78,23 @@ export function NewChangeRequestDialog({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
+              <Label htmlFor="new-request-workflow">Workflow</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                id="new-request-workflow"
+                name="workflowKey"
+                value={workflowKey}
+                onChange={(event) => setWorkflowKey(event.target.value)}
+              >
+                {enabledWorkflows.map((workflow) => (
+                  <option key={workflow.id} value={workflow.key}>
+                    {workflow.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="new-request-type">Type</Label>
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
@@ -68,7 +111,7 @@ export function NewChangeRequestDialog({
               </select>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="new-request-priority">Priority</Label>
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
@@ -85,13 +128,19 @@ export function NewChangeRequestDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="new-request-target-app">Repository</Label>
+            <Label htmlFor="new-request-target-app">
+              Target repository{targetRequired ? "" : " (optional)"}
+            </Label>
             <select
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
               id="new-request-target-app"
               name="targetAppId"
-              required
+              required={targetRequired}
+              defaultValue={targetRequired ? targetApps[0]?.id ?? "" : ""}
             >
+              {!targetRequired ? (
+                <option value="">No repository target</option>
+              ) : null}
               {targetApps.map((targetApp) => (
                 <option key={targetApp.id} value={targetApp.id}>
                   {targetApp.name}

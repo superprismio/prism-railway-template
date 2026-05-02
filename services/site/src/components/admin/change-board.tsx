@@ -571,6 +571,7 @@ export function ChangeBoard({
         open={isNewRequestOpen}
         onOpenChange={setIsNewRequestOpen}
         targetApps={data.targetApps}
+        workflows={data.workflows ?? []}
       />
     </main>
   );

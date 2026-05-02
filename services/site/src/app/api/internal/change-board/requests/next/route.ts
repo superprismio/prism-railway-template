@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, changeRequest: null, targetApp: null, targetEnvironment: null, deployPlan: null, latestExecution: null })
   }
 
-  const targetApp = getTargetApp(changeRequest.targetAppId)
+  const targetApp = changeRequest.targetAppId ? getTargetApp(changeRequest.targetAppId) : null
   const targetEnvironment = changeRequest.targetEnvironmentId ? getTargetEnvironment(changeRequest.targetEnvironmentId) : null
   const latestExecution = listChangeRequestExecutions(changeRequest.id)[0] ?? null
   const deployPlan = targetApp && targetEnvironment

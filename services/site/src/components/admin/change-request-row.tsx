@@ -75,15 +75,17 @@ export function ChangeRequestRow({
 
       <div className="space-y-1 text-sm">
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-          Repository
+          Target
         </p>
         <p className="truncate font-medium">
-          {targetApp?.name ?? request.targetAppSlug ?? "Unknown"}
+          {targetApp?.name ?? request.targetAppSlug ?? "No target"}
         </p>
-        <p className="flex items-center gap-1 text-xs text-muted-foreground">
-          <GitBranch className="h-3.5 w-3.5" />
-          <span className="truncate">{targetBranch}</span>
-        </p>
+        {targetApp ? (
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <GitBranch className="h-3.5 w-3.5" />
+            <span className="truncate">{targetBranch}</span>
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-1 text-sm">
@@ -92,7 +94,7 @@ export function ChangeRequestRow({
         </p>
         <p className="flex items-center gap-1 font-medium">
           <Bot className="h-3.5 w-3.5 text-muted-foreground" />
-          {targetEnvironment?.agentWritable ? "Writable" : "Locked"}
+          {targetApp ? (targetEnvironment?.agentWritable ? "Writable" : "Locked") : "Workflow"}
         </p>
         {request.agentRecommendation ? (
           <p className="truncate text-xs text-muted-foreground">Triage ready</p>

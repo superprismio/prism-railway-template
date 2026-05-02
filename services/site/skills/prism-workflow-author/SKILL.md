@@ -26,6 +26,7 @@ Instance custom workflows should use the site-owned volume when that API/storage
 
 ```text
 /data/workflows/<workflow-key>/
+  manifest.proposal.json
   workflow.md
   steps/
     <step-key>.md
@@ -41,6 +42,7 @@ Use it for:
 
 - `entrypoint`
 - `workflowPath`
+- optional target requirement, for example `{ "target": { "kind": "repository", "required": true } }`
 - ordered `steps`
 - step `key`
 - step `label`
@@ -52,6 +54,8 @@ Use it for:
 - deterministic delegation policy in `agentConfig.delegation`
 
 Do not put long prompts, implementation logic, scripts, or large prose in the manifest. Put those in markdown.
+
+Do not require a target repository unless the workflow actually needs repo/deploy helpers. Requests can produce artifacts, Discord messages, summaries, or other outputs without a `targetAppId`.
 
 Put whether delegation is allowed in the manifest:
 
