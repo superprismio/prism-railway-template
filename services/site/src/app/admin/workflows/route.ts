@@ -7,7 +7,7 @@ import { requireLocalAdminAccess } from "@/lib/local-admin-api";
 import { requireServiceAccess } from "@/lib/internal-service";
 
 export async function GET() {
-  const access = await requireLocalAdminAccess();
+  const access = await requireWorkflowWriteAccess();
   if (!access.ok) {
     return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
   }

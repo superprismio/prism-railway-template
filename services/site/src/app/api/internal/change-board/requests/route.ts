@@ -38,8 +38,14 @@ export async function POST(request: Request) {
   const targetRequired = workflowKey === "change-request-default"
     || (isRecord(target) && target.required === true)
 
-  if (!title || !description || !requestType || !workflow || (targetRequired && !targetAppId)) {
-    return NextResponse.json({ ok: false, error: "title, description, requestType, workflowKey, and required targetAppId are required" }, { status: 400 })
+  if (!title || !description || !requestType) {
+    return NextResponse.json({ ok: false, error: "title, description, and requestType are required" }, { status: 400 })
+  }
+  if (!workflow) {
+    return NextResponse.json({ ok: false, error: `Workflow not found: ${workflowKey}` }, { status: 400 })
+  }
+  if (targetRequired && !targetAppId) {
+    return NextResponse.json({ ok: false, error: `Workflow ${workflowKey} requires targetAppId` }, { status: 400 })
   }
   if (!trackedChangeRequestTypes.includes(requestType as typeof trackedChangeRequestTypes[number])) {
     return NextResponse.json({ ok: false, error: "Invalid request type" }, { status: 400 })
