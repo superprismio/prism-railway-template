@@ -15,7 +15,7 @@ import {
   statusLabel,
   statusVariant,
   targetAppForRequest,
-  workflowStepForStatus,
+  workflowStepForKey,
   workflowSteps,
 } from "./change-request-utils";
 
@@ -34,9 +34,10 @@ export function ChangeRequestRow({
 }) {
   const targetApp = targetAppForRequest(request, targetApps);
   const targetEnvironment = environmentForRequest(request, targetEnvironments);
-  const workflowStep = workflowStepForStatus(
-    request.status,
+  const workflowStep = workflowStepForKey(
+    request.currentWorkflowStepKey,
     workflowSteps(workflow),
+    request.status,
   ).step;
   const targetBranch =
     targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch";

@@ -502,10 +502,14 @@ export async function POST(request: Request) {
 
   const requestStartedFromStatus = linkedChangeRequest?.status ?? null
   const requestRunningStatus = runnableWorkflowStep ? statusForStep(runnableWorkflowStep, "running") : null
+  const nextWorkflowStepAfterRun = runnableWorkflowStep
+    ? nextStepForAction(linkedWorkflowSteps, runnableWorkflowStep, "approved")
+    : null
   const requestCompletedStatus = runnableWorkflowStep
-    ? statusForStep(nextStepForAction(linkedWorkflowSteps, runnableWorkflowStep, "approved") ?? runnableWorkflowStep, "waiting")
+    ? statusForStep(nextWorkflowStepAfterRun ?? runnableWorkflowStep, "waiting")
     : null
   const runnableStepKey = runnableWorkflowStep ? stepKey(runnableWorkflowStep) : null
+  const nextStepKeyAfterRun = nextWorkflowStepAfterRun ? stepKey(nextWorkflowStepAfterRun) : null
   let activeExecutionId: string | null = null
 
   if (activeLinkedChangeRequestId && linkedChangeRequest && linkedWorkflowRun && runnableWorkflowStep && requestRunningStatus) {
@@ -542,6 +546,7 @@ export async function POST(request: Request) {
     if (linkedChangeRequest.status !== requestRunningStatus) {
       updateChangeRequest(activeLinkedChangeRequestId, {
         status: requestRunningStatus,
+        syncWorkflowRun: false,
       })
     }
     updateWorkflowRun({
@@ -629,7 +634,8 @@ export async function POST(request: Request) {
                 ? `Workflow step instructions:\n${workflowStepInstruction}`
                 : "This response is linked to a tracked request workflow step.",
               runnableStepKey ? `Current workflow step: ${runnableStepKey}.` : null,
-              requestCompletedStatus ? `When this step is complete, the request should move toward ${requestCompletedStatus}.` : null,
+              nextStepKeyAfterRun ? `When this step is complete, advance the workflow run to ${nextStepKeyAfterRun}.` : null,
+              requestCompletedStatus ? `The board status should move toward ${requestCompletedStatus}.` : null,
             ].filter(Boolean).join("\n\n")
           : null,
       },
@@ -710,14 +716,30 @@ export async function POST(request: Request) {
       if (requestCompletedStatus) {
         updateChangeRequest(activeLinkedChangeRequestId, {
           status: requestCompletedStatus,
+          syncWorkflowRun: false,
         })
-        const nextStep = findStepForStatus(linkedWorkflowSteps, requestCompletedStatus)
+        const nextStep = nextWorkflowStepAfterRun ?? findStepForStatus(linkedWorkflowSteps, requestCompletedStatus)
+        const nextStepKey = nextStep ? stepKey(nextStep) : runnableStepKey
         updateWorkflowRun({
           requestId: activeLinkedChangeRequestId,
-          currentStepKey: nextStep ? stepKey(nextStep) : runnableStepKey,
+          currentStepKey: nextStepKey,
           status: ["approved", "rejected", "closed"].includes(requestCompletedStatus) ? "completed" : "active",
           completedAt: ["approved", "rejected", "closed"].includes(requestCompletedStatus) ? new Date().toISOString() : null,
         })
+        if (nextStepKey !== runnableStepKey) {
+          createWorkflowEvent({
+            workflowRunId: linkedWorkflowRun.id,
+            requestId: activeLinkedChangeRequestId,
+            stepKey: nextStepKey,
+            eventType: "workflow.step_changed",
+            actorType: "system",
+            payload: {
+              status: requestCompletedStatus,
+              previousStepKey: runnableStepKey,
+              nextStepKey,
+            },
+          })
+        }
       }
     }
 
@@ -808,6 +830,7 @@ export async function POST(request: Request) {
       if (refreshedChangeRequest?.status === requestRunningStatus) {
         updateChangeRequest(activeLinkedChangeRequestId, {
           status: requestStartedFromStatus ?? linkedChangeRequest.status,
+          syncWorkflowRun: false,
         })
       }
     }

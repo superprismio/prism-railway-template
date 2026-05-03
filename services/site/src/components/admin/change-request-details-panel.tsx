@@ -51,7 +51,7 @@ import {
   isoLabel,
   priorityVariant,
   triageStatuses,
-  workflowStepForStatus,
+  workflowStepForKey,
   workflowSteps,
   type WorkflowStep,
   type AgentThreadMessage,
@@ -60,6 +60,7 @@ import {
 
 function CommandCenter({
   status,
+  currentWorkflowStepKey,
   steps,
   triageSummary,
   agentRecommendation,
@@ -75,6 +76,7 @@ function CommandCenter({
   onCloseRequest,
 }: {
   status: string;
+  currentWorkflowStepKey: string | null;
   steps: WorkflowStep[];
   triageSummary: string;
   agentRecommendation: string;
@@ -90,7 +92,7 @@ function CommandCenter({
   onCloseRequest: () => void;
 }) {
   const [reviewComment, setReviewComment] = useState("");
-  const currentWorkflowPosition = workflowStepForStatus(status, steps);
+  const currentWorkflowPosition = workflowStepForKey(currentWorkflowStepKey, steps, status);
   const currentStepIndex = currentWorkflowPosition.index;
   const currentStep = currentWorkflowPosition.step;
   const isReviewCommentRequired = status === "awaiting-review";
@@ -443,9 +445,10 @@ export function RequestDetailsPanel({
     targetEnvironment?.branch ?? targetApp?.defaultBranch ?? null;
   const currentWorkflowSteps = useMemo(() => workflowSteps(workflow), [workflow]);
   const [status, setStatus] = useState(request.status);
+  const [currentWorkflowStepKey, setCurrentWorkflowStepKey] = useState(request.currentWorkflowStepKey);
   const currentWorkflowStep = useMemo(
-    () => workflowStepForStatus(status, currentWorkflowSteps).step,
-    [currentWorkflowSteps, status],
+    () => workflowStepForKey(currentWorkflowStepKey, currentWorkflowSteps, status).step,
+    [currentWorkflowStepKey, currentWorkflowSteps, status],
   );
   const [triageSummary, setTriageSummary] = useState(
     request.triageSummary ?? "",
@@ -480,6 +483,7 @@ export function RequestDetailsPanel({
 
   useEffect(() => {
     setStatus(request.status);
+    setCurrentWorkflowStepKey(request.currentWorkflowStepKey);
     setTriageSummary(request.triageSummary ?? "");
     setAgentRecommendation(request.agentRecommendation ?? "");
     setManualStatus(request.status);
@@ -1101,6 +1105,7 @@ export function RequestDetailsPanel({
         <div className="space-y-6">
           <CommandCenter
             status={status}
+            currentWorkflowStepKey={currentWorkflowStepKey}
             steps={currentWorkflowSteps}
             triageSummary={triageSummary}
             agentRecommendation={agentRecommendation}

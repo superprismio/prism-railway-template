@@ -127,6 +127,21 @@ export function workflowStepForStatus(
   return { step: steps[safeIndex] ?? fallbackRequestWorkflowSteps[0], index: safeIndex };
 }
 
+export function workflowStepForKey(
+  stepKey: string | null | undefined,
+  steps: WorkflowStep[],
+  fallbackStatus: string,
+): { step: WorkflowStep; index: number } {
+  if (stepKey) {
+    const index = steps.findIndex((step) => step.key === stepKey);
+    if (index >= 0) {
+      return { step: steps[index], index };
+    }
+  }
+
+  return workflowStepForStatus(fallbackStatus, steps);
+}
+
 export function priorityVariant(priority: string) {
   if (priority === "urgent") return "default";
   if (priority === "high") return "secondary";

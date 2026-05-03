@@ -62,6 +62,8 @@ export type ChangeRequestRecord = {
   targetEnvironmentId: string | null
   targetEnvironmentSlug: string | null
   targetEnvironmentName: string | null
+  currentWorkflowStepKey: string | null
+  workflowRunStatus: string | null
   triageSummary: string | null
   acceptanceCriteria: unknown[]
   constraints: Record<string, unknown>

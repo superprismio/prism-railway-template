@@ -296,6 +296,8 @@ export interface ChangeRequestRecord {
   targetEnvironmentId: string | null;
   targetEnvironmentSlug: string | null;
   targetEnvironmentName: string | null;
+  currentWorkflowStepKey: string | null;
+  workflowRunStatus: string | null;
   triageSummary: string | null;
   acceptanceCriteria: unknown[];
   constraints: Record<string, unknown>;
@@ -391,6 +393,7 @@ export interface UpdateChangeRequestInput {
   reviewNotes?: string | null;
   resolutionSummary?: string | null;
   agentRecommendation?: string | null;
+  syncWorkflowRun?: boolean;
 }
 
 export interface CreateChangeRequestExecutionInput {
@@ -1137,6 +1140,8 @@ function parseTrackedChangeRequestRow(row: {
   target_environment_id: string | null;
   target_environment_slug: string | null;
   target_environment_name: string | null;
+  current_workflow_step_key?: string | null;
+  workflow_run_status?: string | null;
   triage_summary: string | null;
   acceptance_criteria_json: string | null;
   constraints_json: string | null;
@@ -1169,6 +1174,8 @@ function parseTrackedChangeRequestRow(row: {
     targetEnvironmentId: row.target_environment_id,
     targetEnvironmentSlug: row.target_environment_slug,
     targetEnvironmentName: row.target_environment_name,
+    currentWorkflowStepKey: row.current_workflow_step_key ?? null,
+    workflowRunStatus: row.workflow_run_status ?? null,
     triageSummary: row.triage_summary,
     acceptanceCriteria: parseJsonValue<unknown[]>(row.acceptance_criteria_json, []),
     constraints: parseJsonValue<Record<string, unknown>>(row.constraints_json, {}),
@@ -2522,6 +2529,8 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
       cr.target_environment_id,
       te.slug AS target_environment_slug,
       te.name AS target_environment_name,
+      wr.current_step_key AS current_workflow_step_key,
+      wr.status AS workflow_run_status,
       cr.triage_summary,
       cr.acceptance_criteria_json,
       cr.constraints_json,
@@ -2538,7 +2547,8 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     FROM change_requests cr
     LEFT JOIN profiles requester ON requester.user_id = cr.requested_by_user_id
     LEFT JOIN target_apps ta ON ta.id = cr.target_app_id
-    LEFT JOIN target_environments te ON te.id = cr.target_environment_id`;
+    LEFT JOIN target_environments te ON te.id = cr.target_environment_id
+    LEFT JOIN workflow_runs wr ON wr.request_id = cr.id`;
 
   const conditions: string[] = [];
   if (input.status) {
@@ -2573,6 +2583,8 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     target_environment_id: string | null;
     target_environment_slug: string | null;
     target_environment_name: string | null;
+    current_workflow_step_key: string | null;
+    workflow_run_status: string | null;
     triage_summary: string | null;
     acceptance_criteria_json: string | null;
     constraints_json: string | null;
@@ -2686,6 +2698,8 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
         target_environment_id: string | null;
         target_environment_slug: string | null;
         target_environment_name: string | null;
+        current_workflow_step_key: string | null;
+        workflow_run_status: string | null;
         triage_summary: string | null;
         acceptance_criteria_json: string | null;
         constraints_json: string | null;
@@ -2800,6 +2814,8 @@ export function getChangeRequest(changeRequestId: string) {
          cr.target_environment_id,
          te.slug AS target_environment_slug,
          te.name AS target_environment_name,
+         wr.current_step_key AS current_workflow_step_key,
+         wr.status AS workflow_run_status,
          cr.triage_summary,
          cr.acceptance_criteria_json,
          cr.constraints_json,
@@ -2817,6 +2833,7 @@ export function getChangeRequest(changeRequestId: string) {
        LEFT JOIN profiles requester ON requester.user_id = cr.requested_by_user_id
        LEFT JOIN target_apps ta ON ta.id = cr.target_app_id
        LEFT JOIN target_environments te ON te.id = cr.target_environment_id
+       LEFT JOIN workflow_runs wr ON wr.request_id = cr.id
        WHERE cr.id = ?`,
     )
     .get(changeRequestId) as
@@ -2976,7 +2993,7 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
     );
 
   const updated = getChangeRequest(changeRequestId);
-  if (updated) {
+  if (updated && input.syncWorkflowRun !== false) {
     syncWorkflowRunToRequestStatus(updated);
   }
   return updated;
