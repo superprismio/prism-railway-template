@@ -1,7 +1,13 @@
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
-import { adminPasswordCookieName } from "@/lib/admin"
+import { loadConfig } from "@/lib/app-core"
+import {
+  adminSessionCookieName,
+  adminSessionMaxAgeSeconds,
+  createAdminSessionCookieValue,
+  legacyAdminPasswordCookieName,
+} from "@/lib/admin-auth"
 
 export async function POST(request: Request) {
   const formData = await request.formData()
@@ -11,12 +17,18 @@ export async function POST(request: Request) {
     redirect("/admin?error=missing-password")
   }
 
-  ;(await cookies()).set(adminPasswordCookieName, password, {
+  if (password !== loadConfig().adminPassword) {
+    redirect("/admin?error=unauthorized")
+  }
+
+  const cookieStore = await cookies()
+  cookieStore.delete(legacyAdminPasswordCookieName)
+  cookieStore.set(adminSessionCookieName, createAdminSessionCookieValue(), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 12,
+    maxAge: adminSessionMaxAgeSeconds(),
   })
 
   redirect("/admin")

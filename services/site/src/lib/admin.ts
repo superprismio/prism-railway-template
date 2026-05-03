@@ -1,7 +1,5 @@
-import { cookies } from "next/headers"
 import { getAdminBoardSnapshot, getAdminSetupStatus, loadConfig } from "@/lib/app-core"
-
-export const adminPasswordCookieName = "prism_admin_password"
+import { requireAdminSession } from "@/lib/admin-auth"
 
 function useLocalAppApi() {
   return process.env.SITE_USE_LOCAL_APP_API?.trim() === "true"
@@ -179,19 +177,16 @@ export type AdminWorkspaceData = AdminBoardData & {
   setup: AdminSetupStatus
 }
 
-export async function getAdminPasswordCookie() {
-  return (await cookies()).get(adminPasswordCookieName)?.value ?? null
-}
-
 export async function adminFetch(path: string, init?: RequestInit) {
-  const password = await getAdminPasswordCookie()
+  const access = await requireAdminSession()
+  const adminPassword = access.ok ? loadConfig().adminPassword : null
 
   const response = await fetch(`${siteApiBase}${path}`, {
     ...init,
     cache: "no-store",
     headers: {
       "content-type": "application/json",
-      ...(password ? { "x-admin-password": password } : {}),
+      ...(adminPassword ? { "x-admin-password": adminPassword } : {}),
       ...(init?.headers ?? {}),
     },
   })
@@ -200,14 +195,9 @@ export async function adminFetch(path: string, init?: RequestInit) {
 }
 
 async function requireLocalAdminPassword() {
-  const password = await getAdminPasswordCookie()
-  if (!password) {
+  const access = await requireAdminSession()
+  if (!access.ok) {
     return { ok: false as const, reason: "missing-password" as const }
-  }
-
-  const config = loadConfig()
-  if (password !== config.adminPassword) {
-    return { ok: false as const, reason: "unauthorized" as const }
   }
 
   return { ok: true as const }
@@ -232,8 +222,8 @@ export async function getAdminBoardData(): Promise<
     }
   }
 
-  const password = await getAdminPasswordCookie()
-  if (!password) {
+  const access = await requireAdminSession()
+  if (!access.ok) {
     return { ok: false, reason: "missing-password" }
   }
 
@@ -302,8 +292,8 @@ export async function getAdminWorkspaceData(): Promise<
     }
   }
 
-  const password = await getAdminPasswordCookie()
-  if (!password) {
+  const access = await requireAdminSession()
+  if (!access.ok) {
     return { ok: false, reason: "missing-password" }
   }
 

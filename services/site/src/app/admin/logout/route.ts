@@ -1,9 +1,11 @@
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
-import { adminPasswordCookieName } from "@/lib/admin"
+import { adminSessionCookieName, legacyAdminPasswordCookieName } from "@/lib/admin-auth"
 
 export async function POST() {
-  ;(await cookies()).delete(adminPasswordCookieName)
+  const cookieStore = await cookies()
+  cookieStore.delete(adminSessionCookieName)
+  cookieStore.delete(legacyAdminPasswordCookieName)
   redirect("/admin")
 }

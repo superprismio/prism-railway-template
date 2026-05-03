@@ -15,8 +15,7 @@ export function LoginCard({ error }: { error?: string }) {
           </div>
           <CardTitle className="text-2xl">Admin Access</CardTitle>
           <CardDescription>
-            Use the shared admin password. The site stores it in a cookie and forwards it to the API as
-            <code className="ml-1 rounded bg-muted px-1.5 py-0.5 text-xs">x-admin-password</code>.
+            Use the shared admin password. The site keeps a signed admin session cookie for this browser.
           </CardDescription>
         </CardHeader>
         <CardContent>
