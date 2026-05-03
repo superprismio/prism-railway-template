@@ -255,7 +255,7 @@ export function WorkflowsWorkspace() {
           }
         }}
       >
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="flex max-h-[90vh] max-w-5xl flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <GitBranch className="h-4 w-4" />
@@ -267,15 +267,15 @@ export function WorkflowsWorkspace() {
               {detailError}
             </div>
           ) : null}
-          <Tabs defaultValue="overview" className="space-y-4">
-            <TabsList className="h-auto flex-wrap rounded-none bg-muted/50 p-1">
+          <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col gap-4">
+            <TabsList className="h-auto shrink-0 flex-wrap rounded-none bg-muted/50 p-1">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="steps">Steps</TabsTrigger>
               <TabsTrigger value="json">JSON</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="overview" className="mt-0">
-              <ScrollArea className="max-h-[68vh] border border-border/70 bg-muted/20">
+            <TabsContent value="overview" className="mt-0 min-h-0 flex-1">
+              <ScrollArea className="h-[calc(90vh-180px)] border border-border/70 bg-muted/20">
                 <div className="space-y-4 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={selectedWorkflow?.enabled ? "default" : "outline"}>
@@ -302,8 +302,8 @@ export function WorkflowsWorkspace() {
               </ScrollArea>
             </TabsContent>
 
-            <TabsContent value="steps" className="mt-0">
-              <ScrollArea className="max-h-[68vh] border border-border/70 bg-muted/20">
+            <TabsContent value="steps" className="mt-0 min-h-0 flex-1">
+              <ScrollArea className="h-[calc(90vh-180px)] border border-border/70 bg-muted/20">
                 <div className="space-y-4 p-4">
                   {isDetailLoading ? (
                     <p className="text-sm text-muted-foreground">Loading step instructions...</p>
@@ -350,8 +350,8 @@ export function WorkflowsWorkspace() {
               </ScrollArea>
             </TabsContent>
 
-            <TabsContent value="json" className="mt-0">
-              <ScrollArea className="max-h-[68vh] border border-border/70 bg-muted/20">
+            <TabsContent value="json" className="mt-0 min-h-0 flex-1">
+              <ScrollArea className="h-[calc(90vh-180px)] border border-border/70 bg-muted/20">
                 <pre className="whitespace-pre-wrap break-words p-4 text-xs leading-6">
                   {selectedWorkflow ? JSON.stringify(selectedWorkflow.definition, null, 2) : ""}
                 </pre>
