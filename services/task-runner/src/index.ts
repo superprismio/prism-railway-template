@@ -76,6 +76,13 @@ type AppTask = {
   agentConfig: Record<string, unknown>;
 };
 
+type WorkflowRunStepResult = {
+  status: number;
+  url: string;
+  body: string;
+  payload: Record<string, unknown>;
+};
+
 type TaskState = {
   status: TaskStatus;
   lastRunAt: string | null;
@@ -261,6 +268,30 @@ function isAppTask(value: unknown): value is AppTask {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function stringFromConfig(config: Record<string, unknown>, key: string, fallback = ""): string {
+  const value = config[key];
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function boolFromConfig(config: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const value = config[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function intFromConfig(config: Record<string, unknown>, key: string, fallback: number, minimum: number, maximum: number): number {
+  const value = config[key];
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number.parseInt(value, 10) : fallback;
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(maximum, Math.max(minimum, Math.trunc(parsed)));
+}
+
+function recordFromConfig(config: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = config[key];
+  return isRecord(value) ? value : {};
 }
 
 async function registerTaskWithSite(task: BuiltInTask): Promise<void> {
@@ -551,17 +582,182 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
   };
 }
 
-function syncCodexPromptTasks(runnableTasks: RunnableTask[], siteTasks: AppTask[]): void {
+function statusFromChangeRequest(payload: Record<string, unknown>): string | null {
+  const changeRequest = payload.changeRequest;
+  if (!isRecord(changeRequest)) {
+    return null;
+  }
+  const status = changeRequest.status;
+  return typeof status === "string" && status.trim() ? status.trim() : null;
+}
+
+function requestIdFromChangeRequest(payload: Record<string, unknown>): string | null {
+  const changeRequest = payload.changeRequest;
+  if (!isRecord(changeRequest)) {
+    return null;
+  }
+  const id = changeRequest.id;
+  return typeof id === "string" && id.trim() ? id.trim() : null;
+}
+
+function requestNumberFromChangeRequest(payload: Record<string, unknown>): number | null {
+  const changeRequest = payload.changeRequest;
+  if (!isRecord(changeRequest)) {
+    return null;
+  }
+  const requestNumber = changeRequest.requestNumber ?? changeRequest.request_number;
+  return typeof requestNumber === "number" && Number.isFinite(requestNumber) ? requestNumber : null;
+}
+
+function workflowRunnerShouldStop(status: string | null, stopStatuses: Set<string>) {
+  if (!status) {
+    return false;
+  }
+  return stopStatuses.has(status);
+}
+
+async function appApiPost(path: string, body: Record<string, unknown>): Promise<WorkflowRunStepResult> {
+  const baseUrl = requireBaseUrl("APP_API_BASE_URL", appApiBaseUrl() ?? "");
+  const token = appApiServiceToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["X-Service-Token"] = token;
+  }
+  const result = await postJson(baseUrl, path, headers, body);
+  const payload = result.body ? JSON.parse(result.body) as Record<string, unknown> : {};
+  return {
+    status: result.status,
+    url: result.url,
+    body: result.body,
+    payload,
+  };
+}
+
+function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
+  const workflowKey = stringFromConfig(siteTask.inputConfig, "workflowKey");
+  const requestConfig = recordFromConfig(siteTask.inputConfig, "request");
+  if (!workflowKey) {
+    console.warn(JSON.stringify({ event: "task.workflow_runner_missing_workflow", task: siteTask.key }));
+    return null;
+  }
+
+  const title = stringFromConfig(requestConfig, "title", siteTask.name);
+  const description = stringFromConfig(requestConfig, "description");
+  if (!title || !description) {
+    console.warn(JSON.stringify({ event: "task.workflow_runner_missing_request", task: siteTask.key }));
+    return null;
+  }
+
+  const autoRunConfig = recordFromConfig(siteTask.inputConfig, "autoRun");
+  const autoRunEnabled = boolFromConfig(autoRunConfig, "enabled", true);
+  const maxSteps = intFromConfig(autoRunConfig, "maxSteps", 1, 0, 10);
+  const stopStatuses = new Set(
+    (Array.isArray(autoRunConfig.stopStatuses) ? autoRunConfig.stopStatuses : ["awaiting-review", "approved", "rejected", "closed"])
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      .map((item) => item.trim()),
+  );
+  const prompt = stringFromConfig(
+    siteTask.instructionConfig,
+    "prompt",
+    `Run the current workflow step for the request created by task ${siteTask.key} using the request description and workflow step instructions.`,
+  );
+  const cron = (siteTask.scheduleCron ?? "").trim() || "0 * * * *";
+
+  return {
+    key: siteTask.key,
+    name: siteTask.name,
+    taskType: "workflow-runner",
+    defaultEnabled: false,
+    defaultCron: cron,
+    enabled: siteTask.enabled,
+    cron,
+    run: async () => {
+      const requestPayload: Record<string, unknown> = {
+        title,
+        description,
+        workflowKey,
+        requestType: stringFromConfig(requestConfig, "requestType", "content"),
+        priority: stringFromConfig(requestConfig, "priority", "normal"),
+        source: "task-runner",
+        targetAppId: requestConfig.targetAppId ?? null,
+        targetEnvironmentId: requestConfig.targetEnvironmentId ?? null,
+        constraints: isRecord(requestConfig.constraints) ? requestConfig.constraints : {},
+        attachments: Array.isArray(requestConfig.attachments) ? requestConfig.attachments : [],
+      };
+      const createResult = await appApiPost("/api/internal/change-board/requests", requestPayload);
+      const requestId = requestIdFromChangeRequest(createResult.payload);
+      const requestNumber = requestNumberFromChangeRequest(createResult.payload);
+      if (!requestId) {
+        throw new Error(`WORKFLOW_RUNNER_REQUEST_CREATE_INVALID_RESPONSE:${createResult.body.slice(0, 500)}`);
+      }
+
+      const stepResults: WorkflowRunStepResult[] = [];
+      let lastStatus = statusFromChangeRequest(createResult.payload);
+      if (autoRunEnabled) {
+        for (let index = 0; index < maxSteps; index += 1) {
+          if (workflowRunnerShouldStop(lastStatus, stopStatuses)) {
+            break;
+          }
+          const runResult = await appApiPost("/admin/responses", {
+            input: [{ role: "user", content: prompt }],
+            linked_change_request_id: requestId,
+            workflow_action: null,
+            requested_skills: mergeRequestedSkills(siteTask),
+          });
+          stepResults.push(runResult);
+          const detailResult = await appApiRequest(`/api/internal/change-board/requests/${encodeURIComponent(requestId)}`, {
+            method: "GET",
+          });
+          lastStatus = detailResult ? statusFromChangeRequest(detailResult) : lastStatus;
+        }
+      }
+
+      return {
+        ok: true,
+        status: createResult.status,
+        url: createResult.url,
+        body: JSON.stringify({
+          requestId,
+          requestNumber,
+          workflowKey,
+          status: lastStatus,
+          autoRun: {
+            enabled: autoRunEnabled,
+            stepsRun: stepResults.length,
+            maxSteps,
+            stopStatuses: Array.from(stopStatuses),
+          },
+          createResponse: createResult.payload,
+          stepResponses: stepResults.map((result) => ({
+            status: result.status,
+            url: result.url,
+            payload: result.payload,
+          })),
+        }),
+      };
+    },
+    outputConfig: siteTask.outputConfig,
+  };
+}
+
+function buildDynamicTask(siteTask: AppTask): RunnableTask | null {
+  if (siteTask.taskType === "codex-prompt") {
+    return buildCodexPromptTask(siteTask);
+  }
+  if (siteTask.taskType === "workflow-runner") {
+    return buildWorkflowRunnerTask(siteTask);
+  }
+  return null;
+}
+
+function syncDynamicTasks(runnableTasks: RunnableTask[], siteTasks: AppTask[]): void {
   const seen = new Set<string>();
   for (const siteTask of siteTasks) {
-    if (siteTask.taskType !== "codex-prompt") {
-      continue;
-    }
-    seen.add(siteTask.key);
-    const nextTask = buildCodexPromptTask(siteTask);
+    const nextTask = buildDynamicTask(siteTask);
     if (!nextTask) {
       continue;
     }
+    seen.add(siteTask.key);
     const existingIndex = runnableTasks.findIndex((task) => task.key === nextTask.key);
     if (existingIndex >= 0) {
       runnableTasks[existingIndex] = nextTask;
@@ -580,7 +776,7 @@ function syncCodexPromptTasks(runnableTasks: RunnableTask[], siteTasks: AppTask[
 
   for (let index = runnableTasks.length - 1; index >= 0; index -= 1) {
     const task = runnableTasks[index];
-    if (task.taskType === "codex-prompt" && !seen.has(task.key)) {
+    if ((task.taskType === "codex-prompt" || task.taskType === "workflow-runner") && !seen.has(task.key)) {
       runnableTasks.splice(index, 1);
       state.delete(task.key);
     }
@@ -606,7 +802,7 @@ async function syncTasksFromSite(tasks: RunnableTask[]): Promise<void> {
       console.warn(JSON.stringify({ event: "task.site_config_invalid", task: task.key, error: describeError(error) }));
     }
   }
-  syncCodexPromptTasks(tasks, siteTasks);
+  syncDynamicTasks(tasks, siteTasks);
 }
 
 async function createTaskRunInSite(task: RunnableTask, source: "schedule" | "manual"): Promise<AppTaskRun | null> {

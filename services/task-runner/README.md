@@ -57,6 +57,42 @@ The runner calls:
 
 - `POST /v1/responses` on `CODEX_RUNTIME_BASE_URL`
 
+## Workflow runner tasks
+
+Scheduled workflow tasks use `taskType=workflow-runner`. The runner creates a request through `site`, then optionally invokes the current workflow step through `/admin/responses`.
+
+Supported config:
+
+```json
+{
+  "taskType": "workflow-runner",
+  "inputConfig": {
+    "workflowKey": "blog-post-draft-review-publish",
+    "request": {
+      "title": "Weekly blog post",
+      "description": "Create this week's blog post from Prism Memory and Knowledge.",
+      "requestType": "content",
+      "priority": "normal"
+    },
+    "autoRun": {
+      "enabled": true,
+      "maxSteps": 1,
+      "stopStatuses": ["awaiting-review", "approved", "rejected", "closed"]
+    }
+  },
+  "instructionConfig": {
+    "prompt": "Run the current workflow step using the request description and workflow step instructions."
+  }
+}
+```
+
+The default behavior is conservative: auto-run is enabled, but `maxSteps` defaults to `1`, so a scheduled task creates the request and runs only the first agent step unless configured otherwise. The runner stops when the request status reaches one of `stopStatuses`.
+
+The runner calls:
+
+- `POST /api/internal/change-board/requests` on `APP_API_BASE_URL`
+- `POST /admin/responses` on `APP_API_BASE_URL`
+
 ### Discord sync
 
 - `DISCORD_ADAPTER_BASE_URL=http://discord-adapter.railway.internal:8789`

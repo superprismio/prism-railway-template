@@ -179,6 +179,9 @@ function taskTypeBadge(taskType: string) {
   if (taskType === "codex-prompt") {
     return <Badge variant="outline">Custom</Badge>;
   }
+  if (taskType === "workflow-runner") {
+    return <Badge variant="default">Workflow</Badge>;
+  }
   return <Badge variant="muted">{taskType || "task"}</Badge>;
 }
 
