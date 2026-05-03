@@ -1485,11 +1485,11 @@ export function RequestDetailsPanel({
             <CardContent className="space-y-6">
               <div className="space-y-3">
                 <Label htmlFor="manual-workflow-step">Workflow Step</Label>
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,360px)_auto]">
+                <div className="flex flex-wrap items-center gap-3">
                   <Select value={manualWorkflowStepKey} onValueChange={handleManualWorkflowStepChange}>
                     <SelectTrigger
                       id="manual-workflow-step"
-                      className="border border-input shadow-sm"
+                      className="w-full border border-input shadow-sm sm:w-[360px]"
                     >
                       <SelectValue placeholder="Select workflow step" />
                     </SelectTrigger>
@@ -1503,16 +1503,20 @@ export function RequestDetailsPanel({
                   </Select>
                   <Button
                     type="button"
+                    size="icon"
                     onClick={handleSaveManualStatus}
                     disabled={
                       isPending ||
                       (manualWorkflowStepKey || null) === currentWorkflowStepKey
                     }
+                    aria-label="Save workflow step"
+                    title="Save workflow step"
                   >
                     {isPending ? (
                       <LoaderCircle className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    Save step
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4" />
+                    )}
                   </Button>
                 </div>
               </div>
