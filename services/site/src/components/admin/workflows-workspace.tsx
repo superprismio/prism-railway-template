@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Eye, GitBranch, RefreshCw, Route } from "lucide-react";
+import { Eye, FileText, GitBranch, RefreshCw, Route } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type WorkflowRecord = {
   id: string;
@@ -29,6 +30,30 @@ type WorkflowRecord = {
 type WorkflowsPayload = {
   ok?: boolean;
   workflows?: WorkflowRecord[];
+  error?: string;
+};
+
+type WorkflowStepDetail = {
+  key: string;
+  label: string;
+  type: string;
+  statusMap: string[];
+  instructionPath: string | null;
+  resolvedInstructionPath: string | null;
+  instructionContent: string | null;
+};
+
+type WorkflowDetail = {
+  workflowPath: string | null;
+  resolvedWorkflowPath: string | null;
+  workflowContent: string | null;
+  steps: WorkflowStepDetail[];
+};
+
+type WorkflowDetailPayload = {
+  ok?: boolean;
+  workflow?: WorkflowRecord;
+  detail?: WorkflowDetail;
   error?: string;
 };
 
@@ -58,6 +83,9 @@ export function WorkflowsWorkspace() {
   const [workflows, setWorkflows] = useState<WorkflowRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowRecord | null>(null);
+  const [selectedWorkflowDetail, setSelectedWorkflowDetail] = useState<WorkflowDetail | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isRefreshing, startRefresh] = useTransition();
 
   async function loadWorkflows() {
@@ -79,6 +107,26 @@ export function WorkflowsWorkspace() {
         setError(nextError instanceof Error ? nextError.message : "Could not load workflows");
       }
     });
+  }
+
+  async function openWorkflow(workflow: WorkflowRecord) {
+    setSelectedWorkflow(workflow);
+    setSelectedWorkflowDetail(null);
+    setDetailError(null);
+    setIsDetailLoading(true);
+    try {
+      const response = await fetch(`/admin/workflows/${encodeURIComponent(workflow.key)}`, { cache: "no-store" });
+      const payload = (await response.json()) as WorkflowDetailPayload;
+      if (!response.ok || !payload.ok || !payload.detail) {
+        throw new Error(payload.error || "Could not load workflow detail");
+      }
+      setSelectedWorkflow(payload.workflow ?? workflow);
+      setSelectedWorkflowDetail(payload.detail);
+    } catch (nextError) {
+      setDetailError(nextError instanceof Error ? nextError.message : "Could not load workflow detail");
+    } finally {
+      setIsDetailLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -182,9 +230,9 @@ export function WorkflowsWorkspace() {
               </div>
 
               <div className="flex items-center justify-end">
-                <Button type="button" variant="outline" onClick={() => setSelectedWorkflow(workflow)}>
+                <Button type="button" variant="outline" onClick={() => openWorkflow(workflow)}>
                   <Eye className="h-4 w-4" />
-                  View JSON
+                  View
                 </Button>
               </div>
             </div>
@@ -197,19 +245,119 @@ export function WorkflowsWorkspace() {
         ) : null}
       </section>
 
-      <Dialog open={Boolean(selectedWorkflow)} onOpenChange={(open) => !open && setSelectedWorkflow(null)}>
-        <DialogContent className="max-w-4xl">
+      <Dialog
+        open={Boolean(selectedWorkflow)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedWorkflow(null);
+            setSelectedWorkflowDetail(null);
+            setDetailError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-5xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <GitBranch className="h-4 w-4" />
               {selectedWorkflow?.name ?? "Workflow"}
             </DialogTitle>
           </DialogHeader>
-          <ScrollArea className="max-h-[70vh] border border-border/70 bg-muted/20">
-            <pre className="whitespace-pre-wrap break-words p-4 text-xs leading-6">
-              {selectedWorkflow ? JSON.stringify(selectedWorkflow.definition, null, 2) : ""}
-            </pre>
-          </ScrollArea>
+          {detailError ? (
+            <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {detailError}
+            </div>
+          ) : null}
+          <Tabs defaultValue="overview" className="space-y-4">
+            <TabsList className="h-auto flex-wrap rounded-none bg-muted/50 p-1">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="steps">Steps</TabsTrigger>
+              <TabsTrigger value="json">JSON</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="overview" className="mt-0">
+              <ScrollArea className="max-h-[68vh] border border-border/70 bg-muted/20">
+                <div className="space-y-4 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={selectedWorkflow?.enabled ? "default" : "outline"}>
+                      {selectedWorkflow?.enabled ? "enabled" : "disabled"}
+                    </Badge>
+                    {selectedWorkflow?.systemDefault ? <Badge variant="outline">system</Badge> : null}
+                    {selectedWorkflow ? <Badge variant="outline">v{selectedWorkflow.version}</Badge> : null}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {selectedWorkflowDetail?.workflowPath ?? "No workflow markdown path configured."}
+                  </div>
+                  {isDetailLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading workflow markdown...</p>
+                  ) : selectedWorkflowDetail?.workflowContent ? (
+                    <pre className="whitespace-pre-wrap break-words text-sm leading-6">
+                      {selectedWorkflowDetail.workflowContent}
+                    </pre>
+                  ) : (
+                    <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                      No workflow markdown found.
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="steps" className="mt-0">
+              <ScrollArea className="max-h-[68vh] border border-border/70 bg-muted/20">
+                <div className="space-y-4 p-4">
+                  {isDetailLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading step instructions...</p>
+                  ) : selectedWorkflowDetail?.steps.length ? (
+                    selectedWorkflowDetail.steps.map((step, index) => (
+                      <div key={`${step.key}:${index}`} className="border border-border/70 bg-background p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex h-7 w-7 items-center justify-center border border-border/70 bg-muted/30 text-xs">
+                                {index + 1}
+                              </div>
+                              <h3 className="font-semibold">{step.label || step.key || "Step"}</h3>
+                              <Badge variant="outline">{step.type}</Badge>
+                            </div>
+                            <p className="mt-2 break-all text-xs text-muted-foreground">
+                              {step.instructionPath ?? "No instruction path configured."}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {step.statusMap.map((status) => (
+                              <Badge key={status} variant="secondary">{status}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                        {step.instructionContent ? (
+                          <pre className="mt-4 whitespace-pre-wrap break-words border border-border/60 bg-muted/20 p-3 text-sm leading-6">
+                            {step.instructionContent}
+                          </pre>
+                        ) : (
+                          <div className="mt-4 flex items-center gap-2 border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                            <FileText className="h-4 w-4" />
+                            No markdown instructions found for this step.
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                      No steps in definition.
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="json" className="mt-0">
+              <ScrollArea className="max-h-[68vh] border border-border/70 bg-muted/20">
+                <pre className="whitespace-pre-wrap break-words p-4 text-xs leading-6">
+                  {selectedWorkflow ? JSON.stringify(selectedWorkflow.definition, null, 2) : ""}
+                </pre>
+              </ScrollArea>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </div>
