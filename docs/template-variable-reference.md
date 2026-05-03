@@ -92,6 +92,7 @@ Use this while filling out the Railway template composer.
 | `CODEX_BIN` | `/app/node_modules/.bin/codex` | Path to the Codex CLI binary inside the runtime image. | No |
 | `CODEX_HOME` | `/data/codex` | Mounted Codex home directory for auth and thread state. | No |
 | `CODEX_RUNTIME_TIMEOUT_MS` | `600000` | Maximum Codex execution timeout in milliseconds. | No |
+| `CODEX_IMAGE_GENERATION_ENABLED` | `true` | Enables the Codex CLI built-in `image_generation` feature for `$imagegen` workflows. | No |
 | `CODEX_WORKSPACE_ROOT` | `/app` | Default workspace root for Codex execution. | No |
 | `CODEX_TARGET_WORKSPACE_ROOT` | `/data/workspaces` | Mounted directory for cloned target repositories. | No |
 | `PRISM_API_BASE` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}` | Private URL for Prism Memory. References the memory service port. | No |

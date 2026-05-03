@@ -19,6 +19,7 @@ Recommended env:
 
 - `CODEX_BIN=codex`
 - `CODEX_RUNTIME_TIMEOUT_MS=600000`
+- `CODEX_IMAGE_GENERATION_ENABLED=true`
 - `CODEX_WORKSPACE_ROOT=/app`
 - `CODEX_TARGET_WORKSPACE_ROOT=/data/workspaces`
 - `CODEX_MODEL=<optional>`
