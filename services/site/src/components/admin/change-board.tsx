@@ -149,7 +149,7 @@ export function ChangeBoard({
   }
 
   function handleSaveTriage(payload: {
-    status: string;
+    status?: string;
     currentWorkflowStepKey?: string | null;
     triageSummary: string;
     agentRecommendation: string;

@@ -27,6 +27,23 @@ function isExecutionStatus(status: string | null | undefined) {
   return ["in-progress", "awaiting-review", "changes-requested", "approved", "closed"].includes(status ?? "")
 }
 
+function isWorkflowStep(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value) && typeof (value as { key?: unknown }).key === "string"
+}
+
+function statusForWorkflowStep(step: Record<string, unknown> | null | undefined) {
+  const statuses = Array.isArray(step?.statusMap)
+    ? step.statusMap.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : []
+  if (!statuses.length) {
+    return null
+  }
+  if (step?.type === "agent") {
+    return statuses.find((status) => status === "triaging" || status === "in-progress") ?? statuses[0]
+  }
+  return statuses[0]
+}
+
 export async function GET(_request: Request, context: RouteContext) {
   const access = await requireServiceAccess()
   if (!access.ok) {
@@ -76,28 +93,32 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (!existingChangeRequest) {
     return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })
   }
-  if (nextStatus && !trackedChangeRequestStatuses.includes(nextStatus as typeof trackedChangeRequestStatuses[number])) {
+
+  const workflow = nextWorkflowStepKey ? getWorkflowByKey(existingChangeRequest.workflowKey) : null
+  const workflowSteps = Array.isArray(workflow?.definition.steps) ? workflow.definition.steps.filter(isWorkflowStep) : []
+  const nextWorkflowStep = nextWorkflowStepKey
+    ? workflowSteps.find((step) => step.key === nextWorkflowStepKey) ?? null
+    : null
+  const derivedStatus = nextWorkflowStep ? statusForWorkflowStep(nextWorkflowStep) : null
+  const projectedStatus = nextStatus ?? derivedStatus ?? undefined
+
+  if (projectedStatus && !trackedChangeRequestStatuses.includes(projectedStatus as typeof trackedChangeRequestStatuses[number])) {
     return NextResponse.json({ ok: false, error: "Invalid status" }, { status: 400 })
   }
   if (nextPriority && !trackedChangeRequestPriorities.includes(nextPriority as typeof trackedChangeRequestPriorities[number])) {
     return NextResponse.json({ ok: false, error: "Invalid priority" }, { status: 400 })
   }
-  if (nextStatus && isTriageOnlyStatus(existingChangeRequest.status) && isExecutionStatus(nextStatus)) {
+  if (projectedStatus && isTriageOnlyStatus(existingChangeRequest.status) && isExecutionStatus(projectedStatus)) {
     return NextResponse.json({ ok: false, error: "CHANGE_REQUEST_NOT_READY_FOR_EXECUTION" }, { status: 409 })
   }
   if (nextWorkflowStepKey) {
-    const workflow = getWorkflowByKey(existingChangeRequest.workflowKey)
-    const steps = Array.isArray(workflow?.definition.steps) ? workflow.definition.steps : []
-    const validStep = steps.some((step) => {
-      return Boolean(step) && typeof step === "object" && !Array.isArray(step) && step.key === nextWorkflowStepKey
-    })
-    if (!validStep) {
+    if (!nextWorkflowStep) {
       return NextResponse.json({ ok: false, error: "Invalid workflow step" }, { status: 400 })
     }
   }
 
   const changeRequest = updateChangeRequest(changeRequestId, {
-    status: nextStatus,
+    status: projectedStatus,
     priority: nextPriority,
     syncWorkflowRun: !nextWorkflowStepKey,
     targetEnvironmentId:

@@ -50,7 +50,6 @@ import {
   githubCompareUrl,
   isoLabel,
   priorityVariant,
-  triageStatuses,
   workflowStepForKey,
   workflowSteps,
   type WorkflowStep,
@@ -69,6 +68,7 @@ function CommandCenter({
   reviewBranchUrl,
   reviewCompareUrl,
   isPending,
+  isStepRunning,
   onTriage,
   onApproveSolution,
   onApproveReview,
@@ -85,6 +85,7 @@ function CommandCenter({
   reviewBranchUrl: string | null;
   reviewCompareUrl: string | null;
   isPending: boolean;
+  isStepRunning: boolean;
   onTriage: () => void;
   onApproveSolution: () => void;
   onApproveReview: () => void;
@@ -97,7 +98,7 @@ function CommandCenter({
   const currentStep = currentWorkflowPosition.step;
   const isReviewCommentRequired = status === "awaiting-review";
   const canRequestChanges = reviewComment.trim().length > 0;
-  const isRunning = ["triaging", "in-progress", "changes-requested"].includes(status);
+  const isRunning = isStepRunning;
   const isTerminal = currentStep.type === "terminal" || ["approved", "rejected", "closed"].includes(status);
   const isReviewGate = currentStep.type === "gate" && status === "awaiting-review";
   const isApprovalGate = currentStep.type === "gate" && status === "ready-for-agent";
@@ -444,7 +445,7 @@ export function RequestDetailsPanel({
   isPending: boolean;
   error: string | null;
   onSave: (payload: {
-    status: string;
+    status?: string;
     currentWorkflowStepKey?: string | null;
     triageSummary: string;
     agentRecommendation: string;
@@ -465,7 +466,6 @@ export function RequestDetailsPanel({
   const [agentRecommendation, setAgentRecommendation] = useState(
     request.agentRecommendation ?? "",
   );
-  const [manualStatus, setManualStatus] = useState(request.status);
   const [manualWorkflowStepKey, setManualWorkflowStepKey] = useState(request.currentWorkflowStepKey ?? "");
   const [manualAgentRecommendation, setManualAgentRecommendation] = useState(
     request.agentRecommendation ?? "",
@@ -496,7 +496,6 @@ export function RequestDetailsPanel({
     setCurrentWorkflowStepKey(request.currentWorkflowStepKey);
     setTriageSummary(request.triageSummary ?? "");
     setAgentRecommendation(request.agentRecommendation ?? "");
-    setManualStatus(request.status);
     setManualWorkflowStepKey(request.currentWorkflowStepKey ?? "");
     setManualAgentRecommendation(request.agentRecommendation ?? "");
     setIsDraftDirty(false);
@@ -959,7 +958,6 @@ export function RequestDetailsPanel({
 
   function saveRequestState(nextStatus: string) {
     setStatus(nextStatus);
-    setManualStatus(nextStatus);
     setIsDraftDirty(false);
     onSave({ status: nextStatus, triageSummary, agentRecommendation });
   }
@@ -1029,7 +1027,6 @@ export function RequestDetailsPanel({
     startCommandTransition(async () => {
       try {
         setStatus("triaging");
-        setManualStatus("triaging");
         await runAgent(prompt);
       } catch (error) {
         setThreadError(
@@ -1049,7 +1046,6 @@ export function RequestDetailsPanel({
     startCommandTransition(async () => {
       try {
         setStatus("in-progress");
-        setManualStatus("in-progress");
         await runAgent(prompt, null, "approved");
       } catch (error) {
         setThreadError(
@@ -1079,7 +1075,6 @@ export function RequestDetailsPanel({
     startCommandTransition(async () => {
       try {
         setStatus("changes-requested");
-        setManualStatus("changes-requested");
         const session = await addRequestComment(content);
         await runAgent(prompt, session, "changesRequested");
       } catch (error) {
@@ -1095,11 +1090,12 @@ export function RequestDetailsPanel({
   }
 
   function handleSaveManualStatus() {
-    setStatus(manualStatus);
+    const nextStep = currentWorkflowSteps.find((step) => step.key === manualWorkflowStepKey);
+    const nextStatus = statusForWorkflowStep(nextStep) ?? status;
+    setStatus(nextStatus);
     setCurrentWorkflowStepKey(manualWorkflowStepKey || null);
     setIsDraftDirty(false);
     onSave({
-      status: manualStatus,
       currentWorkflowStepKey: manualWorkflowStepKey || null,
       triageSummary,
       agentRecommendation,
@@ -1108,11 +1104,6 @@ export function RequestDetailsPanel({
 
   function handleManualWorkflowStepChange(nextStepKey: string) {
     setManualWorkflowStepKey(nextStepKey);
-    const nextStep = currentWorkflowSteps.find((step) => step.key === nextStepKey);
-    const nextStatus = statusForWorkflowStep(nextStep);
-    if (nextStatus) {
-      setManualStatus(nextStatus);
-    }
   }
 
   function handleSaveSuggestedChanges() {
@@ -1140,6 +1131,7 @@ export function RequestDetailsPanel({
             reviewBranchUrl={reviewExecutionBranchUrl}
             reviewCompareUrl={reviewExecutionPrUrl}
             isPending={isPending || isCommandPending}
+            isStepRunning={Boolean(activeExecution)}
             onTriage={handleCommandTriage}
             onApproveSolution={handleApproveSolution}
             onApproveReview={handleApproveReview}
@@ -1487,13 +1479,13 @@ export function RequestDetailsPanel({
             <CardHeader>
               <CardTitle>Advanced</CardTitle>
               <CardDescription>
-                Manual status and suggested-change updates.
+                Manual workflow step and guidance updates.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-3">
                 <Label htmlFor="manual-workflow-step">Workflow Step</Label>
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,320px)_minmax(0,320px)_auto]">
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,360px)_auto]">
                   <Select value={manualWorkflowStepKey} onValueChange={handleManualWorkflowStepChange}>
                     <SelectTrigger
                       id="manual-workflow-step"
@@ -1509,34 +1501,18 @@ export function RequestDetailsPanel({
                       ))}
                     </SelectContent>
                   </Select>
-                  <Select value={manualStatus} onValueChange={setManualStatus}>
-                    <SelectTrigger
-                      id="manual-status"
-                      className="border border-input shadow-sm"
-                    >
-                      <SelectValue placeholder="Select board status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {triageStatuses.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                   <Button
                     type="button"
                     onClick={handleSaveManualStatus}
                     disabled={
                       isPending ||
-                      (manualStatus === status &&
-                        (manualWorkflowStepKey || null) === currentWorkflowStepKey)
+                      (manualWorkflowStepKey || null) === currentWorkflowStepKey
                     }
                   >
                     {isPending ? (
                       <LoaderCircle className="h-4 w-4 animate-spin" />
                     ) : null}
-                    Save status
+                    Save step
                   </Button>
                 </div>
               </div>
