@@ -4,12 +4,14 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   CheckCircle2,
   Circle,
+  ExternalLink,
   FileText,
   GitBranch,
   ImageIcon,
   LoaderCircle,
   PlayCircle,
   Sparkles,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +23,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -441,6 +449,19 @@ function statusForWorkflowStep(step: WorkflowStep | null | undefined) {
   return step.statusMap[0];
 }
 
+function artifactPreviewKind(artifact: RequestArtifactRecord) {
+  if (artifact.mimeType.startsWith("image/")) return "image";
+  if (
+    artifact.mimeType.startsWith("text/") ||
+    artifact.mimeType.includes("json") ||
+    artifact.name.endsWith(".md") ||
+    artifact.name.endsWith(".json")
+  ) {
+    return "text";
+  }
+  return "raw";
+}
+
 export function RequestDetailsPanel({
   request,
   targetApp,
@@ -497,6 +518,10 @@ export function RequestDetailsPanel({
     [],
   );
   const [artifacts, setArtifacts] = useState<RequestArtifactRecord[]>([]);
+  const [selectedArtifact, setSelectedArtifact] = useState<RequestArtifactRecord | null>(null);
+  const [artifactPreviewText, setArtifactPreviewText] = useState<string | null>(null);
+  const [artifactPreviewError, setArtifactPreviewError] = useState<string | null>(null);
+  const [isArtifactPreviewLoading, setIsArtifactPreviewLoading] = useState(false);
   const [isDraftDirty, setIsDraftDirty] = useState(false);
   const [isCommentPending, startCommentTransition] = useTransition();
   const [isContinuePending, startContinueTransition] = useTransition();
@@ -902,6 +927,34 @@ export function RequestDetailsPanel({
     setArtifacts(Array.isArray(payload.artifacts) ? payload.artifacts : []);
   }
 
+  async function openArtifactPreview(artifact: RequestArtifactRecord) {
+    setSelectedArtifact(artifact);
+    setArtifactPreviewText(null);
+    setArtifactPreviewError(null);
+    const kind = artifactPreviewKind(artifact);
+    if (kind !== "text") {
+      return;
+    }
+
+    setIsArtifactPreviewLoading(true);
+    try {
+      const response = await fetch(
+        `/admin/change-requests/${request.id}/artifacts/${artifact.id}/content`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        throw new Error("Could not load artifact preview");
+      }
+      setArtifactPreviewText(await response.text());
+    } catch (error) {
+      setArtifactPreviewError(
+        error instanceof Error ? error.message : "Could not load artifact preview",
+      );
+    } finally {
+      setIsArtifactPreviewLoading(false);
+    }
+  }
+
   async function addRequestComment(content: string) {
     const response = await fetch(
       `/admin/change-requests/${request.id}/comments`,
@@ -1291,14 +1344,13 @@ export function RequestDetailsPanel({
                                 ) : (
                                   <FileText className="h-4 w-4 text-muted-foreground" />
                                 )}
-                                <a
-                                  href={href}
-                                  target="_blank"
-                                  rel="noreferrer"
+                                <button
+                                  type="button"
+                                  onClick={() => openArtifactPreview(artifact)}
                                   className="break-all font-medium underline underline-offset-2"
                                 >
                                   {artifact.name}
-                                </a>
+                                </button>
                                 <Badge variant="outline">{artifact.kind}</Badge>
                               </div>
                               {artifact.description ? (
@@ -1321,6 +1373,22 @@ export function RequestDetailsPanel({
                               {JSON.stringify(artifact.metadata, null, 2)}
                             </pre>
                           ) : null}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openArtifactPreview(artifact)}
+                            >
+                              View
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" asChild>
+                              <a href={href} target="_blank" rel="noreferrer">
+                                <ExternalLink className="h-4 w-4" />
+                                Raw
+                              </a>
+                            </Button>
+                          </div>
                         </div>
                       );
                     })
@@ -1853,6 +1921,87 @@ export function RequestDetailsPanel({
         </div>
       </div>
 
+      <Dialog
+        open={Boolean(selectedArtifact)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedArtifact(null);
+            setArtifactPreviewText(null);
+            setArtifactPreviewError(null);
+            setIsArtifactPreviewLoading(false);
+          }
+        }}
+      >
+        <DialogContent className="flex max-h-[90vh] max-w-5xl flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex min-w-0 items-center justify-between gap-3">
+              <span className="truncate">{selectedArtifact?.name ?? "Artifact"}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setSelectedArtifact(null)}
+                aria-label="Close artifact preview"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </DialogTitle>
+          </DialogHeader>
+          {selectedArtifact ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+                <div className="flex flex-wrap gap-3">
+                  <span>{selectedArtifact.mimeType}</span>
+                  <span>{formatBytes(selectedArtifact.sizeBytes)}</span>
+                  <span>{selectedArtifact.kind}</span>
+                </div>
+                <Button type="button" variant="outline" size="sm" asChild>
+                  <a
+                    href={`/admin/change-requests/${request.id}/artifacts/${selectedArtifact.id}/content`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Raw
+                  </a>
+                </Button>
+              </div>
+              {artifactPreviewError ? (
+                <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  {artifactPreviewError}
+                </div>
+              ) : null}
+              {artifactPreviewKind(selectedArtifact) === "image" ? (
+                <ScrollArea className="h-[calc(90vh-180px)] border border-border/70 bg-muted/20">
+                  <div className="flex min-h-[320px] items-center justify-center p-4">
+                    <img
+                      src={`/admin/change-requests/${request.id}/artifacts/${selectedArtifact.id}/content`}
+                      alt={selectedArtifact.name}
+                      className="max-h-[calc(90vh-220px)] max-w-full object-contain"
+                    />
+                  </div>
+                </ScrollArea>
+              ) : artifactPreviewKind(selectedArtifact) === "text" ? (
+                <ScrollArea className="h-[calc(90vh-180px)] border border-border/70 bg-muted/20">
+                  {isArtifactPreviewLoading ? (
+                    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                      Loading preview...
+                    </div>
+                  ) : (
+                    <pre className="whitespace-pre-wrap break-words p-4 text-sm leading-6">
+                      {artifactPreviewText ?? ""}
+                    </pre>
+                  )}
+                </ScrollArea>
+              ) : (
+                <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                  No inline preview is available for this artifact type. Open the raw file instead.
+                </div>
+              )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
