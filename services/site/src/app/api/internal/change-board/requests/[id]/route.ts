@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server"
 import {
   buildTargetEnvironmentDeployPlan,
+  createWorkflowEvent,
   getChangeRequest,
   getTargetApp,
   getTargetEnvironment,
+  getWorkflowByKey,
+  getWorkflowRunForRequest,
   listChangeRequestExecutions,
   updateChangeRequest,
+  updateWorkflowRun,
 } from "@/lib/app-core"
 
 import { parseNullableString, requireServiceAccess } from "@/lib/internal-service"
@@ -64,6 +68,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   const body = payload && typeof payload === "object" ? payload as Record<string, unknown> : {}
   const nextStatus = typeof body.status === "string" ? body.status : undefined
   const nextPriority = typeof body.priority === "string" ? body.priority : undefined
+  const nextWorkflowStepKey =
+    typeof (body.currentWorkflowStepKey ?? body.current_workflow_step_key) === "string"
+      ? String(body.currentWorkflowStepKey ?? body.current_workflow_step_key).trim()
+      : undefined
 
   if (!existingChangeRequest) {
     return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })
@@ -77,10 +85,21 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (nextStatus && isTriageOnlyStatus(existingChangeRequest.status) && isExecutionStatus(nextStatus)) {
     return NextResponse.json({ ok: false, error: "CHANGE_REQUEST_NOT_READY_FOR_EXECUTION" }, { status: 409 })
   }
+  if (nextWorkflowStepKey) {
+    const workflow = getWorkflowByKey(existingChangeRequest.workflowKey)
+    const steps = Array.isArray(workflow?.definition.steps) ? workflow.definition.steps : []
+    const validStep = steps.some((step) => {
+      return Boolean(step) && typeof step === "object" && !Array.isArray(step) && step.key === nextWorkflowStepKey
+    })
+    if (!validStep) {
+      return NextResponse.json({ ok: false, error: "Invalid workflow step" }, { status: 400 })
+    }
+  }
 
   const changeRequest = updateChangeRequest(changeRequestId, {
     status: nextStatus,
     priority: nextPriority,
+    syncWorkflowRun: !nextWorkflowStepKey,
     targetEnvironmentId:
       body.targetEnvironmentId !== undefined || body.target_environment_id !== undefined
         ? parseNullableString(body.targetEnvironmentId ?? body.target_environment_id) ?? null
@@ -105,6 +124,30 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   if (!changeRequest) {
     return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })
+  }
+  if (nextWorkflowStepKey) {
+    const workflowRun = getWorkflowRunForRequest(changeRequestId)
+    const previousStepKey = workflowRun?.currentStepKey ?? null
+    const updatedRun = updateWorkflowRun({
+      requestId: changeRequestId,
+      currentStepKey: nextWorkflowStepKey,
+      status: ["approved", "rejected", "closed"].includes(changeRequest.status) ? "completed" : "active",
+      completedAt: ["approved", "rejected", "closed"].includes(changeRequest.status) ? new Date().toISOString() : null,
+    })
+    if (updatedRun && previousStepKey !== nextWorkflowStepKey) {
+      createWorkflowEvent({
+        workflowRunId: updatedRun.id,
+        requestId: changeRequestId,
+        stepKey: nextWorkflowStepKey,
+        eventType: "workflow.step_changed",
+        actorType: "system",
+        payload: {
+          status: changeRequest.status,
+          previousStepKey,
+          nextStepKey: nextWorkflowStepKey,
+        },
+      })
+    }
   }
 
   return NextResponse.json({ ok: true, changeRequest })

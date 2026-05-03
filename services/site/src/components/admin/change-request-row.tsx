@@ -98,7 +98,7 @@ export function ChangeRequestRow({
           {targetApp ? (targetEnvironment?.agentWritable ? "Writable" : "Locked") : "Workflow"}
         </p>
         {request.agentRecommendation ? (
-          <p className="truncate text-xs text-muted-foreground">Triage ready</p>
+          <p className="truncate text-xs text-muted-foreground">Guidance ready</p>
         ) : null}
       </div>
 

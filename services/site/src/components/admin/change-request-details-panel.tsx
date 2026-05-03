@@ -237,18 +237,18 @@ function CommandCenter({
             <div className="space-y-4">
               <div className="rounded-none border border-border/70 p-4">
                 <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Triage Summary
+                  Workflow Summary
                 </p>
                 <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                  {triageSummary || "No triage summary yet."}
+                  {triageSummary || "No workflow summary yet."}
                 </p>
               </div>
               <div className="rounded-none border border-border/70 p-4">
                 <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Suggested Changes Summary
+                  Next Step Guidance
                 </p>
                 <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                  {agentRecommendation || "No suggested changes yet."}
+                  {agentRecommendation || "No guidance recorded yet."}
                 </p>
               </div>
             </div>
@@ -420,6 +420,14 @@ function formatBytes(value: number) {
   return `${size >= 10 || index === 0 ? Math.round(size) : size.toFixed(1)} ${units[index]}`;
 }
 
+function statusForWorkflowStep(step: WorkflowStep | null | undefined) {
+  if (!step?.statusMap.length) return null;
+  if (step.type === "agent") {
+    return step.statusMap.find((status) => ["triaging", "in-progress"].includes(status)) ?? step.statusMap[0];
+  }
+  return step.statusMap[0];
+}
+
 export function RequestDetailsPanel({
   request,
   targetApp,
@@ -437,6 +445,7 @@ export function RequestDetailsPanel({
   error: string | null;
   onSave: (payload: {
     status: string;
+    currentWorkflowStepKey?: string | null;
     triageSummary: string;
     agentRecommendation: string;
   }) => void;
@@ -457,6 +466,7 @@ export function RequestDetailsPanel({
     request.agentRecommendation ?? "",
   );
   const [manualStatus, setManualStatus] = useState(request.status);
+  const [manualWorkflowStepKey, setManualWorkflowStepKey] = useState(request.currentWorkflowStepKey ?? "");
   const [manualAgentRecommendation, setManualAgentRecommendation] = useState(
     request.agentRecommendation ?? "",
   );
@@ -487,6 +497,7 @@ export function RequestDetailsPanel({
     setTriageSummary(request.triageSummary ?? "");
     setAgentRecommendation(request.agentRecommendation ?? "");
     setManualStatus(request.status);
+    setManualWorkflowStepKey(request.currentWorkflowStepKey ?? "");
     setManualAgentRecommendation(request.agentRecommendation ?? "");
     setIsDraftDirty(false);
   }, [request.id, request.updatedAt]);
@@ -1031,7 +1042,7 @@ export function RequestDetailsPanel({
   function handleApproveSolution() {
     const prompt = [
       `Approve current gate and continue workflow for request #${request.requestNumber}: ${request.title}.`,
-      "Use the workflow manifest to route to the next agent step. Use the triage summary, suggested changes, request context, and thread history.",
+      "Use the workflow manifest to route to the next agent step. Use the workflow summary, next-step guidance, request context, and thread history.",
     ].join("\n");
 
     setThreadError(null);
@@ -1085,8 +1096,23 @@ export function RequestDetailsPanel({
 
   function handleSaveManualStatus() {
     setStatus(manualStatus);
+    setCurrentWorkflowStepKey(manualWorkflowStepKey || null);
     setIsDraftDirty(false);
-    onSave({ status: manualStatus, triageSummary, agentRecommendation });
+    onSave({
+      status: manualStatus,
+      currentWorkflowStepKey: manualWorkflowStepKey || null,
+      triageSummary,
+      agentRecommendation,
+    });
+  }
+
+  function handleManualWorkflowStepChange(nextStepKey: string) {
+    setManualWorkflowStepKey(nextStepKey);
+    const nextStep = currentWorkflowSteps.find((step) => step.key === nextStepKey);
+    const nextStatus = statusForWorkflowStep(nextStep);
+    if (nextStatus) {
+      setManualStatus(nextStatus);
+    }
   }
 
   function handleSaveSuggestedChanges() {
@@ -1195,9 +1221,9 @@ export function RequestDetailsPanel({
 
           <Card className="border-border/60 bg-card/90 rounded-none">
             <CardHeader>
-              <CardTitle>Triage Notes</CardTitle>
+              <CardTitle>Workflow Notes</CardTitle>
               <CardDescription>
-                Proposed scope, suggested changes, and routing context.
+                Step summaries, guidance, and routing context for this workflow.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1206,7 +1232,7 @@ export function RequestDetailsPanel({
                   {triageSummary ? (
                     <div className="rounded-none border border-border/70 p-4">
                       <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                        Triage Summary
+                        Workflow Summary
                       </p>
                       <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
                         {triageSummary}
@@ -1217,7 +1243,7 @@ export function RequestDetailsPanel({
                     <div className="rounded-none border border-border/70 p-4">
                       <p className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
                         <Sparkles className="h-4 w-4" />
-                        Suggested Changes Summary
+                        Next Step Guidance
                       </p>
                       <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
                         {agentRecommendation}
@@ -1227,7 +1253,7 @@ export function RequestDetailsPanel({
                 </>
               ) : (
                 <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                  No triage notes yet.
+                  No workflow notes yet.
                 </div>
               )}
             </CardContent>
@@ -1466,14 +1492,29 @@ export function RequestDetailsPanel({
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-3">
-                <Label htmlFor="manual-status">Status</Label>
-                <div className="flex flex-col gap-3 sm:flex-row">
+                <Label htmlFor="manual-workflow-step">Workflow Step</Label>
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,320px)_minmax(0,320px)_auto]">
+                  <Select value={manualWorkflowStepKey} onValueChange={handleManualWorkflowStepChange}>
+                    <SelectTrigger
+                      id="manual-workflow-step"
+                      className="border border-input shadow-sm"
+                    >
+                      <SelectValue placeholder="Select workflow step" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {currentWorkflowSteps.map((step) => (
+                        <SelectItem key={step.key} value={step.key}>
+                          {step.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Select value={manualStatus} onValueChange={setManualStatus}>
                     <SelectTrigger
                       id="manual-status"
-                      className="border border-input shadow-sm sm:max-w-xs"
+                      className="border border-input shadow-sm"
                     >
-                      <SelectValue placeholder="Select a status" />
+                      <SelectValue placeholder="Select board status" />
                     </SelectTrigger>
                     <SelectContent>
                       {triageStatuses.map((option) => (
@@ -1486,7 +1527,11 @@ export function RequestDetailsPanel({
                   <Button
                     type="button"
                     onClick={handleSaveManualStatus}
-                    disabled={isPending || manualStatus === status}
+                    disabled={
+                      isPending ||
+                      (manualStatus === status &&
+                        (manualWorkflowStepKey || null) === currentWorkflowStepKey)
+                    }
                   >
                     {isPending ? (
                       <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -1523,7 +1568,7 @@ export function RequestDetailsPanel({
                     htmlFor="manual-agent-recommendation"
                   >
                     <Sparkles className="h-4 w-4" />
-                    Suggested Changes
+                    Next Step Guidance
                   </Label>
                   <div className="rounded-none border border-border/70 bg-background/70 p-4">
                     <Textarea
@@ -1548,7 +1593,7 @@ export function RequestDetailsPanel({
                       {isPending ? (
                         <LoaderCircle className="h-4 w-4 animate-spin" />
                       ) : null}
-                      Save suggested changes
+                      Save guidance
                     </Button>
                   </div>
                 </div>

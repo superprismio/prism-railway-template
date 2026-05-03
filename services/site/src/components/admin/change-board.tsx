@@ -150,6 +150,7 @@ export function ChangeBoard({
 
   function handleSaveTriage(payload: {
     status: string;
+    currentWorkflowStepKey?: string | null;
     triageSummary: string;
     agentRecommendation: string;
   }) {
@@ -453,7 +454,7 @@ export function ChangeBoard({
                 <div className="border-b border-border/60 px-5 py-4 md:px-6">
                   <p className="text-sm font-medium">Workspace Snapshot</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Quick read on activity while you triage the board.
+                    Quick read on request and workflow activity.
                   </p>
                 </div>
                 <div className="grid gap-3 px-5 py-4 md:px-6">
