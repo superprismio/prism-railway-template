@@ -124,7 +124,9 @@ function CommandCenter({
             }}
           />
           <div
-            className="absolute top-4 hidden h-px bg-primary md:block"
+            className={`absolute top-4 hidden h-px bg-primary md:block ${
+              isRunning ? "animate-pulse" : ""
+            }`}
             style={{
               left: `calc(100% / ${steps.length * 2})`,
               width:
@@ -138,6 +140,7 @@ function CommandCenter({
           {steps.map((step, index) => {
             const isComplete = status === "closed" || currentStepIndex > index;
             const isCurrent = currentStepIndex === index;
+            const isCurrentRunning = isCurrent && isRunning;
 
             return (
               <div key={step.key} className="relative flex gap-3 md:block">
@@ -148,22 +151,31 @@ function CommandCenter({
                     }`}
                   />
                 ) : null}
-                <div
-                  className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border md:mx-auto ${
-                    isComplete
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : isCurrent
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-border bg-background text-muted-foreground"
-                  }`}
-                >
-                  {isComplete ? (
-                    <CheckCircle2 className="h-4 w-4" />
-                  ) : isCurrent ? (
-                    <PlayCircle className="h-4 w-4" />
-                  ) : (
-                    <Circle className="h-3 w-3" />
-                  )}
+                <div className="relative z-10 h-8 w-8 shrink-0 md:mx-auto">
+                  {isCurrentRunning ? (
+                    <span className="absolute inset-0 rounded-full bg-primary/30 animate-ping" />
+                  ) : null}
+                  <div
+                    className={`relative flex h-8 w-8 items-center justify-center rounded-full border ${
+                      isComplete
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : isCurrentRunning
+                          ? "border-primary bg-primary text-primary-foreground shadow-[0_0_0_4px_hsl(var(--primary)/0.18)]"
+                          : isCurrent
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border bg-background text-muted-foreground"
+                    }`}
+                  >
+                    {isComplete ? (
+                      <CheckCircle2 className="h-4 w-4" />
+                    ) : isCurrentRunning ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                    ) : isCurrent ? (
+                      <PlayCircle className="h-4 w-4" />
+                    ) : (
+                      <Circle className="h-3 w-3" />
+                    )}
+                  </div>
                 </div>
                 <div className="min-w-0 md:mt-3 md:text-center">
                   <p
