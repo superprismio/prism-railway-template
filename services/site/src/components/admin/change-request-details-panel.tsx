@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   CheckCircle2,
   Circle,
+  FileText,
   GitBranch,
+  ImageIcon,
   LoaderCircle,
   PlayCircle,
   Sparkles,
@@ -33,6 +35,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type {
   ChangeRequestExecutionRecord,
   ChangeRequestRecord,
+  RequestArtifactRecord,
   TargetAppRecord,
   TargetEnvironmentRecord,
   WorkflowEventRecord,
@@ -403,6 +406,18 @@ function CommandCenter({
   );
 }
 
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let size = value;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size >= 10 || index === 0 ? Math.round(size) : size.toFixed(1)} ${units[index]}`;
+}
+
 export function RequestDetailsPanel({
   request,
   targetApp,
@@ -456,6 +471,7 @@ export function RequestDetailsPanel({
   const [workflowEvents, setWorkflowEvents] = useState<WorkflowEventRecord[]>(
     [],
   );
+  const [artifacts, setArtifacts] = useState<RequestArtifactRecord[]>([]);
   const [isDraftDirty, setIsDraftDirty] = useState(false);
   const [isCommentPending, startCommentTransition] = useTransition();
   const [isContinuePending, startContinueTransition] = useTransition();
@@ -537,7 +553,7 @@ export function RequestDetailsPanel({
 
     async function pollLiveState() {
       try {
-        const [threadResponse, executionResponse, workflowEventResponse] = await Promise.all([
+        const [threadResponse, executionResponse, workflowEventResponse, artifactResponse] = await Promise.all([
           fetch(`/admin/change-requests/${request.id}/agent-thread`, {
             cache: "no-store",
           }),
@@ -547,9 +563,12 @@ export function RequestDetailsPanel({
           fetch(`/admin/change-requests/${request.id}/workflow-events`, {
             cache: "no-store",
           }),
+          fetch(`/admin/change-requests/${request.id}/artifacts`, {
+            cache: "no-store",
+          }),
         ]);
 
-        if (!threadResponse.ok || !executionResponse.ok || !workflowEventResponse.ok || cancelled) {
+        if (!threadResponse.ok || !executionResponse.ok || !workflowEventResponse.ok || !artifactResponse.ok || cancelled) {
           return;
         }
 
@@ -562,6 +581,9 @@ export function RequestDetailsPanel({
         };
         const workflowEventPayload = (await workflowEventResponse.json()) as {
           events?: WorkflowEventRecord[];
+        };
+        const artifactPayload = (await artifactResponse.json()) as {
+          artifacts?: RequestArtifactRecord[];
         };
 
         if (cancelled) return;
@@ -578,6 +600,11 @@ export function RequestDetailsPanel({
         setWorkflowEvents(
           Array.isArray(workflowEventPayload.events)
             ? workflowEventPayload.events
+            : [],
+        );
+        setArtifacts(
+          Array.isArray(artifactPayload.artifacts)
+            ? artifactPayload.artifacts
             : [],
         );
       } catch {
@@ -743,6 +770,50 @@ export function RequestDetailsPanel({
     };
   }, [request.id]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadArtifacts() {
+      try {
+        const response = await fetch(
+          `/admin/change-requests/${request.id}/artifacts`,
+          { cache: "no-store" },
+        );
+        if (!response.ok) {
+          throw new Error("Could not load request artifacts");
+        }
+
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          artifacts?: RequestArtifactRecord[];
+          error?: string;
+        };
+
+        if (cancelled) return;
+        if (payload.ok === false) {
+          throw new Error(payload.error || "Could not load request artifacts");
+        }
+
+        setArtifacts(Array.isArray(payload.artifacts) ? payload.artifacts : []);
+      } catch (error) {
+        if (!cancelled) {
+          setThreadError(
+            (current) =>
+              current ??
+              (error instanceof Error
+                ? error.message
+                : "Could not load request artifacts"),
+          );
+        }
+      }
+    }
+
+    loadArtifacts();
+    return () => {
+      cancelled = true;
+    };
+  }, [request.id]);
+
   async function refreshThread() {
     const response = await fetch(
       `/admin/change-requests/${request.id}/agent-thread`,
@@ -788,6 +859,21 @@ export function RequestDetailsPanel({
       events?: WorkflowEventRecord[];
     };
     setWorkflowEvents(Array.isArray(payload.events) ? payload.events : []);
+  }
+
+  async function refreshArtifacts() {
+    const response = await fetch(
+      `/admin/change-requests/${request.id}/artifacts`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) {
+      throw new Error("Could not refresh request artifacts");
+    }
+
+    const payload = (await response.json()) as {
+      artifacts?: RequestArtifactRecord[];
+    };
+    setArtifacts(Array.isArray(payload.artifacts) ? payload.artifacts : []);
   }
 
   async function addRequestComment(content: string) {
@@ -853,6 +939,7 @@ export function RequestDetailsPanel({
     await refreshThread();
     await refreshExecutions();
     await refreshWorkflowEvents();
+    await refreshArtifacts();
   }
 
   function saveRequestState(nextStatus: string) {
@@ -1040,6 +1127,7 @@ export function RequestDetailsPanel({
           <Tabs defaultValue="details" className="space-y-4">
             <TabsList className="h-auto flex-wrap rounded-none bg-muted/50 p-1">
               <TabsTrigger value="details">Details</TabsTrigger>
+              <TabsTrigger value="artifacts">Artifacts</TabsTrigger>
               <TabsTrigger value="comments">Comments</TabsTrigger>
               <TabsTrigger value="history">History</TabsTrigger>
               <TabsTrigger value="log">Log</TabsTrigger>
@@ -1139,6 +1227,75 @@ export function RequestDetailsPanel({
               )}
             </CardContent>
           </Card>
+            </TabsContent>
+
+            <TabsContent value="artifacts" className="mt-0">
+              <Card className="border-border/60 bg-card/90 rounded-none">
+                <CardHeader>
+                  <CardTitle>Artifacts</CardTitle>
+                  <CardDescription>
+                    Durable files produced by workflow steps for this request.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {artifacts.length ? (
+                    artifacts.map((artifact) => {
+                      const href = `/admin/change-requests/${request.id}/artifacts/${artifact.id}/content`;
+                      const isImage = artifact.mimeType.startsWith("image/");
+
+                      return (
+                        <div
+                          key={artifact.id}
+                          className="rounded-none border border-border/70 bg-background/70 p-4 text-sm"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                {isImage ? (
+                                  <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                                ) : (
+                                  <FileText className="h-4 w-4 text-muted-foreground" />
+                                )}
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="break-all font-medium underline underline-offset-2"
+                                >
+                                  {artifact.name}
+                                </a>
+                                <Badge variant="outline">{artifact.kind}</Badge>
+                              </div>
+                              {artifact.description ? (
+                                <p className="mt-2 whitespace-pre-wrap leading-6 text-muted-foreground">
+                                  {artifact.description}
+                                </p>
+                              ) : null}
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {isoLabel(artifact.createdAt) ?? ""}
+                            </span>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                            <span>{artifact.mimeType}</span>
+                            <span>{formatBytes(artifact.sizeBytes)}</span>
+                            <span>by {artifact.createdBy}</span>
+                          </div>
+                          {Object.keys(artifact.metadata).length ? (
+                            <pre className="mt-3 max-h-40 overflow-auto rounded-none border border-border/60 bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+                              {JSON.stringify(artifact.metadata, null, 2)}
+                            </pre>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                      No artifacts have been saved for this request yet.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="comments" className="mt-0">

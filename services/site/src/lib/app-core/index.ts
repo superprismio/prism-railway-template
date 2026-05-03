@@ -4,11 +4,19 @@ export { getAdminBoardSnapshot, getAdminSetupStatus } from './admin-read';
 export { buildTargetEnvironmentDeployPlan, type TargetEnvironmentDeployPlan } from './deploy-adapters';
 export { buildHostedSkillArchive, listHostedSkills, readHostedSkillMarkdown, upsertCustomSkill, type HostedSkillSummary } from './hosted-skills';
 export {
+  buildRequestArtifactStoragePath,
+  readRequestArtifactFile,
+  resolveRequestArtifactStoragePath,
+  workflowArtifactsRoot,
+  writeRequestArtifactFile,
+} from './request-artifact-storage';
+export {
   createAgentMessage,
   createAgentSession,
   createAuditLog,
   createChangeRequest,
   createChangeRequestExecution,
+  createRequestArtifact,
   createWorkflowEvent,
   createTaskRun,
   createTargetApp,
@@ -21,6 +29,7 @@ export {
   getDefaultTargetEnvironmentForApp,
   getNextQueuedChangeRequest,
   getAgentSession,
+  getRequestArtifact,
   getTargetApp,
   getTargetEnvironment,
   getTaskByKey,
@@ -30,6 +39,7 @@ export {
   listChangeRequests,
   listAgentMessages,
   listChangeRequestExecutions,
+  listRequestArtifacts,
   listTargetApps,
   listTargetEnvironments,
   listTaskRuns,
@@ -48,6 +58,7 @@ export {
   updateTaskRun,
   type CreateChangeRequestInput,
   type CreateChangeRequestExecutionInput,
+  type CreateRequestArtifactInput,
   type CreateTaskRunInput,
   type CreateTargetAppInput,
   type CreateTargetEnvironmentInput,
@@ -55,6 +66,7 @@ export {
   type TargetAppRecord,
   type TargetEnvironmentRecord,
   type ChangeRequestRecord,
+  type RequestArtifactRecord,
   type CreateAgentSessionInput,
   type TaskRecord,
   type TaskRunRecord,

@@ -80,6 +80,23 @@ To run a request workflow step from another service, use the site response route
 
 Send that body to `POST /admin/responses`. For gate steps, set `workflow_action` to the route key, such as `approved` or `changesRequested`.
 
+Workflow steps should save durable files through the request artifact API instead of leaving important outputs only in chat text. Use artifacts for drafts, image prompts, generated images, publish packets, JSON plans, or any step output that future steps or humans should inspect.
+
+```json
+{
+  "kind": "markdown",
+  "name": "draft.md",
+  "mimeType": "text/markdown",
+  "content": "# Draft\n...",
+  "encoding": "utf8",
+  "metadata": {
+    "workflowStep": "draft"
+  }
+}
+```
+
+Send that body to `POST /api/internal/change-board/requests/<request-id>/artifacts` with internal service auth. Use `encoding: "base64"` for image or other binary content. Artifacts are owned by the site service, stored under `/data/workflow-artifacts`, listed on the request Artifacts tab, and recorded as `artifact.created` workflow events.
+
 ## Manifest Rules
 
 The manifest is stored in `workflows.definition_json`. Keep it small.
@@ -178,6 +195,7 @@ Each `steps/<step-key>.md` should stay narrow and skill-like:
 - list the context the agent should use
 - name relevant skills/scripts/files
 - state what output should be returned
+- state which durable artifacts should be written
 - state delegation rules when `agentConfig.delegation.allowed` is true
 - avoid broad instructions that belong to the whole workflow
 

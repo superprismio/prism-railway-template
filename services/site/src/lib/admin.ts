@@ -126,6 +126,23 @@ export type WorkflowEventRecord = {
   createdAt: string
 }
 
+export type RequestArtifactRecord = {
+  id: string
+  requestId: string
+  workflowRunId: string | null
+  executionId: string | null
+  kind: string
+  name: string
+  description: string | null
+  mimeType: string
+  storagePath: string
+  sizeBytes: number
+  metadata: Record<string, unknown>
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type AdminSetupStatus = {
   prismMemory: {
     configured: boolean

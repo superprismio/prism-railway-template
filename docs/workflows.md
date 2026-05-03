@@ -170,10 +170,59 @@ The runtime tables are:
 - `workflow_runs`: one durable run per request, including current step and workflow key.
 - `workflow_events`: append-only history for workflow start, step changes, gate decisions, agent start, agent completion, and agent failure.
 - `change_request_executions`: concrete Codex execution records with branch, commit, trace, and summary.
+- `request_artifacts`: files produced by workflow steps, with metadata in SQLite and file bytes stored under the site data volume.
 
 The request `status` remains a board projection derived from the workflow step. It should not be treated as the workflow engine.
 
 Manual status changes in the Advanced request controls are an escape hatch. They sync the workflow run by status and record a step-change event when the mapped step changes, but they can bypass explicit gate-decision events.
+
+## Request Artifacts
+
+Workflow steps can save durable outputs as request artifacts. Use artifacts for drafts, image prompts, generated images, publish packets, JSON plans, or any output that should remain visible after an agent run finishes.
+
+Artifacts are stored under the site service data root:
+
+```text
+/data/workflow-artifacts/
+  requests/
+    <request-id>/
+      <artifact-id>-<filename>
+```
+
+The `request_artifacts` table stores the request link, artifact kind, name, MIME type, size, metadata, and relative storage path. The request detail UI shows artifacts in the **Artifacts** tab and serves file content through authenticated admin routes.
+
+Codex Runtime or another internal service can create an artifact with:
+
+```http
+POST /api/internal/change-board/requests/<request-id>/artifacts
+Content-Type: application/json
+x-service-token: <internal-service-token>
+
+{
+  "kind": "markdown",
+  "name": "draft.md",
+  "mimeType": "text/markdown",
+  "content": "# Draft\n...",
+  "encoding": "utf8",
+  "metadata": {
+    "workflowStep": "draft"
+  }
+}
+```
+
+Use `encoding: "base64"` for images or other binary files. Creating an artifact also records an `artifact.created` workflow event when the request has a workflow run.
+
+List artifacts:
+
+```http
+GET /api/internal/change-board/requests/<request-id>/artifacts
+```
+
+Read artifact content:
+
+```http
+GET /api/internal/change-board/requests/<request-id>/artifacts/<artifact-id>/content
+```
 
 ## Custom Workflow Registration
 
@@ -270,6 +319,7 @@ Workflow state is split across two migrations:
 - `007_workflows`: adds `tasks.agent_config_json`, `change_requests.workflow_key`, and the `workflows` registry table; seeds `change-request-default`.
 - `008_workflow_runs`: adds `workflow_runs` and `workflow_events`.
 - `009_nullable_request_targets`: makes `change_requests.target_app_id` nullable and marks the default workflow as repository-targeted.
+- `010_request_artifacts`: adds request-linked workflow artifacts.
 
 ## Near-Term Path
 
@@ -277,6 +327,6 @@ Workflow state is split across two migrations:
 2. Keep request status as the board projection.
 3. Render registered workflows read-only in admin.
 4. Let chat author workflow markdown and manifests after the default workflow has been exercised.
-5. Add custom workflow persistence under `/data/workflows` when workflow authoring graduates from built-in examples.
+5. Expand workflow artifacts into richer previews when publish and image generation workflows need them.
 
-The `prism-workflow-author` skill documents the authoring style for new workflow markdown and manifests. There is not yet a custom workflow write API or workflow creation UI.
+The `prism-workflow-author` skill documents the authoring style for new workflow markdown and manifests.

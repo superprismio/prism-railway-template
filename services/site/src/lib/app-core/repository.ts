@@ -555,6 +555,38 @@ export interface WorkflowEventRecord {
   createdAt: string;
 }
 
+export interface RequestArtifactRecord {
+  id: string;
+  requestId: string;
+  workflowRunId: string | null;
+  executionId: string | null;
+  kind: string;
+  name: string;
+  description: string | null;
+  mimeType: string;
+  storagePath: string;
+  sizeBytes: number;
+  metadata: Record<string, unknown>;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateRequestArtifactInput {
+  id?: string;
+  requestId: string;
+  workflowRunId?: string | null;
+  executionId?: string | null;
+  kind: string;
+  name: string;
+  description?: string | null;
+  mimeType: string;
+  storagePath: string;
+  sizeBytes: number;
+  metadata?: Record<string, unknown>;
+  createdBy?: string | null;
+}
+
 export interface TaskRunRecord {
   id: string;
   taskId: string;
@@ -779,6 +811,23 @@ interface WorkflowEventRow {
   created_at: string;
 }
 
+interface RequestArtifactRow {
+  id: string;
+  request_id: string;
+  workflow_run_id: string | null;
+  execution_id: string | null;
+  kind: string;
+  name: string;
+  description: string | null;
+  mime_type: string;
+  storage_path: string;
+  size_bytes: number;
+  metadata_json: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface TaskRunRow {
   id: string;
   task_id: string;
@@ -858,6 +907,25 @@ function mapWorkflowEventRow(row: WorkflowEventRow): WorkflowEventRecord {
     note: row.note,
     payload: parseJsonValue<Record<string, unknown>>(row.payload_json, {}),
     createdAt: row.created_at,
+  };
+}
+
+function mapRequestArtifactRow(row: RequestArtifactRow): RequestArtifactRecord {
+  return {
+    id: row.id,
+    requestId: row.request_id,
+    workflowRunId: row.workflow_run_id,
+    executionId: row.execution_id,
+    kind: row.kind,
+    name: row.name,
+    description: row.description,
+    mimeType: row.mime_type,
+    storagePath: row.storage_path,
+    sizeBytes: row.size_bytes,
+    metadata: parseJsonValue<Record<string, unknown>>(row.metadata_json, {}),
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -4230,6 +4298,87 @@ export function listWorkflowEventsForRequest(requestId: string, limit = 100): Wo
     .all(requestId, safeLimit) as WorkflowEventRow[];
 
   return rows.map(mapWorkflowEventRow);
+}
+
+export function createRequestArtifact(input: CreateRequestArtifactInput): RequestArtifactRecord {
+  const request = getChangeRequest(input.requestId);
+  if (!request) {
+    throw new Error('CHANGE_REQUEST_NOT_FOUND');
+  }
+
+  const id = normalizeText(input.id) || randomUUID();
+  const now = new Date().toISOString();
+  const kind = normalizeText(input.kind) || 'file';
+  const name = normalizeText(input.name);
+  const mimeType = normalizeText(input.mimeType) || 'application/octet-stream';
+  const storagePath = normalizeText(input.storagePath);
+
+  if (!name) {
+    throw new Error('ARTIFACT_NAME_REQUIRED');
+  }
+  if (!storagePath) {
+    throw new Error('ARTIFACT_STORAGE_PATH_REQUIRED');
+  }
+
+  getDb()
+    .prepare(
+      `INSERT INTO request_artifacts (
+         id, request_id, workflow_run_id, execution_id, kind, name, description,
+         mime_type, storage_path, size_bytes, metadata_json, created_by, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.requestId,
+      input.workflowRunId ?? null,
+      input.executionId ?? null,
+      kind,
+      name,
+      normalizeText(input.description) || null,
+      mimeType,
+      storagePath,
+      Math.max(0, Math.trunc(input.sizeBytes)),
+      JSON.stringify(input.metadata ?? {}),
+      normalizeText(input.createdBy) || 'system',
+      now,
+      now,
+    );
+
+  const artifact = getRequestArtifact(id);
+  if (!artifact) {
+    throw new Error('ARTIFACT_CREATE_FAILED');
+  }
+
+  return artifact;
+}
+
+export function getRequestArtifact(id: string): RequestArtifactRecord | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, request_id, workflow_run_id, execution_id, kind, name, description,
+              mime_type, storage_path, size_bytes, metadata_json, created_by, created_at, updated_at
+       FROM request_artifacts
+       WHERE id = ?`,
+    )
+    .get(id) as RequestArtifactRow | undefined;
+
+  return row ? mapRequestArtifactRow(row) : null;
+}
+
+export function listRequestArtifacts(requestId: string, limit = 100): RequestArtifactRecord[] {
+  const safeLimit = Math.max(1, Math.min(limit, 500));
+  const rows = getDb()
+    .prepare(
+      `SELECT id, request_id, workflow_run_id, execution_id, kind, name, description,
+              mime_type, storage_path, size_bytes, metadata_json, created_by, created_at, updated_at
+       FROM request_artifacts
+       WHERE request_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+    )
+    .all(requestId, safeLimit) as RequestArtifactRow[];
+
+  return rows.map(mapRequestArtifactRow);
 }
 
 export function upsertTask(input: UpsertTaskInput): TaskRecord {
