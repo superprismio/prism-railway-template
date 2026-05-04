@@ -59,7 +59,7 @@ Workflow runner task shape:
 {
   "key": "weekly-blog-workflow",
   "name": "Weekly blog workflow",
-  "description": "Create a weekly blog request and run the first workflow step.",
+  "description": "Create a weekly blog request and run the workflow until the next gate.",
   "enabled": false,
   "triggerType": "schedule",
   "scheduleCron": "0 16 * * 5",

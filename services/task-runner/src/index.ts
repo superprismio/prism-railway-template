@@ -702,6 +702,7 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
             input: [{ role: "user", content: prompt }],
             linked_change_request_id: requestId,
             workflow_action: null,
+            auto_continue_until_gate: true,
             requested_skills: mergeRequestedSkills(siteTask),
           });
           stepResults.push(runResult);

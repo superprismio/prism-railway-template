@@ -86,7 +86,7 @@ Supported config:
 }
 ```
 
-The default behavior is conservative: auto-run is enabled, but `maxSteps` defaults to `1`, so a scheduled task creates the request and runs only the first agent step unless configured otherwise. The runner stops when the request status reaches one of `stopStatuses`.
+The default behavior creates the request and immediately invokes the workflow with `auto_continue_until_gate=true`. The site service runs consecutive agent steps until the workflow reaches a gate, terminal state, failure, or its server-side continuation cap. `maxSteps` remains as a compatibility guard around repeated task-runner invocations; the usual value is `1`.
 
 The runner calls:
 
