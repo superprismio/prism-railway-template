@@ -31,7 +31,7 @@ function randomMessageId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-export function CodexConsole() {
+export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
   const [draft, setDraft] = useState("")
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ConsoleMessage[]>([])
@@ -41,6 +41,7 @@ export function CodexConsole() {
   const [isPending, startTransition] = useTransition()
   const transcriptRef = useRef<HTMLDivElement | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     const storedSessionId = window.localStorage.getItem(consoleSessionStorageKey)
@@ -85,6 +86,13 @@ export function CodexConsole() {
       behavior: messages.length > 1 ? "smooth" : "auto",
     })
   }, [isLoadingHistory, messages.length, isPending])
+
+  useEffect(() => {
+    if (!isActive) return
+    window.requestAnimationFrame(() => {
+      inputRef.current?.focus()
+    })
+  }, [isActive])
 
   function toggleSkill(skillId: string) {
     setRequestedSkills((current) =>
@@ -230,6 +238,7 @@ export function CodexConsole() {
       <form ref={formRef} action={handleSubmit} className="border-t border-border/60 px-5 py-4 md:px-6">
         <div className="space-y-3">
           <Textarea
+            ref={inputRef}
             name="prompt"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}

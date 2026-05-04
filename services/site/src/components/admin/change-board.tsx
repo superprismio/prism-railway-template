@@ -60,6 +60,13 @@ export function ChangeBoard({
   const [repositoryFilter, setRepositoryFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortValue, setSortValue] = useState<RequestSortValue>("updated-desc");
+  const [activeTab, setActiveTab] = useState(() =>
+    initialTab && workspaceTabs.includes(initialTab)
+      ? initialTab
+      : initialTab === "change-requests"
+        ? "requests"
+        : "requests",
+  );
   const [isSaving, startSaving] = useTransition();
   const [modalError, setModalError] = useState<string | null>(null);
 
@@ -242,13 +249,6 @@ export function ChangeBoard({
     statusFilter,
     typeFilter,
   ]);
-  const defaultTab =
-    initialTab && workspaceTabs.includes(initialTab)
-      ? initialTab
-      : initialTab === "change-requests"
-        ? "requests"
-        : "requests";
-
   return (
     <main className="min-h-screen w-full bg-background text-foreground">
       <AdminHeader
@@ -287,7 +287,8 @@ export function ChangeBoard({
       />
 
       <Tabs
-        defaultValue={defaultTab}
+        value={activeTab}
+        onValueChange={setActiveTab}
         className="flex min-h-[calc(100vh-65px)] flex-col"
       >
         <div className="sticky top-16 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
@@ -504,7 +505,7 @@ export function ChangeBoard({
               </p>
             </div>
 
-            <CodexConsole />
+            <CodexConsole isActive={activeTab === "codex-console"} />
           </section>
         </TabsContent>
 
