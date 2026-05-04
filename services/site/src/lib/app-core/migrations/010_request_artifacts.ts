@@ -11,7 +11,7 @@ export const requestArtifactsMigration = {
       description TEXT,
       mime_type TEXT NOT NULL,
       storage_path TEXT NOT NULL,
-      size_bytes INTEGER NOT NULL DEFAULT 0,
+      size_bytes INTEGER NOT NULL DEFAULT 0 CHECK (size_bytes >= 0),
       metadata_json TEXT NOT NULL DEFAULT '{}',
       created_by TEXT NOT NULL DEFAULT 'system',
       created_at TEXT NOT NULL,

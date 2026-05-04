@@ -4,6 +4,7 @@ import {
   buildRequestArtifactStoragePath,
   createWorkflowEvent,
   createRequestArtifact,
+  deleteRequestArtifactFile,
   getChangeRequest,
   getWorkflowRunForRequest,
   listRequestArtifacts,
@@ -52,7 +53,8 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   const url = new URL(request.url)
-  const limit = readOptionalInteger(url.searchParams.get("limit")) ?? 100
+  const rawLimit = readOptionalInteger(url.searchParams.get("limit")) ?? 100
+  const limit = Math.min(500, Math.max(1, rawLimit))
   return NextResponse.json({ ok: true, artifacts: listRequestArtifacts(id, limit) })
 }
 
@@ -94,7 +96,7 @@ export async function POST(request: Request, context: RouteContext) {
   const storagePath = buildRequestArtifactStoragePath({ requestId, artifactId, name })
 
   try {
-    writeRequestArtifactFile(storagePath, content)
+    await writeRequestArtifactFile(storagePath, content)
     const artifact = createRequestArtifact({
       id: artifactId,
       requestId,
@@ -129,6 +131,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     return NextResponse.json({ ok: true, artifact }, { status: 201 })
   } catch (error) {
+    await deleteRequestArtifactFile(storagePath).catch(() => undefined)
     const message = error instanceof Error ? error.message : String(error)
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }

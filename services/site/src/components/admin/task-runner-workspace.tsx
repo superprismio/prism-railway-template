@@ -432,10 +432,13 @@ export function TaskRunnerWorkspace() {
               id={`${task.key}-enabled`}
               checked={draft.enabled}
               onCheckedChange={(checked) =>
-                setDrafts((current) => ({
-                  ...current,
-                  [task.key]: { ...draft, enabled: checked },
-                }))
+                setDrafts((current) => {
+                  const latest = current[task.key] ?? draft;
+                  return {
+                    ...current,
+                    [task.key]: { ...latest, enabled: checked },
+                  };
+                })
               }
             />
           </div>
@@ -447,10 +450,13 @@ export function TaskRunnerWorkspace() {
             <Select
               value={cronPresets.some((preset) => preset.value === draft.scheduleCron.trim()) ? draft.scheduleCron.trim() : ""}
               onValueChange={(value) =>
-                setDrafts((current) => ({
-                  ...current,
-                  [task.key]: { ...draft, scheduleCron: value },
-                }))
+                setDrafts((current) => {
+                  const latest = current[task.key] ?? draft;
+                  return {
+                    ...current,
+                    [task.key]: { ...latest, scheduleCron: value },
+                  };
+                })
               }
             >
               <SelectTrigger aria-label={`Cron preset for ${task.name}`}>
@@ -469,10 +475,13 @@ export function TaskRunnerWorkspace() {
               value={draft.scheduleCron}
               placeholder="0 * * * *"
               onChange={(event) =>
-                setDrafts((current) => ({
-                  ...current,
-                  [task.key]: { ...draft, scheduleCron: event.target.value },
-                }))
+                setDrafts((current) => {
+                  const latest = current[task.key] ?? draft;
+                  return {
+                    ...current,
+                    [task.key]: { ...latest, scheduleCron: event.target.value },
+                  };
+                })
               }
             />
             <p className={`text-xs ${cron.valid ? "text-muted-foreground" : "text-destructive"}`}>

@@ -2,14 +2,14 @@
 
 `task-runner` is the first step toward a first-class Tasks workflow.
 
-For the initial slice, it can replace the fixed Railway cron workers by running built-in scheduled tasks:
+It replaces the fixed Railway cron workers by running built-in scheduled tasks:
 
 - Discord sync
 - Prism Memory run
 - Prism Knowledge source sync
 - Prism Knowledge run
 
-It does not yet own prompt-driven automations. Built-in task definitions and run history live in the `site` app DB.
+It also runs DB-authored prompt and workflow automations. Built-in task definitions, custom task configuration, and run history live in the `site` app DB.
 
 ## Endpoints
 
@@ -28,6 +28,7 @@ Manual runs require `X-Task-Runner-Token` when `TASK_RUNNER_TOKEN` is configured
 - `APP_API_BASE_URL=http://site.railway.internal:3100`
 - `APP_API_SERVICE_TOKEN=${{site.INTERNAL_SERVICE_TOKEN}}`
 - `CODEX_RUNTIME_BASE_URL=http://codex-runtime.railway.internal:3030`
+- `TASK_RUNNER_HTTP_TIMEOUT_MS=120000`
 
 When `APP_API_BASE_URL` is set, the runner idempotently registers built-in task defaults, reads effective enabled state and cron schedules from `site`, and writes task run history through internal APIs.
 

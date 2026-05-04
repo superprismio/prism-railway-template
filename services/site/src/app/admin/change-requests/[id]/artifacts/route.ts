@@ -12,7 +12,8 @@ type RouteContext = {
 export async function GET(request: Request, context: RouteContext) {
   const { id } = await context.params
   const url = new URL(request.url)
-  const limit = readOptionalInteger(url.searchParams.get("limit")) ?? 100
+  const rawLimit = readOptionalInteger(url.searchParams.get("limit")) ?? 100
+  const limit = Math.min(500, Math.max(1, rawLimit))
 
   if (useLocalAppApi()) {
     const access = await requireLocalAdminAccess()

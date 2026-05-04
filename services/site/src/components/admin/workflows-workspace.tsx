@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ChevronDown, Eye, FileText, GitBranch, RefreshCw, Route } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -93,6 +93,7 @@ export function WorkflowsWorkspace() {
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isSystemOpen, setIsSystemOpen] = useState(false);
   const [isRefreshing, startRefresh] = useTransition();
+  const detailRequestRef = useRef(0);
 
   async function loadWorkflows() {
     const response = await fetch("/admin/workflows", { cache: "no-store" });
@@ -116,6 +117,8 @@ export function WorkflowsWorkspace() {
   }
 
   async function openWorkflow(workflow: WorkflowRecord) {
+    const requestToken = detailRequestRef.current + 1;
+    detailRequestRef.current = requestToken;
     setSelectedWorkflow(workflow);
     setSelectedWorkflowDetail(null);
     setDetailError(null);
@@ -126,11 +129,14 @@ export function WorkflowsWorkspace() {
       if (!response.ok || !payload.ok || !payload.detail) {
         throw new Error(payload.error || "Could not load workflow detail");
       }
+      if (detailRequestRef.current !== requestToken) return;
       setSelectedWorkflow(payload.workflow ?? workflow);
       setSelectedWorkflowDetail(payload.detail);
     } catch (nextError) {
+      if (detailRequestRef.current !== requestToken) return;
       setDetailError(nextError instanceof Error ? nextError.message : "Could not load workflow detail");
     } finally {
+      if (detailRequestRef.current !== requestToken) return;
       setIsDetailLoading(false);
     }
   }
@@ -294,9 +300,11 @@ export function WorkflowsWorkspace() {
         open={Boolean(selectedWorkflow)}
         onOpenChange={(open) => {
           if (!open) {
+            detailRequestRef.current += 1;
             setSelectedWorkflow(null);
             setSelectedWorkflowDetail(null);
             setDetailError(null);
+            setIsDetailLoading(false);
           }
         }}
       >

@@ -102,7 +102,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
       window.cancelAnimationFrame(frameId)
       window.clearTimeout(timeoutId)
     }
-  }, [isActive, isLoadingHistory, messages.length])
+  }, [isActive, isLoadingHistory])
 
   function toggleSkill(skillId: string) {
     setRequestedSkills((current) =>
@@ -253,7 +253,14 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+              if (
+                event.key !== "Enter" ||
+                event.shiftKey ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.altKey ||
+                event.nativeEvent.isComposing
+              ) {
                 return
               }
               event.preventDefault()

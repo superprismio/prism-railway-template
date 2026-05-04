@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from './config';
 import { type RequestArtifactRecord } from './repository';
@@ -40,12 +40,31 @@ export function resolveRequestArtifactStoragePath(storagePath: string) {
   return resolved;
 }
 
-export function writeRequestArtifactFile(storagePath: string, content: Buffer) {
+export async function writeRequestArtifactFile(storagePath: string, content: Buffer) {
   const resolved = resolveRequestArtifactStoragePath(storagePath);
-  fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  fs.writeFileSync(resolved, content);
+  await fs.mkdir(path.dirname(resolved), { recursive: true });
+  await fs.writeFile(resolved, content);
 }
 
-export function readRequestArtifactFile(artifact: RequestArtifactRecord) {
-  return fs.readFileSync(resolveRequestArtifactStoragePath(artifact.storagePath));
+export async function readRequestArtifactFile(artifact: RequestArtifactRecord) {
+  return fs.readFile(resolveRequestArtifactStoragePath(artifact.storagePath));
+}
+
+export async function deleteRequestArtifactFile(storagePath: string) {
+  await fs.rm(resolveRequestArtifactStoragePath(storagePath), { force: true });
+}
+
+export function safeArtifactMimeType(value: string | null | undefined) {
+  const candidate = value?.trim() || '';
+  return /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*(?:\s*;\s*[A-Za-z0-9_.-]+=[A-Za-z0-9_.-]+)*$/.test(candidate)
+    ? candidate
+    : 'application/octet-stream';
+}
+
+export function safeArtifactContentDisposition(name: string | null | undefined) {
+  const safeName = (name ?? '')
+    .replace(/[\x00-\x1F\x7F"\\]/g, '')
+    .replace(/[^\x20-\x7E]+/g, '_')
+    .trim() || 'artifact';
+  return `inline; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`;
 }

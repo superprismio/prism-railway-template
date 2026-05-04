@@ -21,7 +21,16 @@ function base64UrlDecode(value: string) {
 
 function signingSecret() {
   const config = loadConfig()
-  return process.env.ADMIN_SESSION_SECRET?.trim() || config.adminPassword
+  const rootSecret =
+    process.env.ADMIN_SESSION_SECRET?.trim() ||
+    process.env.INTERNAL_SERVICE_TOKEN?.trim() ||
+    process.env.SERVICE_SHARED_TOKEN?.trim() ||
+    process.env.APP_API_SERVICE_TOKEN?.trim() ||
+    config.adminPassword
+
+  return createHmac("sha256", rootSecret)
+    .update("prism-admin-session:v1")
+    .digest()
 }
 
 function signPayload(payload: string) {

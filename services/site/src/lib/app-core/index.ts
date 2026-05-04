@@ -5,8 +5,11 @@ export { buildTargetEnvironmentDeployPlan, type TargetEnvironmentDeployPlan } fr
 export { buildHostedSkillArchive, listHostedSkills, readHostedSkillMarkdown, upsertCustomSkill, type HostedSkillSummary } from './hosted-skills';
 export {
   buildRequestArtifactStoragePath,
+  deleteRequestArtifactFile,
   readRequestArtifactFile,
   resolveRequestArtifactStoragePath,
+  safeArtifactContentDisposition,
+  safeArtifactMimeType,
   workflowArtifactsRoot,
   writeRequestArtifactFile,
 } from './request-artifact-storage';

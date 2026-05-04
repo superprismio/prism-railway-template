@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Search } from "lucide-react";
 
 import { ChangeRequestRow } from "@/components/admin/change-request-row";
@@ -59,6 +60,11 @@ export function ChangeRequestList({
   onSortValueChange: (value: RequestSortValue) => void;
   onOpenRequest: (request: ChangeRequestRecord) => void;
 }) {
+  const workflowByKey = useMemo(
+    () => new Map(workflows.map((workflow) => [workflow.key, workflow])),
+    [workflows],
+  );
+
   return (
     <>
       <div className="border-b border-border/60 bg-background px-5 py-4 md:px-6">
@@ -114,10 +120,10 @@ export function ChangeRequestList({
               onValueChange={onRepositoryFilterChange}
             >
               <SelectTrigger>
-                <SelectValue placeholder="All repositories" />
+                <SelectValue placeholder="All targets" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All repositories</SelectItem>
+                <SelectItem value="all">All targets</SelectItem>
                 {targetApps.map((targetApp) => (
                   <SelectItem key={targetApp.id} value={targetApp.id}>
                     {targetApp.name}
@@ -173,9 +179,7 @@ export function ChangeRequestList({
                 request={request}
                 targetApps={targetApps}
                 targetEnvironments={targetEnvironments}
-                workflow={
-                  workflows.find((workflow) => workflow.key === request.workflowKey) ?? null
-                }
+                workflow={workflowByKey.get(request.workflowKey) ?? null}
                 onOpen={onOpenRequest}
               />
             ))

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   CheckCircle2,
   Circle,
@@ -533,6 +533,7 @@ export function RequestDetailsPanel({
   const [artifactPreviewText, setArtifactPreviewText] = useState<string | null>(null);
   const [artifactPreviewError, setArtifactPreviewError] = useState<string | null>(null);
   const [isArtifactPreviewLoading, setIsArtifactPreviewLoading] = useState(false);
+  const artifactPreviewRequestRef = useRef(0);
   const [isDraftDirty, setIsDraftDirty] = useState(false);
   const [isCommentPending, startCommentTransition] = useTransition();
   const [isContinuePending, startContinueTransition] = useTransition();
@@ -966,11 +967,14 @@ export function RequestDetailsPanel({
   }
 
   async function openArtifactPreview(artifact: RequestArtifactRecord) {
+    const requestToken = artifactPreviewRequestRef.current + 1;
+    artifactPreviewRequestRef.current = requestToken;
     setSelectedArtifact(artifact);
     setArtifactPreviewText(null);
     setArtifactPreviewError(null);
     const kind = artifactPreviewKind(artifact);
     if (kind !== "text") {
+      setIsArtifactPreviewLoading(false);
       return;
     }
 
@@ -983,12 +987,16 @@ export function RequestDetailsPanel({
       if (!response.ok) {
         throw new Error("Could not load artifact preview");
       }
-      setArtifactPreviewText(await response.text());
+      const text = await response.text();
+      if (artifactPreviewRequestRef.current !== requestToken) return;
+      setArtifactPreviewText(text);
     } catch (error) {
+      if (artifactPreviewRequestRef.current !== requestToken) return;
       setArtifactPreviewError(
         error instanceof Error ? error.message : "Could not load artifact preview",
       );
     } finally {
+      if (artifactPreviewRequestRef.current !== requestToken) return;
       setIsArtifactPreviewLoading(false);
     }
   }
@@ -1129,11 +1137,13 @@ export function RequestDetailsPanel({
     ].join("\n");
 
     setThreadError(null);
+    const previousStatus = status;
     startCommandTransition(async () => {
       try {
         setStatus("triaging");
         await runAgent(prompt, null, undefined, autoContinueUntilGate);
       } catch (error) {
+        setStatus(previousStatus);
         setThreadError(
           error instanceof Error ? error.message : "Could not triage request",
         );
@@ -1148,11 +1158,13 @@ export function RequestDetailsPanel({
     ].join("\n");
 
     setThreadError(null);
+    const previousStatus = status;
     startCommandTransition(async () => {
       try {
         setStatus("in-progress");
         await runAgent(prompt, null, "approved", true);
       } catch (error) {
+        setStatus(previousStatus);
         setThreadError(
           error instanceof Error
             ? error.message
@@ -1177,12 +1189,14 @@ export function RequestDetailsPanel({
     ].join("\n");
 
     setThreadError(null);
+    const previousStatus = status;
     startCommandTransition(async () => {
       try {
         setStatus("changes-requested");
         const session = await addRequestComment(content);
         await runAgent(prompt, session, "changesRequested", true);
       } catch (error) {
+        setStatus(previousStatus);
         setThreadError(
           error instanceof Error ? error.message : "Could not request changes",
         );
@@ -1972,6 +1986,7 @@ export function RequestDetailsPanel({
         open={Boolean(selectedArtifact)}
         onOpenChange={(open) => {
           if (!open) {
+            artifactPreviewRequestRef.current += 1;
             setSelectedArtifact(null);
             setArtifactPreviewText(null);
             setArtifactPreviewError(null);

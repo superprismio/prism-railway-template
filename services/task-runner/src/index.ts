@@ -187,6 +187,33 @@ function codexRuntimeBaseUrl(): string {
   return trimBaseUrl(process.env.CODEX_RUNTIME_BASE_URL);
 }
 
+function httpTimeoutMs() {
+  return parseIntEnv(
+    "TASK_RUNNER_HTTP_TIMEOUT_MS",
+    parseIntEnv("TASK_RUNNER_APP_API_TIMEOUT_MS", 120_000, 1_000, 900_000),
+    1_000,
+    900_000,
+  );
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`APP_API_REQUEST_TIMEOUT:${timeoutMs}:${url}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function postJson(
   baseUrl: string,
   path: string,
@@ -194,14 +221,14 @@ async function postJson(
   body: Record<string, unknown> = {},
 ): Promise<TaskRunResult> {
   const url = `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...headers,
     },
     body: JSON.stringify(body),
-  });
+  }, httpTimeoutMs());
   const text = await response.text();
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} from ${url}: ${text.slice(0, 500)}`);
@@ -227,10 +254,11 @@ async function appApiRequest(path: string, init: RequestInit): Promise<Record<st
     headers.set("X-Service-Token", token);
   }
 
-  const response = await fetch(`${baseUrl}${path}`, {
+  const url = `${baseUrl}${path}`;
+  const response = await fetchWithTimeout(url, {
     ...init,
     headers,
-  });
+  }, httpTimeoutMs());
   const text = await response.text();
   if (!response.ok) {
     throw new Error(`APP_API_REQUEST_FAILED:${response.status}:${text.slice(0, 500)}`);

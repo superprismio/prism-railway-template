@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server"
-import { getRequestArtifact, readRequestArtifactFile } from "@/lib/app-core"
+import {
+  getRequestArtifact,
+  readRequestArtifactFile,
+  safeArtifactContentDisposition,
+  safeArtifactMimeType,
+} from "@/lib/app-core"
 import { requireServiceAccess } from "@/lib/internal-service"
 
 type RouteContext = {
@@ -19,12 +24,12 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   try {
-    const body = readRequestArtifactFile(artifact)
+    const body = await readRequestArtifactFile(artifact)
     return new NextResponse(body, {
       headers: {
-        "content-type": artifact.mimeType,
+        "content-type": safeArtifactMimeType(artifact.mimeType),
         "content-length": String(body.byteLength),
-        "content-disposition": `inline; filename="${artifact.name.replaceAll('"', "")}"`,
+        "content-disposition": safeArtifactContentDisposition(artifact.name),
       },
     })
   } catch {

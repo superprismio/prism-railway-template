@@ -624,9 +624,16 @@ export async function POST(request: Request) {
       ? findStepByKey(linkedWorkflowSteps, linkedWorkflowRun.currentStepKey) ??
         findStepForStatus(linkedWorkflowSteps, linkedChangeRequest?.status)
       : null
+  if (currentWorkflowStep && stepType(currentWorkflowStep) === "gate" && !workflowAction) {
+    return NextResponse.json(
+      { ok: false, error: "WORKFLOW_ACTION_REQUIRED" },
+      { status: 409 },
+    )
+  }
+
   const runnableWorkflowStep =
     currentWorkflowStep && stepType(currentWorkflowStep) === "gate"
-      ? nextStepForAction(linkedWorkflowSteps, currentWorkflowStep, workflowAction || "approved")
+      ? nextStepForAction(linkedWorkflowSteps, currentWorkflowStep, workflowAction)
       : currentWorkflowStep
   const workflowStepInstruction = runnableWorkflowStep
     ? readInstructionFile(runnableWorkflowStep.instructionPath)

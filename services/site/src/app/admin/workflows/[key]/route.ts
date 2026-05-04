@@ -37,7 +37,13 @@ function resolveWorkflowFile(rawPath: unknown) {
         path.resolve(config.workspaceRoot, "workflows", normalized.replace(/^workflows\/+/, "")),
         path.resolve(config.repoRoot, "services/site", normalized.replace(/^\/+/, "")),
       ];
-  const allowedRoots = [...siteWorkflowRoots, dataWorkflowRoot];
+  const allowedRoots = [...siteWorkflowRoots, dataWorkflowRoot].map((allowedRoot) => {
+    try {
+      return fs.realpathSync(allowedRoot);
+    } catch {
+      return allowedRoot;
+    }
+  });
 
   const absolutePath = candidates.find((candidate) => {
     return allowedRoots.some((allowedRoot) => candidate === allowedRoot || candidate.startsWith(`${allowedRoot}${path.sep}`));
@@ -47,9 +53,13 @@ function resolveWorkflowFile(rawPath: unknown) {
   }
 
   try {
+    const realPath = fs.realpathSync(absolutePath);
+    if (!allowedRoots.some((allowedRoot) => realPath === allowedRoot || realPath.startsWith(`${allowedRoot}${path.sep}`))) {
+      return null;
+    }
     return {
-      path: absolutePath,
-      content: fs.readFileSync(absolutePath, "utf8").trim(),
+      path: realPath,
+      content: fs.readFileSync(realPath, "utf8").trim(),
     };
   } catch {
     return {

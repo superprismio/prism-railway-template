@@ -82,13 +82,20 @@ export async function PATCH(request: Request, context: RouteContext) {
   const { id } = await context.params
   const changeRequestId = readRouteParam(id)
   const existingChangeRequest = getChangeRequest(changeRequestId)
-  const body = payload && typeof payload === "object" ? payload as Record<string, unknown> : {}
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 })
+  }
+  const body = payload as Record<string, unknown>
   const nextStatus = typeof body.status === "string" ? body.status : undefined
   const nextPriority = typeof body.priority === "string" ? body.priority : undefined
+  const rawWorkflowStepKey = body.currentWorkflowStepKey ?? body.current_workflow_step_key
   const nextWorkflowStepKey =
-    typeof (body.currentWorkflowStepKey ?? body.current_workflow_step_key) === "string"
-      ? String(body.currentWorkflowStepKey ?? body.current_workflow_step_key).trim()
+    typeof rawWorkflowStepKey === "string"
+      ? rawWorkflowStepKey.trim()
       : undefined
+  if (rawWorkflowStepKey !== undefined && nextWorkflowStepKey === "") {
+    return NextResponse.json({ ok: false, error: "Invalid workflow step" }, { status: 400 })
+  }
 
   if (!existingChangeRequest) {
     return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })

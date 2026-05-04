@@ -2643,7 +2643,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
     LEFT JOIN profiles requester ON requester.user_id = cr.requested_by_user_id
     LEFT JOIN target_apps ta ON ta.id = cr.target_app_id
     LEFT JOIN target_environments te ON te.id = cr.target_environment_id
-    WHERE ta.agent_enabled = 1
+    WHERE (cr.target_app_id IS NULL OR ta.agent_enabled = 1)
       AND cr.status IN (${runnableStatuses.map(() => '?').join(', ')})
       AND NOT EXISTS (
         SELECT 1
@@ -2758,7 +2758,7 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
     LEFT JOIN profiles requester ON requester.user_id = cr.requested_by_user_id
     LEFT JOIN target_apps ta ON ta.id = cr.target_app_id
     LEFT JOIN target_environments te ON te.id = cr.target_environment_id
-    WHERE ta.agent_enabled = 1
+    WHERE (cr.target_app_id IS NULL OR ta.agent_enabled = 1)
       AND EXISTS (
         SELECT 1
         FROM change_request_executions cre
@@ -2886,46 +2886,51 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
   const now = new Date().toISOString();
   const id = randomUUID();
   const workflowKey = normalizeText(input.workflowKey) || 'change-request-default';
-
-  getDb()
-    .prepare(
-      `INSERT INTO change_requests (
-         id, request_number, workflow_key, title, description, request_type, status, priority, source,
-         requested_by_user_id, target_app_id, target_environment_id, triage_summary,
-         acceptance_criteria_json, constraints_json, attachments_json, agent_recommendation,
-         created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      id,
-      getNextChangeRequestNumber(),
-      workflowKey,
-      input.title,
-      input.description,
-      input.requestType,
-      input.status ?? 'submitted',
-      input.priority ?? 'normal',
-      input.source ?? 'manual',
-      input.requestedByUserId ?? null,
-      input.targetAppId ?? null,
-      input.targetEnvironmentId ?? null,
-      input.triageSummary ?? null,
-      JSON.stringify(input.acceptanceCriteria ?? []),
-      JSON.stringify(input.constraints ?? {}),
-      JSON.stringify(input.attachments ?? []),
-      input.agentRecommendation ?? null,
-      now,
-      now,
-    );
-
-  const created = getChangeRequest(id);
-  if (created) {
-    ensureWorkflowRunForRequest({
-      requestId: created.id,
-      workflowKey,
-      status: created.status,
-    });
+  const workflow = getWorkflowByKey(workflowKey);
+  if (!workflow) {
+    throw new Error('WORKFLOW_NOT_FOUND');
   }
+  const status = input.status ?? 'submitted';
+
+  const db = getDb();
+  db.transaction(() => {
+    db
+      .prepare(
+        `INSERT INTO change_requests (
+           id, request_number, workflow_key, title, description, request_type, status, priority, source,
+           requested_by_user_id, target_app_id, target_environment_id, triage_summary,
+           acceptance_criteria_json, constraints_json, attachments_json, agent_recommendation,
+           created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        getNextChangeRequestNumber(),
+        workflowKey,
+        input.title,
+        input.description,
+        input.requestType,
+        status,
+        input.priority ?? 'normal',
+        input.source ?? 'manual',
+        input.requestedByUserId ?? null,
+        input.targetAppId ?? null,
+        input.targetEnvironmentId ?? null,
+        input.triageSummary ?? null,
+        JSON.stringify(input.acceptanceCriteria ?? []),
+        JSON.stringify(input.constraints ?? {}),
+        JSON.stringify(input.attachments ?? []),
+        input.agentRecommendation ?? null,
+        now,
+        now,
+      );
+
+    ensureWorkflowRunForRequest({
+      requestId: id,
+      workflowKey,
+      status,
+    });
+  })();
 
   return getChangeRequest(id);
 }
@@ -4069,6 +4074,8 @@ export function upsertWorkflow(input: {
   const now = new Date().toISOString();
   const existing = getWorkflowByKey(input.key);
   const id = existing?.id ?? randomUUID();
+  const nextSystemDefault = input.systemDefault ?? existing?.systemDefault ?? false;
+  const nextEnabled = input.enabled ?? existing?.enabled ?? true;
 
   getDb()
     .prepare(
@@ -4091,8 +4098,8 @@ export function upsertWorkflow(input: {
       input.description ?? null,
       input.version ?? 1,
       JSON.stringify(input.definition),
-      input.systemDefault ? 1 : 0,
-      input.enabled === false ? 0 : 1,
+      nextSystemDefault ? 1 : 0,
+      nextEnabled ? 1 : 0,
       existing?.createdAt ?? now,
       now,
     );

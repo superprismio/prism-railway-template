@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FilePlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -63,6 +63,7 @@ export function NewChangeRequestDialog({
     ?? "change-request-default";
   const [workflowKey, setWorkflowKey] = useState(defaultWorkflowKey);
   const [targetAppId, setTargetAppId] = useState("");
+  const previousWorkflowKeyRef = useRef(workflowKey);
   const selectedWorkflow = enabledWorkflows.find((workflow) => workflow.key === workflowKey) ?? null;
   const targetRequired = workflowRequiresTargetApp(selectedWorkflow);
   const selectedWorkflowSteps = workflowSteps(selectedWorkflow);
@@ -74,8 +75,17 @@ export function NewChangeRequestDialog({
   }, [defaultWorkflowKey, enabledWorkflows, workflowKey]);
 
   useEffect(() => {
-    setTargetAppId(targetRequired ? targetApps[0]?.id ?? "" : "");
-  }, [targetRequired, targetApps]);
+    const workflowChanged = previousWorkflowKeyRef.current !== workflowKey;
+    previousWorkflowKeyRef.current = workflowKey;
+    setTargetAppId((current) => {
+      const currentIsValid = targetApps.some((targetApp) => targetApp.id === current);
+      if (!targetRequired) {
+        return workflowChanged ? "" : currentIsValid ? current : "";
+      }
+      if (currentIsValid) return current;
+      return targetRequired ? targetApps[0]?.id ?? "" : "";
+    });
+  }, [targetRequired, targetApps, workflowKey]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -174,28 +184,50 @@ export function NewChangeRequestDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="new-request-target-app">
-              Target context{targetRequired ? "" : " (optional)"}
-            </Label>
-            <select
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-              id="new-request-target-app"
-              name="targetAppId"
-              required={targetRequired}
-              value={targetAppId}
-              onChange={(event) => setTargetAppId(event.target.value)}
-            >
-              {!targetRequired ? (
-                <option value="">No target context</option>
-              ) : null}
-              {targetApps.map((targetApp) => (
-                <option key={targetApp.id} value={targetApp.id}>
-                  {targetApp.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {targetRequired ? (
+            <div className="space-y-2">
+              <Label htmlFor="new-request-target-app">Target context</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                id="new-request-target-app"
+                name="targetAppId"
+                required
+                value={targetAppId}
+                onChange={(event) => setTargetAppId(event.target.value)}
+              >
+                {targetApps.map((targetApp) => (
+                  <option key={targetApp.id} value={targetApp.id}>
+                    {targetApp.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <details className="border border-border/70 bg-muted/20 px-3 py-2">
+              <summary className="cursor-pointer text-sm font-medium">
+                Optional target context
+              </summary>
+              <div className="mt-3 space-y-2">
+                <Label htmlFor="new-request-target-app">
+                  Attach a target app only if this workflow needs repository or deploy context.
+                </Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                  id="new-request-target-app"
+                  name="targetAppId"
+                  value={targetAppId}
+                  onChange={(event) => setTargetAppId(event.target.value)}
+                >
+                  <option value="">No target context</option>
+                  {targetApps.map((targetApp) => (
+                    <option key={targetApp.id} value={targetApp.id}>
+                      {targetApp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </details>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="new-request-description">Description</Label>
