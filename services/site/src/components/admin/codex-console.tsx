@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { Bot, LoaderCircle, Plus, Wrench } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -39,6 +39,8 @@ export function CodexConsole() {
   const [error, setError] = useState<string | null>(null)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const transcriptRef = useRef<HTMLDivElement | null>(null)
+  const formRef = useRef<HTMLFormElement | null>(null)
 
   useEffect(() => {
     const storedSessionId = window.localStorage.getItem(consoleSessionStorageKey)
@@ -74,6 +76,15 @@ export function CodexConsole() {
       })
       .finally(() => setIsLoadingHistory(false))
   }, [])
+
+  useEffect(() => {
+    const transcript = transcriptRef.current
+    if (!transcript) return
+    transcript.scrollTo({
+      top: transcript.scrollHeight,
+      behavior: messages.length > 1 ? "smooth" : "auto",
+    })
+  }, [isLoadingHistory, messages.length, isPending])
 
   function toggleSkill(skillId: string) {
     setRequestedSkills((current) =>
@@ -184,7 +195,7 @@ export function CodexConsole() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={transcriptRef} className="flex-1 overflow-y-auto">
         <div className="space-y-3 px-5 py-5 md:px-6">
           {isLoadingHistory ? (
             <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
@@ -216,12 +227,20 @@ export function CodexConsole() {
         </div>
       </div>
 
-      <form action={handleSubmit} className="border-t border-border/60 px-5 py-4 md:px-6">
+      <form ref={formRef} action={handleSubmit} className="border-t border-border/60 px-5 py-4 md:px-6">
         <div className="space-y-3">
           <Textarea
             name="prompt"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+                return
+              }
+              event.preventDefault()
+              if (!draft.trim() || isPending) return
+              formRef.current?.requestSubmit()
+            }}
             placeholder="Ask Codex about a request, review branch, preview state, or Prism context."
             className="min-h-28 rounded-none border-x-0 border-t-0 px-0 shadow-none focus-visible:ring-0"
             required
