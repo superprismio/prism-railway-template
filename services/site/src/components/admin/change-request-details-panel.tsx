@@ -77,7 +77,8 @@ function CommandCenter({
   reviewCompareUrl,
   isPending,
   isStepRunning,
-  onTriage,
+  onRunStep,
+  onRunUntilGate,
   onApproveSolution,
   onApproveReview,
   onRequestChanges,
@@ -94,7 +95,8 @@ function CommandCenter({
   reviewCompareUrl: string | null;
   isPending: boolean;
   isStepRunning: boolean;
-  onTriage: () => void;
+  onRunStep: () => void;
+  onRunUntilGate: () => void;
   onApproveSolution: () => void;
   onApproveReview: () => void;
   onRequestChanges: (comment: string) => void;
@@ -227,10 +229,15 @@ function CommandCenter({
             ) : null}
           </div>
           {canRunAgentStep ? (
-            <Button type="button" onClick={onTriage} disabled={isPending}>
-              {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-              Run {currentStep.label}
-            </Button>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="outline" onClick={onRunStep} disabled={isPending}>
+                Run step
+              </Button>
+              <Button type="button" onClick={onRunUntilGate} disabled={isPending}>
+                {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                Run until gate
+              </Button>
+            </div>
           ) : null}
         </div>
 
@@ -987,6 +994,7 @@ export function RequestDetailsPanel({
     prompt: string,
     session?: AgentThreadSession | null,
     workflowAction?: string,
+    autoContinueUntilGate = false,
   ) {
     const response = await fetch("/admin/responses", {
       method: "POST",
@@ -999,6 +1007,7 @@ export function RequestDetailsPanel({
         linked_change_request_id: request.id,
         linked_target_environment_id: request.targetEnvironmentId,
         workflow_action: workflowAction ?? null,
+        auto_continue_until_gate: autoContinueUntilGate,
         requested_skills: ["change-request-ops", "target-deploy-ops"],
       }),
     });
@@ -1078,7 +1087,7 @@ export function RequestDetailsPanel({
     });
   }
 
-  function handleCommandTriage() {
+  function handleCommandTriage(autoContinueUntilGate = false) {
     const prompt = [
       `Run workflow step ${currentWorkflowStep.key} for request #${request.requestNumber}: ${request.title}.`,
       `Step label: ${currentWorkflowStep.label}.`,
@@ -1092,7 +1101,7 @@ export function RequestDetailsPanel({
     startCommandTransition(async () => {
       try {
         setStatus("triaging");
-        await runAgent(prompt);
+        await runAgent(prompt, null, undefined, autoContinueUntilGate);
       } catch (error) {
         setThreadError(
           error instanceof Error ? error.message : "Could not triage request",
@@ -1111,7 +1120,7 @@ export function RequestDetailsPanel({
     startCommandTransition(async () => {
       try {
         setStatus("in-progress");
-        await runAgent(prompt, null, "approved");
+        await runAgent(prompt, null, "approved", true);
       } catch (error) {
         setThreadError(
           error instanceof Error
@@ -1141,7 +1150,7 @@ export function RequestDetailsPanel({
       try {
         setStatus("changes-requested");
         const session = await addRequestComment(content);
-        await runAgent(prompt, session, "changesRequested");
+        await runAgent(prompt, session, "changesRequested", true);
       } catch (error) {
         setThreadError(
           error instanceof Error ? error.message : "Could not request changes",
@@ -1197,7 +1206,8 @@ export function RequestDetailsPanel({
             reviewCompareUrl={reviewExecutionPrUrl}
             isPending={isPending || isCommandPending}
             isStepRunning={Boolean(activeExecution)}
-            onTriage={handleCommandTriage}
+            onRunStep={() => handleCommandTriage(false)}
+            onRunUntilGate={() => handleCommandTriage(true)}
             onApproveSolution={handleApproveSolution}
             onApproveReview={handleApproveReview}
             onRequestChanges={handleRequestChanges}

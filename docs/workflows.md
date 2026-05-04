@@ -312,6 +312,13 @@ The workflow-aware request flow is:
 
 `change_request_executions` remains the record of concrete Codex runs: branch, commit, response text, runtime trace, deploy URL, and execution metadata. `workflow_events` is the higher-level workflow timeline.
 
+The admin UI supports two agent run modes:
+
+- `Run step` executes only the current agent step, advances the workflow pointer once, and stops.
+- `Run until gate` executes the current agent step and then automatically continues through following `agent` steps until the workflow reaches a `gate`, `terminal` step, failure, or the server-side continuation cap.
+
+Gate actions such as approval or requested changes use the same run-until-gate behavior after routing, so a review approval can continue into the next agent step without extra button presses while still stopping at the next human decision point.
+
 ## Migrations
 
 Workflow state is split across two migrations:
