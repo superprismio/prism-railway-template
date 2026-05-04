@@ -1981,17 +1981,8 @@ export function RequestDetailsPanel({
       >
         <DialogContent className="flex max-h-[90vh] max-w-5xl flex-col overflow-hidden">
           <DialogHeader>
-            <DialogTitle className="flex min-w-0 items-center justify-between gap-3">
+            <DialogTitle className="min-w-0 pr-8">
               <span className="truncate">{selectedArtifact?.name ?? "Artifact"}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => setSelectedArtifact(null)}
-                aria-label="Close artifact preview"
-              >
-                <X className="h-4 w-4" />
-              </Button>
             </DialogTitle>
           </DialogHeader>
           {selectedArtifact ? (
