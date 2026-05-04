@@ -31,6 +31,14 @@ function randomMessageId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+function scrollToLatestMessage(element: HTMLDivElement | null, behavior: ScrollBehavior = "auto") {
+  if (!element) return
+  element.scrollTo({
+    top: element.scrollHeight,
+    behavior,
+  })
+}
+
 export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
   const [draft, setDraft] = useState("")
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -79,20 +87,22 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
   }, [])
 
   useEffect(() => {
-    const transcript = transcriptRef.current
-    if (!transcript) return
-    transcript.scrollTo({
-      top: transcript.scrollHeight,
-      behavior: messages.length > 1 ? "smooth" : "auto",
-    })
-  }, [isLoadingHistory, messages.length, isPending])
+    scrollToLatestMessage(transcriptRef.current, messages.length > 1 ? "smooth" : "auto")
+  }, [isActive, isLoadingHistory, messages.length, isPending])
 
   useEffect(() => {
     if (!isActive) return
-    window.requestAnimationFrame(() => {
-      inputRef.current?.focus()
-    })
-  }, [isActive])
+    const focusInput = () => {
+      scrollToLatestMessage(transcriptRef.current)
+      inputRef.current?.focus({ preventScroll: true })
+    }
+    const frameId = window.requestAnimationFrame(focusInput)
+    const timeoutId = window.setTimeout(focusInput, 80)
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.clearTimeout(timeoutId)
+    }
+  }, [isActive, isLoadingHistory, messages.length])
 
   function toggleSkill(skillId: string) {
     setRequestedSkills((current) =>
@@ -166,7 +176,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-248px)] flex-col">
+    <div className="flex h-[calc(100vh-248px)] min-h-0 flex-col">
       <div className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4 md:px-6">
         <div className="flex flex-wrap gap-2">
           {skillOptions.map((skill) => {
@@ -203,7 +213,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
         </div>
       </div>
 
-      <div ref={transcriptRef} className="flex-1 overflow-y-auto">
+      <div ref={transcriptRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className="space-y-3 px-5 py-5 md:px-6">
           {isLoadingHistory ? (
             <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
