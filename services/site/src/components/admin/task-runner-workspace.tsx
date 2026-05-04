@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   AlertCircle,
+  ChevronDown,
   CheckCircle2,
   Clock3,
   Eye,
@@ -14,6 +15,11 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -236,6 +242,7 @@ export function TaskRunnerWorkspace() {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [runningKey, setRunningKey] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isBuiltInOpen, setIsBuiltInOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [selectedRun, setSelectedRun] = useState<TaskRunRecord | null>(null);
   const [createForm, setCreateForm] = useState({
@@ -309,6 +316,8 @@ export function TaskRunnerWorkspace() {
     }
     return map;
   }, [runner.tasks]);
+  const customTasks = useMemo(() => tasks.filter((task) => task.taskType !== "builtin"), [tasks]);
+  const builtInTasks = useMemo(() => tasks.filter((task) => task.taskType === "builtin"), [tasks]);
   const selectedRunResponse = runResponseText(selectedRun);
   const createCron = cronDetails(createForm.scheduleCron);
 
@@ -382,6 +391,133 @@ export function TaskRunnerWorkspace() {
     }
   }
 
+  function renderTask(task: TaskRecord) {
+    const draft = drafts[task.key] ?? {
+      enabled: task.enabled,
+      scheduleCron: task.scheduleCron ?? "",
+    };
+    const cron = cronDetails(draft.scheduleCron);
+    const latestRun = latestRunByTask.get(task.key);
+    const runnerTask = runnerByTask.get(task.key);
+    const dirty =
+      draft.enabled !== task.enabled ||
+      draft.scheduleCron.trim() !== (task.scheduleCron ?? "");
+
+    return (
+      <div
+        key={task.id}
+        className="grid gap-4 border border-border/70 bg-background p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(280px,360px)_minmax(220px,280px)]"
+      >
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold">{task.name}</h2>
+            <Badge variant="outline">{task.key}</Badge>
+            {taskTypeBadge(task.taskType)}
+            {statusBadge(runnerTask?.status ?? latestRun?.status ?? (task.enabled ? "idle" : "disabled"))}
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {task.description || taskDescription(task.key)}
+          </p>
+          <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
+            <span>Last run: {formatDate(runnerTask?.lastRunAt ?? latestRun?.startedAt ?? null)}</span>
+            <span>Last success: {formatDate(runnerTask?.lastSuccessAt ?? null)}</span>
+            <span>Next run: {formatDate(runnerTask?.nextRunAt ?? null)}</span>
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor={`${task.key}-enabled`}>Enabled</Label>
+            <Switch
+              id={`${task.key}-enabled`}
+              checked={draft.enabled}
+              onCheckedChange={(checked) =>
+                setDrafts((current) => ({
+                  ...current,
+                  [task.key]: { ...draft, enabled: checked },
+                }))
+              }
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor={`${task.key}-cron`} className="flex items-center gap-2">
+              <Clock3 className="h-4 w-4" />
+              Cron
+            </Label>
+            <Select
+              value={cronPresets.some((preset) => preset.value === draft.scheduleCron.trim()) ? draft.scheduleCron.trim() : ""}
+              onValueChange={(value) =>
+                setDrafts((current) => ({
+                  ...current,
+                  [task.key]: { ...draft, scheduleCron: value },
+                }))
+              }
+            >
+              <SelectTrigger aria-label={`Cron preset for ${task.name}`}>
+                <SelectValue placeholder="Choose a preset" />
+              </SelectTrigger>
+              <SelectContent>
+                {cronPresets.map((preset) => (
+                  <SelectItem key={preset.value} value={preset.value}>
+                    {preset.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              id={`${task.key}-cron`}
+              value={draft.scheduleCron}
+              placeholder="0 * * * *"
+              onChange={(event) =>
+                setDrafts((current) => ({
+                  ...current,
+                  [task.key]: { ...draft, scheduleCron: event.target.value },
+                }))
+              }
+            />
+            <p className={`text-xs ${cron.valid ? "text-muted-foreground" : "text-destructive"}`}>
+              {cron.preview}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col justify-between gap-3">
+          <div className="grid gap-1 text-xs text-muted-foreground">
+            <span>Updated: {formatDate(task.updatedAt)}</span>
+            <span>Timezone: {task.timezone}</span>
+            {runnerTask?.lastError ? (
+              <span className="text-destructive">{runnerTask.lastError}</span>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => runTask(task)}
+              disabled={!runner.configured || runningKey === task.key}
+              title={
+                runner.configured
+                  ? "Run task now"
+                  : "Set TASK_RUNNER_BASE_URL on the site service"
+              }
+            >
+              <Play className="h-4 w-4" />
+              Run
+            </Button>
+            <Button
+              type="button"
+              onClick={() => saveTask(task)}
+              disabled={!dirty || !cron.valid || savingKey === task.key}
+            >
+              <Save className="h-4 w-4" />
+              Save
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-5 px-5 py-5 md:px-6">
       <section className="grid gap-3 md:grid-cols-3">
@@ -451,133 +587,40 @@ export function TaskRunnerWorkspace() {
       ) : null}
 
       <section className="grid gap-3">
-        {tasks.map((task) => {
-          const draft = drafts[task.key] ?? {
-            enabled: task.enabled,
-            scheduleCron: task.scheduleCron ?? "",
-          };
-          const cron = cronDetails(draft.scheduleCron);
-          const latestRun = latestRunByTask.get(task.key);
-          const runnerTask = runnerByTask.get(task.key);
-          const dirty =
-            draft.enabled !== task.enabled ||
-            draft.scheduleCron.trim() !== (task.scheduleCron ?? "");
-
-          return (
-            <div
-              key={task.id}
-              className="grid gap-4 border border-border/70 bg-background p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(280px,360px)_minmax(220px,280px)]"
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-base font-semibold">{task.name}</h2>
-                  <Badge variant="outline">{task.key}</Badge>
-                  {taskTypeBadge(task.taskType)}
-                  {statusBadge(runnerTask?.status ?? latestRun?.status ?? (task.enabled ? "idle" : "disabled"))}
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {task.description || taskDescription(task.key)}
-                </p>
-                <div className="mt-3 grid gap-1 text-xs text-muted-foreground">
-                  <span>Last run: {formatDate(runnerTask?.lastRunAt ?? latestRun?.startedAt ?? null)}</span>
-                  <span>Last success: {formatDate(runnerTask?.lastSuccessAt ?? null)}</span>
-                  <span>Next run: {formatDate(runnerTask?.nextRunAt ?? null)}</span>
-                </div>
-              </div>
-
-              <div className="grid gap-3">
-                <div className="flex items-center justify-between gap-3">
-                  <Label htmlFor={`${task.key}-enabled`}>Enabled</Label>
-                  <Switch
-                    id={`${task.key}-enabled`}
-                    checked={draft.enabled}
-                    onCheckedChange={(checked) =>
-                      setDrafts((current) => ({
-                        ...current,
-                        [task.key]: { ...draft, enabled: checked },
-                      }))
-                    }
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor={`${task.key}-cron`} className="flex items-center gap-2">
-                    <Clock3 className="h-4 w-4" />
-                    Cron
-                  </Label>
-                  <Select
-                    value={cronPresets.some((preset) => preset.value === draft.scheduleCron.trim()) ? draft.scheduleCron.trim() : ""}
-                    onValueChange={(value) =>
-                      setDrafts((current) => ({
-                        ...current,
-                        [task.key]: { ...draft, scheduleCron: value },
-                      }))
-                    }
-                  >
-                    <SelectTrigger aria-label={`Cron preset for ${task.name}`}>
-                      <SelectValue placeholder="Choose a preset" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {cronPresets.map((preset) => (
-                        <SelectItem key={preset.value} value={preset.value}>
-                          {preset.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    id={`${task.key}-cron`}
-                    value={draft.scheduleCron}
-                    placeholder="0 * * * *"
-                    onChange={(event) =>
-                      setDrafts((current) => ({
-                        ...current,
-                        [task.key]: { ...draft, scheduleCron: event.target.value },
-                      }))
-                    }
-                  />
-                  <p className={`text-xs ${cron.valid ? "text-muted-foreground" : "text-destructive"}`}>
-                    {cron.preview}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-col justify-between gap-3">
-                <div className="grid gap-1 text-xs text-muted-foreground">
-                  <span>Updated: {formatDate(task.updatedAt)}</span>
-                  <span>Timezone: {task.timezone}</span>
-                  {runnerTask?.lastError ? (
-                    <span className="text-destructive">{runnerTask.lastError}</span>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => runTask(task)}
-                    disabled={!runner.configured || runningKey === task.key}
-                    title={
-                      runner.configured
-                        ? "Run task now"
-                        : "Set TASK_RUNNER_BASE_URL on the site service"
-                    }
-                  >
-                    <Play className="h-4 w-4" />
-                    Run
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => saveTask(task)}
-                    disabled={!dirty || !cron.valid || savingKey === task.key}
-                  >
-                    <Save className="h-4 w-4" />
-                    Save
-                  </Button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Custom Tasks</p>
+            <p className="text-sm text-muted-foreground">Instance-created scheduled prompts and workflow runners.</p>
+          </div>
+          <Badge variant="outline">{customTasks.length}</Badge>
+        </div>
+        {customTasks.map(renderTask)}
+        {!customTasks.length && !error ? (
+          <div className="border border-border/70 bg-background px-4 py-6 text-sm text-muted-foreground">
+            No custom tasks created.
+          </div>
+        ) : null}
       </section>
+
+      <Collapsible open={isBuiltInOpen} onOpenChange={setIsBuiltInOpen} className="grid gap-3">
+        <CollapsibleTrigger asChild>
+          <Button type="button" variant="outline" className="justify-between">
+            <span>Built-In Tasks</span>
+            <span className="flex items-center gap-2 text-muted-foreground">
+              {builtInTasks.length}
+              <ChevronDown className={`h-4 w-4 transition-transform ${isBuiltInOpen ? "rotate-180" : ""}`} />
+            </span>
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="grid gap-3">
+          {builtInTasks.map(renderTask)}
+          {!builtInTasks.length && !error ? (
+            <div className="border border-border/70 bg-background px-4 py-6 text-sm text-muted-foreground">
+              No built-in tasks registered.
+            </div>
+          ) : null}
+        </CollapsibleContent>
+      </Collapsible>
 
       <section className="grid gap-3">
         <div>

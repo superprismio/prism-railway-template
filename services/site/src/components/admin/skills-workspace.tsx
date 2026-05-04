@@ -1,10 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { BookOpen, Eye, RefreshCw } from "lucide-react";
+import { BookOpen, ChevronDown, Eye, RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +51,7 @@ export function SkillsWorkspace() {
   const [selectedSkill, setSelectedSkill] = useState<SkillRecord | null>(null);
   const [selectedContent, setSelectedContent] = useState<string>("");
   const [isViewing, setIsViewing] = useState(false);
+  const [isBuiltInOpen, setIsBuiltInOpen] = useState(false);
   const [isRefreshing, startRefresh] = useTransition();
 
   async function loadSkills() {
@@ -100,6 +106,40 @@ export function SkillsWorkspace() {
     }),
     [skills],
   );
+  const customSkills = useMemo(() => skills.filter((skill) => skill.kind === "custom"), [skills]);
+  const builtInSkills = useMemo(() => skills.filter((skill) => skill.kind === "built-in"), [skills]);
+
+  function renderSkill(skill: SkillRecord) {
+    return (
+      <div
+        key={`${skill.source}:${skill.name}`}
+        className="grid gap-4 border border-border/70 bg-background p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,340px)_auto]"
+      >
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <BookOpen className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-base font-semibold">{skill.name}</h2>
+            <Badge variant={skill.kind === "custom" ? "default" : "outline"}>
+              {skill.kind}
+            </Badge>
+            <Badge variant="outline">{sourceLabel(skill.source)}</Badge>
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {skill.description || "No description found."}
+          </p>
+        </div>
+        <div className="min-w-0 self-center text-xs text-muted-foreground">
+          <p className="truncate">{skill.path}</p>
+        </div>
+        <div className="flex items-center justify-end">
+          <Button type="button" variant="outline" onClick={() => viewSkill(skill)}>
+            <Eye className="h-4 w-4" />
+            View
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-5 px-5 py-5 md:px-6">
@@ -138,35 +178,42 @@ export function SkillsWorkspace() {
       ) : null}
 
       <section className="grid gap-3">
-        {skills.map((skill) => (
-          <div
-            key={`${skill.source}:${skill.name}`}
-            className="grid gap-4 border border-border/70 bg-background p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,340px)_auto]"
-          >
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <BookOpen className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-base font-semibold">{skill.name}</h2>
-                <Badge variant={skill.kind === "custom" ? "default" : "outline"}>
-                  {skill.kind}
-                </Badge>
-                <Badge variant="outline">{sourceLabel(skill.source)}</Badge>
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {skill.description || "No description found."}
-              </p>
-            </div>
-            <div className="min-w-0 self-center text-xs text-muted-foreground">
-              <p className="truncate">{skill.path}</p>
-            </div>
-            <div className="flex items-center justify-end">
-              <Button type="button" variant="outline" onClick={() => viewSkill(skill)}>
-                <Eye className="h-4 w-4" />
-                View
-              </Button>
-            </div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Custom Skills</p>
+            <p className="text-sm text-muted-foreground">Instance-owned skills from the site volume.</p>
           </div>
-        ))}
+          <Badge variant="outline">{customSkills.length}</Badge>
+        </div>
+        {customSkills.map(renderSkill)}
+        {!customSkills.length && !error ? (
+          <div className="border border-border/70 bg-background px-4 py-6 text-sm text-muted-foreground">
+            No custom skills discovered.
+          </div>
+        ) : null}
+      </section>
+
+      <Collapsible open={isBuiltInOpen} onOpenChange={setIsBuiltInOpen} className="grid gap-3">
+        <CollapsibleTrigger asChild>
+          <Button type="button" variant="outline" className="justify-between">
+            <span>Built-In Skills</span>
+            <span className="flex items-center gap-2 text-muted-foreground">
+              {builtInSkills.length}
+              <ChevronDown className={`h-4 w-4 transition-transform ${isBuiltInOpen ? "rotate-180" : ""}`} />
+            </span>
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="grid gap-3">
+          {builtInSkills.map(renderSkill)}
+          {!builtInSkills.length && !error ? (
+            <div className="border border-border/70 bg-background px-4 py-6 text-sm text-muted-foreground">
+              No built-in skills discovered.
+            </div>
+          ) : null}
+        </CollapsibleContent>
+      </Collapsible>
+
+      <section className="grid gap-3">
         {!skills.length && !error ? (
           <div className="border border-border/70 bg-background px-4 py-8 text-sm text-muted-foreground">
             No skills discovered.

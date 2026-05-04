@@ -1,10 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { Eye, FileText, GitBranch, RefreshCw, Route } from "lucide-react";
+import { ChevronDown, Eye, FileText, GitBranch, RefreshCw, Route } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -86,6 +91,7 @@ export function WorkflowsWorkspace() {
   const [selectedWorkflowDetail, setSelectedWorkflowDetail] = useState<WorkflowDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [isSystemOpen, setIsSystemOpen] = useState(false);
   const [isRefreshing, startRefresh] = useTransition();
 
   async function loadWorkflows() {
@@ -142,6 +148,67 @@ export function WorkflowsWorkspace() {
     }),
     [workflows],
   );
+  const customWorkflows = useMemo(() => workflows.filter((workflow) => !workflow.systemDefault), [workflows]);
+  const systemWorkflows = useMemo(() => workflows.filter((workflow) => workflow.systemDefault), [workflows]);
+
+  function renderWorkflow(workflow: WorkflowRecord) {
+    const steps = workflowSteps(workflow);
+    return (
+      <div
+        key={workflow.key}
+        className="grid gap-4 border border-border/70 bg-background p-4 xl:grid-cols-[minmax(220px,1fr)_minmax(360px,1.4fr)_auto]"
+      >
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Route className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-base font-semibold">{workflow.name}</h2>
+            <Badge variant={workflow.enabled ? "default" : "outline"}>
+              {workflow.enabled ? "enabled" : "disabled"}
+            </Badge>
+            {workflow.systemDefault ? <Badge variant="outline">system</Badge> : null}
+            <Badge variant="outline">v{workflow.version}</Badge>
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {workflow.description || "No description found."}
+          </p>
+          <p className="mt-2 truncate text-xs text-muted-foreground">{workflow.key}</p>
+        </div>
+
+        <div className="grid gap-2">
+          {steps.slice(0, 5).map((step, index) => (
+            <div
+              key={`${workflow.key}:${String(step.key ?? index)}`}
+              className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 text-sm"
+            >
+              <div className="flex h-7 w-7 items-center justify-center border border-border/70 bg-muted/30 text-xs">
+                {index + 1}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate font-medium">{stepLabel(step)}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {typeof step.key === "string" ? step.key : "unkeyed"}
+                </p>
+              </div>
+              <Badge variant="outline">{stepType(step)}</Badge>
+            </div>
+          ))}
+          {steps.length > 5 ? (
+            <p className="text-xs text-muted-foreground">+{steps.length - 5} more steps</p>
+          ) : null}
+          {!steps.length ? (
+            <p className="text-sm text-muted-foreground">No steps in definition.</p>
+          ) : null}
+        </div>
+
+        <div className="flex items-center justify-end">
+          <Button type="button" variant="outline" onClick={() => openWorkflow(workflow)}>
+            <Eye className="h-4 w-4" />
+            View
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-5 px-5 py-5 md:px-6">
@@ -180,64 +247,42 @@ export function WorkflowsWorkspace() {
       ) : null}
 
       <section className="grid gap-3">
-        {workflows.map((workflow) => {
-          const steps = workflowSteps(workflow);
-          return (
-            <div
-              key={workflow.key}
-              className="grid gap-4 border border-border/70 bg-background p-4 xl:grid-cols-[minmax(220px,1fr)_minmax(360px,1.4fr)_auto]"
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Route className="h-4 w-4 text-muted-foreground" />
-                  <h2 className="text-base font-semibold">{workflow.name}</h2>
-                  <Badge variant={workflow.enabled ? "default" : "outline"}>
-                    {workflow.enabled ? "enabled" : "disabled"}
-                  </Badge>
-                  {workflow.systemDefault ? <Badge variant="outline">system</Badge> : null}
-                  <Badge variant="outline">v{workflow.version}</Badge>
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {workflow.description || "No description found."}
-                </p>
-                <p className="mt-2 truncate text-xs text-muted-foreground">{workflow.key}</p>
-              </div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Custom Workflows</p>
+            <p className="text-sm text-muted-foreground">Instance-authored request flows and experiments.</p>
+          </div>
+          <Badge variant="outline">{customWorkflows.length}</Badge>
+        </div>
+        {customWorkflows.map(renderWorkflow)}
+        {!customWorkflows.length && !error ? (
+          <div className="border border-border/70 bg-background px-4 py-6 text-sm text-muted-foreground">
+            No custom workflows registered.
+          </div>
+        ) : null}
+      </section>
 
-              <div className="grid gap-2">
-                {steps.slice(0, 5).map((step, index) => (
-                  <div
-                    key={`${workflow.key}:${String(step.key ?? index)}`}
-                    className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 text-sm"
-                  >
-                    <div className="flex h-7 w-7 items-center justify-center border border-border/70 bg-muted/30 text-xs">
-                      {index + 1}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">{stepLabel(step)}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {typeof step.key === "string" ? step.key : "unkeyed"}
-                      </p>
-                    </div>
-                    <Badge variant="outline">{stepType(step)}</Badge>
-                  </div>
-                ))}
-                {steps.length > 5 ? (
-                  <p className="text-xs text-muted-foreground">+{steps.length - 5} more steps</p>
-                ) : null}
-                {!steps.length ? (
-                  <p className="text-sm text-muted-foreground">No steps in definition.</p>
-                ) : null}
-              </div>
-
-              <div className="flex items-center justify-end">
-                <Button type="button" variant="outline" onClick={() => openWorkflow(workflow)}>
-                  <Eye className="h-4 w-4" />
-                  View
-                </Button>
-              </div>
+      <Collapsible open={isSystemOpen} onOpenChange={setIsSystemOpen} className="grid gap-3">
+        <CollapsibleTrigger asChild>
+          <Button type="button" variant="outline" className="justify-between">
+            <span>System Workflows</span>
+            <span className="flex items-center gap-2 text-muted-foreground">
+              {systemWorkflows.length}
+              <ChevronDown className={`h-4 w-4 transition-transform ${isSystemOpen ? "rotate-180" : ""}`} />
+            </span>
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="grid gap-3">
+          {systemWorkflows.map(renderWorkflow)}
+          {!systemWorkflows.length && !error ? (
+            <div className="border border-border/70 bg-background px-4 py-6 text-sm text-muted-foreground">
+              No system workflows registered.
             </div>
-          );
-        })}
+          ) : null}
+        </CollapsibleContent>
+      </Collapsible>
+
+      <section className="grid gap-3">
         {!workflows.length && !error ? (
           <div className="border border-border/70 bg-background px-4 py-8 text-sm text-muted-foreground">
             No workflows registered.
