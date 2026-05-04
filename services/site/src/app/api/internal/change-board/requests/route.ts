@@ -44,6 +44,9 @@ export async function POST(request: Request) {
   if (!workflow) {
     return NextResponse.json({ ok: false, error: `Workflow not found: ${workflowKey}` }, { status: 400 })
   }
+  if (!workflow.enabled) {
+    return NextResponse.json({ ok: false, error: `Workflow disabled: ${workflowKey}` }, { status: 400 })
+  }
   if (targetRequired && !targetAppId) {
     return NextResponse.json({ ok: false, error: `Workflow ${workflowKey} requires targetAppId` }, { status: 400 })
   }

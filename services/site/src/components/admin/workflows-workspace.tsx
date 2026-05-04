@@ -136,8 +136,9 @@ export function WorkflowsWorkspace() {
       if (detailRequestRef.current !== requestToken) return;
       setDetailError(nextError instanceof Error ? nextError.message : "Could not load workflow detail");
     } finally {
-      if (detailRequestRef.current !== requestToken) return;
-      setIsDetailLoading(false);
+      if (detailRequestRef.current === requestToken) {
+        setIsDetailLoading(false);
+      }
     }
   }
 

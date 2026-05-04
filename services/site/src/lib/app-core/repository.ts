@@ -2882,6 +2882,10 @@ function getNextChangeRequestNumber() {
   return row.next_number;
 }
 
+function isTerminalRequestStatus(status: string | null | undefined) {
+  return ['approved', 'rejected', 'closed'].includes(status ?? '');
+}
+
 export function createChangeRequest(input: CreateChangeRequestInput) {
   const now = new Date().toISOString();
   const id = randomUUID();
@@ -2889,6 +2893,9 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
   const workflow = getWorkflowByKey(workflowKey);
   if (!workflow) {
     throw new Error('WORKFLOW_NOT_FOUND');
+  }
+  if (!workflow.enabled) {
+    throw new Error('WORKFLOW_DISABLED');
   }
   const status = input.status ?? 'submitted';
 
@@ -4149,6 +4156,18 @@ export function getWorkflowRunForRequest(requestId: string): WorkflowRunRecord |
   return row ? mapWorkflowRunRow(row) : null;
 }
 
+export function getWorkflowRun(workflowRunId: string): WorkflowRunRecord | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, request_id, workflow_key, current_step_key, status, meta_json, created_at, updated_at, completed_at
+       FROM workflow_runs
+       WHERE id = ?`,
+    )
+    .get(workflowRunId) as WorkflowRunRow | undefined;
+
+  return row ? mapWorkflowRunRow(row) : null;
+}
+
 export function ensureWorkflowRunForRequest(input: {
   requestId: string;
   workflowKey: string;
@@ -4167,14 +4186,17 @@ export function ensureWorkflowRunForRequest(input: {
     (input.status ? workflowStepKeyForStatus(workflow, input.status) : workflowEntrypoint(workflow));
   const now = new Date().toISOString();
   const id = randomUUID();
+  const terminal = isTerminalRequestStatus(input.status);
+  const runStatus = terminal ? 'completed' : 'active';
+  const completedAt = terminal ? now : null;
 
   getDb()
     .prepare(
       `INSERT INTO workflow_runs (
          id, request_id, workflow_key, current_step_key, status, meta_json, created_at, updated_at, completed_at
-       ) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, NULL)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, input.requestId, input.workflowKey, currentStepKey, JSON.stringify(input.meta ?? {}), now, now);
+    .run(id, input.requestId, input.workflowKey, currentStepKey, runStatus, JSON.stringify(input.meta ?? {}), now, now, completedAt);
 
   const run = getWorkflowRunForRequest(input.requestId);
   if (!run) {
@@ -4240,8 +4262,8 @@ export function syncWorkflowRunToRequestStatus(request: ChangeRequestRecord, act
     status: request.status,
     currentStepKey: nextStepKey,
   });
-  if (run.currentStepKey !== nextStepKey || (['approved', 'rejected', 'closed'].includes(request.status) && run.status !== 'completed')) {
-    const completedAt = ['approved', 'rejected', 'closed'].includes(request.status) ? new Date().toISOString() : null;
+  if (run.currentStepKey !== nextStepKey || (isTerminalRequestStatus(request.status) && run.status !== 'completed')) {
+    const completedAt = isTerminalRequestStatus(request.status) ? new Date().toISOString() : null;
     updateWorkflowRun({
       requestId: request.id,
       currentStepKey: nextStepKey,
@@ -4387,6 +4409,10 @@ export function getRequestArtifact(id: string): RequestArtifactRecord | null {
     .get(id) as RequestArtifactRow | undefined;
 
   return row ? mapRequestArtifactRow(row) : null;
+}
+
+export function deleteRequestArtifact(id: string) {
+  getDb().prepare('DELETE FROM request_artifacts WHERE id = ?').run(id);
 }
 
 export function listRequestArtifacts(requestId: string, limit = 100): RequestArtifactRecord[] {

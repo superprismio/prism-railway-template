@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import {
   buildTargetEnvironmentDeployPlan,
   createWorkflowEvent,
+  ensureWorkflowRunForRequest,
   getChangeRequest,
   getTargetApp,
   getTargetEnvironment,
@@ -25,6 +26,10 @@ function isTriageOnlyStatus(status: string | null | undefined) {
 
 function isExecutionStatus(status: string | null | undefined) {
   return ["in-progress", "awaiting-review", "changes-requested", "approved", "closed"].includes(status ?? "")
+}
+
+function isTerminalStatus(status: string) {
+  return ["approved", "rejected", "closed"].includes(status)
 }
 
 function isWorkflowStep(value: unknown): value is Record<string, unknown> {
@@ -154,13 +159,18 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })
   }
   if (nextWorkflowStepKey) {
-    const workflowRun = getWorkflowRunForRequest(changeRequestId)
+    const workflowRun = getWorkflowRunForRequest(changeRequestId) ?? ensureWorkflowRunForRequest({
+      requestId: changeRequestId,
+      workflowKey: changeRequest.workflowKey,
+      status: changeRequest.status,
+      currentStepKey: nextWorkflowStepKey,
+    })
     const previousStepKey = workflowRun?.currentStepKey ?? null
     const updatedRun = updateWorkflowRun({
       requestId: changeRequestId,
       currentStepKey: nextWorkflowStepKey,
-      status: ["approved", "rejected", "closed"].includes(changeRequest.status) ? "completed" : "active",
-      completedAt: ["approved", "rejected", "closed"].includes(changeRequest.status) ? new Date().toISOString() : null,
+      status: isTerminalStatus(changeRequest.status) ? "completed" : "active",
+      completedAt: isTerminalStatus(changeRequest.status) ? new Date().toISOString() : null,
     })
     if (updatedRun && previousStepKey !== nextWorkflowStepKey) {
       createWorkflowEvent({

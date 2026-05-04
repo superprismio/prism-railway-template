@@ -996,8 +996,9 @@ export function RequestDetailsPanel({
         error instanceof Error ? error.message : "Could not load artifact preview",
       );
     } finally {
-      if (artifactPreviewRequestRef.current !== requestToken) return;
-      setIsArtifactPreviewLoading(false);
+      if (artifactPreviewRequestRef.current === requestToken) {
+        setIsArtifactPreviewLoading(false);
+      }
     }
   }
 

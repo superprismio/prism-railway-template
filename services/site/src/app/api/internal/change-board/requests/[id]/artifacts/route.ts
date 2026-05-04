@@ -4,8 +4,11 @@ import {
   buildRequestArtifactStoragePath,
   createWorkflowEvent,
   createRequestArtifact,
+  deleteRequestArtifact,
   deleteRequestArtifactFile,
   getChangeRequest,
+  getChangeRequestExecution,
+  getWorkflowRun,
   getWorkflowRunForRequest,
   listRequestArtifacts,
   writeRequestArtifactFile,
@@ -94,14 +97,30 @@ export async function POST(request: Request, context: RouteContext) {
 
   const artifactId = randomUUID()
   const storagePath = buildRequestArtifactStoragePath({ requestId, artifactId, name })
+  const workflowRunId = parseString(body.workflowRunId ?? body.workflow_run_id) || null
+  const executionId = parseString(body.executionId ?? body.execution_id) || null
+
+  if (workflowRunId) {
+    const workflowRun = getWorkflowRun(workflowRunId)
+    if (!workflowRun || workflowRun.requestId !== requestId) {
+      return NextResponse.json({ ok: false, error: "Invalid workflowRunId" }, { status: 400 })
+    }
+  }
+
+  if (executionId) {
+    const execution = getChangeRequestExecution(executionId)
+    if (!execution || execution.changeRequestId !== requestId) {
+      return NextResponse.json({ ok: false, error: "Invalid executionId" }, { status: 400 })
+    }
+  }
 
   try {
     await writeRequestArtifactFile(storagePath, content)
     const artifact = createRequestArtifact({
       id: artifactId,
       requestId,
-      workflowRunId: parseString(body.workflowRunId ?? body.workflow_run_id) || null,
-      executionId: parseString(body.executionId ?? body.execution_id) || null,
+      workflowRunId,
+      executionId,
       kind: parseString(body.kind) || "file",
       name,
       description: parseString(body.description) || null,
@@ -131,6 +150,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     return NextResponse.json({ ok: true, artifact }, { status: 201 })
   } catch (error) {
+    deleteRequestArtifact(artifactId)
     await deleteRequestArtifactFile(storagePath).catch(() => undefined)
     const message = error instanceof Error ? error.message : String(error)
     return NextResponse.json({ ok: false, error: message }, { status: 500 })

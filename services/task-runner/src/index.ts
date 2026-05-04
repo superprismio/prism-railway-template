@@ -290,7 +290,7 @@ function isAppTask(value: unknown): value is AppTask {
     && isRecord(candidate.inputConfig)
     && isRecord(candidate.instructionConfig)
     && isRecord(candidate.outputConfig)
-    && isRecord(candidate.agentConfig)
+    && (candidate.agentConfig === undefined || candidate.agentConfig === null || isRecord(candidate.agentConfig))
   );
 }
 
@@ -363,7 +363,12 @@ async function fetchTasksFromSite(): Promise<AppTask[] | null> {
     if (!Array.isArray(rows)) {
       return null;
     }
-    return rows.filter(isAppTask);
+    return rows
+      .filter(isAppTask)
+      .map((task) => ({
+        ...task,
+        agentConfig: isRecord(task.agentConfig) ? task.agentConfig : {},
+      }));
   } catch (error) {
     console.warn(JSON.stringify({ event: "task.site_fetch_failed", error: describeError(error) }));
     return null;

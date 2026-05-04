@@ -37,6 +37,7 @@ export async function POST(request: Request) {
       !title ||
       !description ||
       !workflow ||
+      !workflow.enabled ||
       (targetRequired && !targetAppId) ||
       !trackedChangeRequestTypes.includes(requestType as typeof trackedChangeRequestTypes[number]) ||
       !trackedChangeRequestPriorities.includes(priority as typeof trackedChangeRequestPriorities[number])

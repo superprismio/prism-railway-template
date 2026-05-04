@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import {
   createAuditLog,
   createWorkflowEvent,
+  ensureWorkflowRunForRequest,
   getChangeRequest,
   getWorkflowByKey,
   getWorkflowRunForRequest,
@@ -40,6 +41,10 @@ function statusForWorkflowStep(step: Record<string, unknown> | null | undefined)
     return statuses.find((status) => status === "triaging" || status === "in-progress") ?? statuses[0]
   }
   return statuses[0]
+}
+
+function isTerminalStatus(status: string) {
+  return ["approved", "rejected", "closed"].includes(status)
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -138,13 +143,18 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })
     }
     if (nextWorkflowStepKey) {
-      const workflowRun = getWorkflowRunForRequest(changeRequestId)
+      const workflowRun = getWorkflowRunForRequest(changeRequestId) ?? ensureWorkflowRunForRequest({
+        requestId: changeRequestId,
+        workflowKey: changeRequest.workflowKey,
+        status: changeRequest.status,
+        currentStepKey: nextWorkflowStepKey,
+      })
       const previousStepKey = workflowRun?.currentStepKey ?? null
       const updatedRun = updateWorkflowRun({
         requestId: changeRequestId,
         currentStepKey: nextWorkflowStepKey,
-        status: ["approved", "rejected", "closed"].includes(changeRequest.status) ? "completed" : "active",
-        completedAt: ["approved", "rejected", "closed"].includes(changeRequest.status) ? new Date().toISOString() : null,
+        status: isTerminalStatus(changeRequest.status) ? "completed" : "active",
+        completedAt: isTerminalStatus(changeRequest.status) ? new Date().toISOString() : null,
       })
       if (updatedRun && previousStepKey !== nextWorkflowStepKey) {
         createWorkflowEvent({
