@@ -603,7 +603,12 @@ export function RequestDetailsPanel({
   }, []);
 
   useEffect(() => {
-    if (!executions.some((execution) => execution.status === "running")) {
+    const shouldPollLiveState =
+      executions.some((execution) => execution.status === "running") ||
+      isCommandPending ||
+      isContinuePending;
+
+    if (!shouldPollLiveState) {
       return;
     }
 
@@ -611,7 +616,10 @@ export function RequestDetailsPanel({
 
     async function pollLiveState() {
       try {
-        const [threadResponse, executionResponse, workflowEventResponse, artifactResponse] = await Promise.all([
+        const [requestResponse, threadResponse, executionResponse, workflowEventResponse, artifactResponse] = await Promise.all([
+          fetch(`/admin/change-requests/${request.id}`, {
+            cache: "no-store",
+          }),
           fetch(`/admin/change-requests/${request.id}/agent-thread`, {
             cache: "no-store",
           }),
@@ -626,10 +634,20 @@ export function RequestDetailsPanel({
           }),
         ]);
 
-        if (!threadResponse.ok || !executionResponse.ok || !workflowEventResponse.ok || !artifactResponse.ok || cancelled) {
+        if (
+          !requestResponse.ok ||
+          !threadResponse.ok ||
+          !executionResponse.ok ||
+          !workflowEventResponse.ok ||
+          !artifactResponse.ok ||
+          cancelled
+        ) {
           return;
         }
 
+        const requestPayload = (await requestResponse.json()) as {
+          changeRequest?: ChangeRequestRecord;
+        };
         const threadPayload = (await threadResponse.json()) as {
           session?: AgentThreadSession | null;
           messages?: AgentThreadMessage[];
@@ -646,6 +664,14 @@ export function RequestDetailsPanel({
 
         if (cancelled) return;
 
+        if (requestPayload.changeRequest) {
+          setStatus(requestPayload.changeRequest.status);
+          setCurrentWorkflowStepKey(requestPayload.changeRequest.currentWorkflowStepKey);
+          setTriageSummary(requestPayload.changeRequest.triageSummary ?? "");
+          setAgentRecommendation(requestPayload.changeRequest.agentRecommendation ?? "");
+          setManualWorkflowStepKey(requestPayload.changeRequest.currentWorkflowStepKey ?? "");
+          setManualAgentRecommendation(requestPayload.changeRequest.agentRecommendation ?? "");
+        }
         setThreadSession(threadPayload.session ?? null);
         setThreadMessages(
           Array.isArray(threadPayload.messages) ? threadPayload.messages : [],
@@ -670,12 +696,13 @@ export function RequestDetailsPanel({
       }
     }
 
+    pollLiveState();
     const intervalId = window.setInterval(pollLiveState, 2500);
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [executions, request.id]);
+  }, [executions, isCommandPending, isContinuePending, request.id]);
 
   const activeExecution = useMemo(
     () =>
