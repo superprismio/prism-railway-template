@@ -353,6 +353,161 @@ async function requestCodexRuntimeResponse(input: {
   return payload
 }
 
+function isTerminalRequestStatus(status: string | null | undefined) {
+  return Boolean(status && ["approved", "rejected", "closed"].includes(status))
+}
+
+function completeWorkflowAgentStep(input: {
+  executionId: string | null
+  runtimeResponse: RuntimeResponsePayload
+  responseText: string
+  requestId: string
+  workflowRunId: string
+  workflowKey: string | null
+  stepKey: string
+  completedStatus: string | null
+  nextStep: Record<string, unknown> | null
+  linkedWorkflowSteps: Record<string, unknown>[]
+  sessionId: string
+  startedFromStatus?: string | null
+  autoContinued?: boolean
+}) {
+  const traceSummary = formatTraceSummary(input.runtimeResponse.trace as RuntimeTraceEntry[] | undefined)
+  const gitPushState = summarizeGitPushState(input.runtimeResponse.trace as RuntimeTraceEntry[] | undefined)
+  if (input.executionId) {
+    updateChangeRequestExecution(input.executionId, {
+      status: "completed",
+      branchName: input.runtimeResponse.branchName ?? null,
+      commitSha: input.runtimeResponse.commitSha ?? null,
+      summary: traceSummary ?? input.responseText.slice(0, 1200),
+      finishedAt: new Date().toISOString(),
+      meta: {
+        workflowKey: input.workflowKey,
+        workflowRunId: input.workflowRunId,
+        workflowStepKey: input.stepKey,
+        transport: "site",
+        sessionId: input.sessionId,
+        startedFromStatus: input.startedFromStatus,
+        autoContinued: input.autoContinued === true,
+        codexThreadId: input.runtimeResponse.thread_id ?? null,
+        baseBranch: input.runtimeResponse.baseBranch ?? null,
+        baseCommitSha: input.runtimeResponse.baseCommitSha ?? null,
+        headCommitSha: input.runtimeResponse.commitSha ?? null,
+        branchUrl: input.runtimeResponse.branchUrl ?? null,
+        gitPushSucceeded: gitPushState.gitPushSucceeded,
+        gitPushError: gitPushState.gitPushError,
+        runtimeTrace: Array.isArray(input.runtimeResponse.trace) ? input.runtimeResponse.trace : [],
+      },
+    })
+  }
+
+  createWorkflowEvent({
+    workflowRunId: input.workflowRunId,
+    requestId: input.requestId,
+    stepKey: input.stepKey,
+    eventType: "agent.completed",
+    actorType: "codex",
+    payload: {
+      status: input.completedStatus,
+      executionId: input.executionId,
+      autoContinued: input.autoContinued === true,
+      branchName: input.runtimeResponse.branchName ?? null,
+      commitSha: input.runtimeResponse.commitSha ?? null,
+    },
+  })
+
+  if (!input.completedStatus) {
+    return input.stepKey
+  }
+
+  updateChangeRequest(input.requestId, {
+    status: input.completedStatus,
+    syncWorkflowRun: false,
+  })
+  const nextStep = input.nextStep ?? findStepForStatus(input.linkedWorkflowSteps, input.completedStatus)
+  const nextStepKey = nextStep ? stepKey(nextStep) : input.stepKey
+  const terminal = isTerminalRequestStatus(input.completedStatus)
+  updateWorkflowRun({
+    requestId: input.requestId,
+    currentStepKey: nextStepKey,
+    status: terminal ? "completed" : "active",
+    completedAt: terminal ? new Date().toISOString() : null,
+  })
+  if (nextStepKey !== input.stepKey) {
+    createWorkflowEvent({
+      workflowRunId: input.workflowRunId,
+      requestId: input.requestId,
+      stepKey: nextStepKey,
+      eventType: "workflow.step_changed",
+      actorType: "system",
+      payload: {
+        status: input.completedStatus,
+        previousStepKey: input.stepKey,
+        nextStepKey,
+        autoContinued: input.autoContinued === true,
+      },
+    })
+  }
+  return nextStepKey
+}
+
+function startWorkflowAgentStep(input: {
+  requestId: string
+  requestStatus: string
+  targetEnvironmentId: string | null
+  workflowRunId: string
+  workflowKey: string
+  stepKey: string
+  runningStatus: string
+  sessionId: string
+  startedFromStatus: string | null
+  action?: string | null
+  autoContinued?: boolean
+}) {
+  if (input.requestStatus !== input.runningStatus) {
+    updateChangeRequest(input.requestId, {
+      status: input.runningStatus,
+      syncWorkflowRun: false,
+    })
+  }
+  updateWorkflowRun({
+    requestId: input.requestId,
+    currentStepKey: input.stepKey,
+    status: "active",
+    completedAt: null,
+  })
+  createWorkflowEvent({
+    workflowRunId: input.workflowRunId,
+    requestId: input.requestId,
+    stepKey: input.stepKey,
+    eventType: "agent.started",
+    actorType: "codex",
+    payload: {
+      status: input.runningStatus,
+      action: input.action,
+      autoContinued: input.autoContinued === true,
+    },
+  })
+
+  const execution = createChangeRequestExecution({
+    changeRequestId: input.requestId,
+    targetEnvironmentId: input.targetEnvironmentId,
+    status: "running",
+    actorType: "codex",
+    startedAt: new Date().toISOString(),
+    meta: {
+      workflowKey: input.workflowKey,
+      workflowRunId: input.workflowRunId,
+      workflowStepKey: input.stepKey,
+      transport: "site",
+      sessionId: input.sessionId,
+      startedFromStatus: input.startedFromStatus,
+      autoContinued: input.autoContinued === true,
+    },
+  })
+  return execution?.id ?? null
+}
+
 export async function POST(request: Request) {
   let payload: unknown = null
 
@@ -515,7 +670,14 @@ export async function POST(request: Request) {
   const nextStepKeyAfterRun = nextWorkflowStepAfterRun ? stepKey(nextWorkflowStepAfterRun) : null
   let activeExecutionId: string | null = null
 
-  if (activeLinkedChangeRequestId && linkedChangeRequest && linkedWorkflowRun && runnableWorkflowStep && requestRunningStatus) {
+  if (
+    activeLinkedChangeRequestId &&
+    linkedChangeRequest &&
+    linkedWorkflowRun &&
+    runnableWorkflowStep &&
+    runnableStepKey &&
+    requestRunningStatus
+  ) {
     if (stepType(runnableWorkflowStep) !== "agent") {
       return NextResponse.json(
         { ok: false, error: "WORKFLOW_STEP_NOT_RUNNABLE" },
@@ -546,46 +708,18 @@ export async function POST(request: Request) {
       })
     }
 
-    if (linkedChangeRequest.status !== requestRunningStatus) {
-      updateChangeRequest(activeLinkedChangeRequestId, {
-        status: requestRunningStatus,
-        syncWorkflowRun: false,
-      })
-    }
-    updateWorkflowRun({
+    activeExecutionId = startWorkflowAgentStep({
       requestId: activeLinkedChangeRequestId,
-      currentStepKey: runnableStepKey ?? linkedWorkflowRun.currentStepKey,
-      status: "active",
-      completedAt: null,
-    })
-    createWorkflowEvent({
-      workflowRunId: linkedWorkflowRun.id,
-      requestId: activeLinkedChangeRequestId,
-      stepKey: runnableStepKey,
-      eventType: "agent.started",
-      actorType: "codex",
-      payload: {
-        status: requestRunningStatus,
-        action: workflowAction,
-      },
-    })
-
-    const execution = createChangeRequestExecution({
-      changeRequestId: activeLinkedChangeRequestId,
+      requestStatus: linkedChangeRequest.status,
       targetEnvironmentId: activeLinkedTargetEnvironmentId ?? linkedChangeRequest.targetEnvironmentId,
-      status: "running",
-      actorType: "codex",
-      startedAt: new Date().toISOString(),
-      meta: {
-        workflowKey: linkedChangeRequest.workflowKey,
-        workflowRunId: linkedWorkflowRun.id,
-        workflowStepKey: runnableStepKey,
-        transport: "site",
-        sessionId: session.id,
-        startedFromStatus: requestStartedFromStatus,
-      },
+      workflowRunId: linkedWorkflowRun.id,
+      workflowKey: linkedChangeRequest.workflowKey,
+      stepKey: runnableStepKey,
+      runningStatus: requestRunningStatus,
+      sessionId: session.id,
+      startedFromStatus: requestStartedFromStatus,
+      action: workflowAction,
     })
-    activeExecutionId = execution?.id ?? null
   }
 
   try {
@@ -674,76 +808,21 @@ export async function POST(request: Request) {
       },
     })
 
-    if (activeExecutionId) {
-      const traceSummary = formatTraceSummary(runtimeResponse.trace as RuntimeTraceEntry[] | undefined)
-      const gitPushState = summarizeGitPushState(runtimeResponse.trace as RuntimeTraceEntry[] | undefined)
-      updateChangeRequestExecution(activeExecutionId, {
-        status: "completed",
-        branchName: runtimeResponse.branchName ?? null,
-        commitSha: runtimeResponse.commitSha ?? null,
-        summary: traceSummary ?? responseText.slice(0, 1200),
-        finishedAt: new Date().toISOString(),
-        meta: {
-          workflowKey: linkedChangeRequest?.workflowKey ?? null,
-          workflowRunId: linkedWorkflowRun?.id ?? null,
-          workflowStepKey: runnableStepKey,
-          transport: "site",
-          sessionId: session.id,
-          startedFromStatus: requestStartedFromStatus,
-          codexThreadId: runtimeResponse.thread_id ?? null,
-          baseBranch: runtimeResponse.baseBranch ?? null,
-          baseCommitSha: runtimeResponse.baseCommitSha ?? null,
-          headCommitSha: runtimeResponse.commitSha ?? null,
-          branchUrl: runtimeResponse.branchUrl ?? null,
-          gitPushSucceeded: gitPushState.gitPushSucceeded,
-          gitPushError: gitPushState.gitPushError,
-          runtimeTrace: Array.isArray(runtimeResponse.trace) ? runtimeResponse.trace : [],
-        },
-      })
-    }
-
     if (activeLinkedChangeRequestId && linkedWorkflowRun && runnableStepKey) {
-      createWorkflowEvent({
-        workflowRunId: linkedWorkflowRun.id,
+      completeWorkflowAgentStep({
+        executionId: activeExecutionId,
+        runtimeResponse,
+        responseText,
         requestId: activeLinkedChangeRequestId,
         stepKey: runnableStepKey,
-        eventType: "agent.completed",
-        actorType: "codex",
-        payload: {
-          status: requestCompletedStatus,
-          executionId: activeExecutionId,
-          branchName: runtimeResponse.branchName ?? null,
-          commitSha: runtimeResponse.commitSha ?? null,
-        },
+        workflowRunId: linkedWorkflowRun.id,
+        workflowKey: linkedChangeRequest?.workflowKey ?? null,
+        completedStatus: requestCompletedStatus,
+        nextStep: nextWorkflowStepAfterRun,
+        linkedWorkflowSteps,
+        sessionId: session.id,
+        startedFromStatus: requestStartedFromStatus,
       })
-      if (requestCompletedStatus) {
-        updateChangeRequest(activeLinkedChangeRequestId, {
-          status: requestCompletedStatus,
-          syncWorkflowRun: false,
-        })
-        const nextStep = nextWorkflowStepAfterRun ?? findStepForStatus(linkedWorkflowSteps, requestCompletedStatus)
-        const nextStepKey = nextStep ? stepKey(nextStep) : runnableStepKey
-        updateWorkflowRun({
-          requestId: activeLinkedChangeRequestId,
-          currentStepKey: nextStepKey,
-          status: ["approved", "rejected", "closed"].includes(requestCompletedStatus) ? "completed" : "active",
-          completedAt: ["approved", "rejected", "closed"].includes(requestCompletedStatus) ? new Date().toISOString() : null,
-        })
-        if (nextStepKey !== runnableStepKey) {
-          createWorkflowEvent({
-            workflowRunId: linkedWorkflowRun.id,
-            requestId: activeLinkedChangeRequestId,
-            stepKey: nextStepKey,
-            eventType: "workflow.step_changed",
-            actorType: "system",
-            payload: {
-              status: requestCompletedStatus,
-              previousStepKey: runnableStepKey,
-              nextStepKey,
-            },
-          })
-        }
-      }
     }
 
     const autoContinuedSteps: string[] = []
@@ -790,45 +869,17 @@ export async function POST(request: Request) {
           break
         }
 
-        if (latestRequest.status !== continuationRunningStatus) {
-          updateChangeRequest(activeLinkedChangeRequestId, {
-            status: continuationRunningStatus,
-            syncWorkflowRun: false,
-          })
-        }
-        updateWorkflowRun({
+        const continuationExecutionId = startWorkflowAgentStep({
           requestId: activeLinkedChangeRequestId,
-          currentStepKey: continuationStepKey,
-          status: "active",
-          completedAt: null,
-        })
-        createWorkflowEvent({
-          workflowRunId: latestRun.id,
-          requestId: activeLinkedChangeRequestId,
-          stepKey: continuationStepKey,
-          eventType: "agent.started",
-          actorType: "codex",
-          payload: {
-            status: continuationRunningStatus,
-            autoContinued: true,
-          },
-        })
-
-        const continuationExecution = createChangeRequestExecution({
-          changeRequestId: activeLinkedChangeRequestId,
+          requestStatus: latestRequest.status,
           targetEnvironmentId: activeLinkedTargetEnvironmentId ?? latestRequest.targetEnvironmentId,
-          status: "running",
-          actorType: "codex",
-          startedAt: new Date().toISOString(),
-          meta: {
-            workflowKey: linkedChangeRequest.workflowKey,
-            workflowRunId: latestRun.id,
-            workflowStepKey: continuationStepKey,
-            transport: "site",
-            sessionId: session.id,
-            autoContinued: true,
-            startedFromStatus: latestRequest.status,
-          },
+          workflowRunId: latestRun.id,
+          workflowKey: linkedChangeRequest.workflowKey,
+          stepKey: continuationStepKey,
+          runningStatus: continuationRunningStatus,
+          sessionId: session.id,
+          startedFromStatus: latestRequest.status,
+          autoContinued: true,
         })
 
         const continuationInstruction = readInstructionFile(continuationStep.instructionPath)
@@ -929,77 +980,21 @@ export async function POST(request: Request) {
             },
           })
 
-          const traceSummary = formatTraceSummary(continuationResponse.trace as RuntimeTraceEntry[] | undefined)
-          const gitPushState = summarizeGitPushState(continuationResponse.trace as RuntimeTraceEntry[] | undefined)
-          if (continuationExecution?.id) {
-            updateChangeRequestExecution(continuationExecution.id, {
-              status: "completed",
-              branchName: continuationResponse.branchName ?? null,
-              commitSha: continuationResponse.commitSha ?? null,
-              summary: traceSummary ?? continuationText.slice(0, 1200),
-              finishedAt: new Date().toISOString(),
-              meta: {
-                workflowKey: linkedChangeRequest.workflowKey,
-                workflowRunId: latestRun.id,
-                workflowStepKey: continuationStepKey,
-                transport: "site",
-                sessionId: session.id,
-                autoContinued: true,
-                codexThreadId: continuationThreadId,
-                baseBranch: continuationResponse.baseBranch ?? null,
-                baseCommitSha: continuationResponse.baseCommitSha ?? null,
-                headCommitSha: continuationResponse.commitSha ?? null,
-                branchUrl: continuationResponse.branchUrl ?? null,
-                gitPushSucceeded: gitPushState.gitPushSucceeded,
-                gitPushError: gitPushState.gitPushError,
-                runtimeTrace: Array.isArray(continuationResponse.trace) ? continuationResponse.trace : [],
-              },
-            })
-          }
-          createWorkflowEvent({
-            workflowRunId: latestRun.id,
+          completeWorkflowAgentStep({
+            executionId: continuationExecutionId,
+            runtimeResponse: continuationResponse,
+            responseText: continuationText,
             requestId: activeLinkedChangeRequestId,
             stepKey: continuationStepKey,
-            eventType: "agent.completed",
-            actorType: "codex",
-            payload: {
-              status: continuationCompletedStatus,
-              executionId: continuationExecution?.id ?? null,
-              autoContinued: true,
-              branchName: continuationResponse.branchName ?? null,
-              commitSha: continuationResponse.commitSha ?? null,
-            },
+            workflowRunId: latestRun.id,
+            workflowKey: linkedChangeRequest.workflowKey,
+            completedStatus: continuationCompletedStatus,
+            nextStep: continuationNextStep,
+            linkedWorkflowSteps,
+            sessionId: session.id,
+            startedFromStatus: latestRequest.status,
+            autoContinued: true,
           })
-
-          if (continuationCompletedStatus) {
-            updateChangeRequest(activeLinkedChangeRequestId, {
-              status: continuationCompletedStatus,
-              syncWorkflowRun: false,
-            })
-            const nextStep = continuationNextStep ?? findStepForStatus(linkedWorkflowSteps, continuationCompletedStatus)
-            const nextStepKey = nextStep ? stepKey(nextStep) : continuationStepKey
-            updateWorkflowRun({
-              requestId: activeLinkedChangeRequestId,
-              currentStepKey: nextStepKey,
-              status: ["approved", "rejected", "closed"].includes(continuationCompletedStatus) ? "completed" : "active",
-              completedAt: ["approved", "rejected", "closed"].includes(continuationCompletedStatus) ? new Date().toISOString() : null,
-            })
-            if (nextStepKey !== continuationStepKey) {
-              createWorkflowEvent({
-                workflowRunId: latestRun.id,
-                requestId: activeLinkedChangeRequestId,
-                stepKey: nextStepKey,
-                eventType: "workflow.step_changed",
-                actorType: "system",
-                payload: {
-                  status: continuationCompletedStatus,
-                  previousStepKey: continuationStepKey,
-                  nextStepKey,
-                  autoContinued: true,
-                },
-              })
-            }
-          }
 
           autoContinuedSteps.push(continuationStepKey)
           continuationHistory = [
@@ -1017,8 +1012,8 @@ export async function POST(request: Request) {
           const runtimeContinuationError = continuationError as RuntimeError
           const failureTrace = Array.isArray(runtimeContinuationError.trace) ? runtimeContinuationError.trace : []
           const failureSummary = formatTraceSummary(failureTrace)
-          if (continuationExecution?.id) {
-            updateChangeRequestExecution(continuationExecution.id, {
+          if (continuationExecutionId) {
+            updateChangeRequestExecution(continuationExecutionId, {
               status: "failed",
               errorMessage: continuationMessage,
               summary: failureSummary,
@@ -1042,7 +1037,7 @@ export async function POST(request: Request) {
             actorType: "codex",
             note: continuationMessage,
             payload: {
-              executionId: continuationExecution?.id ?? null,
+              executionId: continuationExecutionId,
               autoContinued: true,
               runtimeTrace: failureTrace,
             },

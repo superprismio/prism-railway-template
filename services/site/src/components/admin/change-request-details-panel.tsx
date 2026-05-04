@@ -469,6 +469,10 @@ function artifactPreviewKind(artifact: RequestArtifactRecord) {
   return "raw";
 }
 
+function hasAutoContinuedFlag(value: { meta?: Record<string, unknown>; payload?: Record<string, unknown> }) {
+  return value.meta?.autoContinued === true || value.payload?.autoContinued === true;
+}
+
 export function RequestDetailsPanel({
   request,
   targetApp,
@@ -1724,6 +1728,9 @@ export function RequestDetailsPanel({
                           {event.stepKey ? (
                             <Badge variant="secondary">{event.stepKey}</Badge>
                           ) : null}
+                          {hasAutoContinuedFlag(event) ? (
+                            <Badge variant="outline">auto</Badge>
+                          ) : null}
                           <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                             {event.actorType}
                           </span>
@@ -1802,6 +1809,9 @@ export function RequestDetailsPanel({
                             >
                               {execution.status}
                             </Badge>
+                            {hasAutoContinuedFlag(execution) ? (
+                              <Badge variant="outline">auto</Badge>
+                            ) : null}
                             <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                               {execution.actorType}
                             </span>
