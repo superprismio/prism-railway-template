@@ -65,6 +65,11 @@ import {
   type AgentThreadSession,
 } from "./change-request-utils";
 
+function nextStepForGateAction(step: WorkflowStep, steps: WorkflowStep[], action: string) {
+  const routeStepKey = step.routes[action] ?? step.next;
+  return routeStepKey ? steps.find((candidate) => candidate.key === routeStepKey) ?? null : null;
+}
+
 function CommandCenter({
   status,
   currentWorkflowStepKey,
@@ -106,12 +111,18 @@ function CommandCenter({
   const currentWorkflowPosition = workflowStepForKey(currentWorkflowStepKey, steps, status);
   const currentStepIndex = currentWorkflowPosition.index;
   const currentStep = currentWorkflowPosition.step;
-  const isReviewCommentRequired = status === "awaiting-review";
+  const approvedGateStep = currentStep.type === "gate"
+    ? nextStepForGateAction(currentStep, steps, "approved")
+    : null;
+  const changesRequestedGateStep = currentStep.type === "gate"
+    ? nextStepForGateAction(currentStep, steps, "changesRequested")
+    : null;
+  const shouldRunAgentAfterApproval = approvedGateStep?.type === "agent";
+  const isReviewCommentRequired = Boolean(changesRequestedGateStep);
   const canRequestChanges = reviewComment.trim().length > 0;
   const isRunning = isStepRunning;
-  const isTerminal = currentStep.type === "terminal" || ["approved", "rejected", "closed"].includes(status);
-  const isReviewGate = currentStep.type === "gate" && status === "awaiting-review";
-  const isApprovalGate = currentStep.type === "gate" && status === "ready-for-agent";
+  const isTerminal = currentStep.type === "terminal";
+  const isGate = currentStep.type === "gate" && !isRunning && !isTerminal;
   const canRunAgentStep = currentStep.type === "agent" && !isRunning && !isTerminal;
 
   return (
@@ -253,57 +264,35 @@ function CommandCenter({
           </div>
         ) : null}
 
-        {isApprovalGate ? (
+        {isGate ? (
           <div className="space-y-4">
             <div>
               <p className="font-medium">{currentStep.label}</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Review the agent output, then approve this gate to continue to
-                the next workflow step.
+                Review the current workflow context, then choose the next route.
               </p>
             </div>
-            <div className="space-y-4">
-              <div className="rounded-none border border-border/70 p-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Workflow Summary
-                </p>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                  {triageSummary || "No workflow summary yet."}
-                </p>
-              </div>
-              <div className="rounded-none border border-border/70 p-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Next Step Guidance
-                </p>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                  {agentRecommendation || "No guidance recorded yet."}
-                </p>
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                onClick={onApproveSolution}
-                disabled={isPending}
-              >
-                {isPending ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                ) : null}
-                Approve and continue
-              </Button>
-            </div>
-          </div>
-        ) : null}
 
-        {isReviewGate ? (
-          <div className="space-y-4">
-            <div>
-              <p className="font-medium">{currentStep.label}</p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Review the latest execution artifacts. Approve the workflow or
-                route feedback back to the agent.
-              </p>
-            </div>
+            {triageSummary || agentRecommendation ? (
+              <div className="space-y-4">
+                <div className="rounded-none border border-border/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    Workflow Summary
+                  </p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+                    {triageSummary || "No workflow summary yet."}
+                  </p>
+                </div>
+                <div className="rounded-none border border-border/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    Next Step Guidance
+                  </p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+                    {agentRecommendation || "No guidance recorded yet."}
+                  </p>
+                </div>
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap items-center gap-3 rounded-none border border-border/70 p-4 text-sm">
               {targetApp?.repoUrl ? (
@@ -350,49 +339,53 @@ function CommandCenter({
               ) : null}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="review-change-comment">Review Feedback</Label>
-              <Textarea
-                id="review-change-comment"
-                value={reviewComment}
-                onChange={(event) => setReviewComment(event.target.value)}
-                placeholder="Describe what needs to change before approval."
-                className="min-h-24"
-              />
-            </div>
+            {changesRequestedGateStep ? (
+              <div className="space-y-2">
+                <Label htmlFor="review-change-comment">Review Feedback</Label>
+                <Textarea
+                  id="review-change-comment"
+                  value={reviewComment}
+                  onChange={(event) => setReviewComment(event.target.value)}
+                  placeholder="Describe what needs to change before approval."
+                  className="min-h-24"
+                />
+              </div>
+            ) : null}
 
             <div className="flex flex-wrap justify-end gap-3">
+              {changesRequestedGateStep ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    onRequestChanges(reviewComment);
+                    setReviewComment("");
+                  }}
+                  disabled={
+                    isPending || (isReviewCommentRequired && !canRequestChanges)
+                  }
+                >
+                  {isPending ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  Send back to agent
+                </Button>
+              ) : null}
               <Button
                 type="button"
-                variant="outline"
-                onClick={() => {
-                  onRequestChanges(reviewComment);
-                  setReviewComment("");
-                }}
-                disabled={
-                  isPending || (isReviewCommentRequired && !canRequestChanges)
-                }
-              >
-                {isPending ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                ) : null}
-                Send back to agent
-              </Button>
-              <Button
-                type="button"
-                onClick={onApproveReview}
+                onClick={shouldRunAgentAfterApproval ? onApproveSolution : onApproveReview}
                 disabled={isPending}
               >
                 {isPending ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                 ) : null}
-                Approve workflow
+                {shouldRunAgentAfterApproval ? "Approve and continue" : "Approve workflow"}
               </Button>
             </div>
           </div>
         ) : null}
 
-        {status === "approved" ? (
+        {currentStep.type === "terminal" && status === "approved" ? (
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
             <div>
               <p className="font-medium">Approved</p>
@@ -414,7 +407,7 @@ function CommandCenter({
           </div>
         ) : null}
 
-        {status === "closed" ? (
+        {currentStep.type === "terminal" && status === "closed" ? (
           <div>
             <p className="font-medium">Closed</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -423,7 +416,7 @@ function CommandCenter({
           </div>
         ) : null}
 
-        {!canRunAgentStep && !isRunning && !isApprovalGate && !isReviewGate && !["approved", "closed"].includes(status) ? (
+        {!canRunAgentStep && !isRunning && !isGate && currentStep.type !== "terminal" ? (
           <div>
             <p className="font-medium">{currentStep.label}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">

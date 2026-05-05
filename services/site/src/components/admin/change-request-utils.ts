@@ -41,6 +41,8 @@ export type WorkflowStep = {
   type: string;
   statusMap: string[];
   instructionPath: string | null;
+  next: string | null;
+  routes: Record<string, string>;
 };
 
 export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
@@ -50,6 +52,8 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     type: "agent",
     statusMap: ["submitted", "triaging", "needs-human-input"],
     instructionPath: "workflows/change-request-default/steps/triage.md",
+    next: "approve-for-work",
+    routes: {},
   },
   {
     key: "approve-for-work",
@@ -57,6 +61,8 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     type: "gate",
     statusMap: ["ready-for-agent"],
     instructionPath: null,
+    next: "implement",
+    routes: {},
   },
   {
     key: "implement",
@@ -64,6 +70,8 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     type: "agent",
     statusMap: ["in-progress", "changes-requested"],
     instructionPath: "workflows/change-request-default/steps/implement.md",
+    next: "review",
+    routes: {},
   },
   {
     key: "review",
@@ -71,6 +79,12 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     type: "gate",
     statusMap: ["awaiting-review"],
     instructionPath: "workflows/change-request-default/steps/review.md",
+    next: null,
+    routes: {
+      approved: "closed",
+      changesRequested: "implement",
+      rejected: "closed",
+    },
   },
   {
     key: "closed",
@@ -78,6 +92,8 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     type: "terminal",
     statusMap: ["approved", "rejected", "closed"],
     instructionPath: null,
+    next: null,
+    routes: {},
   },
 ];
 
@@ -106,7 +122,19 @@ export function workflowSteps(workflow: WorkflowRecord | null | undefined): Work
         typeof step.instructionPath === "string" && step.instructionPath.trim()
           ? step.instructionPath.trim()
           : null;
-      return { key, label, type, statusMap, instructionPath };
+      const next = typeof step.next === "string" && step.next.trim() ? step.next.trim() : null;
+      const routes = isRecord(step.routes)
+        ? Object.fromEntries(
+            Object.entries(step.routes).filter(
+              (entry): entry is [string, string] =>
+                typeof entry[0] === "string" &&
+                entry[0].trim().length > 0 &&
+                typeof entry[1] === "string" &&
+                entry[1].trim().length > 0,
+            ),
+          )
+        : {};
+      return { key, label, type, statusMap, instructionPath, next, routes };
     })
     .filter((step): step is WorkflowStep => Boolean(step));
 
