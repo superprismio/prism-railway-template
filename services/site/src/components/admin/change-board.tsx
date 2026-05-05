@@ -35,9 +35,10 @@ import {
   parseTimestamp,
   priorityVariant,
   requestTypeLabel,
-  statusLabel,
   statusVariant,
   targetAppForRequest,
+  workflowStepForKey,
+  workflowSteps,
   type RequestSortValue,
 } from "./change-request-utils";
 
@@ -125,6 +126,13 @@ export function ChangeBoard({
     : null;
   const selectedWorkflow = selectedRequest
     ? (data.workflows ?? []).find((workflow) => workflow.key === selectedRequest.workflowKey) ?? null
+    : null;
+  const selectedWorkflowStep = selectedRequest
+    ? workflowStepForKey(
+        selectedRequest.currentWorkflowStepKey,
+        workflowSteps(selectedWorkflow),
+        selectedRequest.status,
+      ).step
     : null;
 
   const requestTypeOptions = useMemo(
@@ -364,7 +372,7 @@ export function ChangeBoard({
                   {selectedRequest ? (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <Badge variant={statusVariant(selectedRequest.status)}>
-                        {statusLabel(selectedRequest.status)}
+                        {selectedWorkflowStep?.label ?? selectedRequest.status}
                       </Badge>
                       <Badge
                         variant={priorityVariant(selectedRequest.priority)}

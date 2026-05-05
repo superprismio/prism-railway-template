@@ -12,7 +12,6 @@ import {
   environmentForRequest,
   isoLabel,
   priorityVariant,
-  statusLabel,
   statusVariant,
   targetAppForRequest,
   workflowStepForKey,
@@ -60,7 +59,6 @@ export function ChangeRequestRow({
           <Badge variant={statusVariant(request.status)}>
             {workflowStep.label}
           </Badge>
-          <Badge variant="outline">{statusLabel(request.status)}</Badge>
           <Badge variant={priorityVariant(request.priority)}>
             {request.priority}
           </Badge>
