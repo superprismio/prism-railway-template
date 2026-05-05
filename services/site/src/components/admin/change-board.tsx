@@ -35,9 +35,9 @@ import {
   parseTimestamp,
   priorityVariant,
   requestTypeLabel,
-  statusVariant,
   targetAppForRequest,
   workflowStepForKey,
+  workflowStepVariant,
   workflowSteps,
   type RequestSortValue,
 } from "./change-request-utils";
@@ -105,12 +105,18 @@ export function ChangeBoard({
     };
   }, []);
 
-  const closedCount = data.changeRequests.filter((request) =>
-    ["approved", "rejected", "closed"].includes(request.status),
-  ).length;
-  const activeCount = data.changeRequests.filter(
-    (request) => !["approved", "rejected", "closed"].includes(request.status),
-  ).length;
+  const workflowByKey = useMemo(
+    () => new Map((data.workflows ?? []).map((workflow) => [workflow.key, workflow])),
+    [data.workflows],
+  );
+  const workflowStepForRequest = (request: AdminBoardData["changeRequests"][number]) =>
+    workflowStepForKey(
+      request.currentWorkflowStepKey,
+      workflowSteps(workflowByKey.get(request.workflowKey) ?? null),
+      request.status,
+    ).step;
+  const closedCount = data.changeRequests.filter((request) => workflowStepForRequest(request).type === "terminal").length;
+  const activeCount = data.changeRequests.length - closedCount;
 
   const selectedRequest = useMemo(
     () =>
@@ -125,7 +131,7 @@ export function ChangeBoard({
     ? environmentForRequest(selectedRequest, data.targetEnvironments)
     : null;
   const selectedWorkflow = selectedRequest
-    ? (data.workflows ?? []).find((workflow) => workflow.key === selectedRequest.workflowKey) ?? null
+    ? workflowByKey.get(selectedRequest.workflowKey) ?? null
     : null;
   const selectedWorkflowStep = selectedRequest
     ? workflowStepForKey(
@@ -207,7 +213,8 @@ export function ChangeBoard({
 
     return data.changeRequests
       .filter((request) => {
-        if (statusFilter !== "all" && request.status !== statusFilter) {
+        const workflowStep = workflowStepForRequest(request);
+        if (statusFilter !== "all" && workflowStep.key !== statusFilter) {
           return false;
         }
 
@@ -256,6 +263,7 @@ export function ChangeBoard({
     sortValue,
     statusFilter,
     typeFilter,
+    workflowByKey,
   ]);
   return (
     <main className="min-h-screen w-full bg-background text-foreground">
@@ -371,7 +379,7 @@ export function ChangeBoard({
                   </h1>
                   {selectedRequest ? (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <Badge variant={statusVariant(selectedRequest.status)}>
+                      <Badge variant={workflowStepVariant(selectedWorkflowStep)}>
                         {selectedWorkflowStep?.label ?? selectedRequest.status}
                       </Badge>
                       <Badge

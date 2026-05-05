@@ -43,10 +43,6 @@ function statusForWorkflowStep(step: Record<string, unknown> | null | undefined)
   return statuses[0]
 }
 
-function isTerminalStatus(status: string) {
-  return ["approved", "rejected", "closed"].includes(status)
-}
-
 export async function PATCH(request: Request, context: RouteContext) {
   let payload: unknown = null
 
@@ -115,6 +111,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const changeRequest = updateChangeRequest(changeRequestId, {
       status: projectedStatus,
+      workflowStepKey: nextWorkflowStepKey,
       priority: nextPriority,
       syncWorkflowRun: !nextWorkflowStepKey,
       targetEnvironmentId:
@@ -150,11 +147,12 @@ export async function PATCH(request: Request, context: RouteContext) {
         currentStepKey: nextWorkflowStepKey,
       })
       const previousStepKey = workflowRun?.currentStepKey ?? null
+      const isTerminalWorkflowStep = nextWorkflowStep?.type === "terminal"
       const updatedRun = updateWorkflowRun({
         requestId: changeRequestId,
         currentStepKey: nextWorkflowStepKey,
-        status: isTerminalStatus(changeRequest.status) ? "completed" : "active",
-        completedAt: isTerminalStatus(changeRequest.status) ? new Date().toISOString() : null,
+        status: isTerminalWorkflowStep ? "completed" : "active",
+        completedAt: isTerminalWorkflowStep ? new Date().toISOString() : null,
       })
       if (updatedRun && previousStepKey !== nextWorkflowStepKey) {
         createWorkflowEvent({

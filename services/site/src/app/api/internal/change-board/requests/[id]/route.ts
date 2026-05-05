@@ -28,10 +28,6 @@ function isExecutionStatus(status: string | null | undefined) {
   return ["in-progress", "awaiting-review", "changes-requested", "approved", "closed"].includes(status ?? "")
 }
 
-function isTerminalStatus(status: string) {
-  return ["approved", "rejected", "closed"].includes(status)
-}
-
 function isWorkflowStep(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value) && typeof (value as { key?: unknown }).key === "string"
 }
@@ -120,7 +116,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (nextPriority && !trackedChangeRequestPriorities.includes(nextPriority as typeof trackedChangeRequestPriorities[number])) {
     return NextResponse.json({ ok: false, error: "Invalid priority" }, { status: 400 })
   }
-  if (projectedStatus && isTriageOnlyStatus(existingChangeRequest.status) && isExecutionStatus(projectedStatus)) {
+  if (!nextWorkflowStepKey && projectedStatus && isTriageOnlyStatus(existingChangeRequest.status) && isExecutionStatus(projectedStatus)) {
     return NextResponse.json({ ok: false, error: "CHANGE_REQUEST_NOT_READY_FOR_EXECUTION" }, { status: 409 })
   }
   if (nextWorkflowStepKey) {
@@ -131,6 +127,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   const changeRequest = updateChangeRequest(changeRequestId, {
     status: projectedStatus,
+    workflowStepKey: nextWorkflowStepKey,
     priority: nextPriority,
     syncWorkflowRun: !nextWorkflowStepKey,
     targetEnvironmentId:
@@ -166,11 +163,12 @@ export async function PATCH(request: Request, context: RouteContext) {
       currentStepKey: nextWorkflowStepKey,
     })
     const previousStepKey = workflowRun?.currentStepKey ?? null
+    const isTerminalWorkflowStep = nextWorkflowStep?.type === "terminal"
     const updatedRun = updateWorkflowRun({
       requestId: changeRequestId,
       currentStepKey: nextWorkflowStepKey,
-      status: isTerminalStatus(changeRequest.status) ? "completed" : "active",
-      completedAt: isTerminalStatus(changeRequest.status) ? new Date().toISOString() : null,
+      status: isTerminalWorkflowStep ? "completed" : "active",
+      completedAt: isTerminalWorkflowStep ? new Date().toISOString() : null,
     })
     if (updatedRun && previousStepKey !== nextWorkflowStepKey) {
       createWorkflowEvent({

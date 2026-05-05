@@ -424,12 +424,13 @@ function completeWorkflowAgentStep(input: {
     return input.stepKey
   }
 
-  updateChangeRequest(input.requestId, {
-    status: input.completedStatus,
-    syncWorkflowRun: false,
-  })
   const nextStep = input.nextStep ?? findStepForStatus(input.linkedWorkflowSteps, input.completedStatus)
   const nextStepKey = nextStep ? stepKey(nextStep) : input.stepKey
+  updateChangeRequest(input.requestId, {
+    status: input.completedStatus,
+    workflowStepKey: nextStepKey,
+    syncWorkflowRun: false,
+  })
   const terminal = isTerminalWorkflowStep(nextStep, input.completedStatus)
   updateWorkflowRun({
     requestId: input.requestId,
@@ -471,6 +472,7 @@ function startWorkflowAgentStep(input: {
   if (input.requestStatus !== input.runningStatus) {
     updateChangeRequest(input.requestId, {
       status: input.runningStatus,
+      workflowStepKey: input.stepKey,
       syncWorkflowRun: false,
     })
   }
@@ -1162,6 +1164,7 @@ export async function POST(request: Request) {
       if (refreshedChangeRequest?.status === requestRunningStatus) {
         updateChangeRequest(activeLinkedChangeRequestId, {
           status: requestStartedFromStatus ?? linkedChangeRequest.status,
+          workflowStepKey: linkedWorkflowRun.currentStepKey,
           syncWorkflowRun: false,
         })
       }

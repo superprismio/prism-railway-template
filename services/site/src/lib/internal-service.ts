@@ -17,7 +17,7 @@ export function readOptionalInteger(value: string | null) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-function getInternalServiceToken() {
+export function getInternalServiceToken() {
   const explicitToken = process.env.INTERNAL_SERVICE_TOKEN?.trim() || process.env.SERVICE_SHARED_TOKEN?.trim()
   if (explicitToken) {
     return explicitToken

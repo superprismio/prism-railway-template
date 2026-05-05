@@ -159,7 +159,7 @@ function CommandCenter({
             }}
           />
           {steps.map((step, index) => {
-            const isComplete = status === "closed" || currentStepIndex > index;
+            const isComplete = currentStep.type === "terminal" || currentStepIndex > index;
             const isCurrent = currentStepIndex === index;
             const isCurrentRunning = isCurrent && isRunning;
 
@@ -385,12 +385,12 @@ function CommandCenter({
           </div>
         ) : null}
 
-        {currentStep.type === "terminal" && status === "approved" ? (
+        {currentStep.type === "terminal" && status !== "closed" ? (
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
             <div>
-              <p className="font-medium">Approved</p>
+              <p className="font-medium">{currentStep.label}</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                This request has passed review and can be closed.
+                This workflow is at its terminal step and can be closed.
               </p>
             </div>
             <Button
@@ -1103,7 +1103,7 @@ export function RequestDetailsPanel({
       latestComment
         ? `Most recent admin comment to follow: ${latestComment}`
         : "No new admin comment was provided; continue from the existing request context and thread history.",
-      request.status === "awaiting-review"
+      currentWorkflowStep.type === "gate"
         ? "This request is currently in review. Apply the review feedback if needed, continue the work, update the request state if appropriate, and leave a detailed summary comment."
         : "Use the latest request context and comments, continue the work, update the request state if appropriate, and leave a detailed summary comment.",
     ].join("\n");
@@ -1134,7 +1134,7 @@ export function RequestDetailsPanel({
     const previousStatus = status;
     startCommandTransition(async () => {
       try {
-        setStatus("triaging");
+        setStatus(statusForWorkflowStep(currentWorkflowStep) ?? status);
         await runAgent(prompt, null, undefined, autoContinueUntilGate);
       } catch (error) {
         setStatus(previousStatus);
@@ -1155,7 +1155,8 @@ export function RequestDetailsPanel({
     const previousStatus = status;
     startCommandTransition(async () => {
       try {
-        setStatus("in-progress");
+        const nextStep = nextStepForGateAction(currentWorkflowStep, currentWorkflowSteps, "approved");
+        setStatus(statusForWorkflowStep(nextStep ?? currentWorkflowStep) ?? status);
         await runAgent(prompt, null, "approved", true);
       } catch (error) {
         setStatus(previousStatus);
@@ -1169,7 +1170,8 @@ export function RequestDetailsPanel({
   }
 
   function handleApproveReview() {
-    saveRequestState("approved");
+    const nextStep = nextStepForGateAction(currentWorkflowStep, currentWorkflowSteps, "approved");
+    saveRequestState(statusForWorkflowStep(nextStep) ?? "approved");
   }
 
   function handleRequestChanges(feedback: string) {
@@ -1186,7 +1188,8 @@ export function RequestDetailsPanel({
     const previousStatus = status;
     startCommandTransition(async () => {
       try {
-        setStatus("changes-requested");
+        const nextStep = nextStepForGateAction(currentWorkflowStep, currentWorkflowSteps, "changesRequested");
+        setStatus(statusForWorkflowStep(nextStep ?? currentWorkflowStep) ?? status);
         const session = await addRequestComment(content);
         await runAgent(prompt, session, "changesRequested", true);
       } catch (error) {
