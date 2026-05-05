@@ -712,6 +712,8 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
         requestType: stringFromConfig(requestConfig, "requestType", "content"),
         priority: stringFromConfig(requestConfig, "priority", "normal"),
         source: "task-runner",
+        autoStart: autoRunEnabled,
+        requestedSkills: mergeRequestedSkills(siteTask),
         targetAppId: requestConfig.targetAppId ?? null,
         targetEnvironmentId: requestConfig.targetEnvironmentId ?? null,
         constraints: isRecord(requestConfig.constraints) ? requestConfig.constraints : {},
@@ -726,7 +728,8 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
 
       const stepResults: WorkflowRunStepResult[] = [];
       let lastStatus = statusFromChangeRequest(createResult.payload);
-      if (autoRunEnabled) {
+      const createAutoStart = isRecord(createResult.payload.autoStart) ? createResult.payload.autoStart : null;
+      if (autoRunEnabled && !createAutoStart) {
         for (let index = 0; index < maxSteps; index += 1) {
           if (workflowRunnerShouldStop(lastStatus, stopStatuses)) {
             break;
@@ -744,6 +747,11 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
           });
           lastStatus = detailResult ? statusFromChangeRequest(detailResult) : lastStatus;
         }
+      } else if (autoRunEnabled) {
+        const detailResult = await appApiRequest(`/api/internal/change-board/requests/${encodeURIComponent(requestId)}`, {
+          method: "GET",
+        });
+        lastStatus = detailResult ? statusFromChangeRequest(detailResult) : lastStatus;
       }
 
       return {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createChangeRequest, getDefaultTargetEnvironmentForApp, getWorkflowByKey } from "@/lib/app-core"
+import { createChangeRequest, getChangeRequest, getDefaultTargetEnvironmentForApp, getWorkflowByKey } from "@/lib/app-core"
 
 import {
   parseNullableString,
@@ -7,6 +7,7 @@ import {
   requireServiceAccess,
 } from "@/lib/internal-service"
 import { trackedChangeRequestPriorities, trackedChangeRequestStatuses, trackedChangeRequestTypes } from "@/lib/local-admin-api"
+import { autoStartWorkflowRequest } from "@/lib/workflow-autostart"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
   }
 
   const body = payload && typeof payload === "object" ? payload as Record<string, unknown> : {}
+  const origin = new URL(request.url).origin
   const title = parseString(body.title)
   const description = parseString(body.description)
   const requestType = parseString(body.requestType ?? body.request_type)
@@ -83,5 +85,21 @@ export async function POST(request: Request) {
     agentRecommendation: parseNullableString(body.agentRecommendation ?? body.agent_recommendation) ?? null,
   })
 
-  return NextResponse.json({ ok: true, changeRequest }, { status: 201 })
+  const autoStartRequested = body.autoStart === true || body.auto_start === true
+  const rawRequestedSkills = body.requestedSkills ?? body.requested_skills
+  const requestedSkills = Array.isArray(rawRequestedSkills)
+    ? rawRequestedSkills
+      .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      .map((item: string) => item.trim())
+    : []
+  const autoStart = changeRequest && autoStartRequested
+    ? await autoStartWorkflowRequest(changeRequest, { baseUrl: origin, requestedSkills })
+    : null
+  const refreshedChangeRequest = changeRequest ? getChangeRequest(changeRequest.id) : null
+
+  return NextResponse.json({
+    ok: true,
+    changeRequest: refreshedChangeRequest ?? changeRequest,
+    autoStart,
+  }, { status: 201 })
 }

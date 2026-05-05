@@ -357,6 +357,10 @@ function isTerminalRequestStatus(status: string | null | undefined) {
   return Boolean(status && ["approved", "rejected", "closed"].includes(status))
 }
 
+function isTerminalWorkflowStep(step: Record<string, unknown> | null | undefined, status: string | null | undefined) {
+  return step ? stepType(step) === "terminal" : isTerminalRequestStatus(status)
+}
+
 function completeWorkflowAgentStep(input: {
   executionId: string | null
   runtimeResponse: RuntimeResponsePayload
@@ -420,13 +424,14 @@ function completeWorkflowAgentStep(input: {
     return input.stepKey
   }
 
-  updateChangeRequest(input.requestId, {
-    status: input.completedStatus,
-    syncWorkflowRun: false,
-  })
   const nextStep = input.nextStep ?? findStepForStatus(input.linkedWorkflowSteps, input.completedStatus)
   const nextStepKey = nextStep ? stepKey(nextStep) : input.stepKey
-  const terminal = isTerminalRequestStatus(input.completedStatus)
+  updateChangeRequest(input.requestId, {
+    status: input.completedStatus,
+    workflowStepKey: nextStepKey,
+    syncWorkflowRun: false,
+  })
+  const terminal = isTerminalWorkflowStep(nextStep, input.completedStatus)
   updateWorkflowRun({
     requestId: input.requestId,
     currentStepKey: nextStepKey,
@@ -467,6 +472,7 @@ function startWorkflowAgentStep(input: {
   if (input.requestStatus !== input.runningStatus) {
     updateChangeRequest(input.requestId, {
       status: input.runningStatus,
+      workflowStepKey: input.stepKey,
       syncWorkflowRun: false,
     })
   }
@@ -1158,6 +1164,7 @@ export async function POST(request: Request) {
       if (refreshedChangeRequest?.status === requestRunningStatus) {
         updateChangeRequest(activeLinkedChangeRequestId, {
           status: requestStartedFromStatus ?? linkedChangeRequest.status,
+          workflowStepKey: linkedWorkflowRun.currentStepKey,
           syncWorkflowRun: false,
         })
       }

@@ -6,17 +6,6 @@ import type {
   WorkflowRecord,
 } from "@/lib/admin";
 
-export const triageStatuses = [
-  { value: "submitted", label: "Inbox" },
-  { value: "triaging", label: "Triaging" },
-  { value: "ready-for-agent", label: "Ready for agent" },
-  { value: "in-progress", label: "Working" },
-  { value: "awaiting-review", label: "Awaiting review" },
-  { value: "changes-requested", label: "Changes requested" },
-  { value: "approved", label: "Approved" },
-  { value: "closed", label: "Closed" },
-] as const;
-
 export type RequestSortValue =
   | "updated-desc"
   | "updated-asc"
@@ -41,6 +30,8 @@ export type WorkflowStep = {
   type: string;
   statusMap: string[];
   instructionPath: string | null;
+  next: string | null;
+  routes: Record<string, string>;
 };
 
 export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
@@ -50,6 +41,8 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     type: "agent",
     statusMap: ["submitted", "triaging", "needs-human-input"],
     instructionPath: "workflows/change-request-default/steps/triage.md",
+    next: "approve-for-work",
+    routes: {},
   },
   {
     key: "approve-for-work",
@@ -57,6 +50,8 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     type: "gate",
     statusMap: ["ready-for-agent"],
     instructionPath: null,
+    next: "implement",
+    routes: {},
   },
   {
     key: "implement",
@@ -64,6 +59,8 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     type: "agent",
     statusMap: ["in-progress", "changes-requested"],
     instructionPath: "workflows/change-request-default/steps/implement.md",
+    next: "review",
+    routes: {},
   },
   {
     key: "review",
@@ -71,6 +68,12 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     type: "gate",
     statusMap: ["awaiting-review"],
     instructionPath: "workflows/change-request-default/steps/review.md",
+    next: null,
+    routes: {
+      approved: "closed",
+      changesRequested: "implement",
+      rejected: "closed",
+    },
   },
   {
     key: "closed",
@@ -78,6 +81,8 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     type: "terminal",
     statusMap: ["approved", "rejected", "closed"],
     instructionPath: null,
+    next: null,
+    routes: {},
   },
 ];
 
@@ -106,7 +111,19 @@ export function workflowSteps(workflow: WorkflowRecord | null | undefined): Work
         typeof step.instructionPath === "string" && step.instructionPath.trim()
           ? step.instructionPath.trim()
           : null;
-      return { key, label, type, statusMap, instructionPath };
+      const next = typeof step.next === "string" && step.next.trim() ? step.next.trim() : null;
+      const routes = isRecord(step.routes)
+        ? Object.fromEntries(
+            Object.entries(step.routes).filter(
+              (entry): entry is [string, string] =>
+                typeof entry[0] === "string" &&
+                entry[0].trim().length > 0 &&
+                typeof entry[1] === "string" &&
+                entry[1].trim().length > 0,
+            ),
+          )
+        : {};
+      return { key, label, type, statusMap, instructionPath, next, routes };
     })
     .filter((step): step is WorkflowStep => Boolean(step));
 
@@ -122,8 +139,7 @@ export function workflowStepForStatus(
     return { step: steps[index], index };
   }
 
-  const fallbackIndex = steps.findIndex((step) => step.type === "terminal");
-  const safeIndex = fallbackIndex >= 0 ? fallbackIndex : Math.max(0, steps.length - 1);
+  const safeIndex = 0;
   return { step: steps[safeIndex] ?? fallbackRequestWorkflowSteps[0], index: safeIndex };
 }
 
@@ -148,21 +164,10 @@ export function priorityVariant(priority: string) {
   return "muted";
 }
 
-export function statusLabel(status: string) {
-  return (
-    triageStatuses.find((option) => option.value === status)?.label ?? status
-  );
-}
-
-export function statusVariant(status: string) {
-  if (status === "in-progress") return "default";
-  if (
-    status === "ready-for-agent" ||
-    status === "awaiting-review" ||
-    status === "approved"
-  )
-    return "secondary";
-  if (status === "closed") return "muted";
+export function workflowStepVariant(step: WorkflowStep | null | undefined) {
+  if (step?.type === "terminal") return "muted";
+  if (step?.type === "gate") return "secondary";
+  if (step?.type === "agent") return "default";
   return "outline";
 }
 

@@ -21,8 +21,8 @@ import type {
 
 import {
   requestTypeLabel,
-  triageStatuses,
   type RequestSortValue,
+  workflowSteps,
 } from "./change-request-utils";
 
 export function ChangeRequestList({
@@ -64,6 +64,17 @@ export function ChangeRequestList({
     () => new Map(workflows.map((workflow) => [workflow.key, workflow])),
     [workflows],
   );
+  const workflowStepOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const workflow of workflows) {
+      for (const step of workflowSteps(workflow)) {
+        if (!options.has(step.key)) {
+          options.set(step.key, step.label);
+        }
+      }
+    }
+    return Array.from(options.entries()).map(([value, label]) => ({ value, label }));
+  }, [workflows]);
 
   return (
     <>
@@ -85,11 +96,11 @@ export function ChangeRequestList({
           <div className="space-y-2">
             <Select value={statusFilter} onValueChange={onStatusFilterChange}>
               <SelectTrigger>
-                <SelectValue placeholder="All statuses" />
+                <SelectValue placeholder="All steps" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
-                {triageStatuses.map((option) => (
+                <SelectItem value="all">All steps</SelectItem>
+                {workflowStepOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>

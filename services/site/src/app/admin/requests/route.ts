@@ -8,6 +8,7 @@ import {
   trackedChangeRequestTypes,
   useLocalAppApi,
 } from "@/lib/local-admin-api"
+import { autoStartWorkflowRequest } from "@/lib/workflow-autostart"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
@@ -68,6 +69,20 @@ export async function POST(request: Request) {
       targetId: changeRequest?.id ?? null,
       meta: { requestType, priority, workflowKey, targetAppId: targetAppId || null, status: "submitted" },
     })
+    if (changeRequest) {
+      const origin = new URL(request.url).origin
+      void autoStartWorkflowRequest(changeRequest, { baseUrl: origin }).then((result) => {
+        if (result.reason && result.reason !== "current_step_is_not_agent") {
+          console.warn(JSON.stringify({
+            event: "workflow.autostart_failed",
+            requestId: changeRequest.id,
+            reason: result.reason,
+            status: result.status ?? null,
+            error: result.error ?? null,
+          }))
+        }
+      })
+    }
 
     redirect("/admin")
   }

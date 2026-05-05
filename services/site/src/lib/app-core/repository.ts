@@ -387,6 +387,7 @@ export interface CreateChangeRequestInput {
 
 export interface UpdateChangeRequestInput {
   status?: string;
+  workflowStepKey?: string | null;
   priority?: string;
   targetEnvironmentId?: string | null;
   triageSummary?: string | null;
@@ -2950,6 +2951,12 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
 
   const now = new Date().toISOString();
   const nextStatus = input.status ?? current.status;
+  const workflow = getWorkflowByKey(current.workflowKey);
+  const lifecycleStepKey =
+    normalizeText(input.workflowStepKey) ||
+    (input.syncWorkflowRun === false ? getWorkflowRunForRequest(changeRequestId)?.currentStepKey : null) ||
+    workflowStepKeyForStatus(workflow, nextStatus);
+  const terminalForTimeline = workflowStepIsTerminal(workflow, lifecycleStepKey, nextStatus);
 
   getDb()
     .prepare(
@@ -2977,7 +2984,7 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
              ELSE completed_at
            END,
            closed_at = CASE
-             WHEN ? IN ('approved', 'rejected', 'closed')
+             WHEN ?
                THEN COALESCE(closed_at, ?)
              ELSE closed_at
            END,
@@ -2998,7 +3005,7 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
       now,
       nextStatus,
       now,
-      nextStatus,
+      terminalForTimeline ? 1 : 0,
       now,
       now,
       changeRequestId,
@@ -4144,6 +4151,21 @@ function workflowStepKeyForStatus(workflow: WorkflowRecord | null | undefined, s
   return workflowEntrypoint(workflow);
 }
 
+function workflowStepForKey(workflow: WorkflowRecord | null | undefined, stepKey: string | null | undefined) {
+  if (!stepKey) {
+    return null;
+  }
+  return workflowStepsFromDefinition(workflow).find((step) => step.key === stepKey) ?? null;
+}
+
+function workflowStepIsTerminal(workflow: WorkflowRecord | null | undefined, stepKey: string | null | undefined, status?: string) {
+  const step = workflowStepForKey(workflow, stepKey);
+  if (step) {
+    return step.type === 'terminal';
+  }
+  return isTerminalRequestStatus(status);
+}
+
 export function getWorkflowRunForRequest(requestId: string): WorkflowRunRecord | null {
   const row = getDb()
     .prepare(
@@ -4186,7 +4208,7 @@ export function ensureWorkflowRunForRequest(input: {
     (input.status ? workflowStepKeyForStatus(workflow, input.status) : workflowEntrypoint(workflow));
   const now = new Date().toISOString();
   const id = randomUUID();
-  const terminal = isTerminalRequestStatus(input.status);
+  const terminal = workflowStepIsTerminal(workflow, currentStepKey, input.status);
   const runStatus = terminal ? 'completed' : 'active';
   const completedAt = terminal ? now : null;
 
@@ -4256,14 +4278,15 @@ export function updateWorkflowRun(input: {
 export function syncWorkflowRunToRequestStatus(request: ChangeRequestRecord, actorType = 'system') {
   const workflow = getWorkflowByKey(request.workflowKey);
   const nextStepKey = workflowStepKeyForStatus(workflow, request.status);
+  const terminal = workflowStepIsTerminal(workflow, nextStepKey, request.status);
   const run = ensureWorkflowRunForRequest({
     requestId: request.id,
     workflowKey: request.workflowKey,
     status: request.status,
     currentStepKey: nextStepKey,
   });
-  if (run.currentStepKey !== nextStepKey || (isTerminalRequestStatus(request.status) && run.status !== 'completed')) {
-    const completedAt = isTerminalRequestStatus(request.status) ? new Date().toISOString() : null;
+  if (run.currentStepKey !== nextStepKey || (terminal && run.status !== 'completed')) {
+    const completedAt = terminal ? new Date().toISOString() : null;
     updateWorkflowRun({
       requestId: request.id,
       currentStepKey: nextStepKey,

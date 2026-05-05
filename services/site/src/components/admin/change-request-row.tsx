@@ -12,10 +12,9 @@ import {
   environmentForRequest,
   isoLabel,
   priorityVariant,
-  statusLabel,
-  statusVariant,
   targetAppForRequest,
   workflowStepForKey,
+  workflowStepVariant,
   workflowSteps,
 } from "./change-request-utils";
 
@@ -57,10 +56,9 @@ export function ChangeRequestRow({
 
       <div className="min-w-0 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={statusVariant(request.status)}>
+          <Badge variant={workflowStepVariant(workflowStep)}>
             {workflowStep.label}
           </Badge>
-          <Badge variant="outline">{statusLabel(request.status)}</Badge>
           <Badge variant={priorityVariant(request.priority)}>
             {request.priority}
           </Badge>
