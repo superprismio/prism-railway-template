@@ -11,6 +11,7 @@ import {
   Search,
   Rows3,
   Settings,
+  Workflow,
   X,
 } from "lucide-react";
 
@@ -22,6 +23,7 @@ import { CodexConsole } from "@/components/admin/codex-console";
 import { NewChangeRequestDialog } from "@/components/admin/new-change-request-dialog";
 import { SkillsWorkspace } from "@/components/admin/skills-workspace";
 import { TaskRunnerWorkspace } from "@/components/admin/task-runner-workspace";
+import { WorkflowsWorkspace } from "@/components/admin/workflows-workspace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -39,7 +41,7 @@ import {
   type RequestSortValue,
 } from "./change-request-utils";
 
-const workspaceTabs = ["change-requests", "codex-console", "tasks", "skills", "settings"];
+const workspaceTabs = ["requests", "codex-console", "tasks", "skills", "workflows", "settings"];
 
 export function ChangeBoard({
   data: initialData,
@@ -58,6 +60,13 @@ export function ChangeBoard({
   const [repositoryFilter, setRepositoryFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortValue, setSortValue] = useState<RequestSortValue>("updated-desc");
+  const [activeTab, setActiveTab] = useState(() =>
+    initialTab && workspaceTabs.includes(initialTab)
+      ? initialTab
+      : initialTab === "change-requests"
+        ? "requests"
+        : "requests",
+  );
   const [isSaving, startSaving] = useTransition();
   const [modalError, setModalError] = useState<string | null>(null);
 
@@ -114,6 +123,9 @@ export function ChangeBoard({
   const selectedTargetEnvironment = selectedRequest
     ? environmentForRequest(selectedRequest, data.targetEnvironments)
     : null;
+  const selectedWorkflow = selectedRequest
+    ? (data.workflows ?? []).find((workflow) => workflow.key === selectedRequest.workflowKey) ?? null
+    : null;
 
   const requestTypeOptions = useMemo(
     () =>
@@ -144,7 +156,8 @@ export function ChangeBoard({
   }
 
   function handleSaveTriage(payload: {
-    status: string;
+    status?: string;
+    currentWorkflowStepKey?: string | null;
     triageSummary: string;
     agentRecommendation: string;
   }) {
@@ -236,11 +249,6 @@ export function ChangeBoard({
     statusFilter,
     typeFilter,
   ]);
-  const defaultTab =
-    initialTab && workspaceTabs.includes(initialTab)
-      ? initialTab
-      : "change-requests";
-
   return (
     <main className="min-h-screen w-full bg-background text-foreground">
       <AdminHeader
@@ -248,7 +256,7 @@ export function ChangeBoard({
           <>
             <Button type="button" onClick={() => setIsNewRequestOpen(true)}>
               <FilePlus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add Change Request</span>
+              <span className="hidden sm:inline">Add Request</span>
             </Button>
             {data.setup.prismMemory.configured ? (
               <Button asChild variant="outline">
@@ -279,18 +287,19 @@ export function ChangeBoard({
       />
 
       <Tabs
-        defaultValue={defaultTab}
+        value={activeTab}
+        onValueChange={setActiveTab}
         className="flex min-h-[calc(100vh-65px)] flex-col"
       >
         <div className="sticky top-16 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
           <div className="px-5 py-3 md:px-6">
             <TabsList className="h-auto flex-wrap rounded-2xl bg-transparent p-0">
               <TabsTrigger
-                value="change-requests"
+                value="requests"
                 className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
               >
                 <Rows3 className="h-4 w-4 md:hidden" />
-                <span className="hidden md:inline">Change Requests</span>
+                <span className="hidden md:inline">Requests</span>
                 <Badge variant="outline" className="ml-2 hidden md:inline-flex">
                   {taskList.length}
                 </Badge>
@@ -317,6 +326,13 @@ export function ChangeBoard({
                 <span className="hidden md:inline">Skills</span>
               </TabsTrigger>
               <TabsTrigger
+                value="workflows"
+                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+              >
+                <Workflow className="h-4 w-4 md:hidden" />
+                <span className="hidden md:inline">Workflows</span>
+              </TabsTrigger>
+              <TabsTrigger
                 value="settings"
                 className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
               >
@@ -327,7 +343,7 @@ export function ChangeBoard({
           </div>
         </div>
 
-        <TabsContent value="change-requests" className="mt-0 flex-1">
+        <TabsContent value="requests" className="mt-0 flex-1">
           <section
             className={`grid min-h-full gap-0 ${
               selectedRequest ? "" : "xl:grid-cols-[minmax(0,1fr)_360px]"
@@ -343,7 +359,7 @@ export function ChangeBoard({
                   <h1 className="text-2xl font-semibold tracking-tight">
                     {selectedRequest
                       ? `#${selectedRequest.requestNumber} ${selectedRequest.title}`
-                      : "Change Requests"}
+                      : "Requests"}
                   </h1>
                   {selectedRequest ? (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -392,7 +408,7 @@ export function ChangeBoard({
                     onClick={() => setIsNewRequestOpen(true)}
                   >
                     <FilePlus className="h-4 w-4" />
-                    Add Change Request
+                    Add Request
                   </Button>
                 )}
               </div>
@@ -403,6 +419,7 @@ export function ChangeBoard({
                     request={selectedRequest}
                     targetApp={selectedTargetApp}
                     targetEnvironment={selectedTargetEnvironment}
+                    workflow={selectedWorkflow}
                     isPending={isSaving}
                     error={modalError}
                     onSave={handleSaveTriage}
@@ -413,6 +430,7 @@ export function ChangeBoard({
                   requests={taskList}
                   targetApps={data.targetApps}
                   targetEnvironments={data.targetEnvironments}
+                  workflows={data.workflows ?? []}
                   requestTypeOptions={requestTypeOptions}
                   statusFilter={statusFilter}
                   typeFilter={typeFilter}
@@ -437,7 +455,7 @@ export function ChangeBoard({
                 <div className="border-b border-border/60 px-5 py-4 md:px-6">
                   <p className="text-sm font-medium">Workspace Snapshot</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Quick read on activity while you triage the board.
+                    Quick read on request and workflow activity.
                   </p>
                 </div>
                 <div className="grid gap-3 px-5 py-4 md:px-6">
@@ -487,7 +505,7 @@ export function ChangeBoard({
               </p>
             </div>
 
-            <CodexConsole />
+            <CodexConsole isActive={activeTab === "codex-console"} />
           </section>
         </TabsContent>
 
@@ -518,6 +536,19 @@ export function ChangeBoard({
           </section>
         </TabsContent>
 
+        <TabsContent value="workflows" className="mt-0 flex-1">
+          <section className="min-h-full">
+            <div className="border-b border-border/60 px-5 py-4 md:px-6">
+              <h1 className="text-2xl font-semibold tracking-tight">Workflows</h1>
+              <p className="text-sm text-muted-foreground">
+                View request workflow definitions and their agent configuration.
+              </p>
+            </div>
+
+            <WorkflowsWorkspace />
+          </section>
+        </TabsContent>
+
         <TabsContent value="settings" className="mt-0 flex-1">
           <section className="min-h-full">
             <div className="border-b border-border/60 px-5 py-4 md:px-6">
@@ -542,6 +573,7 @@ export function ChangeBoard({
         open={isNewRequestOpen}
         onOpenChange={setIsNewRequestOpen}
         targetApps={data.targetApps}
+        workflows={data.workflows ?? []}
       />
     </main>
   );

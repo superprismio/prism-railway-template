@@ -35,6 +35,7 @@ app.get('/health', async (_req, res) => {
     codexHome: config.codexHome,
     codexAuthConfigured: await codexAuthConfigured(),
     codexRuntimeEnabled: config.codexRuntimeEnabled,
+    codexImageGenerationEnabled: config.codexImageGenerationEnabled,
   });
 });
 

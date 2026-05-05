@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Search } from "lucide-react";
 
 import { ChangeRequestRow } from "@/components/admin/change-request-row";
@@ -15,6 +16,7 @@ import type {
   ChangeRequestRecord,
   TargetAppRecord,
   TargetEnvironmentRecord,
+  WorkflowRecord,
 } from "@/lib/admin";
 
 import {
@@ -27,6 +29,7 @@ export function ChangeRequestList({
   requests,
   targetApps,
   targetEnvironments,
+  workflows,
   requestTypeOptions,
   statusFilter,
   typeFilter,
@@ -43,6 +46,7 @@ export function ChangeRequestList({
   requests: ChangeRequestRecord[];
   targetApps: TargetAppRecord[];
   targetEnvironments: TargetEnvironmentRecord[];
+  workflows: WorkflowRecord[];
   requestTypeOptions: string[];
   statusFilter: string;
   typeFilter: string;
@@ -56,6 +60,11 @@ export function ChangeRequestList({
   onSortValueChange: (value: RequestSortValue) => void;
   onOpenRequest: (request: ChangeRequestRecord) => void;
 }) {
+  const workflowByKey = useMemo(
+    () => new Map(workflows.map((workflow) => [workflow.key, workflow])),
+    [workflows],
+  );
+
   return (
     <>
       <div className="border-b border-border/60 bg-background px-5 py-4 md:px-6">
@@ -111,10 +120,10 @@ export function ChangeRequestList({
               onValueChange={onRepositoryFilterChange}
             >
               <SelectTrigger>
-                <SelectValue placeholder="All repositories" />
+                <SelectValue placeholder="All targets" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All repositories</SelectItem>
+                <SelectItem value="all">All targets</SelectItem>
                 {targetApps.map((targetApp) => (
                   <SelectItem key={targetApp.id} value={targetApp.id}>
                     {targetApp.name}
@@ -156,7 +165,7 @@ export function ChangeRequestList({
       <div className="hidden border-b border-border/60 bg-muted/30 px-5 py-3 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground md:grid md:grid-cols-[84px_minmax(0,1fr)_180px_150px_140px] md:gap-4 md:px-6">
         <span>Number</span>
         <span>Request</span>
-        <span>Repository</span>
+        <span>Target</span>
         <span>Agent</span>
         <span>Updated</span>
       </div>
@@ -170,6 +179,7 @@ export function ChangeRequestList({
                 request={request}
                 targetApps={targetApps}
                 targetEnvironments={targetEnvironments}
+                workflow={workflowByKey.get(request.workflowKey) ?? null}
                 onOpen={onOpenRequest}
               />
             ))

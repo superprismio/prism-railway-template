@@ -2,14 +2,14 @@
 
 `task-runner` is the first step toward a first-class Tasks workflow.
 
-For the initial slice, it can replace the fixed Railway cron workers by running built-in scheduled tasks:
+It replaces the fixed Railway cron workers by running built-in scheduled tasks:
 
 - Discord sync
 - Prism Memory run
 - Prism Knowledge source sync
 - Prism Knowledge run
 
-It does not yet own prompt-driven automations. Built-in task definitions and run history live in the `site` app DB.
+It also runs DB-authored prompt and workflow automations. Built-in task definitions, custom task configuration, and run history live in the `site` app DB.
 
 ## Endpoints
 
@@ -28,6 +28,7 @@ Manual runs require `X-Task-Runner-Token` when `TASK_RUNNER_TOKEN` is configured
 - `APP_API_BASE_URL=http://site.railway.internal:3100`
 - `APP_API_SERVICE_TOKEN=${{site.INTERNAL_SERVICE_TOKEN}}`
 - `CODEX_RUNTIME_BASE_URL=http://codex-runtime.railway.internal:3030`
+- `TASK_RUNNER_HTTP_TIMEOUT_MS=120000`
 
 When `APP_API_BASE_URL` is set, the runner idempotently registers built-in task defaults, reads effective enabled state and cron schedules from `site`, and writes task run history through internal APIs.
 
@@ -56,6 +57,42 @@ Supported config:
 The runner calls:
 
 - `POST /v1/responses` on `CODEX_RUNTIME_BASE_URL`
+
+## Workflow runner tasks
+
+Scheduled workflow tasks use `taskType=workflow-runner`. The runner creates a request through `site`, then optionally invokes the current workflow step through `/admin/responses`.
+
+Supported config:
+
+```json
+{
+  "taskType": "workflow-runner",
+  "inputConfig": {
+    "workflowKey": "blog-post-draft-review-publish",
+    "request": {
+      "title": "Weekly blog post",
+      "description": "Create this week's blog post from Prism Memory and Knowledge.",
+      "requestType": "content",
+      "priority": "normal"
+    },
+    "autoRun": {
+      "enabled": true,
+      "maxSteps": 1,
+      "stopStatuses": ["awaiting-review", "approved", "rejected", "closed"]
+    }
+  },
+  "instructionConfig": {
+    "prompt": "Run the current workflow step using the request description and workflow step instructions."
+  }
+}
+```
+
+The default behavior creates the request and immediately invokes the workflow with `auto_continue_until_gate=true`. The site service runs consecutive agent steps until the workflow reaches a gate, terminal state, failure, or its server-side continuation cap. `maxSteps` remains as a compatibility guard around repeated task-runner invocations; the usual value is `1`.
+
+The runner calls:
+
+- `POST /api/internal/change-board/requests` on `APP_API_BASE_URL`
+- `POST /admin/responses` on `APP_API_BASE_URL`
 
 ### Discord sync
 

@@ -1,23 +1,30 @@
 import { randomUUID } from "node:crypto"
+import fs from "node:fs"
+import path from "node:path"
 import { NextResponse } from "next/server"
 import {
   buildTargetEnvironmentDeployPlan,
   createAgentMessage,
   createAgentSession,
   createChangeRequestExecution,
+  createWorkflowEvent,
+  ensureWorkflowRunForRequest,
   getAgentSession,
   getChangeRequest,
   getTargetApp,
   getTargetEnvironment,
+  getWorkflowByKey,
   listAgentMessages,
   listChangeRequestExecutions,
   loadConfig,
   updateAgentSession,
   updateChangeRequest,
   updateChangeRequestExecution,
+  updateWorkflowRun,
 } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
+import { requireServiceAccess } from "@/lib/internal-service"
 import { parseNullableString, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
 
 export async function GET(request: Request) {
@@ -141,30 +148,6 @@ function parseResponseInputMessages(input: unknown) {
     .filter((entry): entry is ResponseInputMessage => Boolean(entry))
 }
 
-function getLinkedChangeRequestPhase(status: string | null | undefined) {
-  if (!status) {
-    return null
-  }
-
-  if (["submitted", "triaging", "needs-human-input"].includes(status)) {
-    return "triage" as const
-  }
-
-  if (["ready-for-agent", "in-progress", "awaiting-review", "changes-requested"].includes(status)) {
-    return "execution" as const
-  }
-
-  return null
-}
-
-function getRunningStatusForPhase(phase: "triage" | "execution") {
-  return phase === "triage" ? "triaging" : "in-progress"
-}
-
-function getCompletedStatusForPhase(phase: "triage" | "execution") {
-  return phase === "triage" ? "ready-for-agent" : "awaiting-review"
-}
-
 function hasActiveExecution(changeRequestId: string, excludeExecutionId?: string | null) {
   return listChangeRequestExecutions(changeRequestId).some((execution) => {
     if (excludeExecutionId && execution.id === excludeExecutionId) {
@@ -173,18 +156,6 @@ function hasActiveExecution(changeRequestId: string, excludeExecutionId?: string
 
     return ["planned", "running"].includes(execution.status)
   })
-}
-
-function getPhaseInstruction(phase: "triage" | "execution" | null) {
-  if (phase === "triage") {
-    return "This request is currently in triage. Use this turn only to analyze scope, write triage details, and stop after moving it to ready-for-agent. Do not start implementation, deploy work, or execution in this same turn."
-  }
-
-  if (phase === "execution") {
-    return "This request is already approved for agent work. Treat recent user comments as execution instructions and report what changed, what is blocked, and what should happen next."
-  }
-
-  return null
 }
 
 function formatTraceSummary(trace: RuntimeTraceEntry[] | undefined) {
@@ -196,6 +167,96 @@ function formatTraceSummary(trace: RuntimeTraceEntry[] | undefined) {
     .slice(-8)
     .map((entry) => `[${entry.at}] ${entry.kind}: ${entry.message}`)
     .join("\n")
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+function workflowSteps(definition: Record<string, unknown> | undefined) {
+  const raw = Array.isArray(definition?.steps) ? definition.steps : []
+  return raw.filter(isRecord).filter((step) => typeof step.key === "string" && step.key.trim())
+}
+
+function stepKey(step: Record<string, unknown>) {
+  return typeof step.key === "string" ? step.key.trim() : ""
+}
+
+function stepType(step: Record<string, unknown>) {
+  return typeof step.type === "string" && step.type.trim() ? step.type.trim() : "agent"
+}
+
+function statusMap(step: Record<string, unknown>) {
+  return Array.isArray(step.statusMap)
+    ? step.statusMap.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : []
+}
+
+function statusForStep(step: Record<string, unknown>, preference: "running" | "waiting" | "complete" = "waiting") {
+  const statuses = statusMap(step)
+  if (!statuses.length) return null
+  if (preference === "running") {
+    return statuses.find((status) => ["triaging", "in-progress"].includes(status)) ?? statuses[0]
+  }
+  return statuses[0]
+}
+
+function findStepByKey(steps: Record<string, unknown>[], key: string | null | undefined) {
+  return steps.find((step) => stepKey(step) === key) ?? null
+}
+
+function findStepForStatus(steps: Record<string, unknown>[], status: string | null | undefined) {
+  if (!status) return null
+  return steps.find((step) => statusMap(step).includes(status)) ?? null
+}
+
+function nextStepForAction(steps: Record<string, unknown>[], step: Record<string, unknown>, action: string | null) {
+  if (action && isRecord(step.routes)) {
+    const routeValue = step.routes[action]
+    if (typeof routeValue === "string") {
+      return findStepByKey(steps, routeValue)
+    }
+  }
+  const next = typeof step.next === "string" ? step.next : null
+  return next ? findStepByKey(steps, next) : null
+}
+
+function readInstructionFile(instructionPath: unknown) {
+  if (typeof instructionPath !== "string" || !instructionPath.trim()) {
+    return null
+  }
+  const config = loadConfig()
+  const normalized = instructionPath.trim()
+  const siteWorkflowRoots = [
+    path.resolve(config.workspaceRoot, "workflows"),
+    path.resolve(config.repoRoot, "services/site/workflows"),
+  ]
+  const dataWorkflowRoot = path.resolve(config.dataRoot, "workflows")
+  const candidates = path.isAbsolute(normalized)
+    ? [path.resolve(normalized)]
+    : [
+        path.resolve(config.workspaceRoot, normalized),
+        path.resolve(config.workspaceRoot, "workflows", normalized.replace(/^workflows\/+/, "")),
+        path.resolve(config.repoRoot, "services/site", normalized.replace(/^\/+/, "")),
+      ]
+  const allowedRoots = [...siteWorkflowRoots, dataWorkflowRoot]
+  const absolutePath = candidates.find((candidate) => {
+    return allowedRoots.some((allowedRoot) => candidate === allowedRoot || candidate.startsWith(`${allowedRoot}${path.sep}`))
+  })
+  if (!absolutePath) {
+    return null
+  }
+  try {
+    return fs.readFileSync(absolutePath, "utf8").trim()
+  } catch {
+    return null
+  }
+}
+
+function requestedSkillsFromAgentConfig(config: unknown) {
+  if (!isRecord(config)) return []
+  const skills = Array.isArray(config.skills) ? config.skills : []
+  return skills.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim())
 }
 
 function summarizeGitPushState(trace: RuntimeTraceEntry[] | undefined) {
@@ -292,6 +353,161 @@ async function requestCodexRuntimeResponse(input: {
   return payload
 }
 
+function isTerminalRequestStatus(status: string | null | undefined) {
+  return Boolean(status && ["approved", "rejected", "closed"].includes(status))
+}
+
+function completeWorkflowAgentStep(input: {
+  executionId: string | null
+  runtimeResponse: RuntimeResponsePayload
+  responseText: string
+  requestId: string
+  workflowRunId: string
+  workflowKey: string | null
+  stepKey: string
+  completedStatus: string | null
+  nextStep: Record<string, unknown> | null
+  linkedWorkflowSteps: Record<string, unknown>[]
+  sessionId: string
+  startedFromStatus?: string | null
+  autoContinued?: boolean
+}) {
+  const traceSummary = formatTraceSummary(input.runtimeResponse.trace as RuntimeTraceEntry[] | undefined)
+  const gitPushState = summarizeGitPushState(input.runtimeResponse.trace as RuntimeTraceEntry[] | undefined)
+  if (input.executionId) {
+    updateChangeRequestExecution(input.executionId, {
+      status: "completed",
+      branchName: input.runtimeResponse.branchName ?? null,
+      commitSha: input.runtimeResponse.commitSha ?? null,
+      summary: traceSummary ?? input.responseText.slice(0, 1200),
+      finishedAt: new Date().toISOString(),
+      meta: {
+        workflowKey: input.workflowKey,
+        workflowRunId: input.workflowRunId,
+        workflowStepKey: input.stepKey,
+        transport: "site",
+        sessionId: input.sessionId,
+        startedFromStatus: input.startedFromStatus,
+        autoContinued: input.autoContinued === true,
+        codexThreadId: input.runtimeResponse.thread_id ?? null,
+        baseBranch: input.runtimeResponse.baseBranch ?? null,
+        baseCommitSha: input.runtimeResponse.baseCommitSha ?? null,
+        headCommitSha: input.runtimeResponse.commitSha ?? null,
+        branchUrl: input.runtimeResponse.branchUrl ?? null,
+        gitPushSucceeded: gitPushState.gitPushSucceeded,
+        gitPushError: gitPushState.gitPushError,
+        runtimeTrace: Array.isArray(input.runtimeResponse.trace) ? input.runtimeResponse.trace : [],
+      },
+    })
+  }
+
+  createWorkflowEvent({
+    workflowRunId: input.workflowRunId,
+    requestId: input.requestId,
+    stepKey: input.stepKey,
+    eventType: "agent.completed",
+    actorType: "codex",
+    payload: {
+      status: input.completedStatus,
+      executionId: input.executionId,
+      autoContinued: input.autoContinued === true,
+      branchName: input.runtimeResponse.branchName ?? null,
+      commitSha: input.runtimeResponse.commitSha ?? null,
+    },
+  })
+
+  if (!input.completedStatus) {
+    return input.stepKey
+  }
+
+  updateChangeRequest(input.requestId, {
+    status: input.completedStatus,
+    syncWorkflowRun: false,
+  })
+  const nextStep = input.nextStep ?? findStepForStatus(input.linkedWorkflowSteps, input.completedStatus)
+  const nextStepKey = nextStep ? stepKey(nextStep) : input.stepKey
+  const terminal = isTerminalRequestStatus(input.completedStatus)
+  updateWorkflowRun({
+    requestId: input.requestId,
+    currentStepKey: nextStepKey,
+    status: terminal ? "completed" : "active",
+    completedAt: terminal ? new Date().toISOString() : null,
+  })
+  if (nextStepKey !== input.stepKey) {
+    createWorkflowEvent({
+      workflowRunId: input.workflowRunId,
+      requestId: input.requestId,
+      stepKey: nextStepKey,
+      eventType: "workflow.step_changed",
+      actorType: "system",
+      payload: {
+        status: input.completedStatus,
+        previousStepKey: input.stepKey,
+        nextStepKey,
+        autoContinued: input.autoContinued === true,
+      },
+    })
+  }
+  return nextStepKey
+}
+
+function startWorkflowAgentStep(input: {
+  requestId: string
+  requestStatus: string
+  targetEnvironmentId: string | null
+  workflowRunId: string
+  workflowKey: string
+  stepKey: string
+  runningStatus: string
+  sessionId: string
+  startedFromStatus: string | null
+  action?: string | null
+  autoContinued?: boolean
+}) {
+  if (input.requestStatus !== input.runningStatus) {
+    updateChangeRequest(input.requestId, {
+      status: input.runningStatus,
+      syncWorkflowRun: false,
+    })
+  }
+  updateWorkflowRun({
+    requestId: input.requestId,
+    currentStepKey: input.stepKey,
+    status: "active",
+    completedAt: null,
+  })
+  createWorkflowEvent({
+    workflowRunId: input.workflowRunId,
+    requestId: input.requestId,
+    stepKey: input.stepKey,
+    eventType: "agent.started",
+    actorType: "codex",
+    payload: {
+      status: input.runningStatus,
+      action: input.action,
+      autoContinued: input.autoContinued === true,
+    },
+  })
+
+  const execution = createChangeRequestExecution({
+    changeRequestId: input.requestId,
+    targetEnvironmentId: input.targetEnvironmentId,
+    status: "running",
+    actorType: "codex",
+    startedAt: new Date().toISOString(),
+    meta: {
+      workflowKey: input.workflowKey,
+      workflowRunId: input.workflowRunId,
+      workflowStepKey: input.stepKey,
+      transport: "site",
+      sessionId: input.sessionId,
+      startedFromStatus: input.startedFromStatus,
+      autoContinued: input.autoContinued === true,
+    },
+  })
+  return execution?.id ?? null
+}
+
 export async function POST(request: Request) {
   let payload: unknown = null
 
@@ -318,7 +534,7 @@ export async function POST(request: Request) {
     })
   }
 
-  const auth = await requireLocalAdminAccess()
+  const auth = await requireResponseAccess()
   if (!auth.ok) {
     return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status })
   }
@@ -373,7 +589,7 @@ export async function POST(request: Request) {
   const activeLinkedChangeRequestId = linkedChangeRequestId ?? session.linkedChangeRequestId ?? null
   const activeLinkedTargetEnvironmentId = linkedTargetEnvironmentId ?? session.linkedTargetEnvironmentId ?? null
   const linkedChangeRequest = activeLinkedChangeRequestId ? getChangeRequest(activeLinkedChangeRequestId) : null
-  const linkedTargetApp = linkedChangeRequest ? getTargetApp(linkedChangeRequest.targetAppId) : null
+  const linkedTargetApp = linkedChangeRequest?.targetAppId ? getTargetApp(linkedChangeRequest.targetAppId) : null
   const linkedTargetEnvironment = activeLinkedTargetEnvironmentId
     ? getTargetEnvironment(activeLinkedTargetEnvironmentId)
     : linkedChangeRequest?.targetEnvironmentId
@@ -390,6 +606,42 @@ export async function POST(request: Request) {
   const linkedLatestExecution = activeLinkedChangeRequestId
     ? listChangeRequestExecutions(activeLinkedChangeRequestId)[0] ?? null
     : null
+  const workflowAction = parseNullableString(body.workflow_action ?? body.workflowAction) ?? null
+  const autoContinueUntilGate =
+    body.auto_continue_until_gate === true || body.autoContinueUntilGate === true
+  const maxAutoContinueSteps = 8
+  const linkedWorkflow = linkedChangeRequest ? getWorkflowByKey(linkedChangeRequest.workflowKey) : null
+  const linkedWorkflowSteps = workflowSteps(linkedWorkflow?.definition)
+  const linkedWorkflowRun = linkedChangeRequest
+    ? ensureWorkflowRunForRequest({
+        requestId: linkedChangeRequest.id,
+        workflowKey: linkedChangeRequest.workflowKey,
+        status: linkedChangeRequest.status,
+      })
+    : null
+  const currentWorkflowStep =
+    linkedWorkflowRun
+      ? findStepByKey(linkedWorkflowSteps, linkedWorkflowRun.currentStepKey) ??
+        findStepForStatus(linkedWorkflowSteps, linkedChangeRequest?.status)
+      : null
+  if (currentWorkflowStep && stepType(currentWorkflowStep) === "gate" && !workflowAction) {
+    return NextResponse.json(
+      { ok: false, error: "WORKFLOW_ACTION_REQUIRED" },
+      { status: 409 },
+    )
+  }
+
+  const runnableWorkflowStep =
+    currentWorkflowStep && stepType(currentWorkflowStep) === "gate"
+      ? nextStepForAction(linkedWorkflowSteps, currentWorkflowStep, workflowAction)
+      : currentWorkflowStep
+  const workflowStepInstruction = runnableWorkflowStep
+    ? readInstructionFile(runnableWorkflowStep.instructionPath)
+    : null
+  const workflowAgentConfig = {
+    ...(isRecord(linkedWorkflow?.definition?.agentConfig) ? linkedWorkflow.definition.agentConfig : {}),
+    ...(isRecord(runnableWorkflowStep?.agentConfig) ? runnableWorkflowStep?.agentConfig : {}),
+  }
   const requestedSkillsInput: unknown[] = Array.isArray(body.requested_skills ?? body.requestedSkills)
     ? (body.requested_skills ?? body.requestedSkills) as unknown[]
     : []
@@ -398,7 +650,7 @@ export async function POST(request: Request) {
       ...requestedSkillsInput
         .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
         .map((entry: string) => entry.trim()),
-      ...(activeLinkedChangeRequestId ? ["change-request-ops", "target-deploy-ops"] : []),
+      ...requestedSkillsFromAgentConfig(workflowAgentConfig),
     ]),
   )
 
@@ -413,42 +665,68 @@ export async function POST(request: Request) {
     },
   })
 
-  const linkedRequestPhase = getLinkedChangeRequestPhase(linkedChangeRequest?.status ?? null)
   const requestStartedFromStatus = linkedChangeRequest?.status ?? null
-  const requestRunningStatus = linkedRequestPhase ? getRunningStatusForPhase(linkedRequestPhase) : null
-  const linkedChangeRequestPhaseInstruction = getPhaseInstruction(linkedRequestPhase)
+  const requestRunningStatus = runnableWorkflowStep ? statusForStep(runnableWorkflowStep, "running") : null
+  const nextWorkflowStepAfterRun = runnableWorkflowStep
+    ? nextStepForAction(linkedWorkflowSteps, runnableWorkflowStep, "approved")
+    : null
+  const requestCompletedStatus = runnableWorkflowStep
+    ? statusForStep(nextWorkflowStepAfterRun ?? runnableWorkflowStep, "waiting")
+    : null
+  const runnableStepKey = runnableWorkflowStep ? stepKey(runnableWorkflowStep) : null
+  const nextStepKeyAfterRun = nextWorkflowStepAfterRun ? stepKey(nextWorkflowStepAfterRun) : null
   let activeExecutionId: string | null = null
-  let activeExecutionCreatedAt: string | null = null
 
-  if (activeLinkedChangeRequestId && linkedChangeRequest && linkedRequestPhase && requestRunningStatus) {
-    if (linkedRequestPhase === "execution" && hasActiveExecution(activeLinkedChangeRequestId)) {
+  if (
+    activeLinkedChangeRequestId &&
+    linkedChangeRequest &&
+    linkedWorkflowRun &&
+    runnableWorkflowStep &&
+    runnableStepKey &&
+    requestRunningStatus
+  ) {
+    if (stepType(runnableWorkflowStep) !== "agent") {
+      return NextResponse.json(
+        { ok: false, error: "WORKFLOW_STEP_NOT_RUNNABLE" },
+        { status: 409 },
+      )
+    }
+
+    if (hasActiveExecution(activeLinkedChangeRequestId)) {
       return NextResponse.json(
         { ok: false, error: "CHANGE_REQUEST_EXECUTION_ALREADY_RUNNING" },
         { status: 409 },
       )
     }
 
-    if (linkedChangeRequest.status !== requestRunningStatus) {
-      updateChangeRequest(activeLinkedChangeRequestId, {
-        status: requestRunningStatus,
+    if (currentWorkflowStep && stepType(currentWorkflowStep) === "gate") {
+      createWorkflowEvent({
+        workflowRunId: linkedWorkflowRun.id,
+        requestId: activeLinkedChangeRequestId,
+        stepKey: stepKey(currentWorkflowStep),
+        eventType: `gate.${workflowAction || "approved"}`,
+        actorType: "admin",
+        note: latestUserMessage.content,
+        payload: {
+          fromStepKey: stepKey(currentWorkflowStep),
+          toStepKey: runnableStepKey,
+          startedFromStatus: requestStartedFromStatus,
+        },
       })
     }
 
-    const execution = createChangeRequestExecution({
-      changeRequestId: activeLinkedChangeRequestId,
+    activeExecutionId = startWorkflowAgentStep({
+      requestId: activeLinkedChangeRequestId,
+      requestStatus: linkedChangeRequest.status,
       targetEnvironmentId: activeLinkedTargetEnvironmentId ?? linkedChangeRequest.targetEnvironmentId,
-      status: "running",
-      actorType: "codex",
-      startedAt: new Date().toISOString(),
-      meta: {
-        phase: linkedRequestPhase,
-        transport: "site",
-        sessionId: session.id,
-        startedFromStatus: requestStartedFromStatus,
-      },
+      workflowRunId: linkedWorkflowRun.id,
+      workflowKey: linkedChangeRequest.workflowKey,
+      stepKey: runnableStepKey,
+      runningStatus: requestRunningStatus,
+      sessionId: session.id,
+      startedFromStatus: requestStartedFromStatus,
+      action: workflowAction,
     })
-    activeExecutionId = execution?.id ?? null
-    activeExecutionCreatedAt = execution?.createdAt ?? null
   }
 
   try {
@@ -459,7 +737,17 @@ export async function POST(request: Request) {
       recentHistory,
       metadata: {
         transport: "site",
-        requestedSkills,
+          requestedSkills,
+          workflow: linkedWorkflow
+            ? {
+                key: linkedWorkflow.key,
+                name: linkedWorkflow.name,
+                currentStepKey: runnableStepKey,
+                action: workflowAction,
+                agentConfig: workflowAgentConfig,
+                stepInstruction: workflowStepInstruction,
+              }
+            : null,
         linkedChangeRequestId: activeLinkedChangeRequestId,
         linkedTargetEnvironmentId: activeLinkedTargetEnvironmentId,
         linkedTargetApp,
@@ -485,8 +773,14 @@ export async function POST(request: Request) {
             }
           : null,
         linkedChangeRequestInstruction: activeLinkedChangeRequestId
-          ? linkedChangeRequestPhaseInstruction ??
-            "This response is linked to a tracked change request. Treat recent user comments as instructions on that request. If you continue work, explain what changed or what blocked you."
+          ? [
+              workflowStepInstruction
+                ? `Workflow step instructions:\n${workflowStepInstruction}`
+                : "This response is linked to a tracked request workflow step.",
+              runnableStepKey ? `Current workflow step: ${runnableStepKey}.` : null,
+              nextStepKeyAfterRun ? `When this step is complete, advance the workflow run to ${nextStepKeyAfterRun}.` : null,
+              requestCompletedStatus ? `The board status should move toward ${requestCompletedStatus}.` : null,
+            ].filter(Boolean).join("\n\n")
           : null,
       },
     })
@@ -521,68 +815,257 @@ export async function POST(request: Request) {
       },
     })
 
-    if (activeExecutionId) {
-      const traceSummary = formatTraceSummary(runtimeResponse.trace as RuntimeTraceEntry[] | undefined)
-      const gitPushState = summarizeGitPushState(runtimeResponse.trace as RuntimeTraceEntry[] | undefined)
-      updateChangeRequestExecution(activeExecutionId, {
-        status: "completed",
-        branchName: runtimeResponse.branchName ?? null,
-        commitSha: runtimeResponse.commitSha ?? null,
-        summary: traceSummary ?? responseText.slice(0, 1200),
-        finishedAt: new Date().toISOString(),
-        meta: {
-          phase: linkedRequestPhase,
-          transport: "site",
-          sessionId: session.id,
-          startedFromStatus: requestStartedFromStatus,
-          codexThreadId: runtimeResponse.thread_id ?? null,
-          baseBranch: runtimeResponse.baseBranch ?? null,
-          baseCommitSha: runtimeResponse.baseCommitSha ?? null,
-          headCommitSha: runtimeResponse.commitSha ?? null,
-          branchUrl: runtimeResponse.branchUrl ?? null,
-          gitPushSucceeded: gitPushState.gitPushSucceeded,
-          gitPushError: gitPushState.gitPushError,
-          runtimeTrace: Array.isArray(runtimeResponse.trace) ? runtimeResponse.trace : [],
-        },
+    if (activeLinkedChangeRequestId && linkedWorkflowRun && runnableStepKey) {
+      completeWorkflowAgentStep({
+        executionId: activeExecutionId,
+        runtimeResponse,
+        responseText,
+        requestId: activeLinkedChangeRequestId,
+        stepKey: runnableStepKey,
+        workflowRunId: linkedWorkflowRun.id,
+        workflowKey: linkedChangeRequest?.workflowKey ?? null,
+        completedStatus: requestCompletedStatus,
+        nextStep: nextWorkflowStepAfterRun,
+        linkedWorkflowSteps,
+        sessionId: session.id,
+        startedFromStatus: requestStartedFromStatus,
       })
     }
 
-    if (activeLinkedChangeRequestId && linkedRequestPhase) {
-      if (linkedRequestPhase === "triage") {
-        const strayExecutions = listChangeRequestExecutions(activeLinkedChangeRequestId).filter((execution) => {
-          if (execution.id === activeExecutionId) {
-            return false
-          }
+    const autoContinuedSteps: string[] = []
+    if (
+      autoContinueUntilGate &&
+      activeLinkedChangeRequestId &&
+      linkedChangeRequest &&
+      linkedWorkflowRun &&
+      nextWorkflowStepAfterRun &&
+      stepType(nextWorkflowStepAfterRun) === "agent"
+    ) {
+      let continuationStep: Record<string, unknown> | null = nextWorkflowStepAfterRun
+      let continuationThreadId =
+        runtimeResponse.thread_id ??
+        (typeof session.meta?.codexThreadId === "string" ? session.meta.codexThreadId : null)
+      let continuationHistory = [
+        ...recentHistory,
+        { role: "user", content: latestUserMessage.content },
+        { role: "assistant", content: responseText },
+      ].slice(-12)
 
-          if (!["planned", "running"].includes(execution.status)) {
-            return false
-          }
-
-          if (!activeExecutionCreatedAt) {
-            return true
-          }
-
-          return execution.createdAt >= activeExecutionCreatedAt
-        })
-
-        for (const execution of strayExecutions) {
-          updateChangeRequestExecution(execution.id, {
-            status: "failed",
-            errorMessage: "Execution was started during a triage-only turn and has been suppressed.",
-            summary: "Suppressed execution created before admin review.",
-            finishedAt: new Date().toISOString(),
-          })
+      for (let autoIndex = 0; autoIndex < maxAutoContinueSteps && continuationStep; autoIndex += 1) {
+        const continuationStepKey = stepKey(continuationStep)
+        if (!continuationStepKey || stepType(continuationStep) !== "agent") {
+          break
         }
 
-        updateChangeRequest(activeLinkedChangeRequestId, {
-          status: "ready-for-agent",
+        const latestRequest = getChangeRequest(activeLinkedChangeRequestId) ?? linkedChangeRequest
+        const latestRun = ensureWorkflowRunForRequest({
+          requestId: activeLinkedChangeRequestId,
+          workflowKey: linkedChangeRequest.workflowKey,
+          status: latestRequest.status,
         })
-      } else if (requestRunningStatus) {
-        const refreshedChangeRequest = getChangeRequest(activeLinkedChangeRequestId)
-        if (refreshedChangeRequest?.status === requestRunningStatus) {
-          updateChangeRequest(activeLinkedChangeRequestId, {
-            status: getCompletedStatusForPhase(linkedRequestPhase),
+        const continuationRunningStatus = statusForStep(continuationStep, "running")
+        const continuationNextStep = nextStepForAction(linkedWorkflowSteps, continuationStep, "approved")
+        const continuationCompletedStatus = statusForStep(continuationNextStep ?? continuationStep, "waiting")
+        const continuationNextStepKey = continuationNextStep ? stepKey(continuationNextStep) : null
+
+        if (!latestRun || !continuationRunningStatus) {
+          break
+        }
+
+        if (hasActiveExecution(activeLinkedChangeRequestId)) {
+          break
+        }
+
+        const continuationExecutionId = startWorkflowAgentStep({
+          requestId: activeLinkedChangeRequestId,
+          requestStatus: latestRequest.status,
+          targetEnvironmentId: activeLinkedTargetEnvironmentId ?? latestRequest.targetEnvironmentId,
+          workflowRunId: latestRun.id,
+          workflowKey: linkedChangeRequest.workflowKey,
+          stepKey: continuationStepKey,
+          runningStatus: continuationRunningStatus,
+          sessionId: session.id,
+          startedFromStatus: latestRequest.status,
+          autoContinued: true,
+        })
+
+        const continuationInstruction = readInstructionFile(continuationStep.instructionPath)
+        const continuationAgentConfig = {
+          ...(isRecord(linkedWorkflow?.definition?.agentConfig) ? linkedWorkflow.definition.agentConfig : {}),
+          ...(isRecord(continuationStep?.agentConfig) ? continuationStep.agentConfig : {}),
+        }
+        const continuationRequestedSkills = Array.from(
+          new Set([
+            ...requestedSkills,
+            ...requestedSkillsFromAgentConfig(continuationAgentConfig),
+          ]),
+        )
+        const continuationPrompt = [
+          `Automatically continue workflow step ${continuationStepKey} for request #${latestRequest.requestNumber}: ${latestRequest.title}.`,
+          `Step label: ${typeof continuationStep.label === "string" ? continuationStep.label : continuationStepKey}.`,
+          continuationInstruction
+            ? "Use the workflow step instructions from runtime metadata."
+            : "Use the current workflow step instructions from runtime metadata and the request context.",
+          "This is part of a run-until-gate chain. Complete only this step, save durable outputs as request artifacts when appropriate, and return a concise summary.",
+        ].join("\n")
+
+        try {
+          const continuationResponse = await requestCodexRuntimeResponse({
+            prompt: continuationPrompt,
+            sessionId: session.id,
+            codexThreadId: continuationThreadId,
+            recentHistory: continuationHistory,
+            metadata: {
+              transport: "site",
+              requestedSkills: continuationRequestedSkills,
+              workflow: linkedWorkflow
+                ? {
+                    key: linkedWorkflow.key,
+                    name: linkedWorkflow.name,
+                    currentStepKey: continuationStepKey,
+                    action: null,
+                    agentConfig: continuationAgentConfig,
+                    stepInstruction: continuationInstruction,
+                    autoContinued: true,
+                  }
+                : null,
+              linkedChangeRequestId: activeLinkedChangeRequestId,
+              linkedTargetEnvironmentId: activeLinkedTargetEnvironmentId,
+              linkedTargetApp,
+              linkedTargetEnvironment,
+              linkedDeployPlan,
+              linkedLatestExecution: listChangeRequestExecutions(activeLinkedChangeRequestId)[0] ?? null,
+              linkedChangeRequest: {
+                id: latestRequest.id,
+                requestNumber: latestRequest.requestNumber,
+                title: latestRequest.title,
+                status: latestRequest.status,
+                triageSummary: latestRequest.triageSummary,
+                agentRecommendation: latestRequest.agentRecommendation,
+                reviewNotes: latestRequest.reviewNotes,
+              },
+              linkedChangeRequestInstruction: [
+                continuationInstruction
+                  ? `Workflow step instructions:\n${continuationInstruction}`
+                  : "This response is linked to a tracked request workflow step.",
+                `Current workflow step: ${continuationStepKey}.`,
+                continuationNextStepKey ? `When this step is complete, advance the workflow run to ${continuationNextStepKey}.` : null,
+                continuationCompletedStatus ? `The board status should move toward ${continuationCompletedStatus}.` : null,
+                "Auto-continue is enabled; the site will run the next agent step until the workflow reaches a gate or terminal step.",
+              ].filter(Boolean).join("\n\n"),
+            },
           })
+
+          const continuationText = (continuationResponse.responseText || continuationResponse.output_text || "").trim()
+          if (!continuationText) {
+            throw new Error("CODEX_RUNTIME_EMPTY_RESPONSE")
+          }
+
+          continuationThreadId = continuationResponse.thread_id ?? continuationThreadId
+          updateAgentSession(session.id, {
+            linkedChangeRequestId: activeLinkedChangeRequestId,
+            linkedTargetEnvironmentId: activeLinkedTargetEnvironmentId,
+            meta: {
+              ...session.meta,
+              transport: "site",
+              codexThreadId: continuationThreadId,
+              codexProvider: continuationResponse.provider ?? "codex-cli",
+            },
+            lastMessageAt: new Date().toISOString(),
+          })
+          createAgentMessage({
+            sessionId: session.id,
+            role: "assistant",
+            source: "site",
+            sourceMessageId: null,
+            content: continuationText,
+            meta: {
+              transport: "site",
+              codexThreadId: continuationThreadId,
+              workflowStepKey: continuationStepKey,
+              autoContinued: true,
+            },
+          })
+
+          completeWorkflowAgentStep({
+            executionId: continuationExecutionId,
+            runtimeResponse: continuationResponse,
+            responseText: continuationText,
+            requestId: activeLinkedChangeRequestId,
+            stepKey: continuationStepKey,
+            workflowRunId: latestRun.id,
+            workflowKey: linkedChangeRequest.workflowKey,
+            completedStatus: continuationCompletedStatus,
+            nextStep: continuationNextStep,
+            linkedWorkflowSteps,
+            sessionId: session.id,
+            startedFromStatus: latestRequest.status,
+            autoContinued: true,
+          })
+
+          autoContinuedSteps.push(continuationStepKey)
+          continuationHistory = [
+            ...continuationHistory,
+            { role: "user", content: continuationPrompt },
+            { role: "assistant", content: continuationText },
+          ].slice(-12)
+          continuationStep =
+            continuationNextStep && stepType(continuationNextStep) === "agent"
+              ? continuationNextStep
+              : null
+        } catch (continuationError) {
+          const continuationMessage =
+            continuationError instanceof Error ? continuationError.message : "CODEX_RUNTIME_REQUEST_FAILED"
+          const runtimeContinuationError = continuationError as RuntimeError
+          const failureTrace = Array.isArray(runtimeContinuationError.trace) ? runtimeContinuationError.trace : []
+          const failureSummary = formatTraceSummary(failureTrace)
+          if (continuationExecutionId) {
+            updateChangeRequestExecution(continuationExecutionId, {
+              status: "failed",
+              errorMessage: continuationMessage,
+              summary: failureSummary,
+              finishedAt: new Date().toISOString(),
+              meta: {
+                workflowKey: linkedChangeRequest.workflowKey,
+                workflowRunId: latestRun.id,
+                workflowStepKey: continuationStepKey,
+                transport: "site",
+                sessionId: session.id,
+                autoContinued: true,
+                runtimeTrace: failureTrace,
+              },
+            })
+          }
+          createWorkflowEvent({
+            workflowRunId: latestRun.id,
+            requestId: activeLinkedChangeRequestId,
+            stepKey: continuationStepKey,
+            eventType: "agent.failed",
+            actorType: "codex",
+            note: continuationMessage,
+            payload: {
+              executionId: continuationExecutionId,
+              autoContinued: true,
+              runtimeTrace: failureTrace,
+            },
+          })
+          createAgentMessage({
+            sessionId: session.id,
+            role: "assistant",
+            source: "site",
+            sourceMessageId: null,
+            content: failureSummary
+              ? `Auto-continue failed at ${continuationStepKey}: ${continuationMessage}\n\nRecent execution trace:\n${failureSummary}`
+              : `Auto-continue failed at ${continuationStepKey}: ${continuationMessage}`,
+            meta: {
+              transport: "site",
+              error: true,
+              workflowStepKey: continuationStepKey,
+              autoContinued: true,
+              runtimeTrace: failureTrace,
+            },
+          })
+          break
         }
       }
     }
@@ -609,6 +1092,7 @@ export async function POST(request: Request) {
       metadata: {
         codex_thread_id: runtimeResponse.thread_id ?? null,
         trace: Array.isArray(runtimeResponse.trace) ? runtimeResponse.trace : [],
+        auto_continued_steps: autoContinuedSteps,
       },
     })
   } catch (error) {
@@ -618,7 +1102,7 @@ export async function POST(request: Request) {
     const failureTrace = Array.isArray(runtimeError.trace) ? runtimeError.trace : []
     const failureSummary = formatTraceSummary(failureTrace)
 
-    if (activeLinkedChangeRequestId && linkedChangeRequest && linkedRequestPhase && requestRunningStatus) {
+    if (activeLinkedChangeRequestId && linkedChangeRequest && linkedWorkflowRun && runnableStepKey && requestRunningStatus) {
       if (activeExecutionId) {
         updateChangeRequestExecution(activeExecutionId, {
           status: "failed",
@@ -634,7 +1118,9 @@ export async function POST(request: Request) {
           summary: failureSummary,
           finishedAt: failedAt,
           meta: {
-            phase: linkedRequestPhase,
+            workflowKey: linkedChangeRequest.workflowKey,
+            workflowRunId: linkedWorkflowRun.id,
+            workflowStepKey: runnableStepKey,
             transport: "site",
             sessionId: session.id,
             startedFromStatus: requestStartedFromStatus,
@@ -656,17 +1142,24 @@ export async function POST(request: Request) {
         })
       }
 
-      if (linkedRequestPhase === "triage") {
+      createWorkflowEvent({
+        workflowRunId: linkedWorkflowRun.id,
+        requestId: activeLinkedChangeRequestId,
+        stepKey: runnableStepKey,
+        eventType: "agent.failed",
+        actorType: "codex",
+        note: message,
+        payload: {
+          executionId: activeExecutionId,
+          runtimeTrace: failureTrace,
+        },
+      })
+      const refreshedChangeRequest = getChangeRequest(activeLinkedChangeRequestId)
+      if (refreshedChangeRequest?.status === requestRunningStatus) {
         updateChangeRequest(activeLinkedChangeRequestId, {
-          status: requestStartedFromStatus ?? "submitted",
+          status: requestStartedFromStatus ?? linkedChangeRequest.status,
+          syncWorkflowRun: false,
         })
-      } else {
-        const refreshedChangeRequest = getChangeRequest(activeLinkedChangeRequestId)
-        if (refreshedChangeRequest?.status === requestRunningStatus) {
-          updateChangeRequest(activeLinkedChangeRequestId, {
-            status: requestStartedFromStatus ?? "ready-for-agent",
-          })
-        }
       }
     }
 
@@ -694,4 +1187,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: false, error: message }, { status: 502 })
   }
+}
+
+async function requireResponseAccess() {
+  const adminAccess = await requireLocalAdminAccess()
+  if (adminAccess.ok) {
+    return adminAccess
+  }
+
+  return requireServiceAccess()
 }

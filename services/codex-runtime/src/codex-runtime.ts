@@ -744,6 +744,10 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
     : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile, '-C', executionWorkspaceRoot];
 
+  if (config.codexImageGenerationEnabled) {
+    args.push('--enable', 'image_generation');
+  }
+
   if (config.codexModel) {
     args.push('-m', config.codexModel);
   }

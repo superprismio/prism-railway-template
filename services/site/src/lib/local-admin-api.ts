@@ -1,7 +1,4 @@
-import { cookies } from "next/headers"
-import { loadConfig } from "@/lib/app-core"
-
-import { adminPasswordCookieName } from "@/lib/admin"
+import { requireAdminSession } from "@/lib/admin-auth"
 
 export const targetEnvironmentKinds = ["production", "staging", "preview", "development"] as const
 export const trackedChangeRequestStatuses = [
@@ -24,17 +21,7 @@ export function useLocalAppApi() {
 }
 
 export async function requireLocalAdminAccess() {
-  const password = (await cookies()).get(adminPasswordCookieName)?.value ?? null
-  if (!password) {
-    return { ok: false as const, status: 401, error: "Unauthorized" }
-  }
-
-  const config = loadConfig()
-  if (password !== config.adminPassword) {
-    return { ok: false as const, status: 401, error: "Unauthorized" }
-  }
-
-  return { ok: true as const }
+  return requireAdminSession()
 }
 
 export function parseString(value: unknown) {

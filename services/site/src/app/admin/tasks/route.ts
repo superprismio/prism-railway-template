@@ -103,6 +103,7 @@ export async function PATCH(request: Request) {
     inputConfig: current.inputConfig,
     instructionConfig: current.instructionConfig,
     outputConfig: current.outputConfig,
+    agentConfig: current.agentConfig,
   });
 
   return NextResponse.json({ ok: true, task });
@@ -149,6 +150,12 @@ export async function POST(request: Request) {
     },
     outputConfig: {
       summary: true,
+    },
+    agentConfig: {
+      runtime: "codex-runtime",
+      mode: "main-agent",
+      identity: "prism-task-agent",
+      skills: ["prism-scheduled-task-runner"],
     },
   });
 

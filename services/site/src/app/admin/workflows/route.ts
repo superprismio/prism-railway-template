@@ -1,0 +1,208 @@
+import { NextResponse } from "next/server";
+import fs from "node:fs";
+import path from "node:path";
+
+import { listWorkflows, loadConfig, upsertWorkflow } from "@/lib/app-core";
+import { requireLocalAdminAccess } from "@/lib/local-admin-api";
+import { requireServiceAccess } from "@/lib/internal-service";
+
+export async function GET() {
+  const access = await requireWorkflowWriteAccess();
+  if (!access.ok) {
+    return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
+  }
+
+  return NextResponse.json({ ok: true, workflows: listWorkflows() });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseKey(value: unknown) {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
+}
+
+function validWorkflowKey(key: string) {
+  return /^[a-z0-9][a-z0-9-]{1,80}[a-z0-9]$/.test(key);
+}
+
+async function requireWorkflowWriteAccess() {
+  const adminAccess = await requireLocalAdminAccess();
+  if (adminAccess.ok) {
+    return adminAccess;
+  }
+
+  return requireServiceAccess();
+}
+
+function resolveInsideRoot(root: string, candidate: string) {
+  const resolved = path.resolve(root, candidate);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    return null;
+  }
+  return resolved;
+}
+
+function normalizeWorkflowFilePath(workflowRoot: string, value: unknown) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+  const rawPath = value.trim();
+  const resolved = path.isAbsolute(rawPath)
+    ? path.resolve(rawPath)
+    : path.resolve(workflowRoot, rawPath.replace(/^workflows\/[^/]+\//, ""));
+
+  if (resolved !== workflowRoot && !resolved.startsWith(`${workflowRoot}${path.sep}`)) {
+    return null;
+  }
+  return resolved;
+}
+
+function pathForManifest(workflowRoot: string, value: unknown) {
+  const resolved = normalizeWorkflowFilePath(workflowRoot, value);
+  return resolved ? resolved : null;
+}
+
+function manifestPathValue(workflowRoot: string, value: unknown) {
+  const resolved = pathForManifest(workflowRoot, value);
+  return resolved ? resolved : null;
+}
+
+function normalizeManifestPaths(definition: Record<string, unknown>, workflowRoot: string) {
+  const normalized = structuredClone(definition) as Record<string, unknown>;
+  const workflowPath = manifestPathValue(workflowRoot, normalized.workflowPath);
+  if (workflowPath) {
+    normalized.workflowPath = workflowPath;
+  }
+
+  if (Array.isArray(normalized.steps)) {
+    normalized.steps = normalized.steps.map((step) => {
+      if (!isRecord(step)) {
+        return step;
+      }
+      const nextStep = { ...step };
+      const instructionPath = manifestPathValue(workflowRoot, nextStep.instructionPath);
+      if (instructionPath) {
+        nextStep.instructionPath = instructionPath;
+      }
+      return nextStep;
+    });
+  }
+
+  return normalized;
+}
+
+function validateWorkflowPaths(definition: Record<string, unknown>, workflowRoot: string) {
+  const paths: string[] = [];
+  if (typeof definition.workflowPath === "string") {
+    paths.push(definition.workflowPath);
+  }
+  if (Array.isArray(definition.steps)) {
+    for (const step of definition.steps) {
+      if (isRecord(step) && typeof step.instructionPath === "string") {
+        paths.push(step.instructionPath);
+      }
+    }
+  }
+
+  for (const rawPath of paths) {
+    const resolved = normalizeWorkflowFilePath(workflowRoot, rawPath);
+    if (!resolved) {
+      return false;
+    }
+    if (resolved !== workflowRoot && !resolved.startsWith(`${workflowRoot}${path.sep}`)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export async function POST(request: Request) {
+  const access = await requireWorkflowWriteAccess();
+  if (!access.ok) {
+    return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
+  }
+
+  let payload: unknown = null;
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const body = isRecord(payload) ? payload : {};
+  const key = parseKey(body.key);
+  if (!validWorkflowKey(key)) {
+    return NextResponse.json({ ok: false, error: "Invalid workflow key" }, { status: 400 });
+  }
+
+  const config = loadConfig();
+  const workflowRoot = path.resolve(config.dataRoot, "workflows", key);
+  const manifestPath = path.resolve(workflowRoot, "manifest.proposal.json");
+  let manifest: unknown = null;
+
+  if (isRecord(body.manifest)) {
+    manifest = body.manifest;
+  } else {
+    if (!fs.existsSync(manifestPath)) {
+      return NextResponse.json({ ok: false, error: `Workflow manifest not found at ${manifestPath}` }, { status: 404 });
+    }
+    try {
+      manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    } catch {
+      return NextResponse.json({ ok: false, error: "Workflow manifest is not valid JSON" }, { status: 400 });
+    }
+  }
+
+  if (!isRecord(manifest)) {
+    return NextResponse.json({ ok: false, error: "Workflow manifest must be an object" }, { status: 400 });
+  }
+  if (manifest.key !== key) {
+    return NextResponse.json({ ok: false, error: "Workflow manifest key does not match requested key" }, { status: 400 });
+  }
+  if (!Array.isArray(manifest.steps) || !manifest.steps.length) {
+    return NextResponse.json({ ok: false, error: "Workflow manifest must include steps" }, { status: 400 });
+  }
+  const normalizedManifest = normalizeManifestPaths(manifest, workflowRoot);
+  if (!validateWorkflowPaths(normalizedManifest, workflowRoot)) {
+    return NextResponse.json({ ok: false, error: "Workflow paths must stay under the workflow volume directory" }, { status: 400 });
+  }
+
+  if (isRecord(body.files)) {
+    fs.mkdirSync(workflowRoot, { recursive: true });
+    for (const [relativePath, content] of Object.entries(body.files)) {
+      if (typeof content !== "string") {
+        return NextResponse.json({ ok: false, error: `Workflow file ${relativePath} must be a string` }, { status: 400 });
+      }
+      if (path.isAbsolute(relativePath) || relativePath.includes("\0")) {
+        return NextResponse.json({ ok: false, error: `Invalid workflow file path: ${relativePath}` }, { status: 400 });
+      }
+      const absolutePath = resolveInsideRoot(workflowRoot, relativePath);
+      if (!absolutePath || absolutePath === workflowRoot) {
+        return NextResponse.json({ ok: false, error: `Workflow file path escapes workflow root: ${relativePath}` }, { status: 400 });
+      }
+      if (!relativePath.endsWith(".md")) {
+        return NextResponse.json({ ok: false, error: `Workflow file must be markdown: ${relativePath}` }, { status: 400 });
+      }
+      fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+      fs.writeFileSync(absolutePath, content.trimEnd() + "\n", "utf8");
+    }
+  }
+
+  fs.mkdirSync(workflowRoot, { recursive: true });
+  fs.writeFileSync(manifestPath, `${JSON.stringify(normalizedManifest, null, 2)}\n`, "utf8");
+
+  const workflow = upsertWorkflow({
+    key,
+    name: typeof normalizedManifest.name === "string" && normalizedManifest.name.trim() ? normalizedManifest.name.trim() : key,
+    description: typeof normalizedManifest.description === "string" ? normalizedManifest.description : null,
+    version: typeof normalizedManifest.version === "number" && Number.isFinite(normalizedManifest.version) ? normalizedManifest.version : 1,
+    definition: normalizedManifest,
+    systemDefault: false,
+    enabled: body.enabled === false ? false : true,
+  });
+
+  return NextResponse.json({ ok: true, workflow }, { status: 201 });
+}

@@ -261,7 +261,7 @@ export interface TargetAppRecord {
 
 export interface TargetEnvironmentRecord {
   id: string;
-  targetAppId: string;
+  targetAppId: string | null;
   targetAppSlug: string | null;
   slug: string;
   name: string;
@@ -281,6 +281,7 @@ export interface TargetEnvironmentRecord {
 export interface ChangeRequestRecord {
   id: string;
   requestNumber: number;
+  workflowKey: string;
   title: string;
   description: string;
   requestType: string;
@@ -289,12 +290,14 @@ export interface ChangeRequestRecord {
   source: string;
   requestedByUserId: string | null;
   requestedByDisplayName: string | null;
-  targetAppId: string;
+  targetAppId?: string | null;
   targetAppSlug: string | null;
   targetAppName: string | null;
   targetEnvironmentId: string | null;
   targetEnvironmentSlug: string | null;
   targetEnvironmentName: string | null;
+  currentWorkflowStepKey: string | null;
+  workflowRunStatus: string | null;
   triageSummary: string | null;
   acceptanceCriteria: unknown[];
   constraints: Record<string, unknown>;
@@ -367,12 +370,13 @@ export interface ListChangeRequestsInput {
 export interface CreateChangeRequestInput {
   title: string;
   description: string;
+  workflowKey?: string;
   requestType: string;
   status?: string;
   priority?: string;
   source?: string;
   requestedByUserId?: string | null;
-  targetAppId: string;
+  targetAppId?: string | null;
   targetEnvironmentId?: string | null;
   triageSummary?: string | null;
   acceptanceCriteria?: unknown[];
@@ -389,6 +393,7 @@ export interface UpdateChangeRequestInput {
   reviewNotes?: string | null;
   resolutionSummary?: string | null;
   agentRecommendation?: string | null;
+  syncWorkflowRun?: boolean;
 }
 
 export interface CreateChangeRequestExecutionInput {
@@ -510,8 +515,79 @@ export interface TaskRecord {
   inputConfig: Record<string, unknown>;
   instructionConfig: Record<string, unknown>;
   outputConfig: Record<string, unknown>;
+  agentConfig: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface WorkflowRecord {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  version: number;
+  definition: Record<string, unknown>;
+  systemDefault: boolean;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowRunRecord {
+  id: string;
+  requestId: string;
+  workflowKey: string;
+  currentStepKey: string;
+  status: string;
+  meta: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export interface WorkflowEventRecord {
+  id: string;
+  workflowRunId: string;
+  requestId: string;
+  stepKey: string | null;
+  eventType: string;
+  actorType: string;
+  actorId: string | null;
+  note: string | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface RequestArtifactRecord {
+  id: string;
+  requestId: string;
+  workflowRunId: string | null;
+  executionId: string | null;
+  kind: string;
+  name: string;
+  description: string | null;
+  mimeType: string;
+  storagePath: string;
+  sizeBytes: number;
+  metadata: Record<string, unknown>;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateRequestArtifactInput {
+  id?: string;
+  requestId: string;
+  workflowRunId?: string | null;
+  executionId?: string | null;
+  kind: string;
+  name: string;
+  description?: string | null;
+  mimeType: string;
+  storagePath: string;
+  sizeBytes: number;
+  metadata?: Record<string, unknown>;
+  createdBy?: string | null;
 }
 
 export interface TaskRunRecord {
@@ -544,6 +620,7 @@ export interface UpsertTaskInput {
   inputConfig?: Record<string, unknown>;
   instructionConfig?: Record<string, unknown>;
   outputConfig?: Record<string, unknown>;
+  agentConfig?: Record<string, unknown>;
 }
 
 export interface CreateTaskRunInput {
@@ -694,6 +771,62 @@ interface TaskRow {
   input_config_json: string;
   instruction_config_json: string;
   output_config_json: string;
+  agent_config_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface WorkflowRow {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  version: number;
+  definition_json: string;
+  system_default: number;
+  enabled: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface WorkflowRunRow {
+  id: string;
+  request_id: string;
+  workflow_key: string;
+  current_step_key: string;
+  status: string;
+  meta_json: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+interface WorkflowEventRow {
+  id: string;
+  workflow_run_id: string;
+  request_id: string;
+  step_key: string | null;
+  event_type: string;
+  actor_type: string;
+  actor_id: string | null;
+  note: string | null;
+  payload_json: string;
+  created_at: string;
+}
+
+interface RequestArtifactRow {
+  id: string;
+  request_id: string;
+  workflow_run_id: string | null;
+  execution_id: string | null;
+  kind: string;
+  name: string;
+  description: string | null;
+  mime_type: string;
+  storage_path: string;
+  size_bytes: number;
+  metadata_json: string;
+  created_by: string;
   created_at: string;
   updated_at: string;
 }
@@ -730,6 +863,70 @@ function mapTaskRow(row: TaskRow): TaskRecord {
     inputConfig: parseJsonValue<Record<string, unknown>>(row.input_config_json, {}),
     instructionConfig: parseJsonValue<Record<string, unknown>>(row.instruction_config_json, {}),
     outputConfig: parseJsonValue<Record<string, unknown>>(row.output_config_json, {}),
+    agentConfig: parseJsonValue<Record<string, unknown>>(row.agent_config_json, {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapWorkflowRow(row: WorkflowRow): WorkflowRecord {
+  return {
+    id: row.id,
+    key: row.key,
+    name: row.name,
+    description: row.description,
+    version: row.version,
+    definition: parseJsonValue<Record<string, unknown>>(row.definition_json, {}),
+    systemDefault: row.system_default === 1,
+    enabled: row.enabled === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapWorkflowRunRow(row: WorkflowRunRow): WorkflowRunRecord {
+  return {
+    id: row.id,
+    requestId: row.request_id,
+    workflowKey: row.workflow_key,
+    currentStepKey: row.current_step_key,
+    status: row.status,
+    meta: parseJsonValue<Record<string, unknown>>(row.meta_json, {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    completedAt: row.completed_at,
+  };
+}
+
+function mapWorkflowEventRow(row: WorkflowEventRow): WorkflowEventRecord {
+  return {
+    id: row.id,
+    workflowRunId: row.workflow_run_id,
+    requestId: row.request_id,
+    stepKey: row.step_key,
+    eventType: row.event_type,
+    actorType: row.actor_type,
+    actorId: row.actor_id,
+    note: row.note,
+    payload: parseJsonValue<Record<string, unknown>>(row.payload_json, {}),
+    createdAt: row.created_at,
+  };
+}
+
+function mapRequestArtifactRow(row: RequestArtifactRow): RequestArtifactRecord {
+  return {
+    id: row.id,
+    requestId: row.request_id,
+    workflowRunId: row.workflow_run_id,
+    executionId: row.execution_id,
+    kind: row.kind,
+    name: row.name,
+    description: row.description,
+    mimeType: row.mime_type,
+    storagePath: row.storage_path,
+    sizeBytes: row.size_bytes,
+    metadata: parseJsonValue<Record<string, unknown>>(row.metadata_json, {}),
+    createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -889,7 +1086,7 @@ function parseTargetAppRow(row: {
 
 function parseTargetEnvironmentRow(row: {
   id: string;
-  target_app_id: string;
+  target_app_id: string | null;
   target_app_slug: string | null;
   slug: string;
   name: string;
@@ -928,6 +1125,7 @@ function parseTargetEnvironmentRow(row: {
 function parseTrackedChangeRequestRow(row: {
   id: string;
   request_number: number;
+  workflow_key: string;
   title: string;
   description: string;
   request_type: string;
@@ -936,12 +1134,14 @@ function parseTrackedChangeRequestRow(row: {
   source: string;
   requested_by_user_id: string | null;
   requested_by_display_name: string | null;
-  target_app_id: string;
+  target_app_id: string | null;
   target_app_slug: string | null;
   target_app_name: string | null;
   target_environment_id: string | null;
   target_environment_slug: string | null;
   target_environment_name: string | null;
+  current_workflow_step_key?: string | null;
+  workflow_run_status?: string | null;
   triage_summary: string | null;
   acceptance_criteria_json: string | null;
   constraints_json: string | null;
@@ -959,6 +1159,7 @@ function parseTrackedChangeRequestRow(row: {
   return {
     id: row.id,
     requestNumber: row.request_number,
+    workflowKey: row.workflow_key,
     title: row.title,
     description: row.description,
     requestType: row.request_type,
@@ -973,6 +1174,8 @@ function parseTrackedChangeRequestRow(row: {
     targetEnvironmentId: row.target_environment_id,
     targetEnvironmentSlug: row.target_environment_slug,
     targetEnvironmentName: row.target_environment_name,
+    currentWorkflowStepKey: row.current_workflow_step_key ?? null,
+    workflowRunStatus: row.workflow_run_status ?? null,
     triageSummary: row.triage_summary,
     acceptanceCriteria: parseJsonValue<unknown[]>(row.acceptance_criteria_json, []),
     constraints: parseJsonValue<Record<string, unknown>>(row.constraints_json, {}),
@@ -2146,7 +2349,7 @@ export function listTargetEnvironments(targetAppId?: string) {
 
   const rows = getDb().prepare(sql).all(...params) as Array<{
     id: string;
-    target_app_id: string;
+    target_app_id: string | null;
     target_app_slug: string | null;
     slug: string;
     name: string;
@@ -2226,7 +2429,7 @@ export function getTargetEnvironment(targetEnvironmentId: string) {
     .get(targetEnvironmentId) as
     | {
         id: string;
-        target_app_id: string;
+        target_app_id: string | null;
         target_app_slug: string | null;
         slug: string;
         name: string;
@@ -2285,7 +2488,7 @@ export function getDefaultTargetEnvironmentForApp(targetAppId: string) {
     .get(targetAppId) as
     | {
         id: string;
-        target_app_id: string;
+        target_app_id: string | null;
         target_app_slug: string | null;
         slug: string;
         name: string;
@@ -2311,6 +2514,7 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
   let sql = `SELECT
       cr.id,
       cr.request_number,
+      cr.workflow_key,
       cr.title,
       cr.description,
       cr.request_type,
@@ -2325,6 +2529,8 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
       cr.target_environment_id,
       te.slug AS target_environment_slug,
       te.name AS target_environment_name,
+      wr.current_step_key AS current_workflow_step_key,
+      wr.status AS workflow_run_status,
       cr.triage_summary,
       cr.acceptance_criteria_json,
       cr.constraints_json,
@@ -2341,7 +2547,8 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     FROM change_requests cr
     LEFT JOIN profiles requester ON requester.user_id = cr.requested_by_user_id
     LEFT JOIN target_apps ta ON ta.id = cr.target_app_id
-    LEFT JOIN target_environments te ON te.id = cr.target_environment_id`;
+    LEFT JOIN target_environments te ON te.id = cr.target_environment_id
+    LEFT JOIN workflow_runs wr ON wr.request_id = cr.id`;
 
   const conditions: string[] = [];
   if (input.status) {
@@ -2361,6 +2568,7 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
   const rows = getDb().prepare(sql).all(...params) as Array<{
     id: string;
     request_number: number;
+    workflow_key: string;
     title: string;
     description: string;
     request_type: string;
@@ -2369,12 +2577,14 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     source: string;
     requested_by_user_id: string | null;
     requested_by_display_name: string | null;
-    target_app_id: string;
+    target_app_id: string | null;
     target_app_slug: string | null;
     target_app_name: string | null;
     target_environment_id: string | null;
     target_environment_slug: string | null;
     target_environment_name: string | null;
+    current_workflow_step_key: string | null;
+    workflow_run_status: string | null;
     triage_summary: string | null;
     acceptance_criteria_json: string | null;
     constraints_json: string | null;
@@ -2401,6 +2611,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
   let sql = `SELECT
       cr.id,
       cr.request_number,
+      cr.workflow_key,
       cr.title,
       cr.description,
       cr.request_type,
@@ -2432,7 +2643,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
     LEFT JOIN profiles requester ON requester.user_id = cr.requested_by_user_id
     LEFT JOIN target_apps ta ON ta.id = cr.target_app_id
     LEFT JOIN target_environments te ON te.id = cr.target_environment_id
-    WHERE ta.agent_enabled = 1
+    WHERE (cr.target_app_id IS NULL OR ta.agent_enabled = 1)
       AND cr.status IN (${runnableStatuses.map(() => '?').join(', ')})
       AND NOT EXISTS (
         SELECT 1
@@ -2472,6 +2683,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
     | {
         id: string;
         request_number: number;
+        workflow_key: string;
         title: string;
         description: string;
         request_type: string;
@@ -2480,12 +2692,14 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
         source: string;
         requested_by_user_id: string | null;
         requested_by_display_name: string | null;
-        target_app_id: string;
+        target_app_id: string | null;
         target_app_slug: string | null;
         target_app_name: string | null;
         target_environment_id: string | null;
         target_environment_slug: string | null;
         target_environment_name: string | null;
+        current_workflow_step_key: string | null;
+        workflow_run_status: string | null;
         triage_summary: string | null;
         acceptance_criteria_json: string | null;
         constraints_json: string | null;
@@ -2512,6 +2726,7 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
   let sql = `SELECT
       cr.id,
       cr.request_number,
+      cr.workflow_key,
       cr.title,
       cr.description,
       cr.request_type,
@@ -2543,7 +2758,7 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
     LEFT JOIN profiles requester ON requester.user_id = cr.requested_by_user_id
     LEFT JOIN target_apps ta ON ta.id = cr.target_app_id
     LEFT JOIN target_environments te ON te.id = cr.target_environment_id
-    WHERE ta.agent_enabled = 1
+    WHERE (cr.target_app_id IS NULL OR ta.agent_enabled = 1)
       AND EXISTS (
         SELECT 1
         FROM change_request_executions cre
@@ -2584,6 +2799,7 @@ export function getChangeRequest(changeRequestId: string) {
       `SELECT
          cr.id,
          cr.request_number,
+         cr.workflow_key,
          cr.title,
          cr.description,
          cr.request_type,
@@ -2598,6 +2814,8 @@ export function getChangeRequest(changeRequestId: string) {
          cr.target_environment_id,
          te.slug AS target_environment_slug,
          te.name AS target_environment_name,
+         wr.current_step_key AS current_workflow_step_key,
+         wr.status AS workflow_run_status,
          cr.triage_summary,
          cr.acceptance_criteria_json,
          cr.constraints_json,
@@ -2615,12 +2833,14 @@ export function getChangeRequest(changeRequestId: string) {
        LEFT JOIN profiles requester ON requester.user_id = cr.requested_by_user_id
        LEFT JOIN target_apps ta ON ta.id = cr.target_app_id
        LEFT JOIN target_environments te ON te.id = cr.target_environment_id
+       LEFT JOIN workflow_runs wr ON wr.request_id = cr.id
        WHERE cr.id = ?`,
     )
     .get(changeRequestId) as
     | {
         id: string;
         request_number: number;
+        workflow_key: string;
         title: string;
         description: string;
         request_type: string;
@@ -2629,7 +2849,7 @@ export function getChangeRequest(changeRequestId: string) {
         source: string;
         requested_by_user_id: string | null;
         requested_by_display_name: string | null;
-        target_app_id: string;
+        target_app_id: string | null;
         target_app_slug: string | null;
         target_app_name: string | null;
         target_environment_id: string | null;
@@ -2662,39 +2882,62 @@ function getNextChangeRequestNumber() {
   return row.next_number;
 }
 
+function isTerminalRequestStatus(status: string | null | undefined) {
+  return ['approved', 'rejected', 'closed'].includes(status ?? '');
+}
+
 export function createChangeRequest(input: CreateChangeRequestInput) {
   const now = new Date().toISOString();
   const id = randomUUID();
+  const workflowKey = normalizeText(input.workflowKey) || 'change-request-default';
+  const workflow = getWorkflowByKey(workflowKey);
+  if (!workflow) {
+    throw new Error('WORKFLOW_NOT_FOUND');
+  }
+  if (!workflow.enabled) {
+    throw new Error('WORKFLOW_DISABLED');
+  }
+  const status = input.status ?? 'submitted';
 
-  getDb()
-    .prepare(
-      `INSERT INTO change_requests (
-         id, request_number, title, description, request_type, status, priority, source,
-         requested_by_user_id, target_app_id, target_environment_id, triage_summary,
-         acceptance_criteria_json, constraints_json, attachments_json, agent_recommendation,
-         created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      id,
-      getNextChangeRequestNumber(),
-      input.title,
-      input.description,
-      input.requestType,
-      input.status ?? 'submitted',
-      input.priority ?? 'normal',
-      input.source ?? 'manual',
-      input.requestedByUserId ?? null,
-      input.targetAppId,
-      input.targetEnvironmentId ?? null,
-      input.triageSummary ?? null,
-      JSON.stringify(input.acceptanceCriteria ?? []),
-      JSON.stringify(input.constraints ?? {}),
-      JSON.stringify(input.attachments ?? []),
-      input.agentRecommendation ?? null,
-      now,
-      now,
-    );
+  const db = getDb();
+  db.transaction(() => {
+    db
+      .prepare(
+        `INSERT INTO change_requests (
+           id, request_number, workflow_key, title, description, request_type, status, priority, source,
+           requested_by_user_id, target_app_id, target_environment_id, triage_summary,
+           acceptance_criteria_json, constraints_json, attachments_json, agent_recommendation,
+           created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        getNextChangeRequestNumber(),
+        workflowKey,
+        input.title,
+        input.description,
+        input.requestType,
+        status,
+        input.priority ?? 'normal',
+        input.source ?? 'manual',
+        input.requestedByUserId ?? null,
+        input.targetAppId ?? null,
+        input.targetEnvironmentId ?? null,
+        input.triageSummary ?? null,
+        JSON.stringify(input.acceptanceCriteria ?? []),
+        JSON.stringify(input.constraints ?? {}),
+        JSON.stringify(input.attachments ?? []),
+        input.agentRecommendation ?? null,
+        now,
+        now,
+      );
+
+    ensureWorkflowRunForRequest({
+      requestId: id,
+      workflowKey,
+      status,
+    });
+  })();
 
   return getChangeRequest(id);
 }
@@ -2761,7 +3004,11 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
       changeRequestId,
     );
 
-  return getChangeRequest(changeRequestId);
+  const updated = getChangeRequest(changeRequestId);
+  if (updated && input.syncWorkflowRun !== false) {
+    syncWorkflowRunToRequestStatus(updated);
+  }
+  return updated;
 }
 
 export function listChangeRequestExecutions(changeRequestId: string) {
@@ -3798,6 +4045,392 @@ export function updateUserLastSeen(userId: string) {
     .run(new Date().toISOString(), new Date().toISOString(), userId);
 }
 
+export function listWorkflows(): WorkflowRecord[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, key, name, description, version, definition_json, system_default, enabled, created_at, updated_at
+       FROM workflows
+       ORDER BY system_default DESC, key ASC`,
+    )
+    .all() as WorkflowRow[];
+
+  return rows.map(mapWorkflowRow);
+}
+
+export function getWorkflowByKey(key: string): WorkflowRecord | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, key, name, description, version, definition_json, system_default, enabled, created_at, updated_at
+       FROM workflows
+       WHERE key = ?`,
+    )
+    .get(key) as WorkflowRow | undefined;
+
+  return row ? mapWorkflowRow(row) : null;
+}
+
+export function upsertWorkflow(input: {
+  key: string;
+  name: string;
+  description?: string | null;
+  version?: number;
+  definition: Record<string, unknown>;
+  systemDefault?: boolean;
+  enabled?: boolean;
+}): WorkflowRecord {
+  const now = new Date().toISOString();
+  const existing = getWorkflowByKey(input.key);
+  const id = existing?.id ?? randomUUID();
+  const nextSystemDefault = input.systemDefault ?? existing?.systemDefault ?? false;
+  const nextEnabled = input.enabled ?? existing?.enabled ?? true;
+
+  getDb()
+    .prepare(
+      `INSERT INTO workflows (
+         id, key, name, description, version, definition_json, system_default, enabled, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         name = excluded.name,
+         description = excluded.description,
+         version = excluded.version,
+         definition_json = excluded.definition_json,
+         system_default = excluded.system_default,
+         enabled = excluded.enabled,
+         updated_at = excluded.updated_at`,
+    )
+    .run(
+      id,
+      input.key,
+      input.name,
+      input.description ?? null,
+      input.version ?? 1,
+      JSON.stringify(input.definition),
+      nextSystemDefault ? 1 : 0,
+      nextEnabled ? 1 : 0,
+      existing?.createdAt ?? now,
+      now,
+    );
+
+  const workflow = getWorkflowByKey(input.key);
+  if (!workflow) {
+    throw new Error('WORKFLOW_UPSERT_FAILED');
+  }
+
+  return workflow;
+}
+
+function workflowStepsFromDefinition(workflow: WorkflowRecord | null | undefined) {
+  const steps = Array.isArray(workflow?.definition?.steps) ? workflow.definition.steps : [];
+  return steps.filter((step): step is Record<string, unknown> => {
+    return Boolean(step) && typeof step === 'object' && !Array.isArray(step) && typeof step.key === 'string';
+  });
+}
+
+function workflowEntrypoint(workflow: WorkflowRecord | null | undefined) {
+  const entrypoint = workflow?.definition?.entrypoint;
+  if (typeof entrypoint === 'string' && entrypoint.trim()) {
+    return entrypoint.trim();
+  }
+  return workflowStepsFromDefinition(workflow)[0]?.key as string | undefined ?? 'triage';
+}
+
+function workflowStepKeyForStatus(workflow: WorkflowRecord | null | undefined, status: string) {
+  for (const step of workflowStepsFromDefinition(workflow)) {
+    const statusMap = Array.isArray(step.statusMap) ? step.statusMap : [];
+    if (statusMap.some((entry) => entry === status)) {
+      return String(step.key);
+    }
+  }
+  return workflowEntrypoint(workflow);
+}
+
+export function getWorkflowRunForRequest(requestId: string): WorkflowRunRecord | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, request_id, workflow_key, current_step_key, status, meta_json, created_at, updated_at, completed_at
+       FROM workflow_runs
+       WHERE request_id = ?`,
+    )
+    .get(requestId) as WorkflowRunRow | undefined;
+
+  return row ? mapWorkflowRunRow(row) : null;
+}
+
+export function getWorkflowRun(workflowRunId: string): WorkflowRunRecord | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, request_id, workflow_key, current_step_key, status, meta_json, created_at, updated_at, completed_at
+       FROM workflow_runs
+       WHERE id = ?`,
+    )
+    .get(workflowRunId) as WorkflowRunRow | undefined;
+
+  return row ? mapWorkflowRunRow(row) : null;
+}
+
+export function ensureWorkflowRunForRequest(input: {
+  requestId: string;
+  workflowKey: string;
+  status?: string;
+  currentStepKey?: string | null;
+  meta?: Record<string, unknown>;
+}): WorkflowRunRecord {
+  const existing = getWorkflowRunForRequest(input.requestId);
+  if (existing) {
+    return existing;
+  }
+
+  const workflow = getWorkflowByKey(input.workflowKey);
+  const currentStepKey =
+    normalizeText(input.currentStepKey) ||
+    (input.status ? workflowStepKeyForStatus(workflow, input.status) : workflowEntrypoint(workflow));
+  const now = new Date().toISOString();
+  const id = randomUUID();
+  const terminal = isTerminalRequestStatus(input.status);
+  const runStatus = terminal ? 'completed' : 'active';
+  const completedAt = terminal ? now : null;
+
+  getDb()
+    .prepare(
+      `INSERT INTO workflow_runs (
+         id, request_id, workflow_key, current_step_key, status, meta_json, created_at, updated_at, completed_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(id, input.requestId, input.workflowKey, currentStepKey, runStatus, JSON.stringify(input.meta ?? {}), now, now, completedAt);
+
+  const run = getWorkflowRunForRequest(input.requestId);
+  if (!run) {
+    throw new Error('WORKFLOW_RUN_CREATE_FAILED');
+  }
+
+  createWorkflowEvent({
+    workflowRunId: run.id,
+    requestId: input.requestId,
+    stepKey: run.currentStepKey,
+    eventType: 'workflow.started',
+    actorType: 'system',
+    payload: {
+      workflowKey: run.workflowKey,
+      status: input.status ?? null,
+    },
+  });
+
+  return run;
+}
+
+export function updateWorkflowRun(input: {
+  requestId: string;
+  currentStepKey?: string;
+  status?: string;
+  meta?: Record<string, unknown>;
+  completedAt?: string | null;
+}): WorkflowRunRecord | null {
+  const existing = getWorkflowRunForRequest(input.requestId);
+  if (!existing) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  getDb()
+    .prepare(
+      `UPDATE workflow_runs
+       SET current_step_key = ?,
+           status = ?,
+           meta_json = ?,
+           updated_at = ?,
+           completed_at = ?
+       WHERE id = ?`,
+    )
+    .run(
+      input.currentStepKey ?? existing.currentStepKey,
+      input.status ?? existing.status,
+      JSON.stringify(input.meta ?? existing.meta),
+      now,
+      input.completedAt !== undefined ? input.completedAt : existing.completedAt,
+      existing.id,
+    );
+
+  return getWorkflowRunForRequest(input.requestId);
+}
+
+export function syncWorkflowRunToRequestStatus(request: ChangeRequestRecord, actorType = 'system') {
+  const workflow = getWorkflowByKey(request.workflowKey);
+  const nextStepKey = workflowStepKeyForStatus(workflow, request.status);
+  const run = ensureWorkflowRunForRequest({
+    requestId: request.id,
+    workflowKey: request.workflowKey,
+    status: request.status,
+    currentStepKey: nextStepKey,
+  });
+  if (run.currentStepKey !== nextStepKey || (isTerminalRequestStatus(request.status) && run.status !== 'completed')) {
+    const completedAt = isTerminalRequestStatus(request.status) ? new Date().toISOString() : null;
+    updateWorkflowRun({
+      requestId: request.id,
+      currentStepKey: nextStepKey,
+      status: completedAt ? 'completed' : 'active',
+      completedAt,
+    });
+    createWorkflowEvent({
+      workflowRunId: run.id,
+      requestId: request.id,
+      stepKey: nextStepKey,
+      eventType: 'workflow.step_changed',
+      actorType,
+      payload: {
+        status: request.status,
+        previousStepKey: run.currentStepKey,
+        nextStepKey,
+      },
+    });
+  }
+}
+
+export function createWorkflowEvent(input: {
+  workflowRunId: string;
+  requestId: string;
+  stepKey?: string | null;
+  eventType: string;
+  actorType?: string;
+  actorId?: string | null;
+  note?: string | null;
+  payload?: Record<string, unknown>;
+}): WorkflowEventRecord {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  getDb()
+    .prepare(
+      `INSERT INTO workflow_events (
+         id, workflow_run_id, request_id, step_key, event_type, actor_type, actor_id, note, payload_json, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.workflowRunId,
+      input.requestId,
+      input.stepKey ?? null,
+      input.eventType,
+      normalizeText(input.actorType) || 'system',
+      input.actorId ?? null,
+      normalizeText(input.note) || null,
+      JSON.stringify(input.payload ?? {}),
+      now,
+    );
+
+  const row = getDb()
+    .prepare(
+      `SELECT id, workflow_run_id, request_id, step_key, event_type, actor_type, actor_id, note, payload_json, created_at
+       FROM workflow_events
+       WHERE id = ?`,
+    )
+    .get(id) as WorkflowEventRow | undefined;
+
+  if (!row) {
+    throw new Error('WORKFLOW_EVENT_CREATE_FAILED');
+  }
+
+  return mapWorkflowEventRow(row);
+}
+
+export function listWorkflowEventsForRequest(requestId: string, limit = 100): WorkflowEventRecord[] {
+  const safeLimit = Math.max(1, Math.min(limit, 500));
+  const rows = getDb()
+    .prepare(
+      `SELECT id, workflow_run_id, request_id, step_key, event_type, actor_type, actor_id, note, payload_json, created_at
+       FROM workflow_events
+       WHERE request_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+    )
+    .all(requestId, safeLimit) as WorkflowEventRow[];
+
+  return rows.map(mapWorkflowEventRow);
+}
+
+export function createRequestArtifact(input: CreateRequestArtifactInput): RequestArtifactRecord {
+  const request = getChangeRequest(input.requestId);
+  if (!request) {
+    throw new Error('CHANGE_REQUEST_NOT_FOUND');
+  }
+
+  const id = normalizeText(input.id) || randomUUID();
+  const now = new Date().toISOString();
+  const kind = normalizeText(input.kind) || 'file';
+  const name = normalizeText(input.name);
+  const mimeType = normalizeText(input.mimeType) || 'application/octet-stream';
+  const storagePath = normalizeText(input.storagePath);
+
+  if (!name) {
+    throw new Error('ARTIFACT_NAME_REQUIRED');
+  }
+  if (!storagePath) {
+    throw new Error('ARTIFACT_STORAGE_PATH_REQUIRED');
+  }
+
+  getDb()
+    .prepare(
+      `INSERT INTO request_artifacts (
+         id, request_id, workflow_run_id, execution_id, kind, name, description,
+         mime_type, storage_path, size_bytes, metadata_json, created_by, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.requestId,
+      input.workflowRunId ?? null,
+      input.executionId ?? null,
+      kind,
+      name,
+      normalizeText(input.description) || null,
+      mimeType,
+      storagePath,
+      Math.max(0, Math.trunc(input.sizeBytes)),
+      JSON.stringify(input.metadata ?? {}),
+      normalizeText(input.createdBy) || 'system',
+      now,
+      now,
+    );
+
+  const artifact = getRequestArtifact(id);
+  if (!artifact) {
+    throw new Error('ARTIFACT_CREATE_FAILED');
+  }
+
+  return artifact;
+}
+
+export function getRequestArtifact(id: string): RequestArtifactRecord | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, request_id, workflow_run_id, execution_id, kind, name, description,
+              mime_type, storage_path, size_bytes, metadata_json, created_by, created_at, updated_at
+       FROM request_artifacts
+       WHERE id = ?`,
+    )
+    .get(id) as RequestArtifactRow | undefined;
+
+  return row ? mapRequestArtifactRow(row) : null;
+}
+
+export function deleteRequestArtifact(id: string) {
+  getDb().prepare('DELETE FROM request_artifacts WHERE id = ?').run(id);
+}
+
+export function listRequestArtifacts(requestId: string, limit = 100): RequestArtifactRecord[] {
+  const safeLimit = Math.max(1, Math.min(limit, 500));
+  const rows = getDb()
+    .prepare(
+      `SELECT id, request_id, workflow_run_id, execution_id, kind, name, description,
+              mime_type, storage_path, size_bytes, metadata_json, created_by, created_at, updated_at
+       FROM request_artifacts
+       WHERE request_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+    )
+    .all(requestId, safeLimit) as RequestArtifactRow[];
+
+  return rows.map(mapRequestArtifactRow);
+}
+
 export function upsertTask(input: UpsertTaskInput): TaskRecord {
   const db = getDb();
   const now = new Date().toISOString();
@@ -3817,10 +4450,10 @@ export function upsertTask(input: UpsertTaskInput): TaskRecord {
   db.prepare(
     `INSERT INTO tasks (
        id, key, name, description, enabled, trigger_type, schedule_cron, timezone, task_type,
-       input_config_json, instruction_config_json, output_config_json, created_at, updated_at
+       input_config_json, instruction_config_json, output_config_json, agent_config_json, created_at, updated_at
      ) VALUES (
        @id, @key, @name, @description, @enabled, @triggerType, @scheduleCron, @timezone, @taskType,
-       @inputConfigJson, @instructionConfigJson, @outputConfigJson, @createdAt, @updatedAt
+       @inputConfigJson, @instructionConfigJson, @outputConfigJson, @agentConfigJson, @createdAt, @updatedAt
      )
      ON CONFLICT(key) DO UPDATE SET
        name = excluded.name,
@@ -3833,6 +4466,7 @@ export function upsertTask(input: UpsertTaskInput): TaskRecord {
        input_config_json = excluded.input_config_json,
        instruction_config_json = excluded.instruction_config_json,
        output_config_json = excluded.output_config_json,
+       agent_config_json = excluded.agent_config_json,
        updated_at = excluded.updated_at`,
   ).run({
     id,
@@ -3847,6 +4481,7 @@ export function upsertTask(input: UpsertTaskInput): TaskRecord {
     inputConfigJson: JSON.stringify(input.inputConfig ?? {}),
     instructionConfigJson: JSON.stringify(input.instructionConfig ?? {}),
     outputConfigJson: JSON.stringify(input.outputConfig ?? {}),
+    agentConfigJson: JSON.stringify(input.agentConfig ?? {}),
     createdAt,
     updatedAt: now,
   });

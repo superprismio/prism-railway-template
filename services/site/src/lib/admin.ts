@@ -1,7 +1,5 @@
-import { cookies } from "next/headers"
 import { getAdminBoardSnapshot, getAdminSetupStatus, loadConfig } from "@/lib/app-core"
-
-export const adminPasswordCookieName = "prism_admin_password"
+import { requireAdminSession } from "@/lib/admin-auth"
 
 function useLocalAppApi() {
   return process.env.SITE_USE_LOCAL_APP_API?.trim() === "true"
@@ -29,7 +27,7 @@ export type TargetAppRecord = {
 
 export type TargetEnvironmentRecord = {
   id: string
-  targetAppId: string
+  targetAppId: string | null
   targetAppSlug: string | null
   slug: string
   name: string
@@ -49,6 +47,7 @@ export type TargetEnvironmentRecord = {
 export type ChangeRequestRecord = {
   id: string
   requestNumber: number
+  workflowKey: string
   title: string
   description: string
   requestType: string
@@ -57,12 +56,14 @@ export type ChangeRequestRecord = {
   source: string
   requestedByUserId: string | null
   requestedByDisplayName: string | null
-  targetAppId: string
+  targetAppId: string | null
   targetAppSlug: string | null
   targetAppName: string | null
   targetEnvironmentId: string | null
   targetEnvironmentSlug: string | null
   targetEnvironmentName: string | null
+  currentWorkflowStepKey: string | null
+  workflowRunStatus: string | null
   triageSummary: string | null
   acceptanceCriteria: unknown[]
   constraints: Record<string, unknown>
@@ -99,6 +100,49 @@ export type ChangeRequestExecutionRecord = {
   finishedAt: string | null
 }
 
+export type WorkflowRecord = {
+  id: string
+  key: string
+  name: string
+  description: string | null
+  version: number
+  definition: Record<string, unknown>
+  systemDefault: boolean
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type WorkflowEventRecord = {
+  id: string
+  workflowRunId: string
+  requestId: string
+  stepKey: string | null
+  eventType: string
+  actorType: string
+  actorId: string | null
+  note: string | null
+  payload: Record<string, unknown>
+  createdAt: string
+}
+
+export type RequestArtifactRecord = {
+  id: string
+  requestId: string
+  workflowRunId: string | null
+  executionId: string | null
+  kind: string
+  name: string
+  description: string | null
+  mimeType: string
+  storagePath: string
+  sizeBytes: number
+  metadata: Record<string, unknown>
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type AdminSetupStatus = {
   prismMemory: {
     configured: boolean
@@ -128,25 +172,23 @@ export type AdminBoardData = {
   targetApps: TargetAppRecord[]
   targetEnvironments: TargetEnvironmentRecord[]
   changeRequests: ChangeRequestRecord[]
+  workflows?: WorkflowRecord[]
 }
 
 export type AdminWorkspaceData = AdminBoardData & {
   setup: AdminSetupStatus
 }
 
-export async function getAdminPasswordCookie() {
-  return (await cookies()).get(adminPasswordCookieName)?.value ?? null
-}
-
 export async function adminFetch(path: string, init?: RequestInit) {
-  const password = await getAdminPasswordCookie()
+  const access = await requireAdminSession()
+  const adminPassword = access.ok ? loadConfig().adminPassword : null
 
   const response = await fetch(`${siteApiBase}${path}`, {
     ...init,
     cache: "no-store",
     headers: {
       "content-type": "application/json",
-      ...(password ? { "x-admin-password": password } : {}),
+      ...(adminPassword ? { "x-admin-password": adminPassword } : {}),
       ...(init?.headers ?? {}),
     },
   })
@@ -155,14 +197,9 @@ export async function adminFetch(path: string, init?: RequestInit) {
 }
 
 async function requireLocalAdminPassword() {
-  const password = await getAdminPasswordCookie()
-  if (!password) {
+  const access = await requireAdminSession()
+  if (!access.ok) {
     return { ok: false as const, reason: "missing-password" as const }
-  }
-
-  const config = loadConfig()
-  if (password !== config.adminPassword) {
-    return { ok: false as const, reason: "unauthorized" as const }
   }
 
   return { ok: true as const }
@@ -187,8 +224,8 @@ export async function getAdminBoardData(): Promise<
     }
   }
 
-  const password = await getAdminPasswordCookie()
-  if (!password) {
+  const access = await requireAdminSession()
+  if (!access.ok) {
     return { ok: false, reason: "missing-password" }
   }
 
@@ -227,6 +264,7 @@ export async function getAdminBoardData(): Promise<
         targetApps: targetAppsJson.targetApps,
         targetEnvironments: targetEnvironmentsJson.targetEnvironments,
         changeRequests: changeRequestsJson.changeRequests,
+        workflows: [],
       },
     }
   } catch {
@@ -256,8 +294,8 @@ export async function getAdminWorkspaceData(): Promise<
     }
   }
 
-  const password = await getAdminPasswordCookie()
-  if (!password) {
+  const access = await requireAdminSession()
+  if (!access.ok) {
     return { ok: false, reason: "missing-password" }
   }
 

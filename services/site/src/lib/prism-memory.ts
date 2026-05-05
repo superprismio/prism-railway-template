@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
-import { loadConfig } from "@/lib/app-core"
 
-import { adminFetch, getAdminPasswordCookie } from "@/lib/admin"
+import { adminFetch } from "@/lib/admin"
+import { requireAdminSession } from "@/lib/admin-auth"
 
 export type PrismArtifactSummary = {
   id: string
@@ -103,8 +103,8 @@ function useLocalAppApi() {
 }
 
 async function requireAdminAccess() {
-  const password = await getAdminPasswordCookie()
-  if (!password) {
+  const session = await requireAdminSession()
+  if (!session.ok) {
     return {
       ok: false as const,
       status: 401,
@@ -113,16 +113,7 @@ async function requireAdminAccess() {
   }
 
   if (useLocalAppApi()) {
-    const config = loadConfig()
-    if (password === config.adminPassword) {
-      return { ok: true as const }
-    }
-
-    return {
-      ok: false as const,
-      status: 401,
-      error: "Unauthorized",
-    }
+    return { ok: true as const }
   }
 
   try {

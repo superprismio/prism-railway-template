@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { createAuditLog, createChangeRequest, getDefaultTargetEnvironmentForApp } from "@/lib/app-core"
+import { createAuditLog, createChangeRequest, getDefaultTargetEnvironmentForApp, getWorkflowByKey } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
 import {
@@ -9,6 +9,10 @@ import {
   useLocalAppApi,
 } from "@/lib/local-admin-api"
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
 export async function POST(request: Request) {
   const formData = await request.formData()
   const title = String(formData.get("title") ?? "").trim()
@@ -16,6 +20,7 @@ export async function POST(request: Request) {
   const requestType = String(formData.get("requestType") ?? "bug").trim()
   const priority = String(formData.get("priority") ?? "normal").trim()
   const targetAppId = String(formData.get("targetAppId") ?? "").trim()
+  const workflowKey = String(formData.get("workflowKey") ?? "change-request-default").trim() || "change-request-default"
 
   if (useLocalAppApi()) {
     const access = await requireLocalAdminAccess()
@@ -23,10 +28,17 @@ export async function POST(request: Request) {
       redirect("/admin?error=unauthorized")
     }
 
+    const workflow = getWorkflowByKey(workflowKey)
+    const target = workflow?.definition?.target
+    const targetRequired = workflowKey === "change-request-default"
+      || (isRecord(target) && target.required === true)
+
     if (
       !title ||
       !description ||
-      !targetAppId ||
+      !workflow ||
+      !workflow.enabled ||
+      (targetRequired && !targetAppId) ||
       !trackedChangeRequestTypes.includes(requestType as typeof trackedChangeRequestTypes[number]) ||
       !trackedChangeRequestPriorities.includes(priority as typeof trackedChangeRequestPriorities[number])
     ) {
@@ -36,13 +48,14 @@ export async function POST(request: Request) {
     const changeRequest = createChangeRequest({
       title,
       description,
+      workflowKey,
       requestType,
       priority,
       status: "submitted",
       source: "manual",
       requestedByUserId: null,
-      targetAppId,
-      targetEnvironmentId: getDefaultTargetEnvironmentForApp(targetAppId)?.id ?? null,
+      targetAppId: targetAppId || null,
+      targetEnvironmentId: targetAppId ? getDefaultTargetEnvironmentForApp(targetAppId)?.id ?? null : null,
       acceptanceCriteria: [],
       constraints: {},
       attachments: [],
@@ -53,7 +66,7 @@ export async function POST(request: Request) {
       actionType: "admin.change_board_request.create",
       targetType: "change_request",
       targetId: changeRequest?.id ?? null,
-      meta: { requestType, priority, targetAppId, status: "submitted" },
+      meta: { requestType, priority, workflowKey, targetAppId: targetAppId || null, status: "submitted" },
     })
 
     redirect("/admin")
@@ -66,7 +79,8 @@ export async function POST(request: Request) {
       description,
       requestType,
       priority,
-      targetAppId,
+      workflowKey,
+      targetAppId: targetAppId || null,
       status: "submitted",
     }),
   })

@@ -8,16 +8,17 @@ Use this skill to turn a user's task idea into a durable Prism task definition.
 Task authoring rules:
 
 1. Prefer `taskType="codex-prompt"` for user-authored scheduled prompt tasks.
-2. Store replayable natural-language instructions in `instructionConfig.prompt`.
-3. Store optional skill names in `instructionConfig.requestedSkills`.
-4. Store schedule in `scheduleCron` using standard five-field cron syntax.
-5. Default new tasks to `enabled=false` unless the user explicitly asks to enable it after review.
-6. Do not store arbitrary JavaScript, Python, or shell code in the task row.
-7. If repeatable code is needed, create or reference a reviewed script outside the DB, then mention that script in the prompt.
-8. Include required destination/config assumptions in `inputConfig` or `outputConfig`.
-9. If the user asks to send output to a destination such as Discord `#updates`, resolve the destination during task creation when possible. Use `availableOutputDestinations` from session metadata first. Store resolved destinations in `outputConfig.outputDestinations`; do not leave channel matching for scheduled run time if the channel can be resolved now.
-10. A resolved output destination must include `adapter`, `type`, `id`, and `label`. If you only know the label, the destination is unresolved.
-11. If a requested destination cannot be resolved, create the task disabled and state that delivery is unresolved.
+2. Use `taskType="workflow-runner"` when the task should create a durable request and run it through a workflow.
+3. Store replayable natural-language instructions in `instructionConfig.prompt`.
+4. Store optional skill names in `instructionConfig.requestedSkills`.
+5. Store schedule in `scheduleCron` using standard five-field cron syntax.
+6. Default new tasks to `enabled=false` unless the user explicitly asks to enable it after review.
+7. Do not store arbitrary JavaScript, Python, or shell code in the task row.
+8. If repeatable code is needed, create or reference a reviewed script outside the DB, then mention that script in the prompt.
+9. Include required destination/config assumptions in `inputConfig` or `outputConfig`.
+10. If the user asks to send output to a destination such as Discord `#updates`, resolve the destination during task creation when possible. Use `availableOutputDestinations` from session metadata first. Store resolved destinations in `outputConfig.outputDestinations`; do not leave channel matching for scheduled run time if the channel can be resolved now.
+11. A resolved output destination must include `adapter`, `type`, `id`, and `label`. If you only know the label, the destination is unresolved.
+12. If a requested destination cannot be resolved, create the task disabled and state that delivery is unresolved.
 
 Recommended task row shape:
 
@@ -49,6 +50,39 @@ Recommended task row shape:
       }
     ]
   }
+}
+```
+
+Workflow runner task shape:
+
+```json
+{
+  "key": "weekly-blog-workflow",
+  "name": "Weekly blog workflow",
+  "description": "Create a weekly blog request and run the workflow until the next gate.",
+  "enabled": false,
+  "triggerType": "schedule",
+  "scheduleCron": "0 16 * * 5",
+  "timezone": "UTC",
+  "taskType": "workflow-runner",
+  "inputConfig": {
+    "workflowKey": "blog-post-draft-review-publish",
+    "request": {
+      "title": "Weekly blog post",
+      "description": "Create this week's blog post from Prism Memory and Knowledge.",
+      "requestType": "content",
+      "priority": "normal"
+    },
+    "autoRun": {
+      "enabled": true,
+      "maxSteps": 1,
+      "stopStatuses": ["awaiting-review", "approved", "rejected", "closed"]
+    }
+  },
+  "instructionConfig": {
+    "prompt": "Run the current workflow step using the request description and workflow step instructions."
+  },
+  "outputConfig": {}
 }
 ```
 

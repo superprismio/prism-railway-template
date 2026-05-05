@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { Bot, LoaderCircle, Plus, Wrench } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -31,7 +31,15 @@ function randomMessageId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-export function CodexConsole() {
+function scrollToLatestMessage(element: HTMLDivElement | null, behavior: ScrollBehavior = "auto") {
+  if (!element) return
+  element.scrollTo({
+    top: element.scrollHeight,
+    behavior,
+  })
+}
+
+export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
   const [draft, setDraft] = useState("")
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ConsoleMessage[]>([])
@@ -39,6 +47,9 @@ export function CodexConsole() {
   const [error, setError] = useState<string | null>(null)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const transcriptRef = useRef<HTMLDivElement | null>(null)
+  const formRef = useRef<HTMLFormElement | null>(null)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => {
     const storedSessionId = window.localStorage.getItem(consoleSessionStorageKey)
@@ -74,6 +85,24 @@ export function CodexConsole() {
       })
       .finally(() => setIsLoadingHistory(false))
   }, [])
+
+  useEffect(() => {
+    scrollToLatestMessage(transcriptRef.current, messages.length > 1 ? "smooth" : "auto")
+  }, [isActive, isLoadingHistory, messages.length, isPending])
+
+  useEffect(() => {
+    if (!isActive) return
+    const focusInput = () => {
+      scrollToLatestMessage(transcriptRef.current)
+      inputRef.current?.focus({ preventScroll: true })
+    }
+    const frameId = window.requestAnimationFrame(focusInput)
+    const timeoutId = window.setTimeout(focusInput, 80)
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.clearTimeout(timeoutId)
+    }
+  }, [isActive, isLoadingHistory])
 
   function toggleSkill(skillId: string) {
     setRequestedSkills((current) =>
@@ -147,7 +176,7 @@ export function CodexConsole() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-248px)] flex-col">
+    <div className="flex h-[calc(100vh-248px)] min-h-0 flex-col">
       <div className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4 md:px-6">
         <div className="flex flex-wrap gap-2">
           {skillOptions.map((skill) => {
@@ -184,7 +213,7 @@ export function CodexConsole() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={transcriptRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className="space-y-3 px-5 py-5 md:px-6">
           {isLoadingHistory ? (
             <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
@@ -216,12 +245,28 @@ export function CodexConsole() {
         </div>
       </div>
 
-      <form action={handleSubmit} className="border-t border-border/60 px-5 py-4 md:px-6">
+      <form ref={formRef} action={handleSubmit} className="border-t border-border/60 px-5 py-4 md:px-6">
         <div className="space-y-3">
           <Textarea
+            ref={inputRef}
             name="prompt"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key !== "Enter" ||
+                event.shiftKey ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.altKey ||
+                event.nativeEvent.isComposing
+              ) {
+                return
+              }
+              event.preventDefault()
+              if (!draft.trim() || isPending) return
+              formRef.current?.requestSubmit()
+            }}
             placeholder="Ask Codex about a request, review branch, preview state, or Prism context."
             className="min-h-28 rounded-none border-x-0 border-t-0 px-0 shadow-none focus-visible:ring-0"
             required

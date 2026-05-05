@@ -5,6 +5,7 @@ import type {
   ChangeRequestRecord,
   TargetAppRecord,
   TargetEnvironmentRecord,
+  WorkflowRecord,
 } from "@/lib/admin";
 
 import {
@@ -14,21 +15,30 @@ import {
   statusLabel,
   statusVariant,
   targetAppForRequest,
+  workflowStepForKey,
+  workflowSteps,
 } from "./change-request-utils";
 
 export function ChangeRequestRow({
   request,
   targetApps,
   targetEnvironments,
+  workflow,
   onOpen,
 }: {
   request: ChangeRequestRecord;
   targetApps: TargetAppRecord[];
   targetEnvironments: TargetEnvironmentRecord[];
+  workflow: WorkflowRecord | null;
   onOpen: (request: ChangeRequestRecord) => void;
 }) {
   const targetApp = targetAppForRequest(request, targetApps);
   const targetEnvironment = environmentForRequest(request, targetEnvironments);
+  const workflowStep = workflowStepForKey(
+    request.currentWorkflowStepKey,
+    workflowSteps(workflow),
+    request.status,
+  ).step;
   const targetBranch =
     targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch";
 
@@ -40,7 +50,7 @@ export function ChangeRequestRow({
     >
       <div>
         <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-          CR
+          Request
         </p>
         <p className="mt-1 text-lg font-semibold">#{request.requestNumber}</p>
       </div>
@@ -48,8 +58,9 @@ export function ChangeRequestRow({
       <div className="min-w-0 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={statusVariant(request.status)}>
-            {statusLabel(request.status)}
+            {workflowStep.label}
           </Badge>
+          <Badge variant="outline">{statusLabel(request.status)}</Badge>
           <Badge variant={priorityVariant(request.priority)}>
             {request.priority}
           </Badge>
@@ -65,15 +76,17 @@ export function ChangeRequestRow({
 
       <div className="space-y-1 text-sm">
         <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-          Repository
+          Target
         </p>
         <p className="truncate font-medium">
-          {targetApp?.name ?? request.targetAppSlug ?? "Unknown"}
+          {targetApp?.name ?? request.targetAppSlug ?? "No target"}
         </p>
-        <p className="flex items-center gap-1 text-xs text-muted-foreground">
-          <GitBranch className="h-3.5 w-3.5" />
-          <span className="truncate">{targetBranch}</span>
-        </p>
+        {targetApp ? (
+          <p className="flex items-center gap-1 text-xs text-muted-foreground">
+            <GitBranch className="h-3.5 w-3.5" />
+            <span className="truncate">{targetBranch}</span>
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-1 text-sm">
@@ -82,10 +95,10 @@ export function ChangeRequestRow({
         </p>
         <p className="flex items-center gap-1 font-medium">
           <Bot className="h-3.5 w-3.5 text-muted-foreground" />
-          {targetEnvironment?.agentWritable ? "Writable" : "Locked"}
+          {targetApp ? (targetEnvironment?.agentWritable ? "Writable" : "Locked") : "Workflow"}
         </p>
         {request.agentRecommendation ? (
-          <p className="truncate text-xs text-muted-foreground">Triage ready</p>
+          <p className="truncate text-xs text-muted-foreground">Guidance ready</p>
         ) : null}
       </div>
 

@@ -1,5 +1,5 @@
 import { loadConfig } from './config';
-import { listChangeRequests, listTargetApps, listTargetEnvironments } from './repository';
+import { listChangeRequests, listTargetApps, listTargetEnvironments, listWorkflows } from './repository';
 
 async function fetchJson(baseUrl: string, path: string) {
   if (!baseUrl) {
@@ -83,5 +83,6 @@ export function getAdminBoardSnapshot(input: { status?: string; targetAppId?: st
       status: input.status,
       targetAppId: input.targetAppId,
     }),
+    workflows: listWorkflows(),
   };
 }

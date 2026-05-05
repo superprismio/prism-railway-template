@@ -50,6 +50,7 @@ export const config = {
       : path.resolve(workspaceRoot, '.codex-target-workspaces')),
   prismSkillCacheTtlMs: readNumberEnv('PRISM_SKILL_CACHE_TTL_MS', 300_000),
   codexRuntimeEnabled: readBooleanEnv('CODEX_RUNTIME_ENABLED', true),
+  codexImageGenerationEnabled: readBooleanEnv('CODEX_IMAGE_GENERATION_ENABLED', true),
   codexRuntimeTimeoutMs: readNumberEnv('CODEX_RUNTIME_TIMEOUT_MS', 600_000),
   codexWorkspaceRoot: process.env.CODEX_WORKSPACE_ROOT?.trim() || workspaceRoot,
   port: readNumberEnv('PORT', 3030),

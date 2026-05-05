@@ -283,6 +283,22 @@ function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>)
   }
 
   if (
+    normalized.includes('create workflow')
+    || normalized.includes('update workflow')
+    || normalized.includes('workflow author')
+    || normalized.includes('workflow step')
+    || normalized.includes('workflow manifest')
+    || normalized.includes('workflow.md')
+    || normalized.includes('request workflow')
+    || normalized.includes('human gate')
+    || normalized.includes('gate step')
+    || normalized.includes('status map')
+    || normalized.includes('statusmap')
+  ) {
+    requested.add('prism-workflow-author');
+  }
+
+  if (
     normalized.includes('deploy')
     || normalized.includes('redeploy')
     || normalized.includes('staging')
