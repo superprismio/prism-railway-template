@@ -642,6 +642,14 @@ function requestNumberFromChangeRequest(payload: Record<string, unknown>): numbe
   return typeof requestNumber === "number" && Number.isFinite(requestNumber) ? requestNumber : null;
 }
 
+function autoStartStarted(payload: Record<string, unknown>) {
+  return isRecord(payload.autoStart) && payload.autoStart.started === true;
+}
+
+function autoStartShouldWait(payload: Record<string, unknown>) {
+  return isRecord(payload.autoStart) && payload.autoStart.reason === "current_step_is_not_agent";
+}
+
 function workflowRunnerShouldStop(status: string | null, stopStatuses: Set<string>) {
   if (!status) {
     return false;
@@ -728,8 +736,7 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
 
       const stepResults: WorkflowRunStepResult[] = [];
       let lastStatus = statusFromChangeRequest(createResult.payload);
-      const createAutoStart = isRecord(createResult.payload.autoStart) ? createResult.payload.autoStart : null;
-      if (autoRunEnabled && !createAutoStart) {
+      if (autoRunEnabled && !autoStartStarted(createResult.payload) && !autoStartShouldWait(createResult.payload)) {
         for (let index = 0; index < maxSteps; index += 1) {
           if (workflowRunnerShouldStop(lastStatus, stopStatuses)) {
             break;

@@ -71,17 +71,16 @@ export async function POST(request: Request) {
     })
     if (changeRequest) {
       const origin = new URL(request.url).origin
-      void autoStartWorkflowRequest(changeRequest, { baseUrl: origin }).then((result) => {
-        if (result.reason && result.reason !== "current_step_is_not_agent") {
-          console.warn(JSON.stringify({
-            event: "workflow.autostart_failed",
-            requestId: changeRequest.id,
-            reason: result.reason,
-            status: result.status ?? null,
-            error: result.error ?? null,
-          }))
-        }
-      })
+      const autoStart = await autoStartWorkflowRequest(changeRequest, { baseUrl: origin })
+      if (autoStart.reason && autoStart.reason !== "current_step_is_not_agent") {
+        console.warn(JSON.stringify({
+          event: "workflow.autostart_failed",
+          requestId: changeRequest.id,
+          reason: autoStart.reason,
+          status: autoStart.status ?? null,
+          error: autoStart.error ?? null,
+        }))
+      }
     }
 
     redirect("/admin")

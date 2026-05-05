@@ -2937,6 +2937,7 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
       requestId: id,
       workflowKey,
       status,
+      currentStepKey: workflowEntrypoint(workflow),
     });
   })();
 
