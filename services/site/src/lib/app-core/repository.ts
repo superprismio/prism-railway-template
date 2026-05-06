@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { loadConfig } from './config';
 import { getDb } from './db';
 import { getDefaultHomeModules, getHomeModuleDefinition, normalizeHomeModuleConfig } from './home-modules';
@@ -48,6 +48,20 @@ interface SessionRow {
   last_seen_at: string;
   created_at: string;
   revoked_at: string | null;
+}
+
+interface UserInviteRow {
+  id: string;
+  user_id: string;
+  token_hash: string;
+  kind: string;
+  expires_at: string;
+  used_at: string | null;
+  created_by_user_id: string | null;
+  created_at: string;
+  email: string | null;
+  handle: string | null;
+  display_name: string | null;
 }
 
 interface CatalogSkillRow {
@@ -112,6 +126,28 @@ export interface SessionUser {
   handle: string | null;
   displayName: string | null;
   roleSlugs: string[];
+}
+
+export interface PasswordLoginUser {
+  id: string;
+  email: string | null;
+  passwordHash: string | null;
+  isBanned: boolean;
+}
+
+export interface UserInviteRecord {
+  id: string;
+  userId: string;
+  kind: 'invite' | 'reset';
+  expiresAt: string;
+  usedAt: string | null;
+  createdByUserId: string | null;
+  createdAt: string;
+  user: SessionUser;
+}
+
+export interface CreatedUserInvite extends UserInviteRecord {
+  token: string;
 }
 
 export interface ProfileRecord {
@@ -1739,6 +1775,17 @@ export function getUserByEmail(email: string) {
     .get(normalizeEmail(email)) as UserRow | undefined;
 }
 
+export function getPasswordLoginUserByEmail(email: string) {
+  const user = getUserByEmail(email);
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email,
+    passwordHash: user.password_hash,
+    isBanned: Boolean(user.is_banned),
+  } satisfies PasswordLoginUser;
+}
+
 export function getUserById(userId: string) {
   return getDb().prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
 }
@@ -1806,6 +1853,162 @@ export function listRoleSlugsForUser(userId: string) {
     .all(userId) as Array<{ slug: string }>;
 
   return rows.map((row) => row.slug);
+}
+
+function hashInviteToken(token: string) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function mapUserInviteRow(row: UserInviteRow): UserInviteRecord {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    kind: row.kind === 'reset' ? 'reset' : 'invite',
+    expiresAt: row.expires_at,
+    usedAt: row.used_at,
+    createdByUserId: row.created_by_user_id,
+    createdAt: row.created_at,
+    user: {
+      id: row.user_id,
+      email: row.email,
+      handle: row.handle,
+      displayName: row.display_name,
+      roleSlugs: listRoleSlugsForUser(row.user_id),
+    },
+  };
+}
+
+export function createUserInvite(input: {
+  userId: string;
+  kind: 'invite' | 'reset';
+  createdByUserId?: string | null;
+  expiresInMs?: number;
+}): CreatedUserInvite {
+  const user = getUserById(input.userId);
+  if (!user) {
+    throw new Error('USER_NOT_FOUND');
+  }
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + (input.expiresInMs ?? (input.kind === 'reset' ? 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000))).toISOString();
+  const token = randomBytes(32).toString('base64url');
+  const id = randomUUID();
+
+  getDb()
+    .prepare(
+      `INSERT INTO user_invites (
+         id, user_id, token_hash, kind, expires_at, used_at, created_by_user_id, created_at
+       ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
+    )
+    .run(id, input.userId, hashInviteToken(token), input.kind, expiresAt, input.createdByUserId ?? null, now.toISOString());
+
+  const invite = getUserInviteById(id);
+  if (!invite) {
+    throw new Error('INVITE_CREATE_FAILED');
+  }
+  return { ...invite, token };
+}
+
+export function getUserInviteById(id: string) {
+  const row = getDb()
+    .prepare(
+      `SELECT
+         i.id,
+         i.user_id,
+         i.token_hash,
+         i.kind,
+         i.expires_at,
+         i.used_at,
+         i.created_by_user_id,
+         i.created_at,
+         u.email,
+         p.handle,
+         p.display_name
+       FROM user_invites i
+       INNER JOIN users u ON u.id = i.user_id
+       LEFT JOIN profiles p ON p.user_id = u.id
+       WHERE i.id = ?`,
+    )
+    .get(id) as UserInviteRow | undefined;
+
+  return row ? mapUserInviteRow(row) : null;
+}
+
+export function getActiveUserInviteByToken(token: string) {
+  const row = getDb()
+    .prepare(
+      `SELECT
+         i.id,
+         i.user_id,
+         i.token_hash,
+         i.kind,
+         i.expires_at,
+         i.used_at,
+         i.created_by_user_id,
+         i.created_at,
+         u.email,
+         p.handle,
+         p.display_name
+       FROM user_invites i
+       INNER JOIN users u ON u.id = i.user_id
+       LEFT JOIN profiles p ON p.user_id = u.id
+       WHERE i.token_hash = ?`,
+    )
+    .get(hashInviteToken(token)) as UserInviteRow | undefined;
+
+  if (!row) return null;
+  const invite = mapUserInviteRow(row);
+  if (invite.usedAt || invite.expiresAt <= new Date().toISOString()) {
+    return null;
+  }
+  return invite;
+}
+
+export function claimUserInvite(input: {
+  token: string;
+  passwordHash: string;
+  displayName?: string | null;
+}) {
+  const invite = getActiveUserInviteByToken(input.token);
+  if (!invite) {
+    throw new Error('INVALID_INVITE');
+  }
+
+  const now = new Date().toISOString();
+  const transaction = getDb().transaction(() => {
+    getDb()
+      .prepare(
+        `UPDATE users
+         SET password_hash = ?, updated_at = ?, last_seen_at = ?
+         WHERE id = ?`,
+      )
+      .run(input.passwordHash, now, now, invite.userId);
+
+    if (input.displayName?.trim()) {
+      getDb()
+        .prepare(
+          `UPDATE profiles
+           SET display_name = ?, claimed_at = COALESCE(claimed_at, ?), updated_at = ?
+           WHERE user_id = ?`,
+        )
+        .run(input.displayName.trim(), now, now, invite.userId);
+    } else {
+      getDb()
+        .prepare(
+          `UPDATE profiles
+           SET claimed_at = COALESCE(claimed_at, ?), updated_at = ?
+           WHERE user_id = ?`,
+        )
+        .run(now, now, invite.userId);
+    }
+
+    getDb()
+      .prepare('UPDATE user_invites SET used_at = ? WHERE id = ?')
+      .run(now, invite.id);
+  });
+
+  transaction();
+  return getSessionSummary(invite.userId);
 }
 
 export function isUserAdmin(userId: string) {
@@ -2237,6 +2440,120 @@ export function listAdminUsers(limit = 100) {
     pointsTotal: row.total_points,
     roleSlugs: listRoleSlugsForUser(row.id),
   } satisfies AdminUserSummary));
+}
+
+function normalizeAdminRoleSlugs(input: readonly string[]) {
+  const allowed = new Set(['admin', 'moderator', 'member']);
+  const next = Array.from(new Set(input.map((role) => role.trim()).filter((role) => allowed.has(role))));
+  return next.length ? next : ['member'];
+}
+
+function ensureStandardAppRoles() {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const upsertRole = db.prepare(
+    `INSERT INTO roles (slug, label, description, created_at, updated_at)
+     VALUES (@slug, @label, @description, @createdAt, @updatedAt)
+     ON CONFLICT(slug) DO UPDATE SET
+       label = excluded.label,
+       description = excluded.description,
+       updated_at = excluded.updated_at`,
+  );
+
+  for (const role of [
+    { slug: 'admin', label: 'Admin', description: 'Full administrative access.' },
+    { slug: 'moderator', label: 'Moderator', description: 'Moderation and review access.' },
+    { slug: 'member', label: 'Member', description: 'Standard authenticated member access.' },
+  ]) {
+    upsertRole.run({ ...role, createdAt: now, updatedAt: now });
+  }
+}
+
+function slugFromEmail(email: string) {
+  return email
+    .split('@')[0]
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'member';
+}
+
+function uniqueProfileHandle(base: string, userId: string) {
+  const normalized = base || 'member';
+  const existing = getProfileRowByHandle(normalized);
+  if (!existing) return normalized;
+  return `${normalized}-${userId.slice(0, 8)}`;
+}
+
+export function setUserRoleSlugs(userId: string, roleSlugs: readonly string[]) {
+  const db = getDb();
+  const normalized = normalizeAdminRoleSlugs(roleSlugs);
+  const now = new Date().toISOString();
+  ensureStandardAppRoles();
+  const placeholders = normalized.map(() => '?').join(', ');
+  const roleRows = db
+    .prepare(`SELECT id, slug FROM roles WHERE slug IN (${placeholders})`)
+    .all(...normalized) as Array<{ id: number; slug: string }>;
+
+  if (roleRows.length !== normalized.length) {
+    throw new Error('UNKNOWN_ROLE');
+  }
+
+  const transaction = db.transaction(() => {
+    db.prepare('DELETE FROM user_roles WHERE user_id = ?').run(userId);
+    const insert = db.prepare(
+      `INSERT INTO user_roles (user_id, role_id, created_at)
+       VALUES (?, ?, ?)`,
+    );
+    for (const role of roleRows) {
+      insert.run(userId, role.id, now);
+    }
+    db.prepare('UPDATE users SET updated_at = ? WHERE id = ?').run(now, userId);
+  });
+
+  transaction();
+  return getSessionSummary(userId);
+}
+
+export function createAdminManagedUser(input: {
+  email: string;
+  displayName?: string | null;
+  roleSlugs?: string[];
+}) {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const email = normalizeEmail(input.email);
+  if (!email || !email.includes('@')) {
+    throw new Error('INVALID_EMAIL');
+  }
+
+  const existing = getUserByEmail(email);
+  if (existing) {
+    const updated = setUserRoleSlugs(existing.id, input.roleSlugs ?? ['member']);
+    return updated;
+  }
+
+  const userId = randomUUID();
+  const handle = uniqueProfileHandle(slugFromEmail(email), userId);
+  const displayName = input.displayName?.trim() || handle;
+
+  const transaction = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO users (id, email, password_hash, created_at, updated_at, last_seen_at, is_seeded)
+       VALUES (?, ?, NULL, ?, ?, NULL, 0)`,
+    ).run(userId, email, now, now);
+
+    db.prepare(
+      `INSERT INTO profiles (
+         id, user_id, handle, display_name, email, links_json, skills_json, cohorts_json,
+         contact_json, visibility, visibility_json, claimed_at, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, '[]', '[]', '[]', '{}', 'private', '{}', NULL, ?, ?)`,
+    ).run(randomUUID(), userId, handle, displayName, email, now, now);
+  });
+
+  transaction();
+  return setUserRoleSlugs(userId, input.roleSlugs ?? ['member']);
 }
 
 export function listAdminChangeRequests(state?: string) {

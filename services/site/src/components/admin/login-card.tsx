@@ -15,14 +15,18 @@ export function LoginCard({ error }: { error?: string }) {
           </div>
           <CardTitle className="text-2xl">Admin Access</CardTitle>
           <CardDescription>
-            Use the shared admin password. The site keeps a signed admin session cookie for this browser.
+            Use your email and password, or leave email blank to use the shared admin password.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form action="/admin/login" method="post" className="space-y-4">
             <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" name="email" type="email" placeholder="Optional for shared admin password" />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input id="password" name="password" type="password" placeholder="Shared admin password" required />
+              <Input id="password" name="password" type="password" placeholder="Password" required />
             </div>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             <Button className="w-full" type="submit">
