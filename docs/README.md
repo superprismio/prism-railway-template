@@ -1,0 +1,61 @@
+# Prism Railway Template Docs
+
+This directory is organized by audience and lifecycle.
+
+## Architecture
+
+Design notes and system direction:
+
+- [Adapter Output Interface](architecture/adapter-output-interface.md)
+- [Agentic Ingest Future Work](architecture/agentic-ingest-future-work.md)
+- [API Execution Flow](architecture/api-execution-flow.md)
+- [Codex-First Architecture](architecture/codex-first-architecture.md)
+- [Custom Source Strategy](architecture/custom-source-strategy.md)
+- [Site API Consolidation Plan](architecture/site-api-consolidation-plan.md)
+- [Tasks Workflow Plan](architecture/tasks-workflow-plan.md)
+- [Workflows](architecture/workflows.md)
+
+## Features
+
+Feature-specific behavior and UI notes:
+
+- [Change Request Flow](features/change-request-flow.md)
+- [Custom Skills](features/custom-skills.md)
+- [Discord Voice Plan](features/discord-voice-plan.md)
+- [Memory Explorer UI](features/memory-explorer-ui.md)
+- [Prism Stack Landing Page](features/prism-stack-landing-page.md)
+
+## Operations
+
+Setup, deployment, and runtime operations:
+
+- [Codex Runtime Auth](operations/codex-runtime-auth.md)
+- [Local VPS Deployment](operations/local-vps-deployment.md)
+- [Railway Env Checklist](operations/railway-env-checklist.md)
+- [Railway Setup](operations/railway-setup.md)
+- [Template Deploy Runbook](operations/template-deploy-runbook.md)
+
+## Template
+
+Railway template authoring and publishing:
+
+- [Template Authoring](template/template-authoring.md)
+- [Template Followups Checklist](template/template-followups-checklist.md)
+- [Template Site API Env Delta](template/template-site-api-env-delta.md)
+- [Template Variable Reference](template/template-variable-reference.md)
+- [Task Runner Template Rollover Checklist](template/task-runner-template-rollover-checklist.md)
+
+## Archive
+
+Historical handoffs, checklists, and completed migration notes:
+
+- [Codex Prompt Tasks Checklist](archive/codex-prompt-tasks-checklist.md)
+- [Handoff](archive/handoff.md)
+- [Prism Memory Path Cleanup](archive/prism-memory-path-cleanup.md)
+- [Site API Cutover Checklist](archive/site-api-cutover-checklist.md)
+- [Task Runner Handoff](archive/task-runner-handoff.md)
+- [TODO](archive/todo.md)
+
+## Data
+
+- [Knowledge Sync Fixtures](knowledge-sync/)

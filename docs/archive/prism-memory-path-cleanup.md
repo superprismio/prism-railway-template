@@ -190,9 +190,9 @@ Expected work:
 
 - `README.md`
 - `services/prism-memory/README.md`
-- `docs/railway-env-checklist.md`
-- `docs/template-deploy-runbook.md`
-- `docs/local-vps-deployment.md`
+- `docs/operations/railway-env-checklist.md`
+- `docs/operations/template-deploy-runbook.md`
+- `docs/operations/local-vps-deployment.md`
 - `services/prism-memory/superprism_poc/raidguild/code/README.md`
 
 Expected work:
