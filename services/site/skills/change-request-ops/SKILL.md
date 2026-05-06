@@ -19,6 +19,7 @@ Core endpoints:
 - `POST /api/internal/change-board/requests`
 - `GET /api/internal/change-board/requests/next`
 - `GET /api/internal/change-board/requests/current`
+- `GET /api/internal/change-board/requests/by-number/:requestNumber/review`
 - `GET /api/internal/change-board/requests/:id`
 - `PATCH /api/internal/change-board/requests/:id`
 - `GET /api/internal/change-board/requests/:id/external-refs`
@@ -41,6 +42,16 @@ curl -fsSL \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
   "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/requests/current${PRISM_TARGET_APP_ID:+?targetAppId=$PRISM_TARGET_APP_ID}"
 ```
+
+Review a completed or stuck workflow run by request number:
+
+```bash
+curl -fsSL \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/requests/by-number/$REQUEST_NUMBER/review"
+```
+
+Use this endpoint when a user asks what happened to request `#10`, why a workflow got stuck, or what should improve next time. It returns the request, workflow definition, workflow run, executions, workflow events, artifacts, external refs, latest linked agent session, and agent messages. Review the timeline before recommending changes.
 
 Create request pattern:
 
