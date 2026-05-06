@@ -97,6 +97,26 @@ Workflow steps should save durable files through the request artifact API instea
 
 Send that body to `POST /api/internal/change-board/requests/<request-id>/artifacts` with internal service auth. Use `encoding: "base64"` for image or other binary content. Artifacts are owned by the site service, stored under `/data/workflow-artifacts`, listed on the request Artifacts tab, and recorded as `artifact.created` workflow events.
 
+Use external refs for live records outside Prism. Do not store GitHub issues, GitHub pull requests, Discord messages, deployment URLs, CMS posts, or DAO proposal links only in comments or artifacts when they need later lookup or sync.
+
+```json
+{
+  "provider": "github",
+  "kind": "pull_request",
+  "externalId": "42",
+  "title": "Add request external refs",
+  "url": "https://github.com/example/repo/pull/42",
+  "state": "open",
+  "metadata": {
+    "repo": "example/repo",
+    "branch": "prism/request-12",
+    "base": "main"
+  }
+}
+```
+
+Send that body to `POST /api/internal/change-board/requests/<request-id>/external-refs` with internal service auth. Common refs include `github` `issue`, `github` `pull_request`, `discord` `message`, `railway` `deployment`, and publishing targets such as `ghost` `post`. Workflow steps can then say: if no GitHub issue ref exists, create one and attach it; if a linked PR is merged, move to post-merge cleanup.
+
 ## Manifest Rules
 
 The manifest is stored in `workflows.definition_json`. Keep it small.
@@ -196,6 +216,7 @@ Each `steps/<step-key>.md` should stay narrow and skill-like:
 - name relevant skills/scripts/files
 - state what output should be returned
 - state which durable artifacts should be written
+- state which external refs should be attached or checked
 - state delegation rules when `agentConfig.delegation.allowed` is true
 - avoid broad instructions that belong to the whole workflow
 

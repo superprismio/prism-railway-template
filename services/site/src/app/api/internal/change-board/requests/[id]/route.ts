@@ -9,6 +9,7 @@ import {
   getWorkflowByKey,
   getWorkflowRunForRequest,
   listChangeRequestExecutions,
+  listRequestExternalRefs,
   updateChangeRequest,
   updateWorkflowRun,
 } from "@/lib/app-core"
@@ -60,11 +61,12 @@ export async function GET(_request: Request, context: RouteContext) {
   const targetApp = changeRequest.targetAppId ? getTargetApp(changeRequest.targetAppId) : null
   const targetEnvironment = changeRequest.targetEnvironmentId ? getTargetEnvironment(changeRequest.targetEnvironmentId) : null
   const latestExecution = listChangeRequestExecutions(changeRequest.id)[0] ?? null
+  const externalRefs = listRequestExternalRefs(changeRequest.id)
   const deployPlan = targetApp && targetEnvironment
     ? buildTargetEnvironmentDeployPlan({ request: changeRequest, targetApp, targetEnvironment })
     : null
 
-  return NextResponse.json({ ok: true, changeRequest, targetApp, targetEnvironment, deployPlan, latestExecution })
+  return NextResponse.json({ ok: true, changeRequest, targetApp, targetEnvironment, deployPlan, latestExecution, externalRefs })
 }
 
 export async function PATCH(request: Request, context: RouteContext) {

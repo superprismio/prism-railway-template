@@ -90,6 +90,52 @@ The markdown answers judgment-heavy agent questions:
 - what skills/scripts/files are relevant
 - how to handle loops such as review sending work back to implementation
 
+## External Refs
+
+Requests can link to live records outside Prism through `request_external_refs`.
+
+Use external refs for things that future steps, tasks, or humans may need to query again:
+
+- GitHub issues
+- GitHub pull requests
+- Discord messages or threads
+- deployment URLs
+- publishing targets such as Ghost posts
+- DAO proposal pages
+
+Artifacts are for durable files produced by the workflow. External refs are for outside records with their own lifecycle.
+
+Example:
+
+```json
+{
+  "provider": "github",
+  "kind": "pull_request",
+  "externalId": "42",
+  "title": "Add request external refs",
+  "url": "https://github.com/example/repo/pull/42",
+  "state": "open",
+  "metadata": {
+    "repo": "example/repo",
+    "branch": "prism/request-12",
+    "base": "main"
+  }
+}
+```
+
+Agents can attach refs through:
+
+```text
+POST /api/internal/change-board/requests/<request-id>/external-refs
+```
+
+Workflow prompts should stay descriptive:
+
+- if no GitHub issue ref exists, create one and attach it
+- if implementation opens a PR, attach a GitHub `pull_request` ref
+- if the linked PR is merged, continue to post-merge cleanup
+- if a support thread created the request, attach the source Discord message or thread
+
 ## Default Request Workflow
 
 The built-in request workflow maps the old board statuses into workflow steps:

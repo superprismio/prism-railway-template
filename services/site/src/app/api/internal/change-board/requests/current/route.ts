@@ -5,6 +5,7 @@ import {
   getTargetApp,
   getTargetEnvironment,
   listChangeRequestExecutions,
+  listRequestExternalRefs,
 } from "@/lib/app-core"
 
 import { requireServiceAccess } from "@/lib/internal-service"
@@ -19,15 +20,16 @@ export async function GET(request: Request) {
   const changeRequest = getCurrentActiveChangeRequest({ targetAppId })
 
   if (!changeRequest) {
-    return NextResponse.json({ ok: true, changeRequest: null, targetApp: null, targetEnvironment: null, deployPlan: null, latestExecution: null })
+    return NextResponse.json({ ok: true, changeRequest: null, targetApp: null, targetEnvironment: null, deployPlan: null, latestExecution: null, externalRefs: [] })
   }
 
   const targetApp = changeRequest.targetAppId ? getTargetApp(changeRequest.targetAppId) : null
   const targetEnvironment = changeRequest.targetEnvironmentId ? getTargetEnvironment(changeRequest.targetEnvironmentId) : null
   const latestExecution = listChangeRequestExecutions(changeRequest.id)[0] ?? null
+  const externalRefs = listRequestExternalRefs(changeRequest.id)
   const deployPlan = targetApp && targetEnvironment
     ? buildTargetEnvironmentDeployPlan({ request: changeRequest, targetApp, targetEnvironment })
     : null
 
-  return NextResponse.json({ ok: true, changeRequest, targetApp, targetEnvironment, deployPlan, latestExecution })
+  return NextResponse.json({ ok: true, changeRequest, targetApp, targetEnvironment, deployPlan, latestExecution, externalRefs })
 }

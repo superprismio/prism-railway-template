@@ -143,6 +143,21 @@ export type RequestArtifactRecord = {
   updatedAt: string
 }
 
+export type RequestExternalRefRecord = {
+  id: string
+  requestId: string
+  provider: string
+  kind: string
+  externalId: string | null
+  title: string | null
+  url: string
+  state: string | null
+  metadata: Record<string, unknown>
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type AdminSetupStatus = {
   prismMemory: {
     configured: boolean
