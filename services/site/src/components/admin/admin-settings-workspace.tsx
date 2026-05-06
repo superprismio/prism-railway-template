@@ -1,9 +1,14 @@
+"use client";
+
+import { useEffect, useState, useTransition } from "react";
 import {
   Activity,
   Bot,
   GitBranch,
   KeyRound,
   ShieldAlert,
+  UserPlus,
+  Users,
 } from "lucide-react";
 
 import { ReposWorkspace } from "@/components/admin/repos-workspace";
@@ -24,6 +29,39 @@ import type {
   TargetAppRecord,
   TargetEnvironmentRecord,
 } from "@/lib/admin";
+import type { Capability, RoleSlug } from "@/lib/role-access";
+
+type AdminMember = {
+  id: string;
+  email: string | null;
+  handle: string | null;
+  displayName: string | null;
+  isBanned: boolean;
+  isSeeded: boolean;
+  lastSeenAt: string | null;
+  createdAt: string;
+  claimedAt: string | null;
+  pointsTotal: number;
+  roleSlugs: RoleSlug[];
+};
+
+const managedRoleOptions: Array<{ value: RoleSlug; label: string; description: string }> = [
+  { value: "admin", label: "Admin", description: "Full instance ownership controls." },
+  { value: "moderator", label: "Moderator", description: "Operational workspace controls." },
+  { value: "member", label: "Member", description: "Read-mostly workspace access." },
+];
+
+function formatDate(value: string | null) {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
 
 function statusBadge(ok: boolean, label?: string) {
   return (
@@ -225,6 +263,286 @@ function EnvironmentInstructions() {
   );
 }
 
+function MembersAndRoles({
+  canManageUsers,
+}: {
+  canManageUsers: boolean;
+}) {
+  const [members, setMembers] = useState<AdminMember[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [newEmail, setNewEmail] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [claimLink, setClaimLink] = useState<{ label: string; url: string; expiresAt: string } | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  async function loadMembers() {
+    if (!canManageUsers) return;
+    try {
+      const response = await fetch("/admin/members", { cache: "no-store" });
+      const payload = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        users?: AdminMember[];
+        error?: string;
+      };
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || "Could not load members");
+      }
+      setMembers(payload.users ?? []);
+      setError(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Could not load members");
+    }
+  }
+
+  useEffect(() => {
+    void loadMembers();
+  }, [canManageUsers]);
+
+  function toggleRole(member: AdminMember, role: RoleSlug) {
+    const nextRoles = member.roleSlugs.includes(role)
+      ? member.roleSlugs.filter((value) => value !== role)
+      : [...member.roleSlugs, role];
+    const normalizedRoles = nextRoles.length ? nextRoles : ["member" as const];
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/admin/members", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ userId: member.id, roleSlugs: normalizedRoles }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+        };
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "Could not update roles");
+        }
+        await loadMembers();
+      } catch (updateError) {
+        setError(updateError instanceof Error ? updateError.message : "Could not update roles");
+      }
+    });
+  }
+
+  function createMember() {
+    const email = newEmail.trim();
+    if (!email) {
+      setError("Email is required");
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const response = await fetch("/admin/members", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            email,
+            displayName: newDisplayName.trim() || null,
+            roleSlugs: ["member"],
+          }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean;
+          invite?: { claimUrl?: string; expiresAt?: string };
+          error?: string;
+        };
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "Could not create member");
+        }
+        setNewEmail("");
+        setNewDisplayName("");
+        if (payload.invite?.claimUrl) {
+          setClaimLink({
+            label: "Invite link",
+            url: payload.invite.claimUrl,
+            expiresAt: payload.invite.expiresAt ?? "",
+          });
+        }
+        await loadMembers();
+      } catch (createError) {
+        setError(createError instanceof Error ? createError.message : "Could not create member");
+      }
+    });
+  }
+
+  function createResetLink(member: AdminMember) {
+    startTransition(async () => {
+      try {
+        const response = await fetch("/admin/member-invites", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            userId: member.id,
+            kind: "reset",
+          }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean;
+          invite?: { claimUrl?: string; expiresAt?: string };
+          error?: string;
+        };
+        if (!response.ok || payload.ok === false || !payload.invite?.claimUrl) {
+          throw new Error(payload.error || "Could not create reset link");
+        }
+        setClaimLink({
+          label: `Reset link for ${member.email ?? member.displayName ?? member.id}`,
+          url: payload.invite.claimUrl,
+          expiresAt: payload.invite.expiresAt ?? "",
+        });
+      } catch (resetError) {
+        setError(resetError instanceof Error ? resetError.message : "Could not create reset link");
+      }
+    });
+  }
+
+  if (!canManageUsers) {
+    return (
+      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Users className="h-4 w-4" />
+            Members & Roles
+          </CardTitle>
+          <CardDescription>Only admins can manage member roles.</CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Users className="h-4 w-4" />
+          Members & Roles
+        </CardTitle>
+        <CardDescription>
+          Manage app roles for signed-in workspace users. Invite and password reset flows are still pending.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {error ? (
+          <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 rounded-none border border-border/70 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <div className="space-y-2">
+            <Label htmlFor="member-email">Email</Label>
+            <Input
+              id="member-email"
+              type="email"
+              value={newEmail}
+              onChange={(event) => setNewEmail(event.target.value)}
+              placeholder="member@example.com"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="member-display-name">Display name</Label>
+            <Input
+              id="member-display-name"
+              value={newDisplayName}
+              onChange={(event) => setNewDisplayName(event.target.value)}
+              placeholder="Optional"
+            />
+          </div>
+          <div className="flex items-end">
+            <Button type="button" onClick={createMember} disabled={isPending}>
+              <UserPlus className="h-4 w-4" />
+              Add member
+            </Button>
+          </div>
+        </div>
+
+        {claimLink ? (
+          <div className="space-y-3 rounded-none border border-primary/40 bg-primary/5 p-4">
+            <div>
+              <p className="font-medium">{claimLink.label}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Copy this link manually. It expires {formatDate(claimLink.expiresAt)}.
+              </p>
+            </div>
+            <Input readOnly value={claimLink.url} onFocus={(event) => event.currentTarget.select()} />
+          </div>
+        ) : null}
+
+        <div className="grid gap-3">
+          {members.map((member) => (
+            <div
+              key={member.id}
+              className="grid gap-4 rounded-none border border-border/70 bg-background/70 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,auto)]"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-medium">
+                    {member.displayName || member.handle || member.email || member.id}
+                  </p>
+                  {member.roleSlugs.map((role) => (
+                    <Badge key={role} variant={role === "admin" ? "secondary" : "outline"}>
+                      {role}
+                    </Badge>
+                  ))}
+                </div>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {member.email ?? "No email"} - Last seen {formatDate(member.lastSeenAt)}
+                </p>
+                {!member.claimedAt ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Invite/reset flow pending. This account is managed but not claimed.
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-3">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {managedRoleOptions.map((role) => (
+                    <label
+                      key={role.value}
+                      className="flex min-h-20 cursor-pointer flex-col gap-2 rounded-none border border-border/70 p-3 text-sm"
+                    >
+                      <span className="flex items-center gap-2 font-medium">
+                        <input
+                          type="checkbox"
+                          checked={member.roleSlugs.includes(role.value)}
+                          onChange={() => toggleRole(member, role.value)}
+                          disabled={isPending}
+                          className="h-4 w-4 accent-primary"
+                        />
+                        {role.label}
+                      </span>
+                      <span className="text-xs leading-5 text-muted-foreground">
+                        {role.description}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => createResetLink(member)}
+                    disabled={isPending}
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    Create reset link
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {!members.length ? (
+            <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+              No members found.
+            </div>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function RepositorySetup({
   targetApps,
   targetEnvironments,
@@ -338,11 +656,17 @@ export function AdminSettingsWorkspace({
   setup,
   targetApps,
   targetEnvironments,
+  session,
 }: {
   setup: AdminSetupStatus;
   targetApps: TargetAppRecord[];
   targetEnvironments: TargetEnvironmentRecord[];
+  session: {
+    capabilities: Capability[];
+  };
 }) {
+  const canManageUsers = session.capabilities.includes("canManageUsers");
+
   return (
     <div className="grid gap-4">
       <div className="px-5 py-4 md:px-6">
@@ -356,6 +680,9 @@ export function AdminSettingsWorkspace({
           targetApps={targetApps}
           targetEnvironments={targetEnvironments}
         />
+      </div>
+      <div className="border-t border-border/60 px-5 py-4 md:px-6">
+        <MembersAndRoles canManageUsers={canManageUsers} />
       </div>
       <div className="border-t border-border/60 px-5 py-4 md:px-6">
         <ReposWorkspace

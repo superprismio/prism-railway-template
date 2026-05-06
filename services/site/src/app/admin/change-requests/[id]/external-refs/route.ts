@@ -3,7 +3,7 @@ import { getChangeRequest, listRequestExternalRefs, upsertRequestExternalRef } f
 
 import { adminFetch } from "@/lib/admin"
 import { readOptionalInteger } from "@/lib/internal-service"
-import { readRouteParam, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
+import { readRouteParam, requireLocalAdminAccess, requireLocalMemberAccess, useLocalAppApi } from "@/lib/local-admin-api"
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -16,7 +16,7 @@ export async function GET(request: Request, context: RouteContext) {
   const limit = Math.min(500, Math.max(1, rawLimit))
 
   if (useLocalAppApi()) {
-    const access = await requireLocalAdminAccess()
+    const access = await requireLocalMemberAccess()
     if (!access.ok) {
       return NextResponse.json({ ok: false, error: access.error }, { status: access.status })
     }

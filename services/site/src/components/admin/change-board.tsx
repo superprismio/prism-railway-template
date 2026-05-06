@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { AdminBoardData, AdminWorkspaceData } from "@/lib/admin";
+import type { Capability } from "@/lib/role-access";
 
 import {
   environmentForRequest,
@@ -43,6 +44,10 @@ import {
 } from "./change-request-utils";
 
 const workspaceTabs = ["requests", "codex-console", "tasks", "skills", "workflows", "settings"];
+
+function canUse(capabilities: readonly Capability[], capability: Capability) {
+  return capabilities.includes(capability);
+}
 
 export function ChangeBoard({
   data: initialData,
@@ -89,6 +94,7 @@ export function ChangeBoard({
           setData((current) => ({
             ...payload.data,
             setup: current.setup,
+            session: current.session,
           }));
         }
       } catch {
@@ -166,6 +172,7 @@ export function ChangeBoard({
     setData((current) => ({
       ...payload.data,
       setup: current.setup,
+      session: current.session,
     }));
   }
 
@@ -265,15 +272,44 @@ export function ChangeBoard({
     typeFilter,
     workflowByKey,
   ]);
+  const userCapabilities = data.session.capabilities;
+  const canCreateRequest = canUse(userCapabilities, "canCreateRequest");
+  const canComment = canUse(userCapabilities, "canComment");
+  const canRunAgent = canUse(userCapabilities, "canRunAgent");
+  const canManageTasks = canUse(userCapabilities, "canManageTasks");
+  const canManageSkills = canUse(userCapabilities, "canManageSkills");
+  const canManageWorkflows = canUse(userCapabilities, "canManageWorkflows");
+  const canManageSettings = canUse(userCapabilities, "canManageSettings");
+  const availableTabs = useMemo(
+    () =>
+      workspaceTabs.filter((tab) => {
+        if (tab === "codex-console") return canRunAgent;
+        if (tab === "tasks") return canManageTasks;
+        if (tab === "skills") return canManageSkills;
+        if (tab === "workflows") return canManageWorkflows;
+        if (tab === "settings") return canManageSettings;
+        return true;
+      }),
+    [canManageSettings, canManageSkills, canManageTasks, canManageWorkflows, canRunAgent],
+  );
+
+  useEffect(() => {
+    if (!availableTabs.includes(activeTab)) {
+      setActiveTab("requests");
+    }
+  }, [activeTab, availableTabs]);
+
   return (
     <main className="min-h-screen w-full bg-background text-foreground">
       <AdminHeader
         actions={
           <>
-            <Button type="button" onClick={() => setIsNewRequestOpen(true)}>
-              <FilePlus className="h-4 w-4" />
-              <span className="hidden sm:inline">Add Request</span>
-            </Button>
+            {canCreateRequest ? (
+              <Button type="button" onClick={() => setIsNewRequestOpen(true)}>
+                <FilePlus className="h-4 w-4" />
+                <span className="hidden sm:inline">Add Request</span>
+              </Button>
+            ) : null}
             {data.setup.prismMemory.configured ? (
               <Button asChild variant="outline">
                 <Link href="/admin/memory">
@@ -320,41 +356,51 @@ export function ChangeBoard({
                   {taskList.length}
                 </Badge>
               </TabsTrigger>
-              <TabsTrigger
-                value="codex-console"
-                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
-              >
-                <BotMessageSquare className="h-4 w-4 md:hidden" />
-                <span className="hidden md:inline">Prism Console</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="tasks"
-                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
-              >
-                <CalendarClock className="h-4 w-4 md:hidden" />
-                <span className="hidden md:inline">Tasks</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="skills"
-                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
-              >
-                <BookOpen className="h-4 w-4 md:hidden" />
-                <span className="hidden md:inline">Skills</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="workflows"
-                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
-              >
-                <Workflow className="h-4 w-4 md:hidden" />
-                <span className="hidden md:inline">Workflows</span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="settings"
-                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
-              >
-                <Settings className="h-4 w-4 md:hidden" />
-                <span className="hidden md:inline">Settings</span>
-              </TabsTrigger>
+              {canRunAgent ? (
+                <TabsTrigger
+                  value="codex-console"
+                  className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+                >
+                  <BotMessageSquare className="h-4 w-4 md:hidden" />
+                  <span className="hidden md:inline">Prism Console</span>
+                </TabsTrigger>
+              ) : null}
+              {canManageTasks ? (
+                <TabsTrigger
+                  value="tasks"
+                  className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+                >
+                  <CalendarClock className="h-4 w-4 md:hidden" />
+                  <span className="hidden md:inline">Tasks</span>
+                </TabsTrigger>
+              ) : null}
+              {canManageSkills ? (
+                <TabsTrigger
+                  value="skills"
+                  className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+                >
+                  <BookOpen className="h-4 w-4 md:hidden" />
+                  <span className="hidden md:inline">Skills</span>
+                </TabsTrigger>
+              ) : null}
+              {canManageWorkflows ? (
+                <TabsTrigger
+                  value="workflows"
+                  className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+                >
+                  <Workflow className="h-4 w-4 md:hidden" />
+                  <span className="hidden md:inline">Workflows</span>
+                </TabsTrigger>
+              ) : null}
+              {canManageSettings ? (
+                <TabsTrigger
+                  value="settings"
+                  className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+                >
+                  <Settings className="h-4 w-4 md:hidden" />
+                  <span className="hidden md:inline">Settings</span>
+                </TabsTrigger>
+              ) : null}
             </TabsList>
           </div>
         </div>
@@ -418,7 +464,7 @@ export function ChangeBoard({
                     <X className="h-4 w-4" />
                     Close
                   </Button>
-                ) : (
+                ) : canCreateRequest ? (
                   <Button
                     type="button"
                     onClick={() => setIsNewRequestOpen(true)}
@@ -426,7 +472,7 @@ export function ChangeBoard({
                     <FilePlus className="h-4 w-4" />
                     Add Request
                   </Button>
-                )}
+                ) : null}
               </div>
 
               {selectedRequest ? (
@@ -438,6 +484,8 @@ export function ChangeBoard({
                     workflow={selectedWorkflow}
                     isPending={isSaving}
                     error={modalError}
+                    canComment={canComment}
+                    canRunWorkflowActions={canRunAgent}
                     onSave={handleSaveTriage}
                   />
                 </ScrollArea>
@@ -580,6 +628,7 @@ export function ChangeBoard({
               setup={data.setup}
               targetApps={data.targetApps}
               targetEnvironments={data.targetEnvironments}
+              session={data.session}
             />
           </section>
         </TabsContent>

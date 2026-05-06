@@ -83,6 +83,7 @@ function CommandCenter({
   reviewCompareUrl,
   isPending,
   isStepRunning,
+  canRunWorkflowActions,
   onRunStep,
   onRunUntilGate,
   onApproveSolution,
@@ -101,6 +102,7 @@ function CommandCenter({
   reviewCompareUrl: string | null;
   isPending: boolean;
   isStepRunning: boolean;
+  canRunWorkflowActions: boolean;
   onRunStep: () => void;
   onRunUntilGate: () => void;
   onApproveSolution: () => void;
@@ -123,8 +125,8 @@ function CommandCenter({
   const canRequestChanges = reviewComment.trim().length > 0;
   const isRunning = isStepRunning;
   const isTerminal = currentStep.type === "terminal";
-  const isGate = currentStep.type === "gate" && !isRunning && !isTerminal;
-  const canRunAgentStep = currentStep.type === "agent" && !isRunning && !isTerminal;
+  const isGate = canRunWorkflowActions && currentStep.type === "gate" && !isRunning && !isTerminal;
+  const canRunAgentStep = canRunWorkflowActions && currentStep.type === "agent" && !isRunning && !isTerminal;
 
   return (
     <Card className="rounded-none border-border/70 bg-background shadow-none">
@@ -398,7 +400,7 @@ function CommandCenter({
               type="button"
               variant="outline"
               onClick={onCloseRequest}
-              disabled={isPending}
+              disabled={isPending || !canRunWorkflowActions}
             >
               {isPending ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -421,7 +423,9 @@ function CommandCenter({
           <div>
             <p className="font-medium">{currentStep.label}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              This workflow step has no specialized controls yet.
+              {canRunWorkflowActions
+                ? "This workflow step has no specialized controls yet."
+                : "You can view this workflow step, but your role cannot run or approve it."}
             </p>
           </div>
         ) : null}
@@ -483,6 +487,8 @@ export function RequestDetailsPanel({
   workflow,
   isPending,
   error,
+  canComment = true,
+  canRunWorkflowActions = true,
   onSave,
 }: {
   request: ChangeRequestRecord;
@@ -491,6 +497,8 @@ export function RequestDetailsPanel({
   workflow: WorkflowRecord | null;
   isPending: boolean;
   error: string | null;
+  canComment?: boolean;
+  canRunWorkflowActions?: boolean;
   onSave: (payload: {
     status?: string;
     currentWorkflowStepKey?: string | null;
@@ -1306,6 +1314,7 @@ export function RequestDetailsPanel({
             reviewCompareUrl={reviewExecutionPrUrl}
             isPending={isPending || isCommandPending}
             isStepRunning={Boolean(activeExecution)}
+            canRunWorkflowActions={canRunWorkflowActions}
             onRunStep={() => handleCommandTriage(false)}
             onRunUntilGate={() => handleCommandTriage(true)}
             onApproveSolution={handleApproveSolution}
@@ -1329,7 +1338,7 @@ export function RequestDetailsPanel({
               <TabsTrigger value="comments">Comments</TabsTrigger>
               <TabsTrigger value="history">History</TabsTrigger>
               <TabsTrigger value="log">Log</TabsTrigger>
-              <TabsTrigger value="advanced">Advanced</TabsTrigger>
+              {canRunWorkflowActions ? <TabsTrigger value="advanced">Advanced</TabsTrigger> : null}
             </TabsList>
 
             <TabsContent value="details" className="mt-0 space-y-4">
@@ -1702,6 +1711,7 @@ export function RequestDetailsPanel({
                 </div>
               </ScrollArea>
 
+              {canComment ? (
               <div className="space-y-2">
                 <Label htmlFor="request-comment">Add Comment</Label>
                 <Textarea
@@ -1725,6 +1735,7 @@ export function RequestDetailsPanel({
                   </Button>
                 </div>
               </div>
+              ) : null}
 
             </CardContent>
           </Card>

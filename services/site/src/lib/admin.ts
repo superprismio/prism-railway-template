@@ -1,5 +1,6 @@
 import { getAdminBoardSnapshot, getAdminSetupStatus, loadConfig } from "@/lib/app-core"
 import { requireAdminSession } from "@/lib/admin-auth"
+import type { Capability } from "@/lib/role-access"
 
 function useLocalAppApi() {
   return process.env.SITE_USE_LOCAL_APP_API?.trim() === "true"
@@ -192,6 +193,11 @@ export type AdminBoardData = {
 
 export type AdminWorkspaceData = AdminBoardData & {
   setup: AdminSetupStatus
+  session: {
+    userId: string | null
+    roleSlugs: string[]
+    capabilities: Capability[]
+  }
 }
 
 export async function adminFetch(path: string, init?: RequestInit) {
@@ -217,7 +223,7 @@ async function requireLocalAdminPassword() {
     return { ok: false as const, reason: "missing-password" as const }
   }
 
-  return { ok: true as const }
+  return { ok: true as const, session: access }
 }
 
 export async function getAdminBoardData(): Promise<
@@ -302,6 +308,11 @@ export async function getAdminWorkspaceData(): Promise<
         data: {
           ...getAdminBoardSnapshot(),
           setup: await getAdminSetupStatus(),
+          session: {
+            userId: access.session.userId,
+            roleSlugs: access.session.roleSlugs,
+            capabilities: access.session.capabilities,
+          },
         },
       }
     } catch {
@@ -341,6 +352,11 @@ export async function getAdminWorkspaceData(): Promise<
       data: {
         ...board.data,
         setup: setupJson.setup,
+        session: {
+          userId: access.userId,
+          roleSlugs: access.roleSlugs,
+          capabilities: access.capabilities,
+        },
       },
     }
   } catch {

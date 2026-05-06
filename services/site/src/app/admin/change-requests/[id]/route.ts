@@ -17,6 +17,7 @@ import {
   parseNullableString,
   readRouteParam,
   requireLocalAdminAccess,
+  requireLocalMemberAccess,
   trackedChangeRequestPriorities,
   trackedChangeRequestStatuses,
   useLocalAppApi,
@@ -205,7 +206,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const { id } = await context.params
 
   if (useLocalAppApi()) {
-    const access = await requireLocalAdminAccess()
+    const access = await requireLocalMemberAccess()
     if (!access.ok) {
       return NextResponse.json({ ok: false, error: access.error }, { status: access.status })
     }

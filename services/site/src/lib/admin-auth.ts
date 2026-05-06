@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto"
 import { cookies } from "next/headers"
 import { loadConfig } from "@/lib/app-core"
+import { capabilitiesForRoles, hasCapability, type Capability } from "@/lib/role-access"
 
 export const adminSessionCookieName = "prism_admin_session"
 export const legacyAdminPasswordCookieName = "prism_admin_password"
@@ -9,6 +10,8 @@ type AdminSessionPayload = {
   v: 1
   iat: number
   exp: number
+  userId?: string | null
+  roleSlugs?: string[]
 }
 
 function base64UrlEncode(value: string | Buffer) {
@@ -51,12 +54,14 @@ export function adminSessionMaxAgeSeconds() {
   return Number.isFinite(configured) && configured > 0 ? configured : 60 * 60 * 24 * 30
 }
 
-export function createAdminSessionCookieValue() {
+export function createAdminSessionCookieValue(input?: { userId?: string | null; roleSlugs?: string[] }) {
   const now = Math.floor(Date.now() / 1000)
   const payload: AdminSessionPayload = {
     v: 1,
     iat: now,
     exp: now + adminSessionMaxAgeSeconds(),
+    userId: input?.userId ?? null,
+    roleSlugs: input?.roleSlugs?.length ? input.roleSlugs : ["admin"],
   }
   const encodedPayload = base64UrlEncode(JSON.stringify(payload))
   return `${encodedPayload}.${signPayload(encodedPayload)}`
@@ -104,5 +109,37 @@ export async function requireAdminSession() {
     return { ok: false as const, status: 401, error: "Unauthorized", reason: result.reason }
   }
 
-  return { ok: true as const }
+  const roleSlugs = result.payload.roleSlugs?.length ? result.payload.roleSlugs : ["admin"]
+
+  return {
+    ok: true as const,
+    userId: result.payload.userId ?? null,
+    roleSlugs,
+    capabilities: [...capabilitiesForRoles(roleSlugs)],
+  }
+}
+
+export async function requireCapabilityAccess(capability: Capability) {
+  const session = await requireAdminSession()
+  if (!session.ok) {
+    return session
+  }
+
+  if (!hasCapability(session.roleSlugs, capability)) {
+    return { ok: false as const, status: 403, error: "Forbidden", reason: "missing-capability" as const }
+  }
+
+  return session
+}
+
+export async function requireAdminAccess() {
+  return requireCapabilityAccess("canManageSettings")
+}
+
+export async function requireModeratorAccess() {
+  return requireCapabilityAccess("canRunAgent")
+}
+
+export async function requireMemberAccess() {
+  return requireCapabilityAccess("canViewWorkspace")
 }

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { getChangeRequest, listChangeRequestExecutions } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
-import { readRouteParam, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
+import { readRouteParam, requireLocalMemberAccess, useLocalAppApi } from "@/lib/local-admin-api"
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -12,7 +12,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const { id } = await context.params
 
   if (useLocalAppApi()) {
-    const access = await requireLocalAdminAccess()
+    const access = await requireLocalMemberAccess()
     if (!access.ok) {
       return NextResponse.json({ ok: false, error: access.error }, { status: access.status })
     }

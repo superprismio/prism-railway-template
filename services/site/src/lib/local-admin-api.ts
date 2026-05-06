@@ -1,4 +1,4 @@
-import { requireAdminSession } from "@/lib/admin-auth"
+import { requireCapabilityAccess, requireMemberAccess, requireModeratorAccess } from "@/lib/admin-auth"
 
 export const targetEnvironmentKinds = ["production", "staging", "preview", "development"] as const
 export const trackedChangeRequestStatuses = [
@@ -21,7 +21,15 @@ export function useLocalAppApi() {
 }
 
 export async function requireLocalAdminAccess() {
-  return requireAdminSession()
+  return requireModeratorAccess()
+}
+
+export async function requireLocalMemberAccess() {
+  return requireMemberAccess()
+}
+
+export async function requireLocalCommentAccess() {
+  return requireCapabilityAccess("canComment")
 }
 
 export function parseString(value: unknown) {

@@ -12,7 +12,7 @@ import { adminFetch } from "@/lib/admin"
 import {
   parseString,
   readRouteParam,
-  requireLocalAdminAccess,
+  requireLocalCommentAccess,
   useLocalAppApi,
 } from "@/lib/local-admin-api"
 
@@ -32,7 +32,7 @@ export async function POST(request: Request, context: RouteContext) {
   const { id } = await context.params
 
   if (useLocalAppApi()) {
-    const access = await requireLocalAdminAccess()
+    const access = await requireLocalCommentAccess()
     if (!access.ok) {
       return NextResponse.json({ ok: false, error: access.error }, { status: access.status })
     }
