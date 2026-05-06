@@ -2953,6 +2953,14 @@ export function getChangeRequest(changeRequestId: string) {
   return row ? parseTrackedChangeRequestRow(row) : null;
 }
 
+export function getChangeRequestByNumber(requestNumber: number) {
+  const row = getDb()
+    .prepare('SELECT id FROM change_requests WHERE request_number = ?')
+    .get(requestNumber) as { id: string } | undefined;
+
+  return row ? getChangeRequest(row.id) : null;
+}
+
 function getNextChangeRequestNumber() {
   const row = getDb()
     .prepare('SELECT COALESCE(MAX(request_number), 0) + 1 AS next_number FROM change_requests')

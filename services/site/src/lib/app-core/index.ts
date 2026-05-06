@@ -29,6 +29,7 @@ export {
   findLatestAgentSessionByChangeRequest,
   findAgentSessionByDiscordContext,
   getChangeRequest,
+  getChangeRequestByNumber,
   getChangeRequestExecution,
   getCurrentActiveChangeRequest,
   getDefaultTargetEnvironmentForApp,
