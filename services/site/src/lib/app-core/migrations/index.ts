@@ -8,6 +8,7 @@ import { workflowsMigration } from './007_workflows';
 import { workflowRunsMigration } from './008_workflow_runs';
 import { nullableRequestTargetsMigration } from './009_nullable_request_targets';
 import { requestArtifactsMigration } from './010_request_artifacts';
+import { requestExternalRefsMigration } from './011_request_external_refs';
 
 export interface Migration {
   name: string;
@@ -25,4 +26,5 @@ export const migrations: Migration[] = [
   workflowRunsMigration,
   nullableRequestTargetsMigration,
   requestArtifactsMigration,
+  requestExternalRefsMigration,
 ];

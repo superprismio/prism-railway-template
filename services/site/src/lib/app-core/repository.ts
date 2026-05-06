@@ -576,6 +576,21 @@ export interface RequestArtifactRecord {
   updatedAt: string;
 }
 
+export interface RequestExternalRefRecord {
+  id: string;
+  requestId: string;
+  provider: string;
+  kind: string;
+  externalId: string | null;
+  title: string | null;
+  url: string;
+  state: string | null;
+  metadata: Record<string, unknown>;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CreateRequestArtifactInput {
   id?: string;
   requestId: string;
@@ -587,6 +602,19 @@ export interface CreateRequestArtifactInput {
   mimeType: string;
   storagePath: string;
   sizeBytes: number;
+  metadata?: Record<string, unknown>;
+  createdBy?: string | null;
+}
+
+export interface UpsertRequestExternalRefInput {
+  id?: string;
+  requestId: string;
+  provider: string;
+  kind: string;
+  externalId?: string | null;
+  title?: string | null;
+  url: string;
+  state?: string | null;
   metadata?: Record<string, unknown>;
   createdBy?: string | null;
 }
@@ -832,6 +860,21 @@ interface RequestArtifactRow {
   updated_at: string;
 }
 
+interface RequestExternalRefRow {
+  id: string;
+  request_id: string;
+  provider: string;
+  kind: string;
+  external_id: string | null;
+  title: string | null;
+  url: string;
+  state: string | null;
+  metadata_json: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface TaskRunRow {
   id: string;
   task_id: string;
@@ -926,6 +969,23 @@ function mapRequestArtifactRow(row: RequestArtifactRow): RequestArtifactRecord {
     mimeType: row.mime_type,
     storagePath: row.storage_path,
     sizeBytes: row.size_bytes,
+    metadata: parseJsonValue<Record<string, unknown>>(row.metadata_json, {}),
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapRequestExternalRefRow(row: RequestExternalRefRow): RequestExternalRefRecord {
+  return {
+    id: row.id,
+    requestId: row.request_id,
+    provider: row.provider,
+    kind: row.kind,
+    externalId: row.external_id,
+    title: row.title,
+    url: row.url,
+    state: row.state,
     metadata: parseJsonValue<Record<string, unknown>>(row.metadata_json, {}),
     createdBy: row.created_by,
     createdAt: row.created_at,
@@ -4453,6 +4513,113 @@ export function listRequestArtifacts(requestId: string, limit = 100): RequestArt
     .all(requestId, safeLimit) as RequestArtifactRow[];
 
   return rows.map(mapRequestArtifactRow);
+}
+
+export function upsertRequestExternalRef(input: UpsertRequestExternalRefInput): RequestExternalRefRecord {
+  const request = getChangeRequest(input.requestId);
+  if (!request) {
+    throw new Error('CHANGE_REQUEST_NOT_FOUND');
+  }
+
+  const provider = normalizeText(input.provider);
+  const kind = normalizeText(input.kind);
+  const url = normalizeText(input.url);
+  if (!provider || !kind || !url) {
+    throw new Error('EXTERNAL_REF_PROVIDER_KIND_URL_REQUIRED');
+  }
+
+  const now = new Date().toISOString();
+  const existing = getDb()
+    .prepare('SELECT id, created_at FROM request_external_refs WHERE request_id = ? AND url = ?')
+    .get(input.requestId, url) as { id: string; created_at: string } | undefined;
+  const id = normalizeText(input.id) || existing?.id || randomUUID();
+  const createdAt = existing?.created_at ?? now;
+
+  getDb()
+    .prepare(
+      `INSERT INTO request_external_refs (
+         id, request_id, provider, kind, external_id, title, url, state,
+         metadata_json, created_by, created_at, updated_at
+       ) VALUES (
+         @id, @requestId, @provider, @kind, @externalId, @title, @url, @state,
+         @metadataJson, @createdBy, @createdAt, @updatedAt
+       )
+       ON CONFLICT(request_id, url) DO UPDATE SET
+         provider = excluded.provider,
+         kind = excluded.kind,
+         external_id = excluded.external_id,
+         title = excluded.title,
+         state = excluded.state,
+         metadata_json = excluded.metadata_json,
+         created_by = excluded.created_by,
+         updated_at = excluded.updated_at`,
+    )
+    .run({
+      id,
+      requestId: input.requestId,
+      provider,
+      kind,
+      externalId: normalizeText(input.externalId) || null,
+      title: normalizeText(input.title) || null,
+      url,
+      state: normalizeText(input.state) || null,
+      metadataJson: JSON.stringify(input.metadata ?? {}),
+      createdBy: normalizeText(input.createdBy) || 'agent',
+      createdAt,
+      updatedAt: now,
+    });
+
+  const ref = getRequestExternalRef(id) ?? getRequestExternalRefByUrl(input.requestId, url);
+  if (!ref) {
+    throw new Error('EXTERNAL_REF_UPSERT_FAILED');
+  }
+  return ref;
+}
+
+export function getRequestExternalRef(id: string): RequestExternalRefRecord | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, request_id, provider, kind, external_id, title, url, state,
+              metadata_json, created_by, created_at, updated_at
+       FROM request_external_refs
+       WHERE id = ?`,
+    )
+    .get(id) as RequestExternalRefRow | undefined;
+
+  return row ? mapRequestExternalRefRow(row) : null;
+}
+
+export function getRequestExternalRefByUrl(requestId: string, url: string): RequestExternalRefRecord | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, request_id, provider, kind, external_id, title, url, state,
+              metadata_json, created_by, created_at, updated_at
+       FROM request_external_refs
+       WHERE request_id = ? AND url = ?`,
+    )
+    .get(requestId, url) as RequestExternalRefRow | undefined;
+
+  return row ? mapRequestExternalRefRow(row) : null;
+}
+
+export function deleteRequestExternalRef(id: string) {
+  getDb().prepare('DELETE FROM request_external_refs WHERE id = ?').run(id);
+}
+
+export function listRequestExternalRefs(requestId: string, limit = 100): RequestExternalRefRecord[] {
+  const safeLimit = Math.max(1, Math.min(limit, 500));
+  const rows = getDb()
+    .prepare(
+      `SELECT id, request_id, provider, kind, external_id, title, url, state,
+              metadata_json, created_by, created_at, updated_at
+       FROM request_external_refs
+       WHERE request_id = ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+    )
+    .all(requestId, safeLimit) as RequestExternalRefRow[];
+
+  return rows.map(mapRequestExternalRefRow);
 }
 
 export function upsertTask(input: UpsertTaskInput): TaskRecord {

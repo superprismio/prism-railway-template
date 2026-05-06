@@ -21,6 +21,8 @@ Core endpoints:
 - `GET /api/internal/change-board/requests/current`
 - `GET /api/internal/change-board/requests/:id`
 - `PATCH /api/internal/change-board/requests/:id`
+- `GET /api/internal/change-board/requests/:id/external-refs`
+- `POST /api/internal/change-board/requests/:id/external-refs`
 - `GET /api/internal/change-board/requests/:id/executions`
 - `POST /api/internal/change-board/requests/:id/executions`
 - `PATCH /api/internal/change-board/executions/:executionId`
@@ -80,7 +82,7 @@ Start-of-run pattern:
 
 1. Fetch `current`.
 2. If `current.changeRequest` is null, fetch `next`.
-3. Read `changeRequest`, `targetApp`, `targetEnvironment`, `deployPlan`, and `latestExecution`.
+3. Read `changeRequest`, `targetApp`, `targetEnvironment`, `deployPlan`, `latestExecution`, and `externalRefs`.
 4. During triage, write substantive detail into `triageSummary` and `agentRecommendation` before routing the request onward.
 5. If operating on a queued request, create an execution record before changing code.
 6. Use `triaging` only while actively triaging a request that has not been approved for execution yet.
@@ -112,6 +114,29 @@ curl -fsSL \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
   "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/requests/$CHANGE_REQUEST_ID" \
   -d '{"status":"in-progress"}'
+```
+
+Attach external records when the request interacts with a live system outside Prism. Use this for GitHub issues, GitHub pull requests, Discord messages or threads, deployments, publishing targets, or DAO proposal pages. Do not leave these only in comments if later workflow steps need to inspect or sync them.
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/requests/$CHANGE_REQUEST_ID/external-refs" \
+  -d '{
+    "provider": "github",
+    "kind": "pull_request",
+    "externalId": "42",
+    "title": "'"$PR_TITLE"'",
+    "url": "'"$PR_URL"'",
+    "state": "open",
+    "metadata": {
+      "repo": "'"$GITHUB_REPO"'",
+      "branch": "'"$BRANCH_NAME"'",
+      "base": "main"
+    }
+  }'
 ```
 
 For richer triage updates, patch the request with both status and suggested changes:

@@ -16,6 +16,7 @@ import {
   getWorkflowByKey,
   listAgentMessages,
   listChangeRequestExecutions,
+  listRequestExternalRefs,
   loadConfig,
   updateAgentSession,
   updateChangeRequest,
@@ -612,6 +613,9 @@ export async function POST(request: Request) {
   const linkedLatestExecution = activeLinkedChangeRequestId
     ? listChangeRequestExecutions(activeLinkedChangeRequestId)[0] ?? null
     : null
+  const linkedExternalRefs = activeLinkedChangeRequestId
+    ? listRequestExternalRefs(activeLinkedChangeRequestId)
+    : []
   const workflowAction = parseNullableString(body.workflow_action ?? body.workflowAction) ?? null
   const autoContinueUntilGate =
     body.auto_continue_until_gate === true || body.autoContinueUntilGate === true
@@ -767,6 +771,7 @@ export async function POST(request: Request) {
               meta: linkedLatestExecution.meta,
             }
           : null,
+        linkedExternalRefs,
         linkedChangeRequest: linkedChangeRequest
           ? {
               id: linkedChangeRequest.id,
@@ -941,6 +946,7 @@ export async function POST(request: Request) {
               linkedTargetEnvironment,
               linkedDeployPlan,
               linkedLatestExecution: listChangeRequestExecutions(activeLinkedChangeRequestId)[0] ?? null,
+              linkedExternalRefs: listRequestExternalRefs(activeLinkedChangeRequestId),
               linkedChangeRequest: {
                 id: latestRequest.id,
                 requestNumber: latestRequest.requestNumber,

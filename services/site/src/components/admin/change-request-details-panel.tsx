@@ -43,6 +43,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type {
   ChangeRequestExecutionRecord,
   ChangeRequestRecord,
+  RequestExternalRefRecord,
   RequestArtifactRecord,
   TargetAppRecord,
   TargetEnvironmentRecord,
@@ -522,6 +523,7 @@ export function RequestDetailsPanel({
     [],
   );
   const [artifacts, setArtifacts] = useState<RequestArtifactRecord[]>([]);
+  const [externalRefs, setExternalRefs] = useState<RequestExternalRefRecord[]>([]);
   const [selectedArtifact, setSelectedArtifact] = useState<RequestArtifactRecord | null>(null);
   const [artifactPreviewText, setArtifactPreviewText] = useState<string | null>(null);
   const [artifactPreviewError, setArtifactPreviewError] = useState<string | null>(null);
@@ -614,7 +616,7 @@ export function RequestDetailsPanel({
 
     async function pollLiveState() {
       try {
-        const [requestResponse, threadResponse, executionResponse, workflowEventResponse, artifactResponse] = await Promise.all([
+        const [requestResponse, threadResponse, executionResponse, workflowEventResponse, artifactResponse, externalRefResponse] = await Promise.all([
           fetch(`/admin/change-requests/${request.id}`, {
             cache: "no-store",
           }),
@@ -630,6 +632,9 @@ export function RequestDetailsPanel({
           fetch(`/admin/change-requests/${request.id}/artifacts`, {
             cache: "no-store",
           }),
+          fetch(`/admin/change-requests/${request.id}/external-refs`, {
+            cache: "no-store",
+          }),
         ]);
 
         if (
@@ -638,6 +643,7 @@ export function RequestDetailsPanel({
           !executionResponse.ok ||
           !workflowEventResponse.ok ||
           !artifactResponse.ok ||
+          !externalRefResponse.ok ||
           cancelled
         ) {
           return;
@@ -658,6 +664,9 @@ export function RequestDetailsPanel({
         };
         const artifactPayload = (await artifactResponse.json()) as {
           artifacts?: RequestArtifactRecord[];
+        };
+        const externalRefPayload = (await externalRefResponse.json()) as {
+          externalRefs?: RequestExternalRefRecord[];
         };
 
         if (cancelled) return;
@@ -687,6 +696,11 @@ export function RequestDetailsPanel({
         setArtifacts(
           Array.isArray(artifactPayload.artifacts)
             ? artifactPayload.artifacts
+            : [],
+        );
+        setExternalRefs(
+          Array.isArray(externalRefPayload.externalRefs)
+            ? externalRefPayload.externalRefs
             : [],
         );
       } catch {
@@ -892,6 +906,41 @@ export function RequestDetailsPanel({
     }
 
     loadArtifacts();
+    return () => {
+      cancelled = true;
+    };
+  }, [request.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadExternalRefs() {
+      try {
+        const response = await fetch(
+          `/admin/change-requests/${request.id}/external-refs`,
+          { cache: "no-store" },
+        );
+        if (!response.ok) {
+          throw new Error("Could not load linked records");
+        }
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          externalRefs?: RequestExternalRefRecord[];
+          error?: string;
+        };
+        if (cancelled) return;
+        if (payload.ok === false) {
+          throw new Error(payload.error || "Could not load linked records");
+        }
+        setExternalRefs(Array.isArray(payload.externalRefs) ? payload.externalRefs : []);
+      } catch {
+        if (!cancelled) {
+          setExternalRefs([]);
+        }
+      }
+    }
+
+    loadExternalRefs();
     return () => {
       cancelled = true;
     };
@@ -1325,6 +1374,63 @@ export function RequestDetailsPanel({
                   </p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60 bg-card/90 rounded-none">
+            <CardHeader>
+              <CardTitle>Linked Records</CardTitle>
+              <CardDescription>
+                Live records outside Prism attached to this request.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {externalRefs.length ? (
+                externalRefs.map((externalRef) => (
+                  <div
+                    key={externalRef.id}
+                    className="rounded-none border border-border/70 bg-background/70 p-4 text-sm"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                          <a
+                            href={externalRef.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="break-all font-medium underline underline-offset-2"
+                          >
+                            {externalRef.title ?? externalRef.url}
+                          </a>
+                          <Badge variant="outline">{externalRef.provider}</Badge>
+                          <Badge variant="outline">{externalRef.kind}</Badge>
+                          {externalRef.state ? (
+                            <Badge variant="secondary">{externalRef.state}</Badge>
+                          ) : null}
+                        </div>
+                        {externalRef.externalId ? (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            External ID: {externalRef.externalId}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {isoLabel(externalRef.updatedAt) ?? ""}
+                      </span>
+                    </div>
+                    {Object.keys(externalRef.metadata).length ? (
+                      <pre className="mt-3 max-h-40 overflow-auto rounded-none border border-border/60 bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+                        {JSON.stringify(externalRef.metadata, null, 2)}
+                      </pre>
+                    ) : null}
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                  No linked external records yet.
+                </div>
+              )}
             </CardContent>
           </Card>
 
