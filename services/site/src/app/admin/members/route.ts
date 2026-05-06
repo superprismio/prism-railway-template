@@ -7,6 +7,7 @@ import {
   setUserRoleSlugs,
 } from "@/lib/app-core"
 import { requireCapabilityAccess } from "@/lib/admin-auth"
+import { publicUrlFromRequest } from "@/lib/public-url"
 import { normalizeRoleSlugs } from "@/lib/role-access"
 
 function parseString(value: unknown) {
@@ -20,8 +21,7 @@ function parseRoleSlugs(value: unknown) {
 }
 
 function claimUrl(request: Request, token: string) {
-  const url = new URL(request.url)
-  return `${url.origin}/claim?token=${encodeURIComponent(token)}`
+  return publicUrlFromRequest(request, `/claim?token=${encodeURIComponent(token)}`)
 }
 
 export async function GET() {

@@ -3,10 +3,10 @@ import { NextResponse } from "next/server"
 import { createUserInvite } from "@/lib/app-core"
 import { requireCapabilityAccess } from "@/lib/admin-auth"
 import { parseString } from "@/lib/local-admin-api"
+import { publicUrlFromRequest } from "@/lib/public-url"
 
 function claimUrl(request: Request, token: string) {
-  const url = new URL(request.url)
-  return `${url.origin}/claim?token=${encodeURIComponent(token)}`
+  return publicUrlFromRequest(request, `/claim?token=${encodeURIComponent(token)}`)
 }
 
 export async function POST(request: Request) {
