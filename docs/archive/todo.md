@@ -5,7 +5,7 @@ Current open items for turning the POC into a clean Railway template.
 ## Template Readiness
 
 - [ ] Replace remaining migration-era docs with lean public template docs.
-- [ ] Decide whether to keep `docs/codex-first-architecture.md` as history or rewrite it as the public architecture overview.
+- [ ] Decide whether to keep `docs/architecture/codex-first-architecture.md` as history or rewrite it as the public architecture overview.
 - [ ] Rename public-facing `source-adapter` language to `discord-adapter` where appropriate.
 - [x] Move Prism memory skills to Codex/Prism-oriented paths.
 - [x] Remove legacy route/function names from API code where they are no longer used.

@@ -159,20 +159,20 @@ For each task:
 
 ## Template Docs To Update
 
-- [ ] `docs/template-authoring.md`
+- [ ] `docs/template/template-authoring.md`
   - Replace cron services with `task-runner`.
   - Add singleton note.
-- [ ] `docs/template-deploy-runbook.md`
+- [ ] `docs/operations/template-deploy-runbook.md`
   - Replace cron setup with task DB schedule setup.
   - Add manual task-runner validation steps.
-- [ ] `docs/railway-env-checklist.md`
+- [ ] `docs/operations/railway-env-checklist.md`
   - Remove cron service env sections from the default path.
   - Add `task-runner` env section.
-- [ ] `docs/template-variable-reference.md`
+- [ ] `docs/template/template-variable-reference.md`
   - Remove `api` references where the consolidated service is now `site`.
   - Add `task-runner` variables.
   - Remove old cron variable tables from the recommended template path.
-- [ ] `docs/railway-setup.md`
+- [ ] `docs/operations/railway-setup.md`
   - Replace recommended cron services with `task-runner`.
 - [ ] `scripts/railway-deploy-prism-stack.sh`
   - Add optional `task-runner` deploy support.

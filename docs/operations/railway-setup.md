@@ -61,7 +61,7 @@ Suggested watch paths:
 
 Codex login/bootstrap reference:
 
-- [Codex Runtime Device Auth](docs/codex-runtime-auth.md)
+- [Codex Runtime Device Auth](codex-runtime-auth.md)
 
 ## CLI Shortcuts
 
@@ -95,7 +95,7 @@ These wrappers do not replace:
 - Railway secret entry
 - Railway cron schedule setup
 
-See [Railway Stack Smoke - 2026-04-21](railway-stack-smoke-2026-04-21.md) for the latest fresh-project smoke findings and template recommendation.
+See archived Railway smoke-test notes for the latest fresh-project findings and template recommendation.
 
 ## Shared Env Links
 

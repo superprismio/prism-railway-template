@@ -51,7 +51,7 @@ Added/updated:
 
 - `.env.example`
 - `.gitignore`
-- `docs/template-authoring.md`
+- `docs/template/template-authoring.md`
 - this handoff doc
 - README title and template-authoring link
 - `services/api/config/target-apps.default.json` now defaults to empty `targetApps` and `targetEnvironments`
@@ -108,7 +108,7 @@ After launching the Railway template:
 
 1. Continue cleanup in the template repo, not the POC repo, unless explicitly comparing behavior.
 2. Run a deeper public-readiness scan for live URLs, IDs, absolute paths, and legacy references.
-3. Decide whether to keep historical docs like `docs/codex-first-architecture.md` or replace them with lean template docs.
+3. Decide whether to keep historical docs like `docs/architecture/codex-first-architecture.md` or replace them with lean template docs.
 4. Rename `services/source-adapter` docs/user-facing language to `discord-adapter` where appropriate, while preserving the directory if desired.
 5. Confirm Prism memory skills are exposed under Codex/Prism-oriented names before publishing.
 6. Add a template-specific `README` quickstart with Railway template source-project setup.

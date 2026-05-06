@@ -80,7 +80,7 @@ Notes:
 - complete `codex login` once inside the running service so auth is written into `CODEX_HOME`
 - this service exposes `POST /v1/responses` for transport adapters
 - external target apps like `daohaus-admin` need a writable target workspace path on the mounted volume so Codex can clone and edit the repo outside the runtime service source tree
-- follow [Codex Runtime Device Auth](docs/codex-runtime-auth.md) for the exact Railway shell steps
+- follow [Codex Runtime Device Auth](codex-runtime-auth.md) for the exact Railway shell steps
 
 ## `discord-adapter`
 

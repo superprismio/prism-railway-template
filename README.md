@@ -17,13 +17,14 @@ Current direction:
 
 ## Architecture
 
-Template authoring notes live in [docs/template-authoring.md](docs/template-authoring.md).
-Post-deploy template operations live in [docs/template-deploy-runbook.md](docs/template-deploy-runbook.md).
-Non-Railway deployment notes live in [docs/local-vps-deployment.md](docs/local-vps-deployment.md).
-Prism Memory storage cleanup planning lives in [docs/prism-memory-path-cleanup.md](docs/prism-memory-path-cleanup.md).
-Site/API consolidation planning lives in [docs/site-api-consolidation-plan.md](docs/site-api-consolidation-plan.md).
-Site/API live cutover steps live in [docs/site-api-cutover-checklist.md](docs/site-api-cutover-checklist.md).
-Template env deltas for that cutover live in [docs/template-site-api-env-delta.md](docs/template-site-api-env-delta.md).
+Documentation starts at [docs/README.md](docs/README.md).
+Template authoring notes live in [docs/template/template-authoring.md](docs/template/template-authoring.md).
+Post-deploy template operations live in [docs/operations/template-deploy-runbook.md](docs/operations/template-deploy-runbook.md).
+Non-Railway deployment notes live in [docs/operations/local-vps-deployment.md](docs/operations/local-vps-deployment.md).
+Prism Memory storage cleanup planning lives in [docs/archive/prism-memory-path-cleanup.md](docs/archive/prism-memory-path-cleanup.md).
+Site/API consolidation planning lives in [docs/architecture/site-api-consolidation-plan.md](docs/architecture/site-api-consolidation-plan.md).
+Site/API live cutover steps live in [docs/archive/site-api-cutover-checklist.md](docs/archive/site-api-cutover-checklist.md).
+Template env deltas for that cutover live in [docs/template/template-site-api-env-delta.md](docs/template/template-site-api-env-delta.md).
 
 This repo is intentionally split by deployable service instead of using PM2 inside one container.
 
@@ -237,10 +238,11 @@ If the Prism app needs to reference a local target during development, create th
 
 Supporting docs:
 
-- [Codex-First Architecture](docs/codex-first-architecture.md)
-- [Codex Runtime Device Auth](docs/codex-runtime-auth.md)
-- [Railway Env Checklist](docs/railway-env-checklist.md)
-- [TODO](docs/todo.md)
+- [Docs Index](docs/README.md)
+- [Codex-First Architecture](docs/architecture/codex-first-architecture.md)
+- [Codex Runtime Device Auth](docs/operations/codex-runtime-auth.md)
+- [Railway Env Checklist](docs/operations/railway-env-checklist.md)
+- [TODO](docs/archive/todo.md)
 
 ## Deployment Checklist
 
