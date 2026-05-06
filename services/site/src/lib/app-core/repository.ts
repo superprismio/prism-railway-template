@@ -1037,6 +1037,24 @@ function normalizeText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function normalizeExternalRefUrl(value: unknown) {
+  const rawUrl = normalizeText(value);
+  if (!rawUrl) return '';
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('EXTERNAL_REF_URL_INVALID');
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('EXTERNAL_REF_URL_INVALID');
+  }
+
+  return parsed.toString();
+}
+
 function uniqueStrings(values: unknown) {
   if (!Array.isArray(values)) return [] as string[];
 
@@ -4523,7 +4541,7 @@ export function upsertRequestExternalRef(input: UpsertRequestExternalRefInput): 
 
   const provider = normalizeText(input.provider);
   const kind = normalizeText(input.kind);
-  const url = normalizeText(input.url);
+  const url = normalizeExternalRefUrl(input.url);
   if (!provider || !kind || !url) {
     throw new Error('EXTERNAL_REF_PROVIDER_KIND_URL_REQUIRED');
   }
@@ -4532,7 +4550,11 @@ export function upsertRequestExternalRef(input: UpsertRequestExternalRefInput): 
   const existing = getDb()
     .prepare('SELECT id, created_at FROM request_external_refs WHERE request_id = ? AND url = ?')
     .get(input.requestId, url) as { id: string; created_at: string } | undefined;
-  const id = normalizeText(input.id) || existing?.id || randomUUID();
+  const inputId = normalizeText(input.id);
+  if (existing && inputId && inputId !== existing.id) {
+    throw new Error('EXTERNAL_REF_ID_URL_CONFLICT');
+  }
+  const id = existing?.id || inputId || randomUUID();
   const createdAt = existing?.created_at ?? now;
 
   getDb()
@@ -4551,7 +4573,6 @@ export function upsertRequestExternalRef(input: UpsertRequestExternalRefInput): 
          title = excluded.title,
          state = excluded.state,
          metadata_json = excluded.metadata_json,
-         created_by = excluded.created_by,
          updated_at = excluded.updated_at`,
     )
     .run({

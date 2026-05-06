@@ -88,7 +88,7 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ ok: true, externalRef }, { status: 201 })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    const status = message === "EXTERNAL_REF_PROVIDER_KIND_URL_REQUIRED" ? 400 : 500
+    const status = message.startsWith("EXTERNAL_REF_") ? 400 : 500
     return NextResponse.json({ ok: false, error: message }, { status })
   }
 }

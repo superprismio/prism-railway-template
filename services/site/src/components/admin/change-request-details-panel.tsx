@@ -467,6 +467,15 @@ function hasAutoContinuedFlag(value: { meta?: Record<string, unknown>; payload?:
   return value.meta?.autoContinued === true || value.payload?.autoContinued === true;
 }
 
+function safeExternalHref(value: string) {
+  try {
+    const parsed = new URL(value);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function RequestDetailsPanel({
   request,
   targetApp,
@@ -935,7 +944,7 @@ export function RequestDetailsPanel({
         setExternalRefs(Array.isArray(payload.externalRefs) ? payload.externalRefs : []);
       } catch {
         if (!cancelled) {
-          setExternalRefs([]);
+          setThreadError((current) => current ?? "Could not load linked records");
         }
       }
     }
@@ -1386,46 +1395,55 @@ export function RequestDetailsPanel({
             </CardHeader>
             <CardContent className="space-y-3">
               {externalRefs.length ? (
-                externalRefs.map((externalRef) => (
-                  <div
-                    key={externalRef.id}
-                    className="rounded-none border border-border/70 bg-background/70 p-4 text-sm"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                          <a
-                            href={externalRef.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="break-all font-medium underline underline-offset-2"
-                          >
-                            {externalRef.title ?? externalRef.url}
-                          </a>
-                          <Badge variant="outline">{externalRef.provider}</Badge>
-                          <Badge variant="outline">{externalRef.kind}</Badge>
-                          {externalRef.state ? (
-                            <Badge variant="secondary">{externalRef.state}</Badge>
+                externalRefs.map((externalRef) => {
+                  const safeHref = safeExternalHref(externalRef.url);
+                  return (
+                    <div
+                      key={externalRef.id}
+                      className="rounded-none border border-border/70 bg-background/70 p-4 text-sm"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                            {safeHref ? (
+                              <a
+                                href={safeHref}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="break-all font-medium underline underline-offset-2"
+                              >
+                                {externalRef.title ?? externalRef.url}
+                              </a>
+                            ) : (
+                              <span className="break-all font-medium">
+                                {externalRef.title ?? externalRef.url}
+                              </span>
+                            )}
+                            <Badge variant="outline">{externalRef.provider}</Badge>
+                            <Badge variant="outline">{externalRef.kind}</Badge>
+                            {externalRef.state ? (
+                              <Badge variant="secondary">{externalRef.state}</Badge>
+                            ) : null}
+                          </div>
+                          {externalRef.externalId ? (
+                            <p className="mt-2 text-xs text-muted-foreground">
+                              External ID: {externalRef.externalId}
+                            </p>
                           ) : null}
                         </div>
-                        {externalRef.externalId ? (
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            External ID: {externalRef.externalId}
-                          </p>
-                        ) : null}
+                        <span className="text-xs text-muted-foreground">
+                          {isoLabel(externalRef.updatedAt) ?? ""}
+                        </span>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {isoLabel(externalRef.updatedAt) ?? ""}
-                      </span>
+                      {Object.keys(externalRef.metadata).length ? (
+                        <pre className="mt-3 max-h-40 overflow-auto rounded-none border border-border/60 bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+                          {JSON.stringify(externalRef.metadata, null, 2)}
+                        </pre>
+                      ) : null}
                     </div>
-                    {Object.keys(externalRef.metadata).length ? (
-                      <pre className="mt-3 max-h-40 overflow-auto rounded-none border border-border/60 bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
-                        {JSON.stringify(externalRef.metadata, null, 2)}
-                      </pre>
-                    ) : null}
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                   No linked external records yet.
