@@ -28,6 +28,7 @@ export {
   createTargetEnvironment,
   deleteRequestArtifact,
   deleteRequestExternalRef,
+  deleteCustomTaskByKey,
   findLatestAgentSessionByChangeRequest,
   findAgentSessionByDiscordContext,
   getChangeRequest,

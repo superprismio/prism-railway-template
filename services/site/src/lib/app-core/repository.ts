@@ -5035,6 +5035,18 @@ export function getTaskByKey(key: string): TaskRecord | null {
   return row ? mapTaskRow(row) : null;
 }
 
+export function deleteCustomTaskByKey(key: string): TaskRecord | null {
+  const task = getTaskByKey(key);
+  if (!task) {
+    return null;
+  }
+  if (task.taskType === 'builtin') {
+    throw new Error('TASK_DELETE_SYSTEM_DEFAULT');
+  }
+  getDb().prepare('DELETE FROM tasks WHERE id = ?').run(task.id);
+  return task;
+}
+
 export function listTasks(): TaskRecord[] {
   const rows = getDb().prepare('SELECT * FROM tasks ORDER BY key ASC').all() as TaskRow[];
   return rows.map(mapTaskRow);
