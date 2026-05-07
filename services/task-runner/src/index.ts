@@ -192,7 +192,17 @@ function httpTimeoutMs() {
     "TASK_RUNNER_HTTP_TIMEOUT_MS",
     parseIntEnv("TASK_RUNNER_APP_API_TIMEOUT_MS", 120_000, 1_000, 900_000),
     1_000,
-    900_000,
+    86_400_000,
+  );
+}
+
+function longRunningHttpTimeoutMs() {
+  const codexRuntimeTimeout = parseIntEnv("CODEX_RUNTIME_TIMEOUT_MS", 900_000, 1_000, 86_400_000);
+  return parseIntEnv(
+    "TASK_RUNNER_LONG_RUNNING_HTTP_TIMEOUT_MS",
+    Math.max(codexRuntimeTimeout + 60_000, 900_000),
+    1_000,
+    86_400_000,
   );
 }
 
@@ -219,6 +229,7 @@ async function postJson(
   path: string,
   headers: Record<string, string>,
   body: Record<string, unknown> = {},
+  timeoutMs = httpTimeoutMs(),
 ): Promise<TaskRunResult> {
   const url = `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
   const response = await fetchWithTimeout(url, {
@@ -228,7 +239,7 @@ async function postJson(
       ...headers,
     },
     body: JSON.stringify(body),
-  }, httpTimeoutMs());
+  }, timeoutMs);
   const text = await response.text();
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} from ${url}: ${text.slice(0, 500)}`);
@@ -608,7 +619,7 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
           agentConfig: siteTask.agentConfig,
           requestedSkills: mergeRequestedSkills(siteTask),
         },
-      });
+      }, longRunningHttpTimeoutMs());
       return response;
     },
     outputConfig: siteTask.outputConfig,
@@ -657,14 +668,14 @@ function workflowRunnerShouldStop(status: string | null, stopStatuses: Set<strin
   return stopStatuses.has(status);
 }
 
-async function appApiPost(path: string, body: Record<string, unknown>): Promise<WorkflowRunStepResult> {
+async function appApiPost(path: string, body: Record<string, unknown>, timeoutMs = httpTimeoutMs()): Promise<WorkflowRunStepResult> {
   const baseUrl = requireBaseUrl("APP_API_BASE_URL", appApiBaseUrl() ?? "");
   const token = appApiServiceToken();
   const headers: Record<string, string> = {};
   if (token) {
     headers["X-Service-Token"] = token;
   }
-  const result = await postJson(baseUrl, path, headers, body);
+  const result = await postJson(baseUrl, path, headers, body, timeoutMs);
   const payload = result.body ? JSON.parse(result.body) as Record<string, unknown> : {};
   return {
     status: result.status,
@@ -747,7 +758,7 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
             workflow_action: null,
             auto_continue_until_gate: true,
             requested_skills: mergeRequestedSkills(siteTask),
-          });
+          }, longRunningHttpTimeoutMs());
           stepResults.push(runResult);
           const detailResult = await appApiRequest(`/api/internal/change-board/requests/${encodeURIComponent(requestId)}`, {
             method: "GET",
@@ -1046,6 +1057,24 @@ async function runTask(task: RunnableTask, source: "schedule" | "manual"): Promi
   }
 }
 
+function startTaskRun(task: RunnableTask, source: "schedule" | "manual") {
+  const taskState = state.get(task.key);
+  if (!taskState) {
+    throw new Error(`Unknown task state for ${task.key}`);
+  }
+  if (!task.enabled && source === "schedule") {
+    throw new Error(`Task ${task.key} is disabled`);
+  }
+  if (taskState.running) {
+    throw new Error(`Task ${task.key} is already running`);
+  }
+
+  const promise = runTask(task, source).catch(() => {
+    // Failure is recorded in task state, site task run rows, and logs.
+  });
+  return promise;
+}
+
 function taskSnapshot(task: RunnableTask): TaskSnapshot {
   const taskState = state.get(task.key) ?? initState(task);
   return {
@@ -1087,9 +1116,11 @@ async function schedulerLoop(tasks: RunnableTask[], builtInTasks: BuiltInTask[],
           continue;
         }
         if (taskState.nextRunAt.getTime() <= now.getTime()) {
-          runTask(task, "schedule").catch(() => {
-            // Failure is recorded in task state and logs.
-          });
+          try {
+            startTaskRun(task, "schedule");
+          } catch (error) {
+            console.warn(JSON.stringify({ event: "task.schedule_start_failed", task: task.key, error: describeError(error) }));
+          }
         }
       }
     }
@@ -1143,10 +1174,10 @@ async function main(): Promise<void> {
       return;
     }
     try {
-      const result = await runTask(task, "manual");
-      response.json({ ok: true, task: taskSnapshot(task), result });
+      startTaskRun(task, "manual");
+      response.status(202).json({ ok: true, accepted: true, task: taskSnapshot(task) });
     } catch (error) {
-      response.status(500).json({ ok: false, task: taskSnapshot(task), error: describeError(error) });
+      response.status(409).json({ ok: false, task: taskSnapshot(task), error: describeError(error) });
     }
   });
 
