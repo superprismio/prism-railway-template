@@ -94,6 +94,7 @@ export function ChangeBoard({
           setData((current) => ({
             ...payload.data,
             setup: current.setup,
+            branding: current.branding,
             session: current.session,
           }));
         }
@@ -172,6 +173,7 @@ export function ChangeBoard({
     setData((current) => ({
       ...payload.data,
       setup: current.setup,
+      branding: current.branding,
       session: current.session,
     }));
   }
@@ -302,6 +304,7 @@ export function ChangeBoard({
   return (
     <main className="min-h-screen w-full bg-background text-foreground">
       <AdminHeader
+        branding={data.branding}
         actions={
           <>
             {canCreateRequest ? (
@@ -626,6 +629,13 @@ export function ChangeBoard({
 
             <AdminSettingsWorkspace
               setup={data.setup}
+              branding={data.branding}
+              onBrandingChange={(branding) =>
+                setData((current) => ({
+                  ...current,
+                  branding,
+                }))
+              }
               targetApps={data.targetApps}
               targetEnvironments={data.targetEnvironments}
               session={data.session}

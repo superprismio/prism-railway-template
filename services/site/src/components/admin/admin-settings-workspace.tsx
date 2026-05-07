@@ -9,6 +9,7 @@ import {
   ShieldAlert,
   UserPlus,
   Users,
+  Palette,
 } from "lucide-react";
 
 import { ReposWorkspace } from "@/components/admin/repos-workspace";
@@ -43,6 +44,13 @@ type AdminMember = {
   claimedAt: string | null;
   pointsTotal: number;
   roleSlugs: RoleSlug[];
+};
+
+type AdminBranding = {
+  brandName: string;
+  logoUrl: string;
+  logoAlt: string;
+  workspaceLabel: string;
 };
 
 const managedRoleOptions: Array<{ value: RoleSlug; label: string; description: string }> = [
@@ -260,6 +268,129 @@ function EnvironmentInstructions() {
         </CardContent>
       </Card>
     </section>
+  );
+}
+
+function BrandingSettings({
+  branding,
+  onBrandingChange,
+}: {
+  branding: AdminBranding;
+  onBrandingChange: (branding: AdminBranding) => void;
+}) {
+  const [draft, setDraft] = useState(branding);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setDraft(branding);
+  }, [branding]);
+
+  function saveBranding() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const response = await fetch("/admin/branding", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(draft),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean;
+          branding?: AdminBranding;
+          error?: string;
+        };
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "Could not save branding");
+        }
+        if (payload.branding) {
+          const nextBranding = {
+            brandName: payload.branding.brandName,
+            logoUrl: payload.branding.logoUrl,
+            logoAlt: payload.branding.logoAlt,
+            workspaceLabel: payload.branding.workspaceLabel,
+          };
+          setDraft(nextBranding);
+          onBrandingChange(nextBranding);
+        }
+      } catch (saveError) {
+        setError(saveError instanceof Error ? saveError.message : "Could not save branding");
+      }
+    });
+  }
+
+  return (
+    <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Palette className="h-4 w-4" />
+          Instance Branding
+        </CardTitle>
+        <CardDescription>
+          Set the header name, workspace label, and logo for this instance.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {error ? (
+          <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
+        ) : null}
+        <div className="grid gap-4 md:grid-cols-[auto_minmax(0,1fr)]">
+          <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-none border border-border/70 bg-muted/40">
+            {draft.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={draft.logoUrl} alt={draft.logoAlt || "Logo preview"} className="h-full w-full object-contain p-1" />
+            ) : (
+              <Palette className="h-5 w-5 text-muted-foreground" />
+            )}
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="brand-name">Brand name</Label>
+              <Input
+                id="brand-name"
+                value={draft.brandName}
+                onChange={(event) => setDraft((current) => ({ ...current, brandName: event.target.value }))}
+                placeholder="Prism Refactory"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="workspace-label">Workspace label</Label>
+              <Input
+                id="workspace-label"
+                value={draft.workspaceLabel}
+                onChange={(event) => setDraft((current) => ({ ...current, workspaceLabel: event.target.value }))}
+                placeholder="Admin workspace"
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="logo-url">Logo URL</Label>
+              <Input
+                id="logo-url"
+                value={draft.logoUrl}
+                onChange={(event) => setDraft((current) => ({ ...current, logoUrl: event.target.value }))}
+                placeholder="https://... or data:image/..."
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="logo-alt">Logo alt text</Label>
+              <Input
+                id="logo-alt"
+                value={draft.logoAlt}
+                onChange={(event) => setDraft((current) => ({ ...current, logoAlt: event.target.value }))}
+                placeholder="Workspace logo"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button type="button" onClick={saveBranding} disabled={isPending}>
+            Save branding
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -654,11 +785,15 @@ function RepositorySetup({
 
 export function AdminSettingsWorkspace({
   setup,
+  branding,
+  onBrandingChange,
   targetApps,
   targetEnvironments,
   session,
 }: {
   setup: AdminSetupStatus;
+  branding: AdminBranding;
+  onBrandingChange: (branding: AdminBranding) => void;
   targetApps: TargetAppRecord[];
   targetEnvironments: TargetEnvironmentRecord[];
   session: {
@@ -671,6 +806,9 @@ export function AdminSettingsWorkspace({
     <div className="grid gap-4">
       <div className="px-5 py-4 md:px-6">
         <SetupStatus setup={setup} />
+      </div>
+      <div className="border-t border-border/60 px-5 py-4 md:px-6">
+        <BrandingSettings branding={branding} onBrandingChange={onBrandingChange} />
       </div>
       <div className="border-t border-border/60 px-5 py-4 md:px-6">
         <EnvironmentInstructions />
