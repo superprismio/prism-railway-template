@@ -3,6 +3,7 @@ export { getDb, closeDb, runMigrations } from './db';
 export { getAdminBoardSnapshot, getAdminSetupStatus } from './admin-read';
 export { buildTargetEnvironmentDeployPlan, type TargetEnvironmentDeployPlan } from './deploy-adapters';
 export { buildHostedSkillArchive, listHostedSkills, readHostedSkillMarkdown, upsertCustomSkill, type HostedSkillSummary } from './hosted-skills';
+export { readSiteContent, writeSiteContent, normalizeSiteContent, type SiteContent } from './site-content';
 export {
   buildRequestArtifactStoragePath,
   deleteRequestArtifactFile,
@@ -28,6 +29,7 @@ export {
   createTargetEnvironment,
   deleteRequestArtifact,
   deleteRequestExternalRef,
+  deleteCustomTaskByKey,
   findLatestAgentSessionByChangeRequest,
   findAgentSessionByDiscordContext,
   getChangeRequest,

@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock3,
   Eye,
+  Trash2,
   Plus,
   Play,
   RefreshCw,
@@ -241,6 +242,7 @@ export function TaskRunnerWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [runningKey, setRunningKey] = useState<string | null>(null);
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isBuiltInOpen, setIsBuiltInOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -391,6 +393,29 @@ export function TaskRunnerWorkspace() {
     }
   }
 
+  async function deleteTask(task: TaskRecord) {
+    if (task.taskType === "builtin") return;
+    const confirmed = window.confirm(`Delete task "${task.name}"? Run history will remain, but the task will no longer be scheduled.`);
+    if (!confirmed) return;
+
+    setError(null);
+    setDeletingKey(task.key);
+    try {
+      const response = await fetch(`/admin/tasks/${encodeURIComponent(task.key)}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || "Could not delete task");
+      }
+      await loadTasks();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Could not delete task");
+    } finally {
+      setDeletingKey(null);
+    }
+  }
+
   function renderTask(task: TaskRecord) {
     const draft = drafts[task.key] ?? {
       enabled: task.enabled,
@@ -521,6 +546,18 @@ export function TaskRunnerWorkspace() {
               <Save className="h-4 w-4" />
               Save
             </Button>
+            {task.taskType !== "builtin" ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => deleteTask(task)}
+                disabled={deletingKey === task.key}
+                title="Delete custom task"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </Button>
+            ) : null}
           </div>
         </div>
       </div>

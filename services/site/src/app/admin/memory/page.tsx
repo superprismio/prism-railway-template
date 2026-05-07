@@ -25,6 +25,7 @@ export default async function AdminMemoryPage() {
     return (
       <main className="min-h-screen w-full bg-background text-foreground">
         <AdminHeader
+          branding={workspace.data.branding}
           actions={
             <>
               <Button asChild variant="outline">
@@ -74,6 +75,7 @@ export default async function AdminMemoryPage() {
   return (
     <main className="min-h-screen w-full bg-background text-foreground">
       <AdminHeader
+        branding={workspace.data.branding}
         actions={
           <>
             <Button asChild variant="outline">

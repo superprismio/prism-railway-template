@@ -1,4 +1,4 @@
-import { getAdminBoardSnapshot, getAdminSetupStatus, loadConfig } from "@/lib/app-core"
+import { getAdminBoardSnapshot, getAdminSetupStatus, loadConfig, readSiteContent } from "@/lib/app-core"
 import { requireAdminSession } from "@/lib/admin-auth"
 import type { Capability } from "@/lib/role-access"
 
@@ -193,10 +193,26 @@ export type AdminBoardData = {
 
 export type AdminWorkspaceData = AdminBoardData & {
   setup: AdminSetupStatus
+  branding: {
+    brandName: string
+    logoUrl: string
+    logoAlt: string
+    workspaceLabel: string
+  }
   session: {
     userId: string | null
     roleSlugs: string[]
     capabilities: Capability[]
+  }
+}
+
+function adminBranding() {
+  const shell = readSiteContent(loadConfig()).shell
+  return {
+    brandName: shell.brandName || "Prism Refactory",
+    logoUrl: shell.logoUrl || "",
+    logoAlt: shell.logoAlt || shell.brandName || "Workspace logo",
+    workspaceLabel: shell.workspaceLabel || "Admin workspace",
   }
 }
 
@@ -308,6 +324,7 @@ export async function getAdminWorkspaceData(): Promise<
         data: {
           ...getAdminBoardSnapshot(),
           setup: await getAdminSetupStatus(),
+          branding: adminBranding(),
           session: {
             userId: access.session.userId,
             roleSlugs: access.session.roleSlugs,
@@ -352,6 +369,7 @@ export async function getAdminWorkspaceData(): Promise<
       data: {
         ...board.data,
         setup: setupJson.setup,
+        branding: adminBranding(),
         session: {
           userId: access.userId,
           roleSlugs: access.roleSlugs,

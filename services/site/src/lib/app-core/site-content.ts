@@ -53,13 +53,13 @@ export interface SiteContent {
 
 export const defaultSiteContent: SiteContent = {
   shell: {
-    brandName: 'Prism Agent',
+    brandName: 'Prism Refactory',
     logoUrl: '',
-    logoAlt: 'Prism Agent logo',
+    logoAlt: 'Prism Refactory logo',
     sidebarTitle: 'Profiles, points, and operator tooling.',
     sidebarCopy:
       'A member directory and operations surface with explicit boundaries between SQLite app state, Prism community memory, and agent continuity.',
-    workspaceLabel: 'Workspace',
+    workspaceLabel: 'Admin workspace',
     sessionLabel: 'Session',
     guestLabel: 'Guest mode',
     signInLabel: 'Sign in',
