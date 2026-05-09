@@ -202,6 +202,27 @@ export function upsertCustomSkill(customSkillsRoot: string, skillName: string, c
   } satisfies HostedSkillSummary;
 }
 
+export function deleteCustomSkill(customSkillsRoot: string, skillName: string) {
+  const normalizedSkillName = skillName.trim();
+  const skillDir = customSkillDirectory(customSkillsRoot, normalizedSkillName);
+  const skillFilePath = path.join(skillDir, 'SKILL.md');
+  if (!fs.existsSync(skillFilePath)) {
+    return null;
+  }
+
+  const skill = {
+    name: normalizedSkillName,
+    path: skillDir,
+    description: readSkillDescription(skillFilePath),
+    source: 'custom',
+    kind: 'custom',
+    readOnly: true,
+  } satisfies HostedSkillSummary;
+
+  fs.rmSync(skillDir, { recursive: true, force: true });
+  return skill;
+}
+
 export function readHostedSkillMarkdown(repoRoot: string, skillName: string, customSkillsRoot?: string) {
   const skillDir = resolveHostedSkillDirectory(repoRoot, skillName, customSkillsRoot);
   if (!skillDir) {
