@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getTaskByKey, listTasks, upsertTask } from "@/lib/app-core"
+import { deleteCustomTaskByKey, getTaskByKey, listTasks, upsertTask } from "@/lib/app-core"
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
 
 function parseBoolean(value: unknown, fallback = false) {
@@ -70,4 +70,36 @@ export async function POST(request: Request) {
   })
 
   return NextResponse.json({ ok: true, task })
+}
+
+export async function DELETE(request: Request) {
+  const access = await requireServiceAccess()
+  if (!access.ok) {
+    return NextResponse.json({ ok: false, error: access.error }, { status: access.status })
+  }
+
+  const url = new URL(request.url)
+  const disabledOnly = parseBoolean(url.searchParams.get("disabledOnly") ?? url.searchParams.get("disabled_only"))
+  if (!disabledOnly) {
+    return NextResponse.json(
+      { ok: false, error: "disabledOnly=true is required for bulk task deletion" },
+      { status: 400 },
+    )
+  }
+
+  const deleted = []
+  const skipped = []
+  for (const task of listTasks()) {
+    if (task.enabled) continue
+    if (task.taskType === "builtin") {
+      skipped.push({ key: task.key, reason: "system-default" })
+      continue
+    }
+    const removed = deleteCustomTaskByKey(task.key)
+    if (removed) {
+      deleted.push(removed)
+    }
+  }
+
+  return NextResponse.json({ ok: true, deleted, skipped })
 }

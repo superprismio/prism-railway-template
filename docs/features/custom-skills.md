@@ -41,6 +41,17 @@ Payload:
 
 The skill then appears in the admin Skills tab and is available through the same site-hosted skill download flow used by `codex-runtime`.
 
+Custom skills can be removed by name through the same internal API:
+
+```bash
+curl -fsSL \
+  -X DELETE \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/api/internal/skills/example-skill"
+```
+
+Only custom skills under `/data/skills` can be deleted this way. Template built-ins return `409`.
+
 ## Registry Decision
 
 There is no DB registry yet. For now, the canonical custom skill source is the `SKILL.md` file under `/data/skills`.
