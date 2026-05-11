@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { BookOpen, ChevronDown, Eye, RefreshCw } from "lucide-react";
+import { BookOpen, ChevronDown, Eye, RefreshCw, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,11 @@ type SkillContentPayload = {
   ok?: boolean;
   name?: string;
   content?: string;
+  error?: string;
+};
+
+type DeleteSkillPayload = {
+  ok?: boolean;
   error?: string;
 };
 
@@ -93,6 +98,31 @@ export function SkillsWorkspace() {
     }
   }
 
+  async function deleteSkill(skill: SkillRecord) {
+    if (skill.kind !== "custom") return;
+    const confirmed = window.confirm(`Delete custom skill "${skill.name}"?`);
+    if (!confirmed) return;
+
+    setError(null);
+    try {
+      const response = await fetch(`/admin/skills/${encodeURIComponent(skill.name)}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json().catch(() => ({}))) as DeleteSkillPayload;
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || "Could not delete skill");
+      }
+      setSkills((current) => current.filter((currentSkill) => currentSkill.name !== skill.name));
+      if (selectedSkill?.name === skill.name) {
+        setSelectedSkill(null);
+        setSelectedContent("");
+        setIsViewing(false);
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Could not delete skill");
+    }
+  }
+
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,11 +161,17 @@ export function SkillsWorkspace() {
         <div className="min-w-0 self-center text-xs text-muted-foreground">
           <p className="truncate">{skill.path}</p>
         </div>
-        <div className="flex items-center justify-end">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button type="button" variant="outline" onClick={() => viewSkill(skill)}>
             <Eye className="h-4 w-4" />
             View
           </Button>
+          {skill.kind === "custom" ? (
+            <Button type="button" variant="destructive" onClick={() => deleteSkill(skill)}>
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </Button>
+          ) : null}
         </div>
       </div>
     );
