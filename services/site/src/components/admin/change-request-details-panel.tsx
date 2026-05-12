@@ -6,11 +6,9 @@ import {
   Circle,
   ExternalLink,
   FileText,
-  GitBranch,
   ImageIcon,
   LoaderCircle,
   PlayCircle,
-  Sparkles,
   X,
 } from "lucide-react";
 
@@ -66,67 +64,29 @@ import {
   type AgentThreadSession,
 } from "./change-request-utils";
 
-function nextStepForGateAction(step: WorkflowStep, steps: WorkflowStep[], action: string) {
-  const routeStepKey = step.routes[action] ?? step.next;
-  return routeStepKey ? steps.find((candidate) => candidate.key === routeStepKey) ?? null : null;
-}
-
 function CommandCenter({
   status,
   currentWorkflowStepKey,
   steps,
-  triageSummary,
-  agentRecommendation,
-  targetApp,
-  reviewBranchName,
-  reviewBranchUrl,
-  reviewCompareUrl,
   isPending,
   isStepRunning,
   canRunWorkflowActions,
-  onRunStep,
-  onRunUntilGate,
-  onApproveSolution,
-  onApproveReview,
-  onRequestChanges,
-  onCloseRequest,
+  onContinue,
 }: {
   status: string;
   currentWorkflowStepKey: string | null;
   steps: WorkflowStep[];
-  triageSummary: string;
-  agentRecommendation: string;
-  targetApp: TargetAppRecord | null;
-  reviewBranchName: string | null;
-  reviewBranchUrl: string | null;
-  reviewCompareUrl: string | null;
   isPending: boolean;
   isStepRunning: boolean;
   canRunWorkflowActions: boolean;
-  onRunStep: () => void;
-  onRunUntilGate: () => void;
-  onApproveSolution: () => void;
-  onApproveReview: () => void;
-  onRequestChanges: (comment: string) => void;
-  onCloseRequest: () => void;
+  onContinue: () => void;
 }) {
-  const [reviewComment, setReviewComment] = useState("");
   const currentWorkflowPosition = workflowStepForKey(currentWorkflowStepKey, steps, status);
   const currentStepIndex = currentWorkflowPosition.index;
   const currentStep = currentWorkflowPosition.step;
-  const approvedGateStep = currentStep.type === "gate"
-    ? nextStepForGateAction(currentStep, steps, "approved")
-    : null;
-  const changesRequestedGateStep = currentStep.type === "gate"
-    ? nextStepForGateAction(currentStep, steps, "changesRequested")
-    : null;
-  const shouldRunAgentAfterApproval = approvedGateStep?.type === "agent";
-  const isReviewCommentRequired = Boolean(changesRequestedGateStep);
-  const canRequestChanges = reviewComment.trim().length > 0;
   const isRunning = isStepRunning;
   const isTerminal = currentStep.type === "terminal";
-  const isGate = canRunWorkflowActions && currentStep.type === "gate" && !isRunning && !isTerminal;
-  const canRunAgentStep = canRunWorkflowActions && currentStep.type === "agent" && !isRunning && !isTerminal;
+  const canContinue = canRunWorkflowActions && !isRunning && !isTerminal;
 
   return (
     <Card className="rounded-none border-border/70 bg-background shadow-none">
@@ -223,7 +183,6 @@ function CommandCenter({
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-medium">{currentStep.label}</p>
               <Badge variant="outline">{currentStep.type}</Badge>
-              <Badge variant="outline">{status}</Badge>
             </div>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {currentStep.type === "agent" && isRunning
@@ -242,14 +201,19 @@ function CommandCenter({
               </p>
             ) : null}
           </div>
-          {canRunAgentStep ? (
+          {canContinue && currentStep.type === "agent" ? (
             <div className="flex flex-wrap justify-end gap-2">
-              <Button type="button" variant="outline" onClick={onRunStep} disabled={isPending}>
-                Run step
-              </Button>
-              <Button type="button" onClick={onRunUntilGate} disabled={isPending}>
+              <Button type="button" onClick={onContinue} disabled={isPending}>
                 {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-                Run until gate
+                Continue
+              </Button>
+            </div>
+          ) : null}
+          {canContinue && currentStep.type !== "agent" ? (
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" onClick={onContinue} disabled={isPending}>
+                {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                Continue
               </Button>
             </div>
           ) : null}
@@ -261,153 +225,16 @@ function CommandCenter({
               <p className="font-medium">Step running</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 Prism is working through the current workflow step. The request
-                will move to the next mapped status when the run completes.
+                will move forward when the run completes.
               </p>
-            </div>
-          </div>
-        ) : null}
-
-        {isGate ? (
-          <div className="space-y-4">
-            <div>
-              <p className="font-medium">{currentStep.label}</p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                Review the current workflow context, then choose the next route.
-              </p>
-            </div>
-
-            {triageSummary || agentRecommendation ? (
-              <div className="space-y-4">
-                <div className="rounded-none border border-border/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Workflow Summary
-                  </p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                    {triageSummary || "No workflow summary yet."}
-                  </p>
-                </div>
-                <div className="rounded-none border border-border/70 p-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Next Step Guidance
-                  </p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                    {agentRecommendation || "No guidance recorded yet."}
-                  </p>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="flex flex-wrap items-center gap-3 rounded-none border border-border/70 p-4 text-sm">
-              {targetApp?.repoUrl ? (
-                <a
-                  href={targetApp.repoUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium underline underline-offset-2"
-                >
-                  Repository
-                </a>
-              ) : null}
-              {reviewBranchName ? (
-                <span className="inline-flex items-center gap-2">
-                  <GitBranch className="h-4 w-4 text-muted-foreground" />
-                  {reviewBranchUrl ? (
-                    <a
-                      href={reviewBranchUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-medium underline underline-offset-2"
-                    >
-                      {reviewBranchName}
-                    </a>
-                  ) : (
-                    <span className="font-medium">{reviewBranchName}</span>
-                  )}
-                </span>
-              ) : null}
-              {reviewCompareUrl ? (
-                <a
-                  href={reviewCompareUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium underline underline-offset-2"
-                >
-                  Open compare / PR
-                </a>
-              ) : null}
-              {!targetApp?.repoUrl && !reviewBranchName && !reviewCompareUrl ? (
-                <span className="text-muted-foreground">
-                  No branch link is available yet.
-                </span>
-              ) : null}
-            </div>
-
-            {changesRequestedGateStep ? (
-              <div className="space-y-2">
-                <Label htmlFor="review-change-comment">Review Feedback</Label>
-                <Textarea
-                  id="review-change-comment"
-                  value={reviewComment}
-                  onChange={(event) => setReviewComment(event.target.value)}
-                  placeholder="Describe what needs to change before approval."
-                  className="min-h-24"
-                />
-              </div>
-            ) : null}
-
-            <div className="flex flex-wrap justify-end gap-3">
-              {changesRequestedGateStep ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    onRequestChanges(reviewComment);
-                    setReviewComment("");
-                  }}
-                  disabled={
-                    isPending || (isReviewCommentRequired && !canRequestChanges)
-                  }
-                >
-                  {isPending ? (
-                    <LoaderCircle className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  Send back to agent
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                onClick={shouldRunAgentAfterApproval ? onApproveSolution : onApproveReview}
-                disabled={isPending}
-              >
-                {isPending ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                ) : null}
-                {shouldRunAgentAfterApproval ? "Approve and continue" : "Approve workflow"}
-              </Button>
             </div>
           </div>
         ) : null}
 
         {currentStep.type === "terminal" && status !== "closed" ? (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto]">
-            <div>
-              <p className="font-medium">{currentStep.label}</p>
-              <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                This workflow is at its terminal step and can be closed.
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onCloseRequest}
-              disabled={isPending || !canRunWorkflowActions}
-            >
-              {isPending ? (
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-              ) : null}
-              Close request
-            </Button>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            This workflow is at its terminal step.
+          </p>
         ) : null}
 
         {currentStep.type === "terminal" && status === "closed" ? (
@@ -419,12 +246,12 @@ function CommandCenter({
           </div>
         ) : null}
 
-        {!canRunAgentStep && !isRunning && !isGate && currentStep.type !== "terminal" ? (
+        {!canContinue && !isRunning && currentStep.type !== "terminal" ? (
           <div>
             <p className="font-medium">{currentStep.label}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {canRunWorkflowActions
-                ? "This workflow step has no specialized controls yet."
+                ? "Add a comment if needed, then continue the workflow."
                 : "You can view this workflow step, but your role cannot run or approve it."}
             </p>
           </div>
@@ -522,9 +349,6 @@ export function RequestDetailsPanel({
     request.agentRecommendation ?? "",
   );
   const [manualWorkflowStepKey, setManualWorkflowStepKey] = useState(request.currentWorkflowStepKey ?? "");
-  const [manualAgentRecommendation, setManualAgentRecommendation] = useState(
-    request.agentRecommendation ?? "",
-  );
   const [threadSession, setThreadSession] = useState<AgentThreadSession | null>(
     null,
   );
@@ -548,7 +372,6 @@ export function RequestDetailsPanel({
   const artifactPreviewRequestRef = useRef(0);
   const [isDraftDirty, setIsDraftDirty] = useState(false);
   const [isCommentPending, startCommentTransition] = useTransition();
-  const [isContinuePending, startContinueTransition] = useTransition();
   const [isCommandPending, startCommandTransition] = useTransition();
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
 
@@ -558,7 +381,6 @@ export function RequestDetailsPanel({
     setTriageSummary(request.triageSummary ?? "");
     setAgentRecommendation(request.agentRecommendation ?? "");
     setManualWorkflowStepKey(request.currentWorkflowStepKey ?? "");
-    setManualAgentRecommendation(request.agentRecommendation ?? "");
     setIsDraftDirty(false);
   }, [request.id, request.updatedAt]);
 
@@ -622,8 +444,7 @@ export function RequestDetailsPanel({
   useEffect(() => {
     const shouldPollLiveState =
       executions.some((execution) => execution.status === "running") ||
-      isCommandPending ||
-      isContinuePending;
+      isCommandPending;
 
     if (!shouldPollLiveState) {
       return;
@@ -694,7 +515,6 @@ export function RequestDetailsPanel({
           setTriageSummary(requestPayload.changeRequest.triageSummary ?? "");
           setAgentRecommendation(requestPayload.changeRequest.agentRecommendation ?? "");
           setManualWorkflowStepKey(requestPayload.changeRequest.currentWorkflowStepKey ?? "");
-          setManualAgentRecommendation(requestPayload.changeRequest.agentRecommendation ?? "");
         }
         setThreadSession(threadPayload.session ?? null);
         setThreadMessages(
@@ -731,7 +551,7 @@ export function RequestDetailsPanel({
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [executions, isCommandPending, isContinuePending, request.id]);
+  }, [executions, isCommandPending, request.id]);
 
   const activeExecution = useMemo(
     () =>
@@ -754,18 +574,6 @@ export function RequestDetailsPanel({
       ? activeExecution.meta.baseBranch
       : null) ?? configuredBaseBranch,
     activeExecution?.branchName ?? null,
-  );
-  const reviewExecution = useMemo(
-    () => executions.find((execution) => execution.branchName) ?? null,
-    [executions],
-  );
-  const reviewExecutionBranchUrl = executionBranchUrl(reviewExecution);
-  const reviewExecutionPrUrl = githubCompareUrl(
-    targetApp,
-    (typeof reviewExecution?.meta?.baseBranch === "string"
-      ? reviewExecution.meta.baseBranch
-      : null) ?? configuredBaseBranch,
-    reviewExecution?.branchName ?? null,
   );
   const lifecycleEvents = useMemo(
     () =>
@@ -1129,12 +937,6 @@ export function RequestDetailsPanel({
     await refreshArtifacts();
   }
 
-  function saveRequestState(nextStatus: string) {
-    setStatus(nextStatus);
-    setIsDraftDirty(false);
-    onSave({ status: nextStatus, triageSummary, agentRecommendation });
-  }
-
   function handleAddComment() {
     const content = commentDraft.trim();
     if (!content) return;
@@ -1152,7 +954,7 @@ export function RequestDetailsPanel({
     });
   }
 
-  function handleContinueAgent() {
+  function handleContinueWorkflow() {
     const latestComment =
       [...threadMessages]
         .reverse()
@@ -1164,21 +966,27 @@ export function RequestDetailsPanel({
 
     const prompt = [
       `Continue workflow step ${currentWorkflowStep.key} for request #${request.requestNumber}: ${request.title}.`,
-      `Current request status: ${request.status}.`,
+      `Current request status: ${status}.`,
       `Workflow step label: ${currentWorkflowStep.label}.`,
       latestComment
-        ? `Most recent admin comment to follow: ${latestComment}`
+        ? `Most recent comment to consider: ${latestComment}`
         : "No new admin comment was provided; continue from the existing request context and thread history.",
       currentWorkflowStep.type === "gate"
-        ? "This request is currently in review. Apply the review feedback if needed, continue the work, update the request state if appropriate, and leave a detailed summary comment."
-        : "Use the latest request context and comments, continue the work, update the request state if appropriate, and leave a detailed summary comment.",
+        ? "This step is a human gate. Treat comments as the gate decision and context, route through the workflow manifest, and continue if there is a next agent step."
+        : "Use the latest request context and comments, run the current workflow step, update the request state if appropriate, and leave a concise summary comment.",
     ].join("\n");
 
     setThreadError(null);
-    startContinueTransition(async () => {
+    const previousStatus = status;
+    const workflowAction = currentWorkflowStep.type === "gate" ? "approved" : undefined;
+    startCommandTransition(async () => {
       try {
-        await runAgent(prompt);
+        if (currentWorkflowStep.type === "agent") {
+          setStatus(statusForWorkflowStep(currentWorkflowStep) ?? status);
+        }
+        await runAgent(prompt, null, workflowAction, true);
       } catch (error) {
+        setStatus(previousStatus);
         setThreadError(
           error instanceof Error ? error.message : "Could not continue agent",
         );
@@ -1186,95 +994,9 @@ export function RequestDetailsPanel({
     });
   }
 
-  function handleCommandTriage(autoContinueUntilGate = false) {
-    const prompt = [
-      `Run workflow step ${currentWorkflowStep.key} for request #${request.requestNumber}: ${request.title}.`,
-      `Step label: ${currentWorkflowStep.label}.`,
-      currentWorkflowStep.instructionPath
-        ? `Use the workflow step instructions at ${currentWorkflowStep.instructionPath}.`
-        : "Use the current workflow step instructions from runtime metadata.",
-      "Use the request context and thread history. Return a concise summary of what changed or what should happen next.",
-    ].join("\n");
-
-    setThreadError(null);
-    const previousStatus = status;
-    startCommandTransition(async () => {
-      try {
-        setStatus(statusForWorkflowStep(currentWorkflowStep) ?? status);
-        await runAgent(prompt, null, undefined, autoContinueUntilGate);
-      } catch (error) {
-        setStatus(previousStatus);
-        setThreadError(
-          error instanceof Error ? error.message : "Could not triage request",
-        );
-      }
-    });
-  }
-
-  function handleApproveSolution() {
-    const prompt = [
-      `Approve current gate and continue workflow for request #${request.requestNumber}: ${request.title}.`,
-      "Use the workflow manifest to route to the next agent step. Use the workflow summary, next-step guidance, request context, and thread history.",
-    ].join("\n");
-
-    setThreadError(null);
-    const previousStatus = status;
-    startCommandTransition(async () => {
-      try {
-        const nextStep = nextStepForGateAction(currentWorkflowStep, currentWorkflowSteps, "approved");
-        setStatus(statusForWorkflowStep(nextStep ?? currentWorkflowStep) ?? status);
-        await runAgent(prompt, null, "approved", true);
-      } catch (error) {
-        setStatus(previousStatus);
-        setThreadError(
-          error instanceof Error
-            ? error.message
-            : "Could not start implementation",
-        );
-      }
-    });
-  }
-
-  function handleApproveReview() {
-    const nextStep = nextStepForGateAction(currentWorkflowStep, currentWorkflowSteps, "approved");
-    saveRequestState(statusForWorkflowStep(nextStep) ?? "approved");
-  }
-
-  function handleRequestChanges(feedback: string) {
-    const content = feedback.trim();
-    if (!content) return;
-
-    const prompt = [
-      `Route review feedback back to the workflow agent for request #${request.requestNumber}: ${request.title}.`,
-      `Review feedback to address: ${content}`,
-      "Use the workflow manifest to return to the appropriate agent step. Apply the feedback and leave a detailed summary when the request is ready for review again.",
-    ].join("\n");
-
-    setThreadError(null);
-    const previousStatus = status;
-    startCommandTransition(async () => {
-      try {
-        const nextStep = nextStepForGateAction(currentWorkflowStep, currentWorkflowSteps, "changesRequested");
-        setStatus(statusForWorkflowStep(nextStep ?? currentWorkflowStep) ?? status);
-        const session = await addRequestComment(content);
-        await runAgent(prompt, session, "changesRequested", true);
-      } catch (error) {
-        setStatus(previousStatus);
-        setThreadError(
-          error instanceof Error ? error.message : "Could not request changes",
-        );
-      }
-    });
-  }
-
-  function handleCloseRequest() {
-    saveRequestState("closed");
-  }
-
   function handleSaveManualStatus() {
     const nextStep = currentWorkflowSteps.find((step) => step.key === manualWorkflowStepKey);
-    const nextStatus = statusForWorkflowStep(nextStep) ?? status;
-    setStatus(nextStatus);
+    if (!nextStep) return;
     setCurrentWorkflowStepKey(manualWorkflowStepKey || null);
     setIsDraftDirty(false);
     onSave({
@@ -1288,16 +1010,6 @@ export function RequestDetailsPanel({
     setManualWorkflowStepKey(nextStepKey);
   }
 
-  function handleSaveSuggestedChanges() {
-    setAgentRecommendation(manualAgentRecommendation);
-    setIsDraftDirty(false);
-    onSave({
-      status,
-      triageSummary,
-      agentRecommendation: manualAgentRecommendation,
-    });
-  }
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 p-5 md:p-6">
@@ -1306,21 +1018,10 @@ export function RequestDetailsPanel({
             status={status}
             currentWorkflowStepKey={currentWorkflowStepKey}
             steps={currentWorkflowSteps}
-            triageSummary={triageSummary}
-            agentRecommendation={agentRecommendation}
-            targetApp={targetApp}
-            reviewBranchName={reviewExecution?.branchName ?? null}
-            reviewBranchUrl={reviewExecutionBranchUrl}
-            reviewCompareUrl={reviewExecutionPrUrl}
             isPending={isPending || isCommandPending}
             isStepRunning={Boolean(activeExecution)}
             canRunWorkflowActions={canRunWorkflowActions}
-            onRunStep={() => handleCommandTriage(false)}
-            onRunUntilGate={() => handleCommandTriage(true)}
-            onApproveSolution={handleApproveSolution}
-            onApproveReview={handleApproveReview}
-            onRequestChanges={handleRequestChanges}
-            onCloseRequest={handleCloseRequest}
+            onContinue={handleContinueWorkflow}
           />
           {error || threadError ? (
             <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -1331,6 +1032,84 @@ export function RequestDetailsPanel({
               Unsaved changes
             </div>
           ) : null}
+          <Card className="border-border/60 bg-card/90 rounded-none">
+            <CardHeader>
+              <CardTitle>Comment</CardTitle>
+              <CardDescription>
+                Add context for the next continue run. The agent reads the request thread and latest comments.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {canComment ? (
+                <div className="space-y-2">
+                  <Label htmlFor="request-comment-primary">Comment</Label>
+                  <Textarea
+                    id="request-comment-primary"
+                    value={commentDraft}
+                    onChange={(event) => setCommentDraft(event.target.value)}
+                    placeholder="Leave review feedback, approval context, or a clarification before continuing."
+                    className="min-h-24"
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleAddComment}
+                      disabled={isCommentPending || !commentDraft.trim()}
+                    >
+                      {isCommentPending ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : null}
+                      {isCommentPending ? "Saving" : "Add comment"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Your role can view comments but cannot add new ones.
+                </p>
+              )}
+              {canRunWorkflowActions ? (
+                <div className="border-t border-border/70 pt-4">
+                  <Label htmlFor="manual-workflow-step">Move to workflow step</Label>
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <Select value={manualWorkflowStepKey} onValueChange={handleManualWorkflowStepChange}>
+                      <SelectTrigger
+                        id="manual-workflow-step"
+                        className="w-full border border-input shadow-sm sm:w-[360px]"
+                      >
+                        <SelectValue placeholder="Select workflow step" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {currentWorkflowSteps.map((step) => (
+                          <SelectItem key={step.key} value={step.key}>
+                            {step.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      size="icon"
+                      onClick={handleSaveManualStatus}
+                      disabled={
+                        isPending ||
+                        (manualWorkflowStepKey || null) === currentWorkflowStepKey
+                      }
+                      aria-label="Save workflow step"
+                      title="Save workflow step"
+                    >
+                      {isPending ? (
+                        <LoaderCircle className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
           <Tabs defaultValue="details" className="space-y-4">
             <TabsList className="h-auto flex-wrap rounded-none bg-muted/50 p-1">
               <TabsTrigger value="details">Details</TabsTrigger>
@@ -1338,7 +1117,6 @@ export function RequestDetailsPanel({
               <TabsTrigger value="comments">Comments</TabsTrigger>
               <TabsTrigger value="history">History</TabsTrigger>
               <TabsTrigger value="log">Log</TabsTrigger>
-              {canRunWorkflowActions ? <TabsTrigger value="advanced">Advanced</TabsTrigger> : null}
             </TabsList>
 
             <TabsContent value="details" className="mt-0 space-y-4">
@@ -1461,45 +1239,6 @@ export function RequestDetailsPanel({
             </CardContent>
           </Card>
 
-          <Card className="border-border/60 bg-card/90 rounded-none">
-            <CardHeader>
-              <CardTitle>Workflow Notes</CardTitle>
-              <CardDescription>
-                Step summaries, guidance, and routing context for this workflow.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {triageSummary || agentRecommendation ? (
-                <>
-                  {triageSummary ? (
-                    <div className="rounded-none border border-border/70 p-4">
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                        Workflow Summary
-                      </p>
-                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                        {triageSummary}
-                      </p>
-                    </div>
-                  ) : null}
-                  {agentRecommendation ? (
-                    <div className="rounded-none border border-border/70 p-4">
-                      <p className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                        <Sparkles className="h-4 w-4" />
-                        Next Step Guidance
-                      </p>
-                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                        {agentRecommendation}
-                      </p>
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                  No workflow notes yet.
-                </div>
-              )}
-            </CardContent>
-          </Card>
             </TabsContent>
 
             <TabsContent value="artifacts" className="mt-0">
@@ -1711,140 +1450,6 @@ export function RequestDetailsPanel({
                 </div>
               </ScrollArea>
 
-              {canComment ? (
-              <div className="space-y-2">
-                <Label htmlFor="request-comment">Add Comment</Label>
-                <Textarea
-                  id="request-comment"
-                  value={commentDraft}
-                  onChange={(event) => setCommentDraft(event.target.value)}
-                  placeholder="Leave context, a review note, or a clarification without triggering the agent."
-                  className="min-h-24"
-                />
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleAddComment}
-                    disabled={isCommentPending}
-                  >
-                    {isCommentPending ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    {isCommentPending ? "Saving" : "Add comment"}
-                  </Button>
-                </div>
-              </div>
-              ) : null}
-
-            </CardContent>
-          </Card>
-            </TabsContent>
-
-            <TabsContent value="advanced" className="mt-0">
-              <Card className="border-border/60 bg-card/90 rounded-none">
-            <CardHeader>
-              <CardTitle>Advanced</CardTitle>
-              <CardDescription>
-                Manual workflow step and guidance updates.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-3">
-                <Label htmlFor="manual-workflow-step">Workflow Step</Label>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Select value={manualWorkflowStepKey} onValueChange={handleManualWorkflowStepChange}>
-                    <SelectTrigger
-                      id="manual-workflow-step"
-                      className="w-full border border-input shadow-sm sm:w-[360px]"
-                    >
-                      <SelectValue placeholder="Select workflow step" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {currentWorkflowSteps.map((step) => (
-                        <SelectItem key={step.key} value={step.key}>
-                          {step.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    type="button"
-                    size="icon"
-                    onClick={handleSaveManualStatus}
-                    disabled={
-                      isPending ||
-                      (manualWorkflowStepKey || null) === currentWorkflowStepKey
-                    }
-                    aria-label="Save workflow step"
-                    title="Save workflow step"
-                  >
-                    {isPending ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-2 rounded-none border border-border/70 p-4">
-                <Label>Continue Agent</Label>
-                <p className="text-sm text-muted-foreground">
-                  Uses the latest admin comment on this request, plus the
-                  current request status and linked thread history.
-                </p>
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    onClick={handleContinueAgent}
-                    disabled={isContinuePending}
-                  >
-                    {isContinuePending ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                    ) : null}
-                    {isContinuePending ? "Running" : "Continue agent"}
-                  </Button>
-                </div>
-              </div>
-
-              {agentRecommendation || manualAgentRecommendation ? (
-                <div className="space-y-3">
-                  <Label
-                    className="flex items-center gap-2"
-                    htmlFor="manual-agent-recommendation"
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    Next Step Guidance
-                  </Label>
-                  <div className="rounded-none border border-border/70 bg-background/70 p-4">
-                    <Textarea
-                      id="manual-agent-recommendation"
-                      value={manualAgentRecommendation}
-                      onChange={(event) =>
-                        setManualAgentRecommendation(event.target.value)
-                      }
-                      placeholder="List the proposed edits, areas to touch, expected outcome, and anything the agent should avoid."
-                      className="min-h-[420px] max-h-[420px] resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 shadow-none focus-visible:ring-0"
-                    />
-                  </div>
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      onClick={handleSaveSuggestedChanges}
-                      disabled={
-                        isPending ||
-                        manualAgentRecommendation === agentRecommendation
-                      }
-                    >
-                      {isPending ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : null}
-                      Save guidance
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
             </CardContent>
           </Card>
             </TabsContent>

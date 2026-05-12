@@ -33,19 +33,6 @@ function isWorkflowStep(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value) && typeof (value as { key?: unknown }).key === "string"
 }
 
-function statusForWorkflowStep(step: Record<string, unknown> | null | undefined) {
-  const statuses = Array.isArray(step?.statusMap)
-    ? step.statusMap.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-    : []
-  if (!statuses.length) {
-    return null
-  }
-  if (step?.type === "agent") {
-    return statuses.find((status) => status === "triaging" || status === "in-progress") ?? statuses[0]
-  }
-  return statuses[0]
-}
-
 export async function GET(_request: Request, context: RouteContext) {
   const access = await requireServiceAccess()
   if (!access.ok) {
@@ -109,8 +96,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   const nextWorkflowStep = nextWorkflowStepKey
     ? workflowSteps.find((step) => step.key === nextWorkflowStepKey) ?? null
     : null
-  const derivedStatus = nextWorkflowStep ? statusForWorkflowStep(nextWorkflowStep) : null
-  const projectedStatus = nextStatus ?? derivedStatus ?? undefined
+  const projectedStatus = nextStatus
 
   if (projectedStatus && !trackedChangeRequestStatuses.includes(projectedStatus as typeof trackedChangeRequestStatuses[number])) {
     return NextResponse.json({ ok: false, error: "Invalid status" }, { status: 400 })
