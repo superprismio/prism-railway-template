@@ -270,6 +270,22 @@ Read artifact content:
 GET /api/internal/change-board/requests/<request-id>/artifacts/<artifact-id>/content
 ```
 
+For Codex-friendly retrieval, request JSON from the raw content route:
+
+```http
+GET /api/internal/change-board/requests/<request-id>/artifacts/<artifact-id>/content?format=json
+```
+
+Codex can also retrieve request artifacts by visible request number without first resolving internal ids:
+
+```http
+GET /api/internal/change-board/requests/by-number/<request-number>/artifacts
+GET /api/internal/change-board/requests/by-number/<request-number>/artifacts?name=draft.md
+GET /api/internal/change-board/requests/by-number/<request-number>/artifacts?kind=markdown&includeContent=true
+```
+
+The by-number route returns artifact metadata plus text/json/markdown bodies as JSON. Binary bodies are omitted by default; pass `includeBinary=true` to receive base64 content.
+
 ## Custom Workflow Registration
 
 Instance-authored workflows can live on the site volume:

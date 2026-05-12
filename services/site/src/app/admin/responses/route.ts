@@ -791,6 +791,9 @@ export async function POST(request: Request) {
               runnableStepKey ? `Current workflow step: ${runnableStepKey}.` : null,
               nextStepKeyAfterRun ? `When this step is complete, advance the workflow run to ${nextStepKeyAfterRun}.` : null,
               requestCompletedStatus ? `The board status should move toward ${requestCompletedStatus}.` : null,
+              linkedChangeRequest
+                ? `To read prior workflow artifact bodies, call GET /api/internal/change-board/requests/by-number/${linkedChangeRequest.requestNumber}/artifacts with x-service-token. Filter by name or kind when useful.`
+                : null,
             ].filter(Boolean).join("\n\n")
           : null,
       },
@@ -963,6 +966,7 @@ export async function POST(request: Request) {
                 `Current workflow step: ${continuationStepKey}.`,
                 continuationNextStepKey ? `When this step is complete, advance the workflow run to ${continuationNextStepKey}.` : null,
                 continuationCompletedStatus ? `The board status should move toward ${continuationCompletedStatus}.` : null,
+                `To read prior workflow artifact bodies, call GET /api/internal/change-board/requests/by-number/${latestRequest.requestNumber}/artifacts with x-service-token. Filter by name or kind when useful.`,
                 "Auto-continue is enabled; the site will run the next agent step until the workflow reaches a gate or terminal step.",
               ].filter(Boolean).join("\n\n"),
             },

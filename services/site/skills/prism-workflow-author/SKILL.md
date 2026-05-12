@@ -97,6 +97,16 @@ Workflow steps should save durable files through the request artifact API instea
 
 Send that body to `POST /api/internal/change-board/requests/<request-id>/artifacts` with internal service auth. Use `encoding: "base64"` for image or other binary content. Artifacts are owned by the site service, stored under `/data/workflow-artifacts`, listed on the request Artifacts tab, and recorded as `artifact.created` workflow events.
 
+When a later workflow step needs prior artifact bodies, read them through the site API instead of guessing volume paths:
+
+```http
+GET /api/internal/change-board/requests/by-number/<request-number>/artifacts
+GET /api/internal/change-board/requests/by-number/<request-number>/artifacts?name=draft.md
+GET /api/internal/change-board/requests/<request-id>/artifacts/<artifact-id>/content?format=json
+```
+
+The by-number route returns artifact metadata plus text/json/markdown bodies. Binary content is omitted by default unless `includeBinary=true` is passed.
+
 Use external refs for live records outside Prism. Do not store GitHub issues, GitHub pull requests, Discord messages, deployment URLs, CMS posts, or DAO proposal links only in comments or artifacts when they need later lookup or sync.
 
 ```json
