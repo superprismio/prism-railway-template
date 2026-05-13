@@ -9,4 +9,4 @@ Produce a concise triage summary that identifies:
 - the target branch or environment context
 - whether the request is ready for agent implementation
 
-When triage is complete, leave the request in `ready-for-agent` with enough context for a human to approve or redirect the work.
+When triage is complete, leave enough context for the next workflow step or human gate to approve or redirect the work. Do not set legacy queue statuses; the workflow run's current step is the source of truth.

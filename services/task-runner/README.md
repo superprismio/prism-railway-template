@@ -83,7 +83,7 @@ Supported config:
     "autoRun": {
       "enabled": true,
       "maxSteps": 1,
-      "stopStatuses": ["awaiting-review", "approved", "rejected", "closed"]
+      "stopStatuses": ["closed"]
     }
   },
   "instructionConfig": {

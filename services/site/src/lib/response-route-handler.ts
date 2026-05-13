@@ -195,10 +195,10 @@ function findStepByKey(steps: Record<string, unknown>[], key: string | null | un
 function requestStatusForWorkflowStep(step: Record<string, unknown> | null | undefined, phase: "running" | "waiting") {
   if (!step) return null
   const type = stepType(step)
-  if (type === "terminal") return "approved"
+  if (type === "terminal") return "closed"
   if (phase === "running") return "in-progress"
-  if (type === "gate") return "awaiting-review"
-  if (type === "agent") return "ready-for-agent"
+  if (type === "gate") return "in-progress"
+  if (type === "agent") return "in-progress"
   return "in-progress"
 }
 
@@ -776,7 +776,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                 : "This response is linked to a tracked request workflow step.",
               runnableStepKey ? `Current workflow step: ${runnableStepKey}.` : null,
               nextStepKeyAfterRun ? `When this step is complete, advance the workflow run to ${nextStepKeyAfterRun}.` : null,
-              requestCompletedStatus ? `The board status should move toward ${requestCompletedStatus}.` : null,
+              requestCompletedStatus ? `The request status projection should move toward ${requestCompletedStatus}; workflow step state remains the source of truth.` : null,
               linkedChangeRequest
                 ? `To read prior workflow artifact bodies, call GET /agent/change-board/requests/by-number/${linkedChangeRequest.requestNumber}/artifacts with x-service-token. Filter by name or kind when useful.`
                 : null,
@@ -1159,7 +1159,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       const refreshedChangeRequest = getChangeRequest(activeLinkedChangeRequestId)
       if (refreshedChangeRequest?.status === requestRunningStatus) {
         updateChangeRequest(activeLinkedChangeRequestId, {
-          status: requestStartedFromStatus ?? linkedChangeRequest.status,
+          status: "in-progress",
           workflowStepKey: linkedWorkflowRun.currentStepKey,
           syncWorkflowRun: false,
         })

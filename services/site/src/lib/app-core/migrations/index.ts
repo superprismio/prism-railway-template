@@ -11,6 +11,7 @@ import { requestArtifactsMigration } from './010_request_artifacts';
 import { requestExternalRefsMigration } from './011_request_external_refs';
 import { userInvitesMigration } from './012_user_invites';
 import { hooksMigration } from './013_hooks';
+import { requestStatusProjectionMigration } from './014_request_status_projection';
 
 export interface Migration {
   name: string;
@@ -31,4 +32,5 @@ export const migrations: Migration[] = [
   requestExternalRefsMigration,
   userInvitesMigration,
   hooksMigration,
+  requestStatusProjectionMigration,
 ];

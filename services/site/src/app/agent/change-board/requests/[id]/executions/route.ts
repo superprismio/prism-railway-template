@@ -9,7 +9,7 @@ type RouteContext = {
 }
 
 function isTriageOnlyStatus(status: string | null | undefined) {
-  return ["submitted", "triaging", "needs-human-input"].includes(status ?? "")
+  return status === "submitted"
 }
 
 function hasActiveExecution(changeRequestId: string) {

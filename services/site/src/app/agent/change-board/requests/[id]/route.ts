@@ -22,11 +22,11 @@ type RouteContext = {
 }
 
 function isTriageOnlyStatus(status: string | null | undefined) {
-  return ["submitted", "triaging", "needs-human-input"].includes(status ?? "")
+  return status === "submitted"
 }
 
 function isExecutionStatus(status: string | null | undefined) {
-  return ["in-progress", "awaiting-review", "changes-requested", "approved", "closed"].includes(status ?? "")
+  return ["in-progress", "closed"].includes(status ?? "")
 }
 
 function isWorkflowStep(value: unknown): value is Record<string, unknown> {

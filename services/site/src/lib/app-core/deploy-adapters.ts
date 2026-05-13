@@ -30,7 +30,7 @@ export function buildTargetEnvironmentDeployPlan(input: {
     warnings.push('Production targets should not be redeployed by agent workflow.');
   }
 
-  if (!['ready-for-agent', 'in-progress', 'awaiting-review', 'changes-requested'].includes(request.status)) {
+  if (request.status !== 'in-progress') {
     warnings.push('Change request is not in an agent-executable state.');
   }
 
