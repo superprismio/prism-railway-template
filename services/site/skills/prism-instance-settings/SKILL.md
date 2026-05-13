@@ -4,6 +4,8 @@ description: Use this skill when Codex is asked to view or update Prism instance
 ---
 
 Use this skill for instance-level Prism settings owned by the site service.
+These settings are persisted by the site service under the mounted data root.
+Do not write `site-content.json` directly from Codex Runtime.
 
 Required environment:
 
