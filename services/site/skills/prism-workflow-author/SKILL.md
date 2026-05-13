@@ -63,6 +63,7 @@ Codex Runtime should not assume it can write the site service volume directly. T
 ```
 
 Use `POST /agent/workflows` with `x-service-token` service auth. The site service writes the files under `/data/workflows/<workflow-key>/`, normalizes manifest paths, and registers the workflow.
+If the route returns `Workflow manifest not found at /data/workflows/...`, the request did not include a usable manifest body. Retry with `manifest` as a JSON object plus the markdown `files`; do not try to write the site volume from Codex Runtime.
 
 To run a request workflow step from another service, use the site response route with internal service auth:
 

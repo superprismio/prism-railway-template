@@ -64,3 +64,39 @@ Custom skills and workflows are owned by the site service:
 - Request artifacts are saved through `/agent/change-board/requests/:id/artifacts`.
 
 Do not write custom Prism skills or workflows directly into `CODEX_HOME` unless the user explicitly asks for a temporary local experiment.
+
+To create a custom skill, POST the full `SKILL.md` body to the site service:
+
+```json
+{
+  "name": "monthly-security-audit",
+  "content": "---\nname: monthly-security-audit\n..."
+}
+```
+
+To create a custom workflow from Codex Runtime, POST the complete manifest and markdown files to the site service. Do not write `/data/workflows/...` locally from Codex Runtime; that is the site service volume.
+
+```json
+{
+  "key": "monthly-security-audit",
+  "manifest": {
+    "key": "monthly-security-audit",
+    "name": "Monthly Security Audit",
+    "entrypoint": "intake",
+    "workflowPath": "workflow.md",
+    "steps": [
+      {
+        "key": "intake",
+        "label": "Intake",
+        "type": "agent",
+        "instructionPath": "steps/intake.md",
+        "next": "review"
+      }
+    ]
+  },
+  "files": {
+    "workflow.md": "# Monthly Security Audit\n...",
+    "steps/intake.md": "# Intake\n..."
+  }
+}
+```

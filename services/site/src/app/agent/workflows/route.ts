@@ -113,6 +113,37 @@ function validateWorkflowPaths(definition: Record<string, unknown>, workflowRoot
   return true;
 }
 
+function parseJsonManifest(value: string, label: string) {
+  try {
+    const parsed = JSON.parse(value);
+    if (!isRecord(parsed)) {
+      return { manifest: null, error: `${label} must be a JSON object` };
+    }
+    return { manifest: parsed, error: null };
+  } catch {
+    return { manifest: null, error: `${label} is not valid JSON` };
+  }
+}
+
+function manifestFromBody(body: Record<string, unknown>) {
+  if (isRecord(body.manifest)) {
+    return { manifest: body.manifest, error: null };
+  }
+  if (isRecord(body.definition)) {
+    return { manifest: body.definition, error: null };
+  }
+  if (typeof body.manifestJson === "string" && body.manifestJson.trim()) {
+    return parseJsonManifest(body.manifestJson, "manifestJson");
+  }
+  if (typeof body.manifestContent === "string" && body.manifestContent.trim()) {
+    return parseJsonManifest(body.manifestContent, "manifestContent");
+  }
+  if (isRecord(body.files) && typeof body.files["manifest.proposal.json"] === "string") {
+    return parseJsonManifest(body.files["manifest.proposal.json"], 'files["manifest.proposal.json"]');
+  }
+  return { manifest: null, error: null };
+}
+
 export async function POST(request: Request) {
   const access = await requireWorkflowWriteAccess();
   if (!access.ok) {
@@ -136,12 +167,24 @@ export async function POST(request: Request) {
   const workflowRoot = path.resolve(config.dataRoot, "workflows", key);
   const manifestPath = path.resolve(workflowRoot, "manifest.proposal.json");
   let manifest: unknown = null;
+  const bodyManifest = manifestFromBody(body);
 
-  if (isRecord(body.manifest)) {
-    manifest = body.manifest;
+  if (bodyManifest.error) {
+    return NextResponse.json({ ok: false, error: bodyManifest.error }, { status: 400 });
+  }
+
+  if (bodyManifest.manifest) {
+    manifest = bodyManifest.manifest;
   } else {
     if (!fs.existsSync(manifestPath)) {
-      return NextResponse.json({ ok: false, error: `Workflow manifest not found at ${manifestPath}` }, { status: 404 });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Workflow manifest not found at ${manifestPath}`,
+          hint: 'To create a workflow from Codex Runtime, POST {"key","manifest","files"} to /agent/workflows. Codex Runtime cannot write the site service volume directly.',
+        },
+        { status: 404 },
+      );
     }
     try {
       manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
@@ -167,6 +210,9 @@ export async function POST(request: Request) {
   if (isRecord(body.files)) {
     fs.mkdirSync(workflowRoot, { recursive: true });
     for (const [relativePath, content] of Object.entries(body.files)) {
+      if (relativePath === "manifest.proposal.json") {
+        continue;
+      }
       if (typeof content !== "string") {
         return NextResponse.json({ ok: false, error: `Workflow file ${relativePath} must be a string` }, { status: 400 });
       }
