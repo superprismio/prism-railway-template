@@ -11,8 +11,8 @@ import { requestArtifactsMigration } from './010_request_artifacts';
 import { requestExternalRefsMigration } from './011_request_external_refs';
 import { userInvitesMigration } from './012_user_invites';
 import { hooksMigration } from './013_hooks';
-import { requestStatusProjectionMigration } from './014_request_status_projection';
 import { closeCompletedWorkflowRequestsMigration } from './015_close_completed_workflow_requests';
+import { dropChangeRequestStatusMigration } from './016_drop_change_request_status';
 
 export interface Migration {
   name: string;
@@ -33,6 +33,6 @@ export const migrations: Migration[] = [
   requestExternalRefsMigration,
   userInvitesMigration,
   hooksMigration,
-  requestStatusProjectionMigration,
   closeCompletedWorkflowRequestsMigration,
+  dropChangeRequestStatusMigration,
 ];

@@ -75,12 +75,11 @@ export async function getAdminSetupStatus() {
   };
 }
 
-export function getAdminBoardSnapshot(input: { status?: string; targetAppId?: string } = {}) {
+export function getAdminBoardSnapshot(input: { targetAppId?: string } = {}) {
   return {
     targetApps: listTargetApps(),
     targetEnvironments: listTargetEnvironments(input.targetAppId),
     changeRequests: listChangeRequests({
-      status: input.status,
       targetAppId: input.targetAppId,
     }),
     workflows: listWorkflows(),

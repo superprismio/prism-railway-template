@@ -183,7 +183,7 @@ First-pass goals:
 - trigger common actions such as:
   - next request
   - run request
-  - request status
+  - request workflow step
   - summarize target
   - deploy staging
 - stream or poll execution output

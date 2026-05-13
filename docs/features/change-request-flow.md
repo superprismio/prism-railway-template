@@ -6,7 +6,7 @@ The older change-request board is now backed by the workflow engine. The databas
 
 This focuses on:
 
-- workflow state and board projection
+- workflow state and board filters
 - Codex execution flow
 - GitHub branch and PR flow
 - Railway PR preview paths
@@ -18,19 +18,16 @@ This focuses on:
 flowchart TD
     A[New request created] --> B[workflow_run created]
     B --> C[triage agent step]
-    C --> D[in-progress request projection]
-    D --> E{Human approve-for-work gate}
+    C --> E{Human approve-for-work gate}
     E -- approved --> F[implement agent step]
     F --> G[Codex edits target repo]
     G --> H[Commit and push request branch]
-    H --> I[in-progress request projection]
-    I --> J{Human review gate}
-    J -- changes requested --> K[in-progress request projection]
-    K --> F
+    H --> J{Human review gate}
+    J -- changes requested --> F
     J -- approved --> L[closed terminal step]
 ```
 
-## Workflow Steps And Board Projection
+## Workflow Steps And Board Filters
 
 ```mermaid
 stateDiagram-v2
@@ -44,9 +41,7 @@ stateDiagram-v2
     closed --> [*]
 ```
 
-The request `status` is still present because the board needs simple filters and labels. It is a coarse projection only: `submitted`, `in-progress`, or `closed`. The workflow run's `current_step_key` is the source of truth.
-
-The workflow run and event records are the durable workflow state. Manual step changes update the workflow run directly.
+The workflow run and event records are the durable workflow state. Manual step changes update the workflow run directly. The board filters requests from workflow state: open, needs review, or closed.
 
 ## Runtime Sequence
 
@@ -72,8 +67,8 @@ sequenceDiagram
     Runtime->>Railway: Report PR preview when available
     Runtime-->>Site: responseText + branch + commit + trace + deploy info
     Site->>Site: Record execution + workflow_event
-    Site->>Site: Advance workflow_run and status projection
-    Site-->>Admin: Review status, links, logs
+    Site->>Site: Advance workflow_run
+    Site-->>Admin: Review step, links, logs
 ```
 
 ## Branch And PR Flow
@@ -178,7 +173,6 @@ erDiagram
     CHANGE_REQUEST {
       string id
       int requestNumber
-      string status
       string workflowKey
       string title
       string targetAppId
@@ -214,7 +208,6 @@ erDiagram
 
 Today the board should surface:
 
-- request status
 - workflow step label
 - workflow subway map
 - workflow events in History

@@ -65,7 +65,6 @@ import {
 } from "./change-request-utils";
 
 function CommandCenter({
-  status,
   currentWorkflowStepKey,
   steps,
   isPending,
@@ -73,7 +72,6 @@ function CommandCenter({
   canRunWorkflowActions,
   onContinue,
 }: {
-  status: string;
   currentWorkflowStepKey: string | null;
   steps: WorkflowStep[];
   isPending: boolean;
@@ -81,7 +79,7 @@ function CommandCenter({
   canRunWorkflowActions: boolean;
   onContinue: () => void;
 }) {
-  const currentWorkflowPosition = workflowStepForKey(currentWorkflowStepKey, steps, status);
+  const currentWorkflowPosition = workflowStepForKey(currentWorkflowStepKey, steps);
   const currentStepIndex = currentWorkflowPosition.index;
   const currentStep = currentWorkflowPosition.step;
   const isRunning = isStepRunning;
@@ -231,13 +229,7 @@ function CommandCenter({
           </div>
         ) : null}
 
-        {currentStep.type === "terminal" && status !== "closed" ? (
-          <p className="text-sm text-muted-foreground">
-            This workflow is at its terminal step.
-          </p>
-        ) : null}
-
-        {currentStep.type === "terminal" && status === "closed" ? (
+        {currentStep.type === "terminal" ? (
           <div>
             <p className="font-medium">Closed</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -271,12 +263,6 @@ function formatBytes(value: number) {
     index += 1;
   }
   return `${size >= 10 || index === 0 ? Math.round(size) : size.toFixed(1)} ${units[index]}`;
-}
-
-function statusForWorkflowStep(step: WorkflowStep | null | undefined) {
-  if (!step) return null;
-  if (step.type === "terminal") return "closed";
-  return "in-progress";
 }
 
 function artifactPreviewKind(artifact: RequestArtifactRecord) {
@@ -325,7 +311,6 @@ export function RequestDetailsPanel({
   canComment?: boolean;
   canRunWorkflowActions?: boolean;
   onSave: (payload: {
-    status?: string;
     currentWorkflowStepKey?: string | null;
     triageSummary: string;
     agentRecommendation: string;
@@ -334,11 +319,10 @@ export function RequestDetailsPanel({
   const configuredBaseBranch =
     targetEnvironment?.branch ?? targetApp?.defaultBranch ?? null;
   const currentWorkflowSteps = useMemo(() => workflowSteps(workflow), [workflow]);
-  const [status, setStatus] = useState(request.status);
   const [currentWorkflowStepKey, setCurrentWorkflowStepKey] = useState(request.currentWorkflowStepKey);
   const currentWorkflowStep = useMemo(
-    () => workflowStepForKey(currentWorkflowStepKey, currentWorkflowSteps, status).step,
-    [currentWorkflowStepKey, currentWorkflowSteps, status],
+    () => workflowStepForKey(currentWorkflowStepKey, currentWorkflowSteps).step,
+    [currentWorkflowStepKey, currentWorkflowSteps],
   );
   const [triageSummary, setTriageSummary] = useState(
     request.triageSummary ?? "",
@@ -374,7 +358,6 @@ export function RequestDetailsPanel({
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
 
   useEffect(() => {
-    setStatus(request.status);
     setCurrentWorkflowStepKey(request.currentWorkflowStepKey);
     setTriageSummary(request.triageSummary ?? "");
     setAgentRecommendation(request.agentRecommendation ?? "");
@@ -508,7 +491,6 @@ export function RequestDetailsPanel({
         if (cancelled) return;
 
         if (requestPayload.changeRequest) {
-          setStatus(requestPayload.changeRequest.status);
           setCurrentWorkflowStepKey(requestPayload.changeRequest.currentWorkflowStepKey);
           setTriageSummary(requestPayload.changeRequest.triageSummary ?? "");
           setAgentRecommendation(requestPayload.changeRequest.agentRecommendation ?? "");
@@ -964,7 +946,6 @@ export function RequestDetailsPanel({
 
     const prompt = [
       `Continue workflow step ${currentWorkflowStep.key} for request #${request.requestNumber}: ${request.title}.`,
-      `Current request status: ${status}.`,
       `Workflow step label: ${currentWorkflowStep.label}.`,
       latestComment
         ? `Most recent comment to consider: ${latestComment}`
@@ -975,16 +956,11 @@ export function RequestDetailsPanel({
     ].join("\n");
 
     setThreadError(null);
-    const previousStatus = status;
     const workflowAction = currentWorkflowStep.type === "gate" ? "approved" : undefined;
     startCommandTransition(async () => {
       try {
-        if (currentWorkflowStep.type === "agent") {
-          setStatus(statusForWorkflowStep(currentWorkflowStep) ?? status);
-        }
         await runAgent(prompt, null, workflowAction, true);
       } catch (error) {
-        setStatus(previousStatus);
         setThreadError(
           error instanceof Error ? error.message : "Could not continue agent",
         );
@@ -1013,7 +989,6 @@ export function RequestDetailsPanel({
       <div className="flex-1 p-5 md:p-6">
         <div className="space-y-6">
           <CommandCenter
-            status={status}
             currentWorkflowStepKey={currentWorkflowStepKey}
             steps={currentWorkflowSteps}
             isPending={isPending || isCommandPending}

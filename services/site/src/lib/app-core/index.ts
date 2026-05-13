@@ -73,7 +73,6 @@ export {
   upsertTask,
   upsertAgentSessionFromDiscord,
   ensureWorkflowRunForRequest,
-  syncWorkflowRunToRequestStatus,
   setUserRoleSlugs,
   claimUserInvite,
   updateWorkflowRun,

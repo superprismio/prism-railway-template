@@ -53,7 +53,6 @@ export const targetAppsAndChangeRequestsMigration = {
       title TEXT NOT NULL,
       description TEXT NOT NULL,
       request_type TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'submitted',
       priority TEXT NOT NULL DEFAULT 'normal',
       source TEXT NOT NULL DEFAULT 'manual',
       requested_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -78,7 +77,7 @@ export const targetAppsAndChangeRequestsMigration = {
       ON change_requests(request_number);
 
     CREATE INDEX IF NOT EXISTS idx_change_requests_listing
-      ON change_requests(status, priority, created_at);
+      ON change_requests(priority, created_at);
 
     CREATE INDEX IF NOT EXISTS idx_change_requests_target_app
       ON change_requests(target_app_id, created_at);

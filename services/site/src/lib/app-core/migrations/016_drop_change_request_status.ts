@@ -1,77 +1,5 @@
-const defaultChangeRequestWorkflow = {
-  key: "change-request-default",
-  name: "Change Request",
-  version: 1,
-  description: "Default human-reviewed request flow for repository-backed changes.",
-  entrypoint: "triage",
-  workflowPath: "workflows/change-request-default/workflow.md",
-  target: {
-    kind: "repository",
-    required: true,
-  },
-  agentConfig: {
-    runtime: "codex-runtime",
-    mode: "main-agent",
-    identity: "prism-change-agent",
-    model: null,
-    reasoningEffort: null,
-    skills: ["change-request-ops", "target-deploy-ops"],
-    delegation: {
-      allowed: false,
-      maxAgents: 0,
-    },
-  },
-  steps: [
-    {
-      key: "triage",
-      label: "Triage",
-      type: "agent",
-      instructionPath: "workflows/change-request-default/steps/triage.md",
-      next: "approve-for-work",
-    },
-    {
-      key: "approve-for-work",
-      label: "Approve",
-      type: "gate",
-      next: "implement",
-    },
-    {
-      key: "implement",
-      label: "Work",
-      type: "agent",
-      instructionPath: "workflows/change-request-default/steps/implement.md",
-      agentConfig: {
-        skills: ["change-request-ops", "target-deploy-ops"],
-        delegation: {
-          allowed: true,
-          maxAgents: 3,
-        },
-      },
-      next: "review",
-    },
-    {
-      key: "review",
-      label: "Review",
-      type: "gate",
-      instructionPath: "workflows/change-request-default/steps/review.md",
-      routes: {
-        approved: "closed",
-        changesRequested: "implement",
-        rejected: "closed",
-      },
-    },
-    {
-      key: "closed",
-      label: "Closed",
-      type: "terminal",
-    },
-  ],
-};
-
-const escapedDefaultWorkflow = JSON.stringify(defaultChangeRequestWorkflow).replace(/'/g, "''");
-
-export const nullableRequestTargetsMigration = {
-  name: '009_nullable_request_targets',
+export const dropChangeRequestStatusMigration = {
+  name: '016_drop_change_request_status',
   sql: `
     PRAGMA foreign_keys = OFF;
 
@@ -128,11 +56,6 @@ export const nullableRequestTargetsMigration = {
 
     CREATE INDEX IF NOT EXISTS idx_change_requests_target_app
       ON change_requests(target_app_id, created_at);
-
-    UPDATE workflows
-    SET definition_json = '${escapedDefaultWorkflow}',
-        updated_at = datetime('now')
-    WHERE key = 'change-request-default';
 
     PRAGMA foreign_keys = ON;
   `,

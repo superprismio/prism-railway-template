@@ -52,7 +52,6 @@ export type ChangeRequestRecord = {
   title: string
   description: string
   requestType: string
-  status: string
   priority: string
   source: string
   requestedByUserId: string | null

@@ -12,4 +12,4 @@ The request thread should remain continuous across the full request. If review s
 
 ## Current Behavior
 
-The workflow run stores the current step. The request status is only a coarse board projection used for lists and badges, not a source of workflow truth.
+The workflow run stores the current step and is the source of truth for request progress.

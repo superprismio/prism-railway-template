@@ -9,7 +9,7 @@ The first implementation is intentionally small:
 - The request board is the first workflow-backed request type.
 - The admin UI exposes a read-only Workflows tab.
 - Tasks and workflows share the same `agentConfig` shape.
-- Workflow runs/events are the runtime record; request status is a board projection.
+- Workflow runs/events are the runtime record and the source of truth for request progress.
 - Requests may have no target repository. Target apps are optional context for workflows that need repository/deploy helpers.
 
 ## Naming
@@ -170,13 +170,13 @@ See `docs/architecture/hooks.md` for the full hook model.
 
 ## Default Request Workflow
 
-The built-in request workflow uses `workflow_runs.current_step_key` as the source of truth. Request `status` remains only a coarse board projection for lists and badges.
+The built-in request workflow uses `workflow_runs.current_step_key` as the source of truth.
 
 The UI renders this as:
 
 - a read-only Workflows tab for registered workflow definitions
 - a workflow-driven subway map in the request detail panel
-- a workflow step label plus raw status on each request row
+- a workflow step label on each request row
 - workflow events in the request History tab
 
 Existing request rows are not deleted by the workflow migration. A workflow run is created when a request is created or first touched by the workflow-aware code path. Workflow events only exist from that point forward.
@@ -244,7 +244,7 @@ The runtime tables are:
 - `change_request_executions`: concrete Codex execution records with branch, commit, trace, and summary.
 - `request_artifacts`: files produced by workflow steps, with metadata in SQLite and file bytes stored under the site data volume.
 
-The request `status` remains a coarse board projection for lists and badges. It should not be treated as the workflow engine. The workflow run's `current_step_key` is the source of truth.
+Request progress comes from `workflow_runs.current_step_key` and terminal workflow state. The board should not maintain a separate request status field.
 
 ## Request Artifacts
 
@@ -393,7 +393,7 @@ The workflow-aware request flow is:
 4. Agent steps merge workflow-level and step-level `agentConfig`.
 5. `site` calls `codex-runtime` with workflow metadata and the step instructions.
 6. The response is recorded in `change_request_executions`.
-7. The workflow run advances, workflow events are appended, and request `status` is updated as the board projection.
+7. The workflow run advances and workflow events are appended.
 
 `change_request_executions` remains the record of concrete Codex runs: branch, commit, response text, runtime trace, deploy URL, and execution metadata. `workflow_events` is the higher-level workflow timeline.
 
@@ -409,13 +409,13 @@ Workflow state is split across two migrations:
 - `008_workflow_runs`: adds `workflow_runs` and `workflow_events`.
 - `009_nullable_request_targets`: makes `change_requests.target_app_id` nullable and marks the default workflow as repository-targeted.
 - `010_request_artifacts`: adds request-linked workflow artifacts.
+- `016_drop_change_request_status`: removes the old request status column so workflow runs own request progress.
 
 ## Near-Term Path
 
 1. Use workflow runs/events as the request engine.
-2. Keep request status as the board projection.
-3. Render registered workflows read-only in admin.
-4. Let chat author workflow markdown and manifests after the default workflow has been exercised.
-5. Expand workflow artifacts into richer previews when publish and image generation workflows need them.
+2. Render registered workflows read-only in admin.
+3. Let chat author workflow markdown and manifests after the default workflow has been exercised.
+4. Expand workflow artifacts into richer previews when publish and image generation workflows need them.
 
 The `prism-workflow-author` skill documents the authoring style for new workflow markdown and manifests.
