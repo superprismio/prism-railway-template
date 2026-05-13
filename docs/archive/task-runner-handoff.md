@@ -60,12 +60,12 @@ Tables:
 
 Internal APIs:
 
-- `GET /api/internal/tasks`
-- `POST /api/internal/tasks`
-- `GET /api/internal/tasks/runs`
-- `POST /api/internal/tasks/runs`
-- `GET /api/internal/tasks/runs/[id]`
-- `PATCH /api/internal/tasks/runs/[id]`
+- `GET /agent/tasks`
+- `POST /agent/tasks`
+- `GET /agent/tasks/runs`
+- `POST /agent/tasks/runs`
+- `GET /agent/tasks/runs/[id]`
+- `PATCH /agent/tasks/runs/[id]`
 
 State ownership:
 
@@ -191,7 +191,7 @@ TOKEN=$(railway variables --service site --json | node -e \
 
 curl -fsS \
   -H "X-Service-Token: $TOKEN" \
-  https://site-production-fef4.up.railway.app/api/internal/tasks
+  https://site-production-fef4.up.railway.app/agent/tasks
 ```
 
 Expected:
@@ -225,7 +225,7 @@ After each run, check run history:
 ```bash
 curl -fsS \
   -H "X-Service-Token: $TOKEN" \
-  "https://site-production-fef4.up.railway.app/api/internal/tasks/runs?limit=20"
+  "https://site-production-fef4.up.railway.app/agent/tasks/runs?limit=20"
 ```
 
 ## Rollout approach

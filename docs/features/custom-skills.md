@@ -26,7 +26,7 @@ curl -fsSL \
   -X POST \
   -H "content-type: application/json" \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/skills" \
+  "$PRISM_AGENT_API_BASE_URL/agent/skills" \
   -d @skill-payload.json
 ```
 
@@ -47,7 +47,7 @@ Custom skills can be removed by name through the same internal API:
 curl -fsSL \
   -X DELETE \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/skills/example-skill"
+  "$PRISM_AGENT_API_BASE_URL/agent/skills/example-skill"
 ```
 
 Only custom skills under `/data/skills` can be deleted this way. Template built-ins return `409`.

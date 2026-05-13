@@ -178,13 +178,13 @@ Do not put the scheduler in the Next.js request path.
 
 Task state should use the existing app SQLite DB owned by `site`. Do not create a second canonical task database in `task-runner`.
 
-Candidate internal endpoints:
+Candidate agent endpoints:
 
-- `GET /api/internal/tasks/due`
-- `POST /api/internal/tasks/:id/claim`
-- `POST /api/internal/tasks/:id/run`
-- `POST /api/internal/tasks/:id/complete`
-- `POST /api/internal/tasks/:id/fail`
+- `GET /agent/tasks/due`
+- `POST /agent/tasks/:id/claim`
+- `POST /agent/tasks/:id/run`
+- `POST /agent/tasks/:id/complete`
+- `POST /agent/tasks/:id/fail`
 
 ### `task-runner`
 

@@ -94,9 +94,13 @@ curl -fsSL \
   -X POST \
   -H "content-type: application/json" \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/tasks" \
+  "$PRISM_AGENT_API_BASE_URL/agent/tasks" \
   -d "$TASK_JSON"
 ```
+
+Do not use `/admin/tasks` from Codex Runtime. That route is for the browser admin UI and requires an authenticated admin session, so `401 Unauthorized` there does not mean task creation is unavailable. Runtime agents should use `/agent/tasks` with `x-service-token`.
+
+In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, and exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are not present, check the `APP_*` names before concluding the task API is unavailable.
 
 Return a concise review summary with:
 
