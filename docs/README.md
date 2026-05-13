@@ -31,6 +31,7 @@ Feature-specific behavior and UI notes:
 Setup, deployment, and runtime operations:
 
 - [Codex Runtime Auth](operations/codex-runtime-auth.md)
+- [Agent API Contract](operations/agent-api-contract.md)
 - [Local VPS Deployment](operations/local-vps-deployment.md)
 - [Railway Env Checklist](operations/railway-env-checklist.md)
 - [Railway Setup](operations/railway-setup.md)
