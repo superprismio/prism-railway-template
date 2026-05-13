@@ -174,13 +174,32 @@ export async function triggerHook(
     throw new Error("HOOK_REQUEST_CREATE_FAILED")
   }
 
-  await writeHookPayloadArtifact(hook, changeRequest.id, payload)
-
-  const autoRunEnabled = boolValue(hook.autoRun.enabled, true)
+  let autoStart: Awaited<ReturnType<typeof autoStartWorkflowRequest>> | null = null
+  const autoRunEnabled = boolValue(hook.autoRun.enabled, false)
   const requestedSkills = stringArray(hook.autoRun.requestedSkills)
-  const autoStart = autoRunEnabled
-    ? await autoStartWorkflowRequest(changeRequest, { baseUrl: options.baseUrl, requestedSkills })
-    : null
+  try {
+    await writeHookPayloadArtifact(hook, changeRequest.id, payload)
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "hook.payload_artifact_failed",
+      hookKey: hook.key,
+      requestId: changeRequest.id,
+      error: error instanceof Error ? error.message : "Unknown payload artifact error",
+    }))
+  }
+
+  if (autoRunEnabled) {
+    try {
+      autoStart = await autoStartWorkflowRequest(changeRequest, { baseUrl: options.baseUrl, requestedSkills })
+    } catch (error) {
+      console.warn(JSON.stringify({
+        event: "hook.autostart_failed",
+        hookKey: hook.key,
+        requestId: changeRequest.id,
+        error: error instanceof Error ? error.message : "Unknown workflow autostart error",
+      }))
+    }
+  }
   markHookTriggered(hook.key)
 
   return {

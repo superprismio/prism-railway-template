@@ -2,21 +2,10 @@ import { NextResponse } from "next/server"
 
 import { deleteCustomHookByKey, getHookByKey, upsertHook } from "@/lib/app-core"
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
+import { parseBoolean, parseConfig } from "@/lib/parse-utils"
 
 type RouteContext = {
   params: Promise<{ key: string }>
-}
-
-function parseBoolean(value: unknown, fallback = false) {
-  if (typeof value === "boolean") return value
-  if (typeof value === "string") return new Set(["1", "true", "yes", "on"]).has(value.trim().toLowerCase())
-  return fallback
-}
-
-function parseConfig(value: unknown) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
 }
 
 export async function GET(_request: Request, context: RouteContext) {

@@ -18,6 +18,7 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const result = await triggerHook(decodeURIComponent(key), payload ?? {}, {
       baseUrl: new URL(request.url).origin,
+      source: "service-hook",
     })
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {

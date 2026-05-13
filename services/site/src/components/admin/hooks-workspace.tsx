@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { ChevronDown, Copy, Play, RefreshCw, Trash2, Webhook } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -56,7 +56,7 @@ export function HooksWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  function loadHooks() {
+  const loadHooks = useCallback(() => {
     startTransition(async () => {
       setError(null);
       try {
@@ -70,11 +70,11 @@ export function HooksWorkspace() {
         setError(loadError instanceof Error ? loadError.message : "Could not load hooks");
       }
     });
-  }
+  }, []);
 
   useEffect(() => {
     loadHooks();
-  }, []);
+  }, [loadHooks]);
 
   const customHooks = useMemo(() => hooks.filter((hook) => !hook.systemDefault), [hooks]);
   const systemHooks = useMemo(() => hooks.filter((hook) => hook.systemDefault), [hooks]);

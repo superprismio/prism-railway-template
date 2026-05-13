@@ -2,16 +2,7 @@ import { NextResponse } from "next/server"
 
 import { listHooks, upsertHook } from "@/lib/app-core"
 import { parseNullableString, parseString, requireLocalAdminAccess } from "@/lib/local-admin-api"
-
-function parseBoolean(value: unknown, fallback = false) {
-  return typeof value === "boolean" ? value : fallback
-}
-
-function parseConfig(value: unknown) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
-}
+import { parseBoolean, parseConfig } from "@/lib/parse-utils"
 
 export async function GET() {
   const access = await requireLocalAdminAccess()

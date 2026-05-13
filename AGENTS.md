@@ -40,6 +40,9 @@ Send service auth as:
 - `POST /agent/workflows`
 - `GET /agent/hooks`
 - `POST /agent/hooks`
+- `GET /agent/hooks/:key`
+- `PATCH /agent/hooks/:key`
+- `DELETE /agent/hooks/:key`
 - `POST /agent/hooks/:key/trigger`
 - `POST /agent/responses`
 - `GET /agent/target-apps`

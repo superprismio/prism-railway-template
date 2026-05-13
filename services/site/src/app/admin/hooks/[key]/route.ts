@@ -2,19 +2,10 @@ import { NextResponse } from "next/server"
 
 import { deleteCustomHookByKey, getHookByKey, upsertHook } from "@/lib/app-core"
 import { parseNullableString, parseString, requireLocalAdminAccess } from "@/lib/local-admin-api"
+import { parseBoolean, parseConfig } from "@/lib/parse-utils"
 
 type RouteContext = {
   params: Promise<{ key: string }>
-}
-
-function parseBoolean(value: unknown, fallback = false) {
-  return typeof value === "boolean" ? value : fallback
-}
-
-function parseConfig(value: unknown) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
 }
 
 export async function PATCH(request: Request, context: RouteContext) {

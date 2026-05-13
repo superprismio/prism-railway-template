@@ -2,18 +2,7 @@ import { NextResponse } from "next/server"
 
 import { listHooks, upsertHook } from "@/lib/app-core"
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
-
-function parseBoolean(value: unknown, fallback = false) {
-  if (typeof value === "boolean") return value
-  if (typeof value === "string") return new Set(["1", "true", "yes", "on"]).has(value.trim().toLowerCase())
-  return fallback
-}
-
-function parseConfig(value: unknown) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
-}
+import { parseBoolean, parseConfig } from "@/lib/parse-utils"
 
 export async function GET() {
   const access = await requireServiceAccess()
@@ -50,7 +39,7 @@ export async function POST(request: Request) {
       autoRun: parseConfig(body?.autoRun ?? body?.auto_run),
       systemDefault: parseBoolean(body?.systemDefault ?? body?.system_default),
     })
-    return NextResponse.json({ ok: true, hook })
+    return NextResponse.json({ ok: true, hook }, { status: 201 })
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Could not save hook" },

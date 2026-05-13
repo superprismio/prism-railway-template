@@ -5113,12 +5113,35 @@ export function upsertHook(input: UpsertHookInput): HookRecord {
     throw new Error('WORKFLOW_NOT_FOUND');
   }
 
-  const existing = db.prepare('SELECT id, created_at, system_default FROM hooks WHERE key = ?').get(key) as
-    | { id: string; created_at: string; system_default: number }
+  const existing = db
+    .prepare(
+      `SELECT id, created_at, system_default, enabled, auth_mode, request_template_json, auto_run_json
+       FROM hooks
+       WHERE key = ?`,
+    )
+    .get(key) as
+    | {
+        id: string;
+        created_at: string;
+        system_default: number;
+        enabled: number;
+        auth_mode: string;
+        request_template_json: string;
+        auto_run_json: string;
+      }
     | undefined;
   const id = existing?.id ?? randomUUID();
   const createdAt = existing?.created_at ?? now;
   const systemDefault = existing?.system_default === 1 || input.systemDefault === true;
+  const enabled = input.enabled === undefined ? existing?.enabled ?? 0 : input.enabled ? 1 : 0;
+  const authMode =
+    input.authMode === undefined
+      ? existing?.auth_mode ?? 'service-token'
+      : normalizeText(input.authMode) || 'service-token';
+  const requestTemplateJson =
+    input.requestTemplate === undefined ? existing?.request_template_json ?? '{}' : JSON.stringify(input.requestTemplate);
+  const autoRunJson =
+    input.autoRun === undefined ? existing?.auto_run_json ?? '{}' : JSON.stringify(input.autoRun);
 
   db.prepare(
     `INSERT INTO hooks (
@@ -5142,11 +5165,11 @@ export function upsertHook(input: UpsertHookInput): HookRecord {
     key,
     name,
     description: normalizeText(input.description) || null,
-    enabled: input.enabled ? 1 : 0,
+    enabled,
     workflowKey,
-    authMode: normalizeText(input.authMode) || 'service-token',
-    requestTemplateJson: JSON.stringify(input.requestTemplate ?? {}),
-    autoRunJson: JSON.stringify(input.autoRun ?? {}),
+    authMode,
+    requestTemplateJson,
+    autoRunJson,
     systemDefault: systemDefault ? 1 : 0,
     lastTriggeredAt: null,
     createdAt,
