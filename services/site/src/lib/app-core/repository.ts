@@ -1333,6 +1333,8 @@ function parseTrackedChangeRequestRow(row: {
   completed_at: string | null;
   closed_at: string | null;
 }) {
+  const projectedStatus = row.workflow_run_status === 'completed' ? 'closed' : row.status;
+
   return {
     id: row.id,
     requestNumber: row.request_number,
@@ -1340,7 +1342,7 @@ function parseTrackedChangeRequestRow(row: {
     title: row.title,
     description: row.description,
     requestType: row.request_type,
-    status: row.status,
+    status: projectedStatus,
     priority: row.priority,
     source: row.source,
     requestedByUserId: row.requested_by_user_id,
@@ -3084,6 +3086,8 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
       cr.target_environment_id,
       te.slug AS target_environment_slug,
       te.name AS target_environment_name,
+      wr.current_step_key AS current_workflow_step_key,
+      wr.status AS workflow_run_status,
       cr.triage_summary,
       cr.acceptance_criteria_json,
       cr.constraints_json,
@@ -3101,8 +3105,10 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
     LEFT JOIN profiles requester ON requester.user_id = cr.requested_by_user_id
     LEFT JOIN target_apps ta ON ta.id = cr.target_app_id
     LEFT JOIN target_environments te ON te.id = cr.target_environment_id
+    LEFT JOIN workflow_runs wr ON wr.request_id = cr.id
     WHERE (cr.target_app_id IS NULL OR ta.agent_enabled = 1)
       AND cr.status IN (${runnableStatuses.map(() => '?').join(', ')})
+      AND COALESCE(wr.status, 'active') != 'completed'
       AND NOT EXISTS (
         SELECT 1
         FROM change_request_executions cre
@@ -3197,6 +3203,8 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
       cr.target_environment_id,
       te.slug AS target_environment_slug,
       te.name AS target_environment_name,
+      wr.current_step_key AS current_workflow_step_key,
+      wr.status AS workflow_run_status,
       cr.triage_summary,
       cr.acceptance_criteria_json,
       cr.constraints_json,
@@ -3214,7 +3222,9 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
     LEFT JOIN profiles requester ON requester.user_id = cr.requested_by_user_id
     LEFT JOIN target_apps ta ON ta.id = cr.target_app_id
     LEFT JOIN target_environments te ON te.id = cr.target_environment_id
+    LEFT JOIN workflow_runs wr ON wr.request_id = cr.id
     WHERE (cr.target_app_id IS NULL OR ta.agent_enabled = 1)
+      AND COALESCE(wr.status, 'active') != 'completed'
       AND EXISTS (
         SELECT 1
         FROM change_request_executions cre
