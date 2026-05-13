@@ -64,7 +64,7 @@ export function ChangeBoard({
     null,
   );
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [lifecycleFilter, setLifecycleFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [repositoryFilter, setRepositoryFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -237,7 +237,15 @@ export function ChangeBoard({
     return data.changeRequests
       .filter((request) => {
         const workflowStep = workflowStepForRequest(request);
-        if (statusFilter !== "all" && workflowStep.key !== statusFilter) {
+        const isClosed = workflowStep.type === "terminal" || request.workflowRunStatus === "completed";
+        const needsReview = !isClosed && workflowStep.type === "gate";
+        if (lifecycleFilter === "open" && isClosed) {
+          return false;
+        }
+        if (lifecycleFilter === "needs-review" && !needsReview) {
+          return false;
+        }
+        if (lifecycleFilter === "closed" && !isClosed) {
           return false;
         }
 
@@ -284,7 +292,7 @@ export function ChangeBoard({
     repositoryFilter,
     searchQuery,
     sortValue,
-    statusFilter,
+    lifecycleFilter,
     typeFilter,
     workflowByKey,
   ]);
@@ -526,12 +534,12 @@ export function ChangeBoard({
                   targetEnvironments={data.targetEnvironments}
                   workflows={data.workflows ?? []}
                   requestTypeOptions={requestTypeOptions}
-                  statusFilter={statusFilter}
+                  lifecycleFilter={lifecycleFilter}
                   typeFilter={typeFilter}
                   repositoryFilter={repositoryFilter}
                   searchQuery={searchQuery}
                   sortValue={sortValue}
-                  onStatusFilterChange={setStatusFilter}
+                  onLifecycleFilterChange={setLifecycleFilter}
                   onTypeFilterChange={setTypeFilter}
                   onRepositoryFilterChange={setRepositoryFilter}
                   onSearchQueryChange={setSearchQuery}
