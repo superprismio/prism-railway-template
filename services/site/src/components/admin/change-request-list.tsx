@@ -22,7 +22,6 @@ import type {
 import {
   requestTypeLabel,
   type RequestSortValue,
-  workflowSteps,
 } from "./change-request-utils";
 
 export function ChangeRequestList({
@@ -31,12 +30,12 @@ export function ChangeRequestList({
   targetEnvironments,
   workflows,
   requestTypeOptions,
-  statusFilter,
+  lifecycleFilter,
   typeFilter,
   repositoryFilter,
   searchQuery,
   sortValue,
-  onStatusFilterChange,
+  onLifecycleFilterChange,
   onTypeFilterChange,
   onRepositoryFilterChange,
   onSearchQueryChange,
@@ -48,12 +47,12 @@ export function ChangeRequestList({
   targetEnvironments: TargetEnvironmentRecord[];
   workflows: WorkflowRecord[];
   requestTypeOptions: string[];
-  statusFilter: string;
+  lifecycleFilter: string;
   typeFilter: string;
   repositoryFilter: string;
   searchQuery: string;
   sortValue: RequestSortValue;
-  onStatusFilterChange: (value: string) => void;
+  onLifecycleFilterChange: (value: string) => void;
   onTypeFilterChange: (value: string) => void;
   onRepositoryFilterChange: (value: string) => void;
   onSearchQueryChange: (value: string) => void;
@@ -64,18 +63,6 @@ export function ChangeRequestList({
     () => new Map(workflows.map((workflow) => [workflow.key, workflow])),
     [workflows],
   );
-  const workflowStepOptions = useMemo(() => {
-    const options = new Map<string, string>();
-    for (const workflow of workflows) {
-      for (const step of workflowSteps(workflow)) {
-        if (!options.has(step.key)) {
-          options.set(step.key, step.label);
-        }
-      }
-    }
-    return Array.from(options.entries()).map(([value, label]) => ({ value, label }));
-  }, [workflows]);
-
   return (
     <>
       <div className="border-b border-border/60 bg-background px-5 py-4 md:px-6">
@@ -94,17 +81,15 @@ export function ChangeRequestList({
           </div>
 
           <div className="space-y-2">
-            <Select value={statusFilter} onValueChange={onStatusFilterChange}>
+            <Select value={lifecycleFilter} onValueChange={onLifecycleFilterChange}>
               <SelectTrigger>
-                <SelectValue placeholder="All steps" />
+                <SelectValue placeholder="All requests" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All steps</SelectItem>
-                {workflowStepOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
+                <SelectItem value="all">All requests</SelectItem>
+                <SelectItem value="open">Open</SelectItem>
+                <SelectItem value="needs-review">Needs review</SelectItem>
+                <SelectItem value="closed">Closed</SelectItem>
               </SelectContent>
             </Select>
           </div>
