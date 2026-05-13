@@ -12,12 +12,4 @@ The request thread should remain continuous across the full request. If review s
 
 ## Current Behavior
 
-This workflow mirrors the existing request board behavior. The app still stores request state in the database and uses the request status as the current workflow projection.
-
-Status mapping:
-
-- `submitted`, `triaging`, `needs-human-input`: Triage
-- `ready-for-agent`: Approve
-- `in-progress`, `changes-requested`: Work
-- `awaiting-review`: Review
-- `approved`, `rejected`, `closed`: Closed
+The workflow run stores the current step. The request status is only a coarse board projection used for lists and badges, not a source of workflow truth.

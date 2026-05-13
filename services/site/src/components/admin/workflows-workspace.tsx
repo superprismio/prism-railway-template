@@ -42,7 +42,6 @@ type WorkflowStepDetail = {
   key: string;
   label: string;
   type: string;
-  statusMap: string[];
   instructionPath: string | null;
   resolvedInstructionPath: string | null;
   instructionContent: string | null;
@@ -376,11 +375,6 @@ export function WorkflowsWorkspace() {
                             <p className="mt-2 break-all text-xs text-muted-foreground">
                               {step.instructionPath ?? "No instruction path configured."}
                             </p>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {step.statusMap.map((status) => (
-                              <Badge key={status} variant="secondary">{status}</Badge>
-                            ))}
                           </div>
                         </div>
                         {step.instructionContent ? (

@@ -169,7 +169,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       },
     })
 
-    return NextResponse.json({ ok: true, changeRequest })
+    return NextResponse.json({ ok: true, changeRequest: getChangeRequest(changeRequestId) ?? changeRequest })
   }
 
   const response = await adminFetch(`/api/admin/change-board/requests/${id}`, {

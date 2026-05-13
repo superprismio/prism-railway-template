@@ -20,7 +20,7 @@ Today the database still contains `change_requests` because the existing board, 
 
 ## Workflow Definition
 
-The workflow manifest is stored in the `workflows.definition_json` column. It is intentionally thin: enough structure for UI, routing, and status mapping, but not a full behavior engine.
+The workflow manifest is stored in the `workflows.definition_json` column. It is intentionally thin: enough structure for UI display and deterministic routing, but not a full behavior engine.
 
 Agent-facing behavior lives in markdown files:
 
@@ -59,7 +59,6 @@ Example:
       "key": "triage",
       "label": "Triage",
       "type": "agent",
-      "statusMap": ["submitted", "triaging", "needs-human-input"],
       "instructionPath": "workflows/change-request-default/steps/triage.md",
       "next": "approve-for-work"
     },
@@ -67,7 +66,6 @@ Example:
       "key": "approve-for-work",
       "label": "Approve",
       "type": "gate",
-      "statusMap": ["ready-for-agent"],
       "next": "implement"
     }
   ]
@@ -78,7 +76,6 @@ The manifest answers deterministic app questions:
 
 - what steps exist
 - what order to render in the request detail view
-- which statuses map to which workflow step
 - whether a step is an agent step, human gate, or terminal state
 - where to find the markdown instructions for agent-facing steps
 - whether the workflow requires a target repository
@@ -138,13 +135,7 @@ Workflow prompts should stay descriptive:
 
 ## Default Request Workflow
 
-The built-in request workflow maps the old board statuses into workflow steps:
-
-- `submitted`, `triaging`, `needs-human-input`: `triage`
-- `ready-for-agent`: `approve-for-work`
-- `in-progress`, `changes-requested`: `implement`
-- `awaiting-review`: `review`
-- `approved`, `rejected`, `closed`: `closed`
+The built-in request workflow uses `workflow_runs.current_step_key` as the source of truth. Request `status` remains only a coarse board projection for lists and badges.
 
 The UI renders this as:
 
@@ -218,9 +209,7 @@ The runtime tables are:
 - `change_request_executions`: concrete Codex execution records with branch, commit, trace, and summary.
 - `request_artifacts`: files produced by workflow steps, with metadata in SQLite and file bytes stored under the site data volume.
 
-The request `status` remains a board projection derived from the workflow step. It should not be treated as the workflow engine.
-
-Manual status changes in the Advanced request controls are an escape hatch. They sync the workflow run by status and record a step-change event when the mapped step changes, but they can bypass explicit gate-decision events.
+The request `status` remains a coarse board projection for lists and badges. It should not be treated as the workflow engine. The workflow run's `current_step_key` is the source of truth.
 
 ## Request Artifacts
 
@@ -324,7 +313,6 @@ Codex Runtime usually cannot write the site service volume directly. For chat-au
         "key": "intake",
         "label": "Intake",
         "type": "agent",
-        "statusMap": ["submitted", "triaging"],
         "instructionPath": "steps/intake.md",
         "next": "draft"
       }
@@ -374,10 +362,7 @@ The workflow-aware request flow is:
 
 `change_request_executions` remains the record of concrete Codex runs: branch, commit, response text, runtime trace, deploy URL, and execution metadata. `workflow_events` is the higher-level workflow timeline.
 
-The admin UI supports two agent run modes:
-
-- `Run step` executes only the current agent step, advances the workflow pointer once, and stops.
-- `Run until gate` executes the current agent step and then automatically continues through following `agent` steps until the workflow reaches a `gate`, `terminal` step, failure, or the server-side continuation cap.
+The admin UI uses one `Continue` action. It runs the current agent step and then automatically continues through following `agent` steps until the workflow reaches a `gate`, `terminal` step, failure, or the server-side continuation cap.
 
 Gate actions such as approval or requested changes use the same run-until-gate behavior after routing, so a review approval can continue into the next agent step without extra button presses while still stopping at the next human decision point.
 

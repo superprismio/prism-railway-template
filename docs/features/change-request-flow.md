@@ -44,15 +44,9 @@ stateDiagram-v2
     closed --> [*]
 ```
 
-The request `status` is still present because the board needs simple filters and labels. It is now a projection of the workflow step:
+The request `status` is still present because the board needs simple filters and labels. It is a coarse projection only; the workflow run's `current_step_key` is the source of truth.
 
-- `submitted`, `triaging`, `needs-human-input`: Triage
-- `ready-for-agent`: Approve
-- `in-progress`, `changes-requested`: Work
-- `awaiting-review`: Review
-- `approved`, `rejected`, `closed`: Closed
-
-The workflow run and event records are the durable workflow state. Manual Advanced status changes remain an escape hatch and sync the workflow run by this projection.
+The workflow run and event records are the durable workflow state. Manual step changes update the workflow run directly.
 
 ## Runtime Sequence
 

@@ -26,7 +26,6 @@ const defaultChangeRequestWorkflow = {
       key: "triage",
       label: "Triage",
       type: "agent",
-      statusMap: ["submitted", "triaging", "needs-human-input"],
       instructionPath: "workflows/change-request-default/steps/triage.md",
       next: "approve-for-work",
     },
@@ -34,14 +33,12 @@ const defaultChangeRequestWorkflow = {
       key: "approve-for-work",
       label: "Approve",
       type: "gate",
-      statusMap: ["ready-for-agent"],
       next: "implement",
     },
     {
       key: "implement",
       label: "Work",
       type: "agent",
-      statusMap: ["in-progress", "changes-requested"],
       instructionPath: "workflows/change-request-default/steps/implement.md",
       agentConfig: {
         skills: ["change-request-ops", "target-deploy-ops"],
@@ -56,7 +53,6 @@ const defaultChangeRequestWorkflow = {
       key: "review",
       label: "Review",
       type: "gate",
-      statusMap: ["awaiting-review"],
       instructionPath: "workflows/change-request-default/steps/review.md",
       routes: {
         approved: "closed",
@@ -68,7 +64,6 @@ const defaultChangeRequestWorkflow = {
       key: "closed",
       label: "Closed",
       type: "terminal",
-      statusMap: ["approved", "rejected", "closed"],
     },
   ],
 };

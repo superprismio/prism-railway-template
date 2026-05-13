@@ -274,11 +274,10 @@ function formatBytes(value: number) {
 }
 
 function statusForWorkflowStep(step: WorkflowStep | null | undefined) {
-  if (!step?.statusMap.length) return null;
-  if (step.type === "agent") {
-    return step.statusMap.find((status) => ["triaging", "in-progress"].includes(status)) ?? step.statusMap[0];
-  }
-  return step.statusMap[0];
+  if (!step) return null;
+  if (step.type === "terminal") return "approved";
+  if (step.type === "gate") return "awaiting-review";
+  return "in-progress";
 }
 
 function artifactPreviewKind(artifact: RequestArtifactRecord) {

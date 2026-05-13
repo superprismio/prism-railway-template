@@ -8,7 +8,7 @@ Use this skill to author Prism workflows in the style expected by the site servi
 Prism workflows are markdown-first and DB-indexed:
 
 - Workflow and step instructions are human/agent-authored markdown.
-- The workflow manifest is thin structure for UI/status mapping and deterministic routing.
+- The workflow manifest is thin structure for UI display and deterministic routing.
 - Workflow state, approvals, executions, and event history belong in the DB, not markdown.
 
 ## Storage
@@ -49,7 +49,6 @@ Codex Runtime should not assume it can write the site service volume directly. T
         "key": "triage",
         "label": "Triage",
         "type": "agent",
-        "statusMap": ["submitted", "triaging"],
         "instructionPath": "steps/triage.md"
       }
     ]
@@ -140,7 +139,6 @@ Use it for:
 - step `key`
 - step `label`
 - step `type`
-- `statusMap`
 - `instructionPath`
 - simple `next` or `routes` only when the UI/runtime needs deterministic routing
 - shared `agentConfig`
@@ -149,6 +147,24 @@ Use it for:
 Do not put long prompts, implementation logic, scripts, or large prose in the manifest. Put those in markdown.
 
 Do not require a target repository unless the workflow actually needs repo/deploy helpers. Requests can produce artifacts, Discord messages, summaries, or other outputs without a `targetAppId`.
+
+Do not add workflow-specific hacks for board status, terminal status, auto-advance state, or legacy status mapping. The site workflow engine owns:
+
+- current step state through `workflow_runs.current_step_key`
+- request status projection for lists and badges
+- terminal run state
+- gate routing mechanics
+- auto-continue behavior
+- execution and workflow event history
+
+Workflow markdown should define domain truth and evidence:
+
+- what approval means for this workflow
+- which comments are sufficient or insufficient for a human gate
+- which artifacts prove the step is complete
+- which external refs prove a live system action happened
+- how to reconcile existing work before starting duplicate jobs
+- what the next step should verify before writing or publishing
 
 Put whether delegation is allowed in the manifest:
 
@@ -185,7 +201,6 @@ Recommended manifest shape:
       "key": "triage",
       "label": "Triage",
       "type": "agent",
-      "statusMap": ["submitted", "triaging"],
       "instructionPath": "workflows/example-workflow/steps/triage.md",
       "next": "review"
     },
@@ -193,7 +208,6 @@ Recommended manifest shape:
       "key": "review",
       "label": "Review",
       "type": "gate",
-      "statusMap": ["awaiting-review"],
       "routes": {
         "approved": "closed",
         "changesRequested": "triage"
@@ -202,8 +216,7 @@ Recommended manifest shape:
     {
       "key": "closed",
       "label": "Closed",
-      "type": "terminal",
-      "statusMap": ["approved", "rejected", "closed"]
+      "type": "terminal"
     }
   ]
 }
@@ -218,6 +231,7 @@ Recommended manifest shape:
 - how loops/retries should be handled
 - which state is durable DB state
 - any important target/artifact conventions
+- which domain evidence is required before a risky step can continue
 
 Each `steps/<step-key>.md` should stay narrow and skill-like:
 
@@ -227,6 +241,7 @@ Each `steps/<step-key>.md` should stay narrow and skill-like:
 - state what output should be returned
 - state which durable artifacts should be written
 - state which external refs should be attached or checked
+- state idempotency/reconciliation rules for steps that call live systems
 - state delegation rules when `agentConfig.delegation.allowed` is true
 - avoid broad instructions that belong to the whole workflow
 
@@ -248,13 +263,7 @@ Only add `command`, `handoff`, `subworkflow`, or `wait` when the current product
 
 The current built-in request workflow is `change-request-default`.
 
-Its status projection is:
-
-- `submitted`, `triaging`, `needs-human-input`: Triage
-- `ready-for-agent`: Approve
-- `in-progress`, `changes-requested`: Work
-- `awaiting-review`: Review
-- `approved`, `rejected`, `closed`: Closed
+Its workflow run `current_step_key` is the source of truth. Request `status` is only a coarse board projection for lists and badges.
 
 When modifying current request behavior, preserve existing board semantics unless the user explicitly asks for a migration.
 
@@ -265,7 +274,7 @@ When creating or changing a workflow:
 1. Use lowercase kebab-case workflow and step keys.
 2. Update `workflow.md`.
 3. Add or update each relevant `steps/<step-key>.md`.
-4. Update the manifest `steps[]` order and `statusMap`.
+4. Update the manifest `steps[]` order and deterministic `next` / `routes`.
 5. Keep agent instructions in markdown, not JSON.
 6. Keep state and approvals in DB-backed request/workflow records.
 7. Call out any required skills, scripts, env vars, or adapter capabilities.

@@ -25,7 +25,6 @@ Example manifest step:
   "key": "agent-review",
   "label": "Agent Review",
   "type": "agent",
-  "statusMap": ["awaiting-review"],
   "instructionPath": "workflows/github-change-request/steps/agent-review.md",
   "agentConfig": {
     "runtime": "codex-runtime",

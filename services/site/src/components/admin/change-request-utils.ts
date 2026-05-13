@@ -28,7 +28,6 @@ export type WorkflowStep = {
   key: string;
   label: string;
   type: string;
-  statusMap: string[];
   instructionPath: string | null;
   next: string | null;
   routes: Record<string, string>;
@@ -39,7 +38,6 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     key: "triage",
     label: "Triage",
     type: "agent",
-    statusMap: ["submitted", "triaging", "needs-human-input"],
     instructionPath: "workflows/change-request-default/steps/triage.md",
     next: "approve-for-work",
     routes: {},
@@ -48,7 +46,6 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     key: "approve-for-work",
     label: "Approve",
     type: "gate",
-    statusMap: ["ready-for-agent"],
     instructionPath: null,
     next: "implement",
     routes: {},
@@ -57,7 +54,6 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     key: "implement",
     label: "Work",
     type: "agent",
-    statusMap: ["in-progress", "changes-requested"],
     instructionPath: "workflows/change-request-default/steps/implement.md",
     next: "review",
     routes: {},
@@ -66,7 +62,6 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     key: "review",
     label: "Review",
     type: "gate",
-    statusMap: ["awaiting-review"],
     instructionPath: "workflows/change-request-default/steps/review.md",
     next: null,
     routes: {
@@ -79,7 +74,6 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     key: "closed",
     label: "Closed",
     type: "terminal",
-    statusMap: ["approved", "rejected", "closed"],
     instructionPath: null,
     next: null,
     routes: {},
@@ -104,9 +98,6 @@ export function workflowSteps(workflow: WorkflowRecord | null | undefined): Work
             ? step.name.trim()
             : key;
       const type = typeof step.type === "string" && step.type.trim() ? step.type.trim() : "agent";
-      const statusMap = Array.isArray(step.statusMap)
-        ? step.statusMap.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-        : [];
       const instructionPath =
         typeof step.instructionPath === "string" && step.instructionPath.trim()
           ? step.instructionPath.trim()
@@ -123,30 +114,17 @@ export function workflowSteps(workflow: WorkflowRecord | null | undefined): Work
             ),
           )
         : {};
-      return { key, label, type, statusMap, instructionPath, next, routes };
+      return { key, label, type, instructionPath, next, routes };
     })
     .filter((step): step is WorkflowStep => Boolean(step));
 
   return steps.length ? steps : fallbackRequestWorkflowSteps;
 }
 
-export function workflowStepForStatus(
-  status: string,
-  steps: WorkflowStep[],
-): { step: WorkflowStep; index: number } {
-  const index = steps.findIndex((step) => step.statusMap.includes(status));
-  if (index >= 0) {
-    return { step: steps[index], index };
-  }
-
-  const safeIndex = 0;
-  return { step: steps[safeIndex] ?? fallbackRequestWorkflowSteps[0], index: safeIndex };
-}
-
 export function workflowStepForKey(
   stepKey: string | null | undefined,
   steps: WorkflowStep[],
-  fallbackStatus: string,
+  _fallbackStatus: string,
 ): { step: WorkflowStep; index: number } {
   if (stepKey) {
     const index = steps.findIndex((step) => step.key === stepKey);
@@ -155,7 +133,8 @@ export function workflowStepForKey(
     }
   }
 
-  return workflowStepForStatus(fallbackStatus, steps);
+  const safeIndex = 0;
+  return { step: steps[safeIndex] ?? fallbackRequestWorkflowSteps[0], index: safeIndex };
 }
 
 export function priorityVariant(priority: string) {

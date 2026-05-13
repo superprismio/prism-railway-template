@@ -3358,8 +3358,8 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
   const workflow = getWorkflowByKey(current.workflowKey);
   const lifecycleStepKey =
     normalizeText(input.workflowStepKey) ||
-    (input.syncWorkflowRun === false ? getWorkflowRunForRequest(changeRequestId)?.currentStepKey : null) ||
-    workflowStepKeyForStatus(workflow, nextStatus);
+    getWorkflowRunForRequest(changeRequestId)?.currentStepKey ||
+    workflowEntrypoint(workflow);
   const terminalForTimeline = workflowStepIsTerminal(workflow, lifecycleStepKey, nextStatus);
 
   getDb()
@@ -4545,16 +4545,6 @@ function workflowEntrypoint(workflow: WorkflowRecord | null | undefined) {
   return workflowStepsFromDefinition(workflow)[0]?.key as string | undefined ?? 'triage';
 }
 
-function workflowStepKeyForStatus(workflow: WorkflowRecord | null | undefined, status: string) {
-  for (const step of workflowStepsFromDefinition(workflow)) {
-    const statusMap = Array.isArray(step.statusMap) ? step.statusMap : [];
-    if (statusMap.some((entry) => entry === status)) {
-      return String(step.key);
-    }
-  }
-  return workflowEntrypoint(workflow);
-}
-
 function workflowStepForKey(workflow: WorkflowRecord | null | undefined, stepKey: string | null | undefined) {
   if (!stepKey) {
     return null;
@@ -4609,7 +4599,7 @@ export function ensureWorkflowRunForRequest(input: {
   const workflow = getWorkflowByKey(input.workflowKey);
   const currentStepKey =
     normalizeText(input.currentStepKey) ||
-    (input.status ? workflowStepKeyForStatus(workflow, input.status) : workflowEntrypoint(workflow));
+    workflowEntrypoint(workflow);
   const now = new Date().toISOString();
   const id = randomUUID();
   const terminal = workflowStepIsTerminal(workflow, currentStepKey, input.status);
@@ -4681,7 +4671,8 @@ export function updateWorkflowRun(input: {
 
 export function syncWorkflowRunToRequestStatus(request: ChangeRequestRecord, actorType = 'system') {
   const workflow = getWorkflowByKey(request.workflowKey);
-  const nextStepKey = workflowStepKeyForStatus(workflow, request.status);
+  const existingRun = getWorkflowRunForRequest(request.id);
+  const nextStepKey = existingRun?.currentStepKey ?? workflowEntrypoint(workflow);
   const terminal = workflowStepIsTerminal(workflow, nextStepKey, request.status);
   const run = ensureWorkflowRunForRequest({
     requestId: request.id,

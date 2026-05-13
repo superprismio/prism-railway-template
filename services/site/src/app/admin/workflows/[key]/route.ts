@@ -97,7 +97,6 @@ export async function GET(_request: Request, context: RouteContext) {
       key: typeof step.key === "string" ? step.key : "",
       label: typeof step.label === "string" ? step.label : typeof step.name === "string" ? step.name : "",
       type: typeof step.type === "string" ? step.type : "agent",
-      statusMap: Array.isArray(step.statusMap) ? step.statusMap.filter((item): item is string => typeof item === "string") : [],
       instructionPath: typeof step.instructionPath === "string" ? step.instructionPath : null,
       resolvedInstructionPath: instructionFile?.path ?? null,
       instructionContent: instructionFile?.content ?? null,

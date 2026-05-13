@@ -28,7 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { AdminBoardData, AdminWorkspaceData } from "@/lib/admin";
+import type { AdminBoardData, AdminWorkspaceData, ChangeRequestRecord } from "@/lib/admin";
 import type { Capability } from "@/lib/role-access";
 
 import {
@@ -203,11 +203,22 @@ export function ChangeBoard({
         const responsePayload = (await response.json()) as {
           ok?: boolean;
           error?: string;
+          changeRequest?: ChangeRequestRecord;
         };
         if (!response.ok || responsePayload.ok === false) {
           throw new Error(responsePayload.error || "Could not save triage");
         }
 
+        if (responsePayload.changeRequest) {
+          setData((current) => ({
+            ...current,
+            changeRequests: current.changeRequests.map((request) =>
+              request.id === responsePayload.changeRequest?.id
+                ? responsePayload.changeRequest
+                : request,
+            ),
+          }));
+        }
         await refreshOnce();
       } catch (error) {
         setModalError(

@@ -187,28 +187,18 @@ function stepType(step: Record<string, unknown>) {
   return typeof step.type === "string" && step.type.trim() ? step.type.trim() : "agent"
 }
 
-function statusMap(step: Record<string, unknown>) {
-  return Array.isArray(step.statusMap)
-    ? step.statusMap.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-    : []
-}
-
-function statusForStep(step: Record<string, unknown>, preference: "running" | "waiting" | "complete" = "waiting") {
-  const statuses = statusMap(step)
-  if (!statuses.length) return null
-  if (preference === "running") {
-    return statuses.find((status) => ["triaging", "in-progress"].includes(status)) ?? statuses[0]
-  }
-  return statuses[0]
-}
-
 function findStepByKey(steps: Record<string, unknown>[], key: string | null | undefined) {
   return steps.find((step) => stepKey(step) === key) ?? null
 }
 
-function findStepForStatus(steps: Record<string, unknown>[], status: string | null | undefined) {
-  if (!status) return null
-  return steps.find((step) => statusMap(step).includes(status)) ?? null
+function requestStatusForWorkflowStep(step: Record<string, unknown> | null | undefined, phase: "running" | "waiting") {
+  if (!step) return null
+  const type = stepType(step)
+  if (type === "terminal") return "approved"
+  if (phase === "running") return "in-progress"
+  if (type === "gate") return "awaiting-review"
+  if (type === "agent") return "ready-for-agent"
+  return "in-progress"
 }
 
 function nextStepForAction(steps: Record<string, unknown>[], step: Record<string, unknown>, action: string | null) {
@@ -354,12 +344,8 @@ async function requestCodexRuntimeResponse(input: {
   return payload
 }
 
-function isTerminalRequestStatus(status: string | null | undefined) {
-  return Boolean(status && ["approved", "rejected", "closed"].includes(status))
-}
-
-function isTerminalWorkflowStep(step: Record<string, unknown> | null | undefined, status: string | null | undefined) {
-  return step ? stepType(step) === "terminal" : isTerminalRequestStatus(status)
+function isTerminalWorkflowStep(step: Record<string, unknown> | null | undefined) {
+  return step ? stepType(step) === "terminal" : false
 }
 
 function completeWorkflowAgentStep(input: {
@@ -425,14 +411,14 @@ function completeWorkflowAgentStep(input: {
     return input.stepKey
   }
 
-  const nextStep = input.nextStep ?? findStepForStatus(input.linkedWorkflowSteps, input.completedStatus)
+  const nextStep = input.nextStep
   const nextStepKey = nextStep ? stepKey(nextStep) : input.stepKey
   updateChangeRequest(input.requestId, {
     status: input.completedStatus,
     workflowStepKey: nextStepKey,
     syncWorkflowRun: false,
   })
-  const terminal = isTerminalWorkflowStep(nextStep, input.completedStatus)
+  const terminal = isTerminalWorkflowStep(nextStep)
   updateWorkflowRun({
     requestId: input.requestId,
     currentStepKey: nextStepKey,
@@ -632,7 +618,7 @@ export async function POST(request: Request) {
   const currentWorkflowStep =
     linkedWorkflowRun
       ? findStepByKey(linkedWorkflowSteps, linkedWorkflowRun.currentStepKey) ??
-        findStepForStatus(linkedWorkflowSteps, linkedChangeRequest?.status)
+        findStepByKey(linkedWorkflowSteps, typeof linkedWorkflow?.definition?.entrypoint === "string" ? linkedWorkflow.definition.entrypoint : null)
       : null
   if (currentWorkflowStep && stepType(currentWorkflowStep) === "gate" && !workflowAction) {
     return NextResponse.json(
@@ -676,13 +662,11 @@ export async function POST(request: Request) {
   })
 
   const requestStartedFromStatus = linkedChangeRequest?.status ?? null
-  const requestRunningStatus = runnableWorkflowStep ? statusForStep(runnableWorkflowStep, "running") : null
+  const requestRunningStatus = requestStatusForWorkflowStep(runnableWorkflowStep, "running")
   const nextWorkflowStepAfterRun = runnableWorkflowStep
     ? nextStepForAction(linkedWorkflowSteps, runnableWorkflowStep, "approved")
     : null
-  const requestCompletedStatus = runnableWorkflowStep
-    ? statusForStep(nextWorkflowStepAfterRun ?? runnableWorkflowStep, "waiting")
-    : null
+  const requestCompletedStatus = requestStatusForWorkflowStep(nextWorkflowStepAfterRun ?? runnableWorkflowStep, "waiting")
   const runnableStepKey = runnableWorkflowStep ? stepKey(runnableWorkflowStep) : null
   const nextStepKeyAfterRun = nextWorkflowStepAfterRun ? stepKey(nextWorkflowStepAfterRun) : null
   let activeExecutionId: string | null = null
@@ -877,9 +861,9 @@ export async function POST(request: Request) {
           workflowKey: linkedChangeRequest.workflowKey,
           status: latestRequest.status,
         })
-        const continuationRunningStatus = statusForStep(continuationStep, "running")
+        const continuationRunningStatus = requestStatusForWorkflowStep(continuationStep, "running")
         const continuationNextStep = nextStepForAction(linkedWorkflowSteps, continuationStep, "approved")
-        const continuationCompletedStatus = statusForStep(continuationNextStep ?? continuationStep, "waiting")
+        const continuationCompletedStatus = requestStatusForWorkflowStep(continuationNextStep ?? continuationStep, "waiting")
         const continuationNextStepKey = continuationNextStep ? stepKey(continuationNextStep) : null
 
         if (!latestRun || !continuationRunningStatus) {
