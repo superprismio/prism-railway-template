@@ -653,6 +653,63 @@ function requestNumberFromChangeRequest(payload: Record<string, unknown>): numbe
   return typeof requestNumber === "number" && Number.isFinite(requestNumber) ? requestNumber : null;
 }
 
+function changeRequestFromPayload(payload: Record<string, unknown>): Record<string, unknown> | null {
+  return isRecord(payload.changeRequest) ? payload.changeRequest : null;
+}
+
+function workflowKeyFromChangeRequest(payload: Record<string, unknown>): string | null {
+  const changeRequest = changeRequestFromPayload(payload);
+  const workflowKey = changeRequest?.workflowKey ?? changeRequest?.workflow_key;
+  return typeof workflowKey === "string" && workflowKey.trim() ? workflowKey.trim() : null;
+}
+
+function currentWorkflowStepKeyFromChangeRequest(payload: Record<string, unknown>): string | null {
+  const changeRequest = changeRequestFromPayload(payload);
+  const stepKey = changeRequest?.currentWorkflowStepKey ?? changeRequest?.current_workflow_step_key;
+  return typeof stepKey === "string" && stepKey.trim() ? stepKey.trim() : null;
+}
+
+function workflowRunStatusFromChangeRequest(payload: Record<string, unknown>): string | null {
+  const changeRequest = changeRequestFromPayload(payload);
+  const status = changeRequest?.workflowRunStatus ?? changeRequest?.workflow_run_status;
+  return typeof status === "string" && status.trim() ? status.trim() : null;
+}
+
+function workflowStepTypeFromPayload(payload: Record<string, unknown>, stepKey: string | null): string | null {
+  if (!stepKey) {
+    return null;
+  }
+
+  const detail = isRecord(payload.detail) ? payload.detail : null;
+  const detailSteps = Array.isArray(detail?.steps) ? detail.steps : [];
+  const workflow = isRecord(payload.workflow) ? payload.workflow : null;
+  const definition = isRecord(workflow?.definition) ? workflow.definition : null;
+  const definitionSteps = Array.isArray(definition?.steps) ? definition.steps : [];
+  const steps = [...detailSteps, ...definitionSteps].filter(isRecord);
+  const step = steps.find((candidate) => candidate.key === stepKey);
+  const stepType = step?.type;
+  return typeof stepType === "string" && stepType.trim() ? stepType.trim() : null;
+}
+
+async function workflowRunnerCurrentStepIsAgent(requestDetail: Record<string, unknown>, fallbackWorkflowKey: string): Promise<boolean> {
+  if (workflowRunStatusFromChangeRequest(requestDetail) === "completed") {
+    return false;
+  }
+
+  const stepKey = currentWorkflowStepKeyFromChangeRequest(requestDetail);
+  if (!stepKey) {
+    return false;
+  }
+
+  const workflowKey = workflowKeyFromChangeRequest(requestDetail) ?? fallbackWorkflowKey;
+  const workflowPayload = await appApiRequest(`/agent/workflows/${encodeURIComponent(workflowKey)}`, { method: "GET" });
+  if (!workflowPayload) {
+    return false;
+  }
+
+  return (workflowStepTypeFromPayload(workflowPayload, stepKey) ?? "agent") === "agent";
+}
+
 function autoStartStarted(payload: Record<string, unknown>) {
   return isRecord(payload.autoStart) && payload.autoStart.started === true;
 }
@@ -731,7 +788,7 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
         requestType: stringFromConfig(requestConfig, "requestType", "content"),
         priority: stringFromConfig(requestConfig, "priority", "normal"),
         source: "task-runner",
-        autoStart: autoRunEnabled,
+        autoStart: false,
         requestedSkills: mergeRequestedSkills(siteTask),
         targetAppId: requestConfig.targetAppId ?? null,
         targetEnvironmentId: requestConfig.targetEnvironmentId ?? null,
@@ -749,9 +806,19 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
       let lastStatus = statusFromChangeRequest(createResult.payload);
       if (autoRunEnabled && !autoStartStarted(createResult.payload) && !autoStartShouldWait(createResult.payload)) {
         for (let index = 0; index < maxSteps; index += 1) {
+          const currentDetail = await appApiRequest(`/agent/change-board/requests/${encodeURIComponent(requestId)}`, {
+            method: "GET",
+          });
+          if (currentDetail) {
+            lastStatus = statusFromChangeRequest(currentDetail) ?? lastStatus;
+          }
           if (workflowRunnerShouldStop(lastStatus, stopStatuses)) {
             break;
           }
+          if (!currentDetail || !(await workflowRunnerCurrentStepIsAgent(currentDetail, workflowKey))) {
+            break;
+          }
+
           const runResult = await appApiPost("/agent/responses", {
             input: [{ role: "user", content: prompt }],
             linked_change_request_id: requestId,
