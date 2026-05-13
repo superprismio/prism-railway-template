@@ -82,6 +82,7 @@ export const nullableRequestTargetsMigration = {
       title TEXT NOT NULL,
       description TEXT NOT NULL,
       request_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'submitted',
       priority TEXT NOT NULL DEFAULT 'normal',
       source TEXT NOT NULL DEFAULT 'manual',
       requested_by_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -103,14 +104,14 @@ export const nullableRequestTargetsMigration = {
     );
 
     INSERT INTO change_requests_new (
-      id, request_number, workflow_key, title, description, request_type, priority, source,
+      id, request_number, workflow_key, title, description, request_type, status, priority, source,
       requested_by_user_id, target_app_id, target_environment_id, triage_summary,
       acceptance_criteria_json, constraints_json, attachments_json, agent_recommendation,
       review_notes, resolution_summary, created_at, updated_at,
       triaged_at, approved_for_work_at, completed_at, closed_at
     )
     SELECT
-      id, request_number, workflow_key, title, description, request_type, priority, source,
+      id, request_number, workflow_key, title, description, request_type, status, priority, source,
       requested_by_user_id, target_app_id, target_environment_id, triage_summary,
       acceptance_criteria_json, constraints_json, attachments_json, agent_recommendation,
       review_notes, resolution_summary, created_at, updated_at,
@@ -124,7 +125,7 @@ export const nullableRequestTargetsMigration = {
       ON change_requests(request_number);
 
     CREATE INDEX IF NOT EXISTS idx_change_requests_listing
-      ON change_requests(priority, created_at);
+      ON change_requests(status, priority, created_at);
 
     CREATE INDEX IF NOT EXISTS idx_change_requests_target_app
       ON change_requests(target_app_id, created_at);
