@@ -761,7 +761,7 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
   const autoRunEnabled = boolFromConfig(autoRunConfig, "enabled", true);
   const maxSteps = intFromConfig(autoRunConfig, "maxSteps", 1, 0, 10);
   const stopStatuses = new Set(
-    (Array.isArray(autoRunConfig.stopStatuses) ? autoRunConfig.stopStatuses : ["awaiting-review", "approved", "rejected", "closed"])
+    (Array.isArray(autoRunConfig.stopStatuses) ? autoRunConfig.stopStatuses : ["closed"])
       .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
       .map((item) => item.trim()),
   );
@@ -788,7 +788,7 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
         requestType: stringFromConfig(requestConfig, "requestType", "content"),
         priority: stringFromConfig(requestConfig, "priority", "normal"),
         source: "task-runner",
-        autoStart: false,
+        autoStart: autoRunEnabled,
         requestedSkills: mergeRequestedSkills(siteTask),
         targetAppId: requestConfig.targetAppId ?? null,
         targetEnvironmentId: requestConfig.targetEnvironmentId ?? null,

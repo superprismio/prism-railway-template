@@ -275,8 +275,7 @@ function formatBytes(value: number) {
 
 function statusForWorkflowStep(step: WorkflowStep | null | undefined) {
   if (!step) return null;
-  if (step.type === "terminal") return "approved";
-  if (step.type === "gate") return "awaiting-review";
+  if (step.type === "terminal") return "closed";
   return "in-progress";
 }
 

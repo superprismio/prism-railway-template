@@ -85,7 +85,7 @@ export async function POST(request: Request) {
     agentRecommendation: parseNullableString(body.agentRecommendation ?? body.agent_recommendation) ?? null,
   })
 
-  const autoStartRequested = body.autoStart === true || body.auto_start === true
+  const autoStartRequested = body.autoStart !== false && body.auto_start !== false
   const rawRequestedSkills = body.requestedSkills ?? body.requested_skills
   const requestedSkills = Array.isArray(rawRequestedSkills)
     ? rawRequestedSkills

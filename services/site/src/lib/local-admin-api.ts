@@ -3,14 +3,7 @@ import { requireCapabilityAccess, requireMemberAccess, requireModeratorAccess } 
 export const targetEnvironmentKinds = ["production", "staging", "preview", "development"] as const
 export const trackedChangeRequestStatuses = [
   "submitted",
-  "triaging",
-  "needs-human-input",
-  "ready-for-agent",
   "in-progress",
-  "awaiting-review",
-  "changes-requested",
-  "approved",
-  "rejected",
   "closed",
 ] as const
 export const trackedChangeRequestTypes = ["bug", "feature", "content", "design", "config", "ops"] as const

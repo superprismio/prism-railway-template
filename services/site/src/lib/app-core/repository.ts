@@ -3001,7 +3001,7 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
 
 export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) {
   const params: Array<string> = [];
-  const runnableStatuses = ['changes-requested', 'ready-for-agent', 'submitted', 'triaging'];
+  const runnableStatuses = ['submitted', 'in-progress'];
   const activeExecutionStatuses = ['planned', 'running'];
 
   let sql = `SELECT
@@ -3065,10 +3065,8 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
         ELSE 4
       END,
       CASE cr.status
-        WHEN 'changes-requested' THEN 0
-        WHEN 'ready-for-agent' THEN 1
-        WHEN 'submitted' THEN 2
-        WHEN 'triaging' THEN 3
+        WHEN 'in-progress' THEN 0
+        WHEN 'submitted' THEN 1
         ELSE 4
       END,
       COALESCE(cr.approved_for_work_at, cr.triaged_at, cr.created_at) ASC,
@@ -3287,7 +3285,7 @@ function getNextChangeRequestNumber() {
 }
 
 function isTerminalRequestStatus(status: string | null | undefined) {
-  return ['approved', 'rejected', 'closed'].includes(status ?? '');
+  return status === 'closed';
 }
 
 export function createChangeRequest(input: CreateChangeRequestInput) {
@@ -3373,17 +3371,17 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
            resolution_summary = ?,
            agent_recommendation = ?,
            triaged_at = CASE
-             WHEN ? IN ('triaging', 'needs-human-input', 'ready-for-agent', 'in-progress', 'awaiting-review', 'changes-requested', 'approved', 'rejected', 'closed')
+             WHEN ? IN ('in-progress', 'closed')
                THEN COALESCE(triaged_at, ?)
              ELSE triaged_at
            END,
            approved_for_work_at = CASE
-             WHEN ? IN ('ready-for-agent', 'in-progress', 'awaiting-review', 'changes-requested', 'approved', 'closed')
+             WHEN ? IN ('in-progress', 'closed')
                THEN COALESCE(approved_for_work_at, ?)
              ELSE approved_for_work_at
            END,
            completed_at = CASE
-             WHEN ? IN ('awaiting-review', 'approved', 'closed')
+             WHEN ? IN ('closed')
                THEN COALESCE(completed_at, ?)
              ELSE completed_at
            END,

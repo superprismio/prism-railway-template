@@ -77,7 +77,7 @@ Workflow runner task shape:
     "autoRun": {
       "enabled": true,
       "maxSteps": 1,
-      "stopStatuses": ["awaiting-review", "approved", "rejected", "closed"]
+      "stopStatuses": ["closed"]
     }
   },
   "instructionConfig": {
@@ -86,6 +86,8 @@ Workflow runner task shape:
   "outputConfig": {}
 }
 ```
+
+Workflow-runner tasks create requests through `/agent/change-board/requests`. When `inputConfig.autoRun.enabled` is true, the created request should start automatically if the workflow entry step is an agent step. If the entry step is a gate, it waits for an operator decision.
 
 When creating a task through the Prism API, use the site internal task endpoint if credentials are available:
 

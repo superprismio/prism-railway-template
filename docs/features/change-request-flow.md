@@ -18,14 +18,14 @@ This focuses on:
 flowchart TD
     A[New request created] --> B[workflow_run created]
     B --> C[triage agent step]
-    C --> D[ready-for-agent board projection]
+    C --> D[in-progress request projection]
     D --> E{Human approve-for-work gate}
     E -- approved --> F[implement agent step]
     F --> G[Codex edits target repo]
     G --> H[Commit and push request branch]
-    H --> I[awaiting-review board projection]
+    H --> I[in-progress request projection]
     I --> J{Human review gate}
-    J -- changes requested --> K[changes-requested board projection]
+    J -- changes requested --> K[in-progress request projection]
     K --> F
     J -- approved --> L[closed terminal step]
 ```
@@ -44,7 +44,7 @@ stateDiagram-v2
     closed --> [*]
 ```
 
-The request `status` is still present because the board needs simple filters and labels. It is a coarse projection only; the workflow run's `current_step_key` is the source of truth.
+The request `status` is still present because the board needs simple filters and labels. It is a coarse projection only: `submitted`, `in-progress`, or `closed`. The workflow run's `current_step_key` is the source of truth.
 
 The workflow run and event records are the durable workflow state. Manual step changes update the workflow run directly.
 
@@ -124,12 +124,12 @@ PR environment notes:
 flowchart TD
     A[in-progress execution] --> B{Run succeeded?}
     B -- No --> C[Execution marked failed]
-    C --> D[Request moves back to ready-for-agent]
+    C --> D[Request stays on current workflow step]
     D --> E[Admin reviews logs and comments]
     E --> F[Continue agent]
     F --> A
     B -- Yes --> G[Execution completed]
-    G --> H[Request moves to awaiting-review]
+    G --> H[Workflow advances to next step or gate]
 ```
 
 Typical failure classes:
