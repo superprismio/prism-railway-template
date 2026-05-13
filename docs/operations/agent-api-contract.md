@@ -76,6 +76,8 @@ Branding:
 - `GET /agent/site-content/branding`
 - `PATCH /agent/site-content/branding`
 
+Use the branding routes for logo, platform title, brand name, workspace label, and logo alt text updates.
+
 Agent sessions:
 
 - `GET /agent/agent-sessions/:sessionId`

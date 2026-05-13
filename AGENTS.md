@@ -47,6 +47,8 @@ Send service auth as:
 - `GET /agent/site-content/branding`
 - `PATCH /agent/site-content/branding`
 
+For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
+
 ## Instance-Owned Content
 
 Custom skills and workflows are owned by the site service:
