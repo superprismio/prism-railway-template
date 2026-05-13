@@ -166,6 +166,8 @@ When a hook creates a request:
 
 Hooks default to service-token auth in the first implementation. The browser admin UI exposes a Hooks tab for inspection, enable/disable, deletion of custom hooks, endpoint copy, and manual test triggering.
 
+See `docs/architecture/hooks.md` for the full hook model.
+
 ## Default Request Workflow
 
 The built-in request workflow uses `workflow_runs.current_step_key` as the source of truth. Request `status` remains only a coarse board projection for lists and badges.
