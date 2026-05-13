@@ -445,6 +445,66 @@ function completeWorkflowAgentStep(input: {
   return nextStepKey
 }
 
+function completeWorkflowGateStep(input: {
+  requestId: string
+  requestNumber: number
+  requestTitle: string
+  workflowRunId: string
+  fromStep: Record<string, unknown>
+  toStep: Record<string, unknown>
+  action: string
+  note: string
+  status: string
+  startedFromStatus: string | null
+}) {
+  const fromStepKey = stepKey(input.fromStep)
+  const toStepKey = stepKey(input.toStep)
+
+  createWorkflowEvent({
+    workflowRunId: input.workflowRunId,
+    requestId: input.requestId,
+    stepKey: fromStepKey,
+    eventType: `gate.${input.action}`,
+    actorType: "admin",
+    note: input.note,
+    payload: {
+      fromStepKey,
+      toStepKey,
+      startedFromStatus: input.startedFromStatus,
+    },
+  })
+
+  updateChangeRequest(input.requestId, {
+    status: input.status,
+    workflowStepKey: toStepKey,
+    syncWorkflowRun: false,
+  })
+  updateWorkflowRun({
+    requestId: input.requestId,
+    currentStepKey: toStepKey,
+    status: isTerminalWorkflowStep(input.toStep) ? "completed" : "active",
+    completedAt: isTerminalWorkflowStep(input.toStep) ? new Date().toISOString() : null,
+  })
+  createWorkflowEvent({
+    workflowRunId: input.workflowRunId,
+    requestId: input.requestId,
+    stepKey: toStepKey,
+    eventType: "workflow.step_changed",
+    actorType: "system",
+    payload: {
+      status: input.status,
+      previousStepKey: fromStepKey,
+      nextStepKey: toStepKey,
+      action: input.action,
+    },
+  })
+
+  const toLabel = typeof input.toStep.label === "string" && input.toStep.label.trim()
+    ? input.toStep.label.trim()
+    : toStepKey
+  return `Workflow gate ${input.action} completed for request #${input.requestNumber}: ${input.requestTitle}. Moved to ${toLabel}.`
+}
+
 function startWorkflowAgentStep(input: {
   requestId: string
   requestStatus: string
@@ -672,6 +732,78 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   const runnableStepKey = runnableWorkflowStep ? stepKey(runnableWorkflowStep) : null
   const nextStepKeyAfterRun = nextWorkflowStepAfterRun ? stepKey(nextWorkflowStepAfterRun) : null
   let activeExecutionId: string | null = null
+
+  if (
+    activeLinkedChangeRequestId &&
+    linkedChangeRequest &&
+    linkedWorkflowRun &&
+    currentWorkflowStep &&
+    stepType(currentWorkflowStep) === "gate" &&
+    runnableWorkflowStep &&
+    runnableStepKey &&
+    requestCompletedStatus &&
+    isTerminalWorkflowStep(runnableWorkflowStep)
+  ) {
+    const responseText = completeWorkflowGateStep({
+      requestId: activeLinkedChangeRequestId,
+      requestNumber: linkedChangeRequest.requestNumber,
+      requestTitle: linkedChangeRequest.title,
+      workflowRunId: linkedWorkflowRun.id,
+      fromStep: currentWorkflowStep,
+      toStep: runnableWorkflowStep,
+      action: workflowAction || "approved",
+      note: latestUserMessage.content,
+      status: requestCompletedStatus,
+      startedFromStatus: requestStartedFromStatus,
+    })
+    const updatedSession = updateAgentSession(session.id, {
+      title: session.title ?? latestUserMessage.content.slice(0, 80),
+      linkedChangeRequestId: activeLinkedChangeRequestId,
+      linkedTargetEnvironmentId: activeLinkedTargetEnvironmentId,
+      meta: {
+        ...session.meta,
+        transport: "site",
+      },
+      lastMessageAt: new Date().toISOString(),
+    })
+    const assistantMessage = createAgentMessage({
+      sessionId: session.id,
+      role: "assistant",
+      source: "site",
+      sourceMessageId: null,
+      content: responseText,
+      meta: {
+        transport: "site",
+        workflowStepKey: runnableStepKey,
+        workflowAction: workflowAction || "approved",
+      },
+    })
+
+    return NextResponse.json({
+      id: assistantMessage?.id ?? randomUUID(),
+      object: "response",
+      created_at: Math.floor(Date.now() / 1000),
+      model: "site-workflow",
+      output: [
+        {
+          type: "message",
+          role: "assistant",
+          content: [
+            {
+              type: "output_text",
+              text: responseText,
+            },
+          ],
+        },
+      ],
+      output_text: responseText,
+      session_id: updatedSession?.id ?? session.id,
+      metadata: {
+        workflow_action: workflowAction || "approved",
+        workflow_step_key: runnableStepKey,
+      },
+    })
+  }
 
   if (
     activeLinkedChangeRequestId &&
