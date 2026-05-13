@@ -74,8 +74,8 @@ TASK_RUNNER_BASE_URL="http://${{task-runner.RAILWAY_PRIVATE_DOMAIN}}:${{task-run
 
 - [ ] Confirm migration `006_tasks` is applied.
 - [ ] Confirm `/api/health` reports the expected migration count.
-- [ ] Confirm `POST /api/internal/tasks` supports `preserveExisting`.
-- [ ] Confirm `GET /api/internal/tasks` returns:
+- [ ] Confirm `POST /agent/tasks` supports `preserveExisting`.
+- [ ] Confirm `GET /agent/tasks` returns:
   - `discord-sync`
   - `memory-run`
   - `knowledge-run`
@@ -119,7 +119,7 @@ These are seeded by `task-runner` only when a task row does not already exist:
   - `POST /tasks/knowledge-source-sync/run`
   - `POST /tasks/knowledge-run/run`
   - `POST /tasks/discord-sync/run`
-- [ ] Confirm each manual run writes a `succeeded` row to `/api/internal/tasks/runs`.
+- [ ] Confirm each manual run writes a `succeeded` row to `/agent/tasks/runs`.
 - [ ] Enable schedules by updating `site` DB task rows, not Railway env.
 
 ## Existing Instance Migration

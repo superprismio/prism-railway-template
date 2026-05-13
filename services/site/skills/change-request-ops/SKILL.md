@@ -1,6 +1,6 @@
 ---
 name: change-request-ops
-description: Use this skill when Codex needs to pull the next or current Prism change request, inspect request state, update board status, or create and update execution records through the Prism Agent API.
+description: Use this skill when Codex needs to pull the next or current Prism request, inspect request/workflow state, create requests, attach external refs, or create and update execution records through the Prism Agent API.
 ---
 
 Use this skill when Codex is operating on tracked change requests instead of freeform chat.
@@ -13,34 +13,38 @@ Required environment:
 
 Always send `x-service-token: $PRISM_AGENT_SERVICE_TOKEN`.
 
+In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the API is unavailable.
+
+Do not use browser admin routes such as `/admin/board` from Codex Runtime. Runtime agents should use the `/agent/...` routes below with service-token auth. A `401` from a browser admin route usually means "wrong surface", not that the operation is impossible.
+
 Core endpoints:
 
-- `GET /api/internal/target-apps`
-- `POST /api/internal/change-board/requests`
-- `GET /api/internal/change-board/requests/next`
-- `GET /api/internal/change-board/requests/current`
-- `GET /api/internal/change-board/requests/by-number/:requestNumber/review`
-- `GET /api/internal/change-board/requests/:id`
-- `PATCH /api/internal/change-board/requests/:id`
-- `GET /api/internal/change-board/requests/:id/external-refs`
-- `POST /api/internal/change-board/requests/:id/external-refs`
-- `GET /api/internal/change-board/requests/:id/executions`
-- `POST /api/internal/change-board/requests/:id/executions`
-- `PATCH /api/internal/change-board/executions/:executionId`
-- `GET /api/internal/change-board/requests/:id/deploy-plan`
+- `GET /agent/target-apps`
+- `POST /agent/change-board/requests`
+- `GET /agent/change-board/requests/next`
+- `GET /agent/change-board/requests/current`
+- `GET /agent/change-board/requests/by-number/:requestNumber/review`
+- `GET /agent/change-board/requests/:id`
+- `PATCH /agent/change-board/requests/:id`
+- `GET /agent/change-board/requests/:id/external-refs`
+- `POST /agent/change-board/requests/:id/external-refs`
+- `GET /agent/change-board/requests/:id/executions`
+- `POST /agent/change-board/requests/:id/executions`
+- `PATCH /agent/change-board/executions/:executionId`
+- `GET /agent/change-board/requests/:id/deploy-plan`
 
 Queue reads:
 
 ```bash
 curl -fsSL \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/requests/next${PRISM_TARGET_APP_ID:+?targetAppId=$PRISM_TARGET_APP_ID}"
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/next${PRISM_TARGET_APP_ID:+?targetAppId=$PRISM_TARGET_APP_ID}"
 ```
 
 ```bash
 curl -fsSL \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/requests/current${PRISM_TARGET_APP_ID:+?targetAppId=$PRISM_TARGET_APP_ID}"
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/current${PRISM_TARGET_APP_ID:+?targetAppId=$PRISM_TARGET_APP_ID}"
 ```
 
 Review a completed or stuck workflow run by request number:
@@ -48,7 +52,7 @@ Review a completed or stuck workflow run by request number:
 ```bash
 curl -fsSL \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/requests/by-number/$REQUEST_NUMBER/review"
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/by-number/$REQUEST_NUMBER/review"
 ```
 
 Use this endpoint when a user asks what happened to request `#10`, why a workflow got stuck, or what should improve next time. It returns the request, workflow definition, workflow run, executions, workflow events, artifacts, external refs, latest linked agent session, and agent messages. Review the timeline before recommending changes.
@@ -67,7 +71,7 @@ List target apps:
 ```bash
 curl -fsSL \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/target-apps"
+  "$PRISM_AGENT_API_BASE_URL/agent/target-apps"
 ```
 
 Create tracked change request:
@@ -77,7 +81,7 @@ curl -fsSL \
   -X POST \
   -H "content-type: application/json" \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/requests" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests" \
   -d '{
     "title": "'"$TITLE"'",
     "description": "'"$DESCRIPTION"'",
@@ -108,7 +112,7 @@ curl -fsSL \
   -X POST \
   -H "content-type: application/json" \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/requests/$CHANGE_REQUEST_ID/executions" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/$CHANGE_REQUEST_ID/executions" \
   -d '{
     "status": "running",
     "actorType": "codex",
@@ -116,14 +120,14 @@ curl -fsSL \
   }'
 ```
 
-Update request status:
+Patch request metadata or coarse board status:
 
 ```bash
 curl -fsSL \
   -X PATCH \
   -H "content-type: application/json" \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/requests/$CHANGE_REQUEST_ID" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/$CHANGE_REQUEST_ID" \
   -d '{"status":"in-progress"}'
 ```
 
@@ -134,7 +138,7 @@ curl -fsSL \
   -X POST \
   -H "content-type: application/json" \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/requests/$CHANGE_REQUEST_ID/external-refs" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/$CHANGE_REQUEST_ID/external-refs" \
   -d '{
     "provider": "github",
     "kind": "pull_request",
@@ -157,7 +161,7 @@ curl -fsSL \
   -X PATCH \
   -H "content-type: application/json" \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/requests/$CHANGE_REQUEST_ID" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/$CHANGE_REQUEST_ID" \
   -d '{
     "status": "ready-for-agent",
     "triageSummary": "'"$TRIAGE_SUMMARY"'",
@@ -172,7 +176,7 @@ curl -fsSL \
   -X PATCH \
   -H "content-type: application/json" \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/change-board/executions/$EXECUTION_ID" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/executions/$EXECUTION_ID" \
   -d '{
     "status": "completed",
     "branchName": "'"$BRANCH_NAME"'",
@@ -185,8 +189,8 @@ curl -fsSL \
 
 End-of-run pattern:
 
-1. A triage pass should end by moving the request to `ready-for-agent` once triage details are complete.
-2. An execution pass should end by moving the request to `awaiting-review`, `changes-requested`, `approved`, or `closed` as appropriate.
+1. A triage pass should end by recording useful triage details and leaving the workflow/request ready for the next explicit workflow step.
+2. An execution pass should update execution records and any durable artifacts/external refs. Workflow step movement is owned by the site workflow engine when running through `/agent/responses`.
 3. Update the execution with branch, commit, deploy URL, summary, error, timestamps, and notable runtime trace details.
 4. If work fails, record the failure on the execution and move the request back to the state it was in before the active run if possible.
 
@@ -196,6 +200,7 @@ Rules:
 - Re-read the request if the scope seems stale.
 - If the user explicitly asks to create a change request, prefer the change-board API path over Prism memory writing.
 - A chat-created request should default to `submitted`, then stop at `ready-for-agent` after triage review. It should not auto-run implementation.
+- Do not use request `status` as the workflow source of truth. The current workflow step is stored in `workflow_runs.current_step_key` and is exposed on request records as `currentWorkflowStepKey`.
 - Keep summaries factual, but make triage useful enough that a human can understand the proposed edits without reopening the whole conversation.
 - `agentRecommendation` should describe the suggested changes, touched areas, and intended outcome, not just say "ready for agent".
 - Store machine-usable fields in execution metadata instead of burying them in prose.

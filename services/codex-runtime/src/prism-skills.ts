@@ -107,7 +107,7 @@ async function listAppHostedSkills() {
     return [] as SkillRecord[];
   }
 
-  const response = await appApiRequest('/api/internal/skills');
+  const response = await appApiRequest('/agent/skills');
   const payload = await response.json() as SkillIndexResponse;
   return (Array.isArray(payload.skills) ? payload.skills : [])
     .map((entry) => normalizeSkillRecord('app-api', entry))
@@ -176,7 +176,7 @@ export async function downloadPrismSkill(skillName: string) {
 
   let response: Response;
   if (skill.source === 'app-api') {
-    const downloadPath = skill.downloadPath || `/api/internal/skills/${encodeURIComponent(skillName)}/download`;
+    const downloadPath = skill.downloadPath || `/agent/skills/${encodeURIComponent(skillName)}/download`;
     response = await appApiRequest(downloadPath);
   } else {
     response = await prismRequest(`/skills/${encodeURIComponent(skillName)}/download`);

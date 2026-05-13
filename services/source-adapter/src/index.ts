@@ -370,7 +370,7 @@ async function lookupDiscordSession(discordChannelId: string | null, discordThre
     threadId: discordThreadId ?? "",
     limit: String(limit),
   });
-  return appApiRequest(`/api/internal/agent-sessions/discord/lookup?${params.toString()}`);
+  return appApiRequest(`/agent/agent-sessions/discord/lookup?${params.toString()}`);
 }
 
 async function upsertDiscordSession(input: {
@@ -381,7 +381,7 @@ async function upsertDiscordSession(input: {
   meta: JsonObject;
   lastMessageAt: string;
 }): Promise<JsonObject> {
-  const payload = await appApiRequest("/api/internal/agent-sessions/discord/upsert", {
+  const payload = await appApiRequest("/agent/agent-sessions/discord/upsert", {
     method: "POST",
     body: JSON.stringify({
       source: "discord",
@@ -406,7 +406,7 @@ async function appendSessionMessage(input: {
   meta: JsonObject;
   createdAt: string;
 }): Promise<void> {
-  await appApiRequest(`/api/internal/agent-sessions/${input.sessionId}/messages`, {
+  await appApiRequest(`/agent/agent-sessions/${input.sessionId}/messages`, {
     method: "POST",
     body: JSON.stringify({
       role: input.role,

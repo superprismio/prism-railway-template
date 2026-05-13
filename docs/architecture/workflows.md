@@ -123,7 +123,7 @@ Example:
 Agents can attach refs through:
 
 ```text
-POST /api/internal/change-board/requests/<request-id>/external-refs
+POST /agent/change-board/requests/<request-id>/external-refs
 ```
 
 Workflow prompts should stay descriptive:
@@ -229,7 +229,7 @@ The `request_artifacts` table stores the request link, artifact kind, name, MIME
 Codex Runtime or another internal service can create an artifact with:
 
 ```http
-POST /api/internal/change-board/requests/<request-id>/artifacts
+POST /agent/change-board/requests/<request-id>/artifacts
 Content-Type: application/json
 x-service-token: <internal-service-token>
 
@@ -250,27 +250,27 @@ Use `encoding: "base64"` for images or other binary files. Creating an artifact 
 List artifacts:
 
 ```http
-GET /api/internal/change-board/requests/<request-id>/artifacts
+GET /agent/change-board/requests/<request-id>/artifacts
 ```
 
 Read artifact content:
 
 ```http
-GET /api/internal/change-board/requests/<request-id>/artifacts/<artifact-id>/content
+GET /agent/change-board/requests/<request-id>/artifacts/<artifact-id>/content
 ```
 
 For Codex-friendly retrieval, request JSON from the raw content route:
 
 ```http
-GET /api/internal/change-board/requests/<request-id>/artifacts/<artifact-id>/content?format=json
+GET /agent/change-board/requests/<request-id>/artifacts/<artifact-id>/content?format=json
 ```
 
 Codex can also retrieve request artifacts by visible request number without first resolving internal ids:
 
 ```http
-GET /api/internal/change-board/requests/by-number/<request-number>/artifacts
-GET /api/internal/change-board/requests/by-number/<request-number>/artifacts?name=draft.md
-GET /api/internal/change-board/requests/by-number/<request-number>/artifacts?kind=markdown&includeContent=true
+GET /agent/change-board/requests/by-number/<request-number>/artifacts
+GET /agent/change-board/requests/by-number/<request-number>/artifacts?name=draft.md
+GET /agent/change-board/requests/by-number/<request-number>/artifacts?kind=markdown&includeContent=true
 ```
 
 The by-number route returns artifact metadata plus text/json/markdown bodies as JSON. Binary bodies are omitted by default; pass `includeBinary=true` to receive base64 content.
@@ -290,7 +290,7 @@ Instance-authored workflows can live on the site volume:
 Register a volume workflow with:
 
 ```http
-POST /admin/workflows
+POST /agent/workflows
 Content-Type: application/json
 
 { "key": "<workflow-key>" }
@@ -330,7 +330,7 @@ The site writes `files` under `/data/workflows/<workflow-key>/`, normalizes mani
 Run the current workflow step with the same response route the UI uses:
 
 ```http
-POST /admin/responses
+POST /agent/responses
 Content-Type: application/json
 x-service-token: <internal-service-token>
 
@@ -352,7 +352,7 @@ For a gate step, set `workflow_action` to `approved`, `changesRequested`, or ano
 
 The workflow-aware request flow is:
 
-1. The admin UI sends `/admin/responses` with the operator prompt and optional `workflow_action`.
+1. The admin UI sends `/admin/responses` with the operator prompt and optional `workflow_action`; service-token callers use `/agent/responses`.
 2. `site` loads the request, workflow definition, workflow run, current step, and step markdown.
 3. Gate actions are recorded as `workflow_events` and routed through the manifest.
 4. Agent steps merge workflow-level and step-level `agentConfig`.

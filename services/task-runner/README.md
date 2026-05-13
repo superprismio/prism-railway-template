@@ -65,7 +65,7 @@ The runner calls:
 
 ## Workflow runner tasks
 
-Scheduled workflow tasks use `taskType=workflow-runner`. The runner creates a request through `site`, then optionally invokes the current workflow step through `/admin/responses`.
+Scheduled workflow tasks use `taskType=workflow-runner`. The runner creates a request through `site`, then optionally invokes the current workflow step through `/agent/responses`.
 
 Supported config:
 
@@ -96,8 +96,8 @@ The default behavior creates the request and immediately invokes the workflow wi
 
 The runner calls:
 
-- `POST /api/internal/change-board/requests` on `APP_API_BASE_URL`
-- `POST /admin/responses` on `APP_API_BASE_URL`
+- `POST /agent/change-board/requests` on `APP_API_BASE_URL`
+- `POST /agent/responses` on `APP_API_BASE_URL`
 
 ### Discord sync
 

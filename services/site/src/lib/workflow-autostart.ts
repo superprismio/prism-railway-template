@@ -89,7 +89,7 @@ export async function autoStartWorkflowRequest(
   ].join("\n")
 
   try {
-    const response = await fetch(`${baseUrl}/admin/responses`, {
+    const response = await fetch(`${baseUrl}/agent/responses`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

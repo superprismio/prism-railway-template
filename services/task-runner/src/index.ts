@@ -335,7 +335,7 @@ function recordFromConfig(config: Record<string, unknown>, key: string): Record<
 
 async function registerTaskWithSite(task: BuiltInTask): Promise<void> {
   try {
-    await appApiRequest("/api/internal/tasks", {
+    await appApiRequest("/agent/tasks", {
       method: "POST",
       body: JSON.stringify({
         key: task.key,
@@ -369,7 +369,7 @@ async function ensureTasksRegisteredWithSite(tasks: BuiltInTask[]): Promise<void
 
 async function fetchTasksFromSite(): Promise<AppTask[] | null> {
   try {
-    const payload = await appApiRequest("/api/internal/tasks", { method: "GET" });
+    const payload = await appApiRequest("/agent/tasks", { method: "GET" });
     const rows = payload?.tasks;
     if (!Array.isArray(rows)) {
       return null;
@@ -738,7 +738,7 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
         constraints: isRecord(requestConfig.constraints) ? requestConfig.constraints : {},
         attachments: Array.isArray(requestConfig.attachments) ? requestConfig.attachments : [],
       };
-      const createResult = await appApiPost("/api/internal/change-board/requests", requestPayload);
+      const createResult = await appApiPost("/agent/change-board/requests", requestPayload);
       const requestId = requestIdFromChangeRequest(createResult.payload);
       const requestNumber = requestNumberFromChangeRequest(createResult.payload);
       if (!requestId) {
@@ -752,7 +752,7 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
           if (workflowRunnerShouldStop(lastStatus, stopStatuses)) {
             break;
           }
-          const runResult = await appApiPost("/admin/responses", {
+          const runResult = await appApiPost("/agent/responses", {
             input: [{ role: "user", content: prompt }],
             linked_change_request_id: requestId,
             workflow_action: null,
@@ -760,13 +760,13 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
             requested_skills: mergeRequestedSkills(siteTask),
           }, longRunningHttpTimeoutMs());
           stepResults.push(runResult);
-          const detailResult = await appApiRequest(`/api/internal/change-board/requests/${encodeURIComponent(requestId)}`, {
+          const detailResult = await appApiRequest(`/agent/change-board/requests/${encodeURIComponent(requestId)}`, {
             method: "GET",
           });
           lastStatus = detailResult ? statusFromChangeRequest(detailResult) : lastStatus;
         }
       } else if (autoRunEnabled) {
-        const detailResult = await appApiRequest(`/api/internal/change-board/requests/${encodeURIComponent(requestId)}`, {
+        const detailResult = await appApiRequest(`/agent/change-board/requests/${encodeURIComponent(requestId)}`, {
           method: "GET",
         });
         lastStatus = detailResult ? statusFromChangeRequest(detailResult) : lastStatus;
@@ -867,7 +867,7 @@ async function syncTasksFromSite(tasks: RunnableTask[]): Promise<void> {
 
 async function createTaskRunInSite(task: RunnableTask, source: "schedule" | "manual"): Promise<AppTaskRun | null> {
   try {
-    const payload = await appApiRequest("/api/internal/tasks/runs", {
+    const payload = await appApiRequest("/agent/tasks/runs", {
       method: "POST",
       body: JSON.stringify({
         taskKey: task.key,
@@ -899,7 +899,7 @@ async function updateTaskRunInSite(
     return;
   }
   try {
-    await appApiRequest(`/api/internal/tasks/runs/${encodeURIComponent(run.id)}`, {
+    await appApiRequest(`/agent/tasks/runs/${encodeURIComponent(run.id)}`, {
       method: "PATCH",
       body: JSON.stringify({
         status,

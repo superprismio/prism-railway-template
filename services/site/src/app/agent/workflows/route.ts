@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { listWorkflows, loadConfig, upsertWorkflow } from "@/lib/app-core";
-import { requireLocalAdminAccess } from "@/lib/local-admin-api";
+import { requireServiceAccess } from "@/lib/internal-service";
 
 export async function GET() {
   const access = await requireWorkflowWriteAccess();
@@ -28,7 +28,7 @@ function validWorkflowKey(key: string) {
 }
 
 async function requireWorkflowWriteAccess() {
-  return requireLocalAdminAccess();
+  return requireServiceAccess();
 }
 
 function resolveInsideRoot(root: string, candidate: string) {

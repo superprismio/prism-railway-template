@@ -3,7 +3,8 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 
 import { getWorkflowByKey, loadConfig } from "@/lib/app-core";
-import { readRouteParam, requireLocalAdminAccess } from "@/lib/local-admin-api";
+import { requireServiceAccess } from "@/lib/internal-service";
+import { readRouteParam } from "@/lib/local-admin-api";
 
 type RouteContext = {
   params: Promise<{ key: string }>;
@@ -69,7 +70,7 @@ function resolveWorkflowFile(rawPath: unknown) {
 }
 
 async function requireWorkflowReadAccess() {
-  return requireLocalAdminAccess();
+  return requireServiceAccess();
 }
 
 export async function GET(_request: Request, context: RouteContext) {

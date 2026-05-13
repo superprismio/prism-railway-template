@@ -15,6 +15,10 @@ Custom skill definitions are owned by the site service and stored under `/data/s
 4. Use the site internal skill endpoint when `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN` are available.
 5. Keep new skills disabled-by-convention until a task or prompt explicitly requests them.
 
+In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the API is unavailable.
+
+Do not use browser admin routes from Codex Runtime. Custom skill writes should go through `/agent/skills` with `x-service-token`.
+
 ## Save A Custom Skill
 
 POST the complete `SKILL.md` content:
@@ -24,7 +28,7 @@ curl -fsSL \
   -X POST \
   -H "content-type: application/json" \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/api/internal/skills" \
+  "$PRISM_AGENT_API_BASE_URL/agent/skills" \
   -d @skill-payload.json
 ```
 
@@ -38,4 +42,3 @@ Payload shape:
 ```
 
 After saving, the skill appears in the admin Skills tab and can be requested by tasks through `instructionConfig.requestedSkills`.
-

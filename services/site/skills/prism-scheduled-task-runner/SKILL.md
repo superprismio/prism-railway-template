@@ -25,8 +25,12 @@ Useful environment variables may include:
 - `PRISM_API_READ_KEY`
 - `PRISM_AGENT_API_BASE_URL`
 - `PRISM_AGENT_SERVICE_TOKEN`
+- `APP_API_BASE_URL`
+- `APP_API_SERVICE_TOKEN`
 - `DISCORD_ADAPTER_BASE_URL`
 - `SOURCE_ADAPTER_TOKEN`
+
+In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the site API is unavailable.
 
 For Prism Memory reads, use:
 

@@ -34,6 +34,8 @@ Instance custom workflows should use the site-owned volume when that API/storage
 
 Do not store runtime approval state, current step, retry state, or execution history in workflow files.
 
+In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the API is unavailable.
+
 Codex Runtime should not assume it can write the site service volume directly. To install a chat-authored workflow, call the site workflow endpoint with the manifest and files:
 
 ```json
@@ -60,7 +62,7 @@ Codex Runtime should not assume it can write the site service volume directly. T
 }
 ```
 
-Use `POST /admin/workflows` with admin auth or internal service auth. The site service writes the files under `/data/workflows/<workflow-key>/`, normalizes manifest paths, and registers the workflow.
+Use `POST /agent/workflows` with `x-service-token` service auth. The site service writes the files under `/data/workflows/<workflow-key>/`, normalizes manifest paths, and registers the workflow.
 
 To run a request workflow step from another service, use the site response route with internal service auth:
 
@@ -77,7 +79,7 @@ To run a request workflow step from another service, use the site response route
 }
 ```
 
-Send that body to `POST /admin/responses`. For gate steps, set `workflow_action` to the route key, such as `approved` or `changesRequested`.
+Send that body to `POST /agent/responses` with `x-service-token` service auth. For gate steps, set `workflow_action` to the route key, such as `approved` or `changesRequested`.
 
 Workflow steps should save durable files through the request artifact API instead of leaving important outputs only in chat text. Use artifacts for drafts, image prompts, generated images, publish packets, JSON plans, or any step output that future steps or humans should inspect.
 
@@ -94,14 +96,14 @@ Workflow steps should save durable files through the request artifact API instea
 }
 ```
 
-Send that body to `POST /api/internal/change-board/requests/<request-id>/artifacts` with internal service auth. Use `encoding: "base64"` for image or other binary content. Artifacts are owned by the site service, stored under `/data/workflow-artifacts`, listed on the request Artifacts tab, and recorded as `artifact.created` workflow events.
+Send that body to `POST /agent/change-board/requests/<request-id>/artifacts` with internal service auth. Use `encoding: "base64"` for image or other binary content. Artifacts are owned by the site service, stored under `/data/workflow-artifacts`, listed on the request Artifacts tab, and recorded as `artifact.created` workflow events.
 
 When a later workflow step needs prior artifact bodies, read them through the site API instead of guessing volume paths:
 
 ```http
-GET /api/internal/change-board/requests/by-number/<request-number>/artifacts
-GET /api/internal/change-board/requests/by-number/<request-number>/artifacts?name=draft.md
-GET /api/internal/change-board/requests/<request-id>/artifacts/<artifact-id>/content?format=json
+GET /agent/change-board/requests/by-number/<request-number>/artifacts
+GET /agent/change-board/requests/by-number/<request-number>/artifacts?name=draft.md
+GET /agent/change-board/requests/<request-id>/artifacts/<artifact-id>/content?format=json
 ```
 
 The by-number route returns artifact metadata plus text/json/markdown bodies. Binary content is omitted by default unless `includeBinary=true` is passed.
@@ -124,7 +126,7 @@ Use external refs for live records outside Prism. Do not store GitHub issues, Gi
 }
 ```
 
-Send that body to `POST /api/internal/change-board/requests/<request-id>/external-refs` with internal service auth. Common refs include `github` `issue`, `github` `pull_request`, `discord` `message`, `railway` `deployment`, and publishing targets such as `ghost` `post`. Workflow steps can then say: if no GitHub issue ref exists, create one and attach it; if a linked PR is merged, move to post-merge cleanup.
+Send that body to `POST /agent/change-board/requests/<request-id>/external-refs` with internal service auth. Common refs include `github` `issue`, `github` `pull_request`, `discord` `message`, `railway` `deployment`, and publishing targets such as `ghost` `post`. Workflow steps can then say: if no GitHub issue ref exists, create one and attach it; if a linked PR is merged, move to post-merge cleanup.
 
 ## Manifest Rules
 
