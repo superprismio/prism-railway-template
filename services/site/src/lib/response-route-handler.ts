@@ -371,6 +371,7 @@ function completeWorkflowAgentStep(input: {
       status: "completed",
       branchName: input.runtimeResponse.branchName ?? null,
       commitSha: input.runtimeResponse.commitSha ?? null,
+      errorMessage: null,
       summary: traceSummary ?? input.responseText.slice(0, 1200),
       finishedAt: new Date().toISOString(),
       meta: {
