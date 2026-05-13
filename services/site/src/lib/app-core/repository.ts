@@ -557,6 +557,22 @@ export interface TaskRecord {
   updatedAt: string;
 }
 
+export interface HookRecord {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  workflowKey: string;
+  authMode: string;
+  requestTemplate: Record<string, unknown>;
+  autoRun: Record<string, unknown>;
+  systemDefault: boolean;
+  lastTriggeredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface WorkflowRecord {
   id: string;
   key: string;
@@ -686,6 +702,18 @@ export interface UpsertTaskInput {
   instructionConfig?: Record<string, unknown>;
   outputConfig?: Record<string, unknown>;
   agentConfig?: Record<string, unknown>;
+}
+
+export interface UpsertHookInput {
+  key: string;
+  name: string;
+  description?: string | null;
+  enabled?: boolean;
+  workflowKey: string;
+  authMode?: string;
+  requestTemplate?: Record<string, unknown>;
+  autoRun?: Record<string, unknown>;
+  systemDefault?: boolean;
 }
 
 export interface CreateTaskRunInput {
@@ -929,6 +957,22 @@ interface TaskRunRow {
   updated_at: string;
 }
 
+interface HookRow {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  enabled: number;
+  workflow_key: string;
+  auth_mode: string;
+  request_template_json: string;
+  auto_run_json: string;
+  system_default: number;
+  last_triggered_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 function mapTaskRow(row: TaskRow): TaskRecord {
   return {
     id: row.id,
@@ -944,6 +988,24 @@ function mapTaskRow(row: TaskRow): TaskRecord {
     instructionConfig: parseJsonValue<Record<string, unknown>>(row.instruction_config_json, {}),
     outputConfig: parseJsonValue<Record<string, unknown>>(row.output_config_json, {}),
     agentConfig: parseJsonValue<Record<string, unknown>>(row.agent_config_json, {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapHookRow(row: HookRow): HookRecord {
+  return {
+    id: row.id,
+    key: row.key,
+    name: row.name,
+    description: row.description,
+    enabled: row.enabled === 1,
+    workflowKey: row.workflow_key,
+    authMode: row.auth_mode,
+    requestTemplate: parseJsonValue<Record<string, unknown>>(row.request_template_json, {}),
+    autoRun: parseJsonValue<Record<string, unknown>>(row.auto_run_json, {}),
+    systemDefault: row.system_default === 1,
+    lastTriggeredAt: row.last_triggered_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -5036,6 +5098,95 @@ export function deleteCustomTaskByKey(key: string): TaskRecord | null {
   }
   getDb().prepare('DELETE FROM tasks WHERE id = ?').run(task.id);
   return task;
+}
+
+export function upsertHook(input: UpsertHookInput): HookRecord {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const key = normalizeText(input.key);
+  const name = normalizeText(input.name);
+  const workflowKey = normalizeText(input.workflowKey);
+
+  if (!key || !name || !workflowKey) {
+    throw new Error('HOOK_KEY_NAME_AND_WORKFLOW_REQUIRED');
+  }
+  const workflow = getWorkflowByKey(workflowKey);
+  if (!workflow) {
+    throw new Error('WORKFLOW_NOT_FOUND');
+  }
+
+  const existing = db.prepare('SELECT id, created_at, system_default FROM hooks WHERE key = ?').get(key) as
+    | { id: string; created_at: string; system_default: number }
+    | undefined;
+  const id = existing?.id ?? randomUUID();
+  const createdAt = existing?.created_at ?? now;
+  const systemDefault = existing?.system_default === 1 || input.systemDefault === true;
+
+  db.prepare(
+    `INSERT INTO hooks (
+       id, key, name, description, enabled, workflow_key, auth_mode, request_template_json,
+       auto_run_json, system_default, last_triggered_at, created_at, updated_at
+     ) VALUES (
+       @id, @key, @name, @description, @enabled, @workflowKey, @authMode, @requestTemplateJson,
+       @autoRunJson, @systemDefault, @lastTriggeredAt, @createdAt, @updatedAt
+     )
+     ON CONFLICT(key) DO UPDATE SET
+       name = excluded.name,
+       description = excluded.description,
+       enabled = excluded.enabled,
+       workflow_key = excluded.workflow_key,
+       auth_mode = excluded.auth_mode,
+       request_template_json = excluded.request_template_json,
+       auto_run_json = excluded.auto_run_json,
+       updated_at = excluded.updated_at`,
+  ).run({
+    id,
+    key,
+    name,
+    description: normalizeText(input.description) || null,
+    enabled: input.enabled ? 1 : 0,
+    workflowKey,
+    authMode: normalizeText(input.authMode) || 'service-token',
+    requestTemplateJson: JSON.stringify(input.requestTemplate ?? {}),
+    autoRunJson: JSON.stringify(input.autoRun ?? {}),
+    systemDefault: systemDefault ? 1 : 0,
+    lastTriggeredAt: null,
+    createdAt,
+    updatedAt: now,
+  });
+
+  const hook = getHookByKey(key);
+  if (!hook) {
+    throw new Error('HOOK_UPSERT_FAILED');
+  }
+  return hook;
+}
+
+export function getHookByKey(key: string): HookRecord | null {
+  const row = getDb().prepare('SELECT * FROM hooks WHERE key = ?').get(key) as HookRow | undefined;
+  return row ? mapHookRow(row) : null;
+}
+
+export function listHooks(): HookRecord[] {
+  const rows = getDb().prepare('SELECT * FROM hooks ORDER BY key ASC').all() as HookRow[];
+  return rows.map(mapHookRow);
+}
+
+export function markHookTriggered(key: string, triggeredAt = new Date().toISOString()): HookRecord | null {
+  getDb().prepare('UPDATE hooks SET last_triggered_at = ?, updated_at = ? WHERE key = ?').run(triggeredAt, triggeredAt, key);
+  return getHookByKey(key);
+}
+
+export function deleteCustomHookByKey(key: string): HookRecord | null {
+  const hook = getHookByKey(key);
+  if (!hook) {
+    return null;
+  }
+  if (hook.systemDefault) {
+    throw new Error('HOOK_DELETE_SYSTEM_DEFAULT');
+  }
+  getDb().prepare('DELETE FROM hooks WHERE id = ?').run(hook.id);
+  return hook;
 }
 
 export function listTasks(): TaskRecord[] {

@@ -10,6 +10,7 @@ import { nullableRequestTargetsMigration } from './009_nullable_request_targets'
 import { requestArtifactsMigration } from './010_request_artifacts';
 import { requestExternalRefsMigration } from './011_request_external_refs';
 import { userInvitesMigration } from './012_user_invites';
+import { hooksMigration } from './013_hooks';
 
 export interface Migration {
   name: string;
@@ -29,4 +30,5 @@ export const migrations: Migration[] = [
   requestArtifactsMigration,
   requestExternalRefsMigration,
   userInvitesMigration,
+  hooksMigration,
 ];

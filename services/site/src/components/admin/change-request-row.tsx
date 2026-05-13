@@ -12,6 +12,7 @@ import {
   environmentForRequest,
   isoLabel,
   priorityVariant,
+  requestSourceLabel,
   targetAppForRequest,
   workflowStepForKey,
   workflowStepVariant,
@@ -63,6 +64,7 @@ export function ChangeRequestRow({
             {request.priority}
           </Badge>
           <Badge variant="outline">{request.requestType}</Badge>
+          <Badge variant="outline">{requestSourceLabel(request.source)}</Badge>
         </div>
         <h3 className="line-clamp-1 text-base font-semibold">
           {request.title}

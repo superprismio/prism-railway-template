@@ -133,6 +133,39 @@ Workflow prompts should stay descriptive:
 - if the linked PR is merged, continue to post-merge cleanup
 - if a support thread created the request, attach the source Discord message or thread
 
+## Hooks
+
+Hooks are on-demand workflow entrypoints. They sit beside tasks:
+
+- tasks trigger work on a schedule
+- hooks trigger work from an event or direct API call
+- both can create workflow-backed requests
+
+A hook row stores:
+
+- `key` and `name`
+- target `workflowKey`
+- an enabled flag
+- a small `requestTemplate`
+- an `autoRun` policy
+- last trigger timestamp
+
+The trigger endpoint is:
+
+```text
+POST /agent/hooks/<hook-key>/trigger
+```
+
+The request template can use simple placeholders from the payload, plus `{{date}}`, `{{now}}`, and `{{payload}}`. Keep hooks thin. Put domain behavior in workflow markdown, skills, scripts, or adapters. If the hook is fed by another live system, include that system's stable identifiers and URLs in the payload so the workflow can attach external refs.
+
+When a hook creates a request:
+
+- request `source` is `hook:<hook-key>`
+- the raw payload is saved as a `hook-payload.json` artifact with kind `hook-payload`
+- auto-run starts from the workflow entrypoint when `autoRun.enabled` is true
+
+Hooks default to service-token auth in the first implementation. The browser admin UI exposes a Hooks tab for inspection, enable/disable, deletion of custom hooks, endpoint copy, and manual test triggering.
+
 ## Default Request Workflow
 
 The built-in request workflow uses `workflow_runs.current_step_key` as the source of truth. Request `status` remains only a coarse board projection for lists and badges.

@@ -38,6 +38,9 @@ Send service auth as:
 - `POST /agent/skills`
 - `GET /agent/workflows`
 - `POST /agent/workflows`
+- `GET /agent/hooks`
+- `POST /agent/hooks`
+- `POST /agent/hooks/:key/trigger`
 - `POST /agent/responses`
 - `GET /agent/target-apps`
 - `GET /agent/change-board/requests/:id`
