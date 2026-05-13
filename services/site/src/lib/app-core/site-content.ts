@@ -229,6 +229,10 @@ export function normalizeSiteContent(value: unknown): SiteContent {
 }
 
 export function getSiteContentPath(config: AppConfig) {
+  return path.resolve(config.dataRoot, 'site-content.json');
+}
+
+function getLegacySiteContentPath(config: AppConfig) {
   return path.resolve(config.workspaceRoot, 'data/site-content.json');
 }
 
@@ -240,6 +244,19 @@ export function ensureSiteContentFile(config: AppConfig) {
   }
 
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
+
+  const legacyFilePath = getLegacySiteContentPath(config);
+  if (legacyFilePath !== filePath && fs.existsSync(legacyFilePath)) {
+    try {
+      const legacyFileContents = fs.readFileSync(legacyFilePath, 'utf8');
+      const legacyContent = normalizeSiteContent(JSON.parse(legacyFileContents));
+      fs.writeFileSync(filePath, `${JSON.stringify(legacyContent, null, 2)}\n`, 'utf8');
+      return;
+    } catch {
+      // Fall through to defaults when the legacy file cannot be read.
+    }
+  }
+
   fs.writeFileSync(filePath, `${JSON.stringify(defaultSiteContent, null, 2)}\n`, 'utf8');
 }
 
