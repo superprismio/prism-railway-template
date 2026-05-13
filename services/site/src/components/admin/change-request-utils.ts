@@ -157,6 +157,15 @@ export function requestTypeLabel(value: string) {
     .join(" ");
 }
 
+export function requestSourceLabel(value: string) {
+  if (value.startsWith("hook:")) return `Hook: ${value.slice("hook:".length)}`;
+  if (value === "task-runner" || value.startsWith("task:")) return "Task";
+  if (value === "chat") return "Agent";
+  if (value === "manual") return "Manual";
+  if (value === "admin-hook-test") return "Hook test";
+  return requestTypeLabel(value || "unknown");
+}
+
 export function parseTimestamp(value: string | null) {
   if (!value) return 0;
   const timestamp = new Date(value).getTime();

@@ -58,6 +58,15 @@ Workflows:
 - `GET /agent/workflows/:key`
 - `POST /agent/responses`
 
+Hooks:
+
+- `GET /agent/hooks`
+- `POST /agent/hooks`
+- `GET /agent/hooks/:key`
+- `PATCH /agent/hooks/:key`
+- `DELETE /agent/hooks/:key`
+- `POST /agent/hooks/:key/trigger`
+
 Requests and artifacts:
 
 - `GET /agent/target-apps`

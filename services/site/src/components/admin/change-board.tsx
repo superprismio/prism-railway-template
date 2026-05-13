@@ -11,6 +11,7 @@ import {
   Search,
   Rows3,
   Settings,
+  Webhook,
   Workflow,
   X,
 } from "lucide-react";
@@ -20,6 +21,7 @@ import { AdminSettingsWorkspace } from "@/components/admin/admin-settings-worksp
 import { ChangeRequestList } from "@/components/admin/change-request-list";
 import { RequestDetailsPanel } from "@/components/admin/change-request-details-panel";
 import { CodexConsole } from "@/components/admin/codex-console";
+import { HooksWorkspace } from "@/components/admin/hooks-workspace";
 import { NewChangeRequestDialog } from "@/components/admin/new-change-request-dialog";
 import { SkillsWorkspace } from "@/components/admin/skills-workspace";
 import { TaskRunnerWorkspace } from "@/components/admin/task-runner-workspace";
@@ -35,6 +37,7 @@ import {
   environmentForRequest,
   parseTimestamp,
   priorityVariant,
+  requestSourceLabel,
   requestTypeLabel,
   targetAppForRequest,
   workflowStepForKey,
@@ -43,7 +46,7 @@ import {
   type RequestSortValue,
 } from "./change-request-utils";
 
-const workspaceTabs = ["requests", "codex-console", "tasks", "skills", "workflows", "settings"];
+const workspaceTabs = ["requests", "codex-console", "tasks", "skills", "workflows", "hooks", "settings"];
 
 function canUse(capabilities: readonly Capability[], capability: Capability) {
   return capabilities.includes(capability);
@@ -300,6 +303,7 @@ export function ChangeBoard({
         if (tab === "tasks") return canManageTasks;
         if (tab === "skills") return canManageSkills;
         if (tab === "workflows") return canManageWorkflows;
+        if (tab === "hooks") return canManageWorkflows;
         if (tab === "settings") return canManageSettings;
         return true;
       }),
@@ -406,6 +410,15 @@ export function ChangeBoard({
                   <span className="hidden md:inline">Workflows</span>
                 </TabsTrigger>
               ) : null}
+              {canManageWorkflows ? (
+                <TabsTrigger
+                  value="hooks"
+                  className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+                >
+                  <Webhook className="h-4 w-4 md:hidden" />
+                  <span className="hidden md:inline">Hooks</span>
+                </TabsTrigger>
+              ) : null}
               {canManageSettings ? (
                 <TabsTrigger
                   value="settings"
@@ -449,6 +462,9 @@ export function ChangeBoard({
                       </Badge>
                       <Badge variant="outline">
                         {requestTypeLabel(selectedRequest.requestType)}
+                      </Badge>
+                      <Badge variant="outline">
+                        {requestSourceLabel(selectedRequest.source)}
                       </Badge>
                       <span className="text-sm text-muted-foreground">
                         {selectedTargetApp?.name ??
@@ -624,6 +640,19 @@ export function ChangeBoard({
             </div>
 
             <WorkflowsWorkspace />
+          </section>
+        </TabsContent>
+
+        <TabsContent value="hooks" className="mt-0 flex-1">
+          <section className="min-h-full">
+            <div className="border-b border-border/60 px-5 py-4 md:px-6">
+              <h1 className="text-2xl font-semibold tracking-tight">Hooks</h1>
+              <p className="text-sm text-muted-foreground">
+                Manage on-demand triggers that create workflow-backed requests.
+              </p>
+            </div>
+
+            <HooksWorkspace />
           </section>
         </TabsContent>
 
