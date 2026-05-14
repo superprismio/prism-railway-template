@@ -111,8 +111,13 @@ export async function POST(request: Request, context: RouteContext) {
   } catch (error) {
     deleteRequestArtifact(artifactId)
     await deleteRequestArtifactFile(storagePath).catch(() => undefined)
+    console.error("request artifact upload failed", {
+      requestId,
+      artifactId,
+      error,
+    })
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Could not upload artifact" },
+      { ok: false, error: "Could not upload artifact" },
       { status: 500 },
     )
   }
