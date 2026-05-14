@@ -7,6 +7,7 @@ import {
   deleteRequestArtifact,
   deleteRequestArtifactFile,
   getChangeRequest,
+  getSessionSummary,
   getWorkflowRunForRequest,
   writeRequestArtifactFile,
 } from "@/lib/app-core"
@@ -68,6 +69,7 @@ export async function POST(request: Request, context: RouteContext) {
   const name = parseString(formData.get("name")) || file.name
   const storagePath = buildRequestArtifactStoragePath({ requestId, artifactId, name })
   const content = Buffer.from(await file.arrayBuffer())
+  const uploader = access.userId ? getSessionSummary(access.userId) : null
 
   try {
     await writeRequestArtifactFile(storagePath, content)
@@ -85,6 +87,10 @@ export async function POST(request: Request, context: RouteContext) {
       metadata: {
         source: "admin-upload",
         originalName: file.name,
+        uploadedByUserId: access.userId ?? null,
+        uploadedByDisplayName: uploader?.displayName ?? uploader?.handle ?? null,
+        uploadedByEmail: uploader?.email ?? null,
+        uploadedByRoleSlugs: access.roleSlugs,
       },
       createdBy: "admin",
     })

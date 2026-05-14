@@ -45,6 +45,7 @@ export {
   getRequestArtifact,
   getRequestExternalRef,
   getRequestExternalRefByUrl,
+  getSessionSummary,
   getTargetApp,
   getTargetEnvironment,
   getHookByKey,
