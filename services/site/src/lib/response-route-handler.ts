@@ -339,6 +339,10 @@ function isTerminalWorkflowStep(step: Record<string, unknown> | null | undefined
   return step ? stepType(step) === "terminal" : false
 }
 
+function isCheckpointWorkflowStep(step: Record<string, unknown> | null | undefined) {
+  return step ? stepType(step) === "checkpoint" : false
+}
+
 function completeWorkflowAgentStep(input: {
   executionId: string | null
   runtimeResponse: RuntimeResponsePayload
@@ -381,22 +385,26 @@ function completeWorkflowAgentStep(input: {
     })
   }
 
+  const currentStep = findStepByKey(input.linkedWorkflowSteps, input.stepKey)
+  const shouldStayOnStep = isCheckpointWorkflowStep(currentStep)
+
   createWorkflowEvent({
     workflowRunId: input.workflowRunId,
     requestId: input.requestId,
     stepKey: input.stepKey,
-    eventType: "agent.completed",
+    eventType: shouldStayOnStep ? "checkpoint.checked" : "agent.completed",
     actorType: "codex",
     payload: {
       executionId: input.executionId,
       autoContinued: input.autoContinued === true,
       branchName: input.runtimeResponse.branchName ?? null,
       commitSha: input.runtimeResponse.commitSha ?? null,
+      nextStepKey: input.nextStep ? stepKey(input.nextStep) : null,
     },
   })
 
   const nextStep = input.nextStep
-  const nextStepKey = nextStep ? stepKey(nextStep) : input.stepKey
+  const nextStepKey = !shouldStayOnStep && nextStep ? stepKey(nextStep) : input.stepKey
   updateChangeRequest(input.requestId, {
     workflowStepKey: nextStepKey,
   })
@@ -769,7 +777,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     runnableWorkflowStep &&
     runnableStepKey
   ) {
-    if (stepType(runnableWorkflowStep) !== "agent") {
+    const runnableStepType = stepType(runnableWorkflowStep)
+    if (runnableStepType !== "agent" && runnableStepType !== "checkpoint") {
       return NextResponse.json(
         { ok: false, error: "WORKFLOW_STEP_NOT_RUNNABLE" },
         { status: 409 },
@@ -858,7 +867,13 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                 ? `Workflow step instructions:\n${workflowStepInstruction}`
                 : "This response is linked to a tracked request workflow step.",
               runnableStepKey ? `Current workflow step: ${runnableStepKey}.` : null,
-              nextStepKeyAfterRun ? `When this step is complete, advance the workflow run to ${nextStepKeyAfterRun}.` : null,
+              isCheckpointWorkflowStep(runnableWorkflowStep)
+                ? [
+                    "This workflow step is a checkpoint. Check external state and durable artifacts without starting duplicate work.",
+                    "The site will keep the request on this checkpoint after this run.",
+                    nextStepKeyAfterRun ? `If the workflow is ready to continue, say that ${nextStepKeyAfterRun} should run next and why.` : null,
+                  ].filter(Boolean).join(" ")
+                : nextStepKeyAfterRun ? `When this step is complete, advance the workflow run to ${nextStepKeyAfterRun}.` : null,
               linkedChangeRequest
                 ? `To read prior workflow artifact bodies, call GET /agent/change-board/requests/by-number/${linkedChangeRequest.requestNumber}/artifacts with x-service-token. Filter by name or kind when useful.`
                 : null,
@@ -980,7 +995,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           continuationInstruction
             ? "Use the workflow step instructions from runtime metadata."
             : "Use the current workflow step instructions from runtime metadata and the request context.",
-          "This is part of a run-until-gate chain. Complete only this step, save durable outputs as request artifacts when appropriate, and return a concise summary.",
+          "This is part of an auto-continue chain. Complete only this step, save durable outputs as request artifacts when appropriate, and return a concise summary.",
         ].join("\n")
 
         try {
@@ -1025,7 +1040,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                 `Current workflow step: ${continuationStepKey}.`,
                 continuationNextStepKey ? `When this step is complete, advance the workflow run to ${continuationNextStepKey}.` : null,
                 `To read prior workflow artifact bodies, call GET /agent/change-board/requests/by-number/${latestRequest.requestNumber}/artifacts with x-service-token. Filter by name or kind when useful.`,
-                "Auto-continue is enabled; the site will run the next agent step until the workflow reaches a gate or terminal step.",
+                "Auto-continue is enabled; the site will run the next agent step until the workflow reaches a gate, checkpoint, or terminal step.",
               ].filter(Boolean).join("\n\n"),
             },
           })

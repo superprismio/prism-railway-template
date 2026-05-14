@@ -185,17 +185,38 @@ The default request workflow declares a repository target because it uses branch
 
 ## Step Types
 
-The initial schema is descriptive and intentionally narrow. The default request workflow currently exercises `agent`, `gate`, and `terminal`.
+The schema is descriptive and intentionally narrow. The default request workflow currently exercises `agent`, `gate`, and `terminal`; custom workflows can also use `checkpoint` for manual external-state checks.
 
-Planned step types:
+Supported step types:
 
-- `agent`: call Codex Runtime with prompt, context, skills, and target metadata.
-- `gate`: wait for a human decision.
+- `agent`: call Codex Runtime with prompt, context, skills, and target metadata. Agent steps auto-continue until the workflow reaches a gate, checkpoint, or terminal step.
+- `gate`: wait for a human decision. Continuing a gate routes through the manifest using a workflow action such as `approved` or `changesRequested`.
+- `checkpoint`: pause until an operator asks the agent to check external state. Checkpoints run their own markdown instructions and stay on the checkpoint after the check, so they work for long-running renders, PR review checks, deployment checks, and other “look before doing more” moments. If the checkpoint is ready to continue, the agent should say which next step should run and why.
 - `command`: run a reviewed script or service command.
 - `handoff`: move work to a channel, target, or person.
 - `subworkflow`: start another workflow run.
 - `wait`: pause until an external signal, time, or status.
 - `terminal`: close the run.
+
+Example checkpoint step:
+
+```json
+{
+  "key": "render-check",
+  "label": "Render Check",
+  "type": "checkpoint",
+  "instructionPath": "workflows/video-publish/steps/render-check.md",
+  "resumeLabel": "Check render",
+  "next": "publish"
+}
+```
+
+Checkpoint markdown should be explicit about idempotency:
+
+- inspect durable artifacts and external refs first
+- do not start duplicate jobs
+- if still waiting, summarize the blocker and keep the request on the checkpoint
+- if ready, name the next step and the evidence that makes it safe to proceed
 
 ## Agent Config
 
@@ -393,13 +414,13 @@ The workflow-aware request flow is:
 4. Agent steps merge workflow-level and step-level `agentConfig`.
 5. `site` calls `codex-runtime` with workflow metadata and the step instructions.
 6. The response is recorded in `change_request_executions`.
-7. The workflow run advances and workflow events are appended.
+7. The workflow run advances and workflow events are appended. Checkpoint steps are the exception: the check is recorded, but the workflow stays on the checkpoint until an operator moves or continues it.
 
 `change_request_executions` remains the record of concrete Codex runs: branch, commit, response text, runtime trace, deploy URL, and execution metadata. `workflow_events` is the higher-level workflow timeline.
 
-The admin UI uses one `Continue` action. It runs the current agent step and then automatically continues through following `agent` steps until the workflow reaches a `gate`, `terminal` step, failure, or the server-side continuation cap.
+The admin UI uses one primary step action. It runs the current agent step, or checks the current checkpoint step, and automatically continues through following `agent` steps until the workflow reaches a `gate`, `checkpoint`, `terminal` step, failure, or the server-side continuation cap.
 
-Gate actions such as approval or requested changes use the same run-until-gate behavior after routing, so a review approval can continue into the next agent step without extra button presses while still stopping at the next human decision point.
+Gate actions such as approval or requested changes use the same run-until-gate behavior after routing, so a review approval can continue into the next agent step without extra button presses while still stopping at the next human decision or checkpoint.
 
 ## Migrations
 

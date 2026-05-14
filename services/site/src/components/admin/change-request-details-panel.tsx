@@ -91,6 +91,10 @@ function CommandCenter({
   const isRunning = isStepRunning;
   const isTerminal = currentStep.type === "terminal" || isClosed;
   const canContinue = canRunWorkflowActions && !isRunning && !isTerminal;
+  const actionLabel =
+    currentStep.type === "checkpoint"
+      ? currentStep.resumeLabel ?? `Check ${currentStep.label}`
+      : "Continue";
 
   return (
     <Card className="rounded-none border-border/70 bg-background shadow-none">
@@ -195,6 +199,8 @@ function CommandCenter({
                 ? "The agent is running this workflow step."
                 : currentStep.type === "agent"
                   ? "This workflow step is ready for an agent run."
+                  : currentStep.type === "checkpoint"
+                    ? "This workflow is paused until an operator checks external state."
                   : currentStep.type === "gate"
                     ? "This workflow step is waiting for a human decision."
                     : currentStep.type === "terminal"
@@ -211,7 +217,7 @@ function CommandCenter({
             <div className="flex flex-wrap justify-end gap-2">
               <Button type="button" onClick={onContinue} disabled={isPending}>
                 {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-                Continue
+                {actionLabel}
               </Button>
             </div>
           ) : null}
@@ -219,7 +225,7 @@ function CommandCenter({
             <div className="flex flex-wrap justify-end gap-2">
               <Button type="button" onClick={onContinue} disabled={isPending}>
                 {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-                Continue
+                {actionLabel}
               </Button>
             </div>
           ) : null}
@@ -251,7 +257,9 @@ function CommandCenter({
             <p className="font-medium">{currentStep.label}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {canRunWorkflowActions
-                ? "Add a comment if needed, then continue the workflow."
+                ? currentStep.type === "checkpoint"
+                  ? "Add a comment if needed, then check this workflow checkpoint."
+                  : "Add a comment if needed, then continue the workflow."
                 : "You can view this workflow step, but your role cannot run or approve it."}
             </p>
           </div>
@@ -1040,7 +1048,9 @@ export function RequestDetailsPanel({
         : "No new admin comment was provided; continue from the existing request context and thread history.",
       currentWorkflowStep.type === "gate"
         ? "This step is a human gate. Treat comments as the gate decision and context, route through the workflow manifest, and continue if there is a next agent step."
-        : "Use the latest request context and comments, run the current workflow step, update the request state if appropriate, and leave a concise summary comment.",
+        : currentWorkflowStep.type === "checkpoint"
+          ? "This step is a checkpoint. Reconcile existing external state and durable artifacts before doing anything new. Do not start duplicate jobs. If the external state is still waiting, leave the request on this checkpoint and summarize what is pending. If it is ready for the next step, say which step should run next and why."
+          : "Use the latest request context and comments, run the current workflow step, update the request state if appropriate, and leave a concise summary comment.",
     ].join("\n");
 
     setThreadError(null);

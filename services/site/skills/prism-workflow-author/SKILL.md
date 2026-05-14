@@ -80,7 +80,7 @@ To run a request workflow step from another service, use the site response route
 }
 ```
 
-Send that body to `POST /agent/responses` with `x-service-token` service auth. For gate steps, set `workflow_action` to the route key, such as `approved` or `changesRequested`.
+Send that body to `POST /agent/responses` with `x-service-token` service auth. For gate steps, set `workflow_action` to the route key, such as `approved` or `changesRequested`. For checkpoint steps, do not set `workflow_action`; run the checkpoint step itself.
 
 Workflow steps should save durable files through the request artifact API instead of leaving important outputs only in chat text. Use artifacts for drafts, image prompts, generated images, publish packets, JSON plans, or any step output that future steps or humans should inspect.
 
@@ -208,6 +208,14 @@ Recommended manifest shape:
       "next": "review"
     },
     {
+      "key": "external-check",
+      "label": "External Check",
+      "type": "checkpoint",
+      "instructionPath": "workflows/example-workflow/steps/external-check.md",
+      "resumeLabel": "Check external state",
+      "next": "review"
+    },
+    {
       "key": "review",
       "label": "Review",
       "type": "gate",
@@ -254,13 +262,14 @@ Use these step types:
 
 - `agent`: Codex performs work for the step.
 - `gate`: a human decision is required.
+- `checkpoint`: a human-triggered agent check of external or long-running state. Use this for render status, PR reviews, deploy readiness, publication status, or other waits where an operator decides when to ask the agent to check. Checkpoints run their own instructions and stay on the checkpoint after the check; if ready, the agent should state which next step should run and why.
 - `command`: a reviewed script or service command runs.
 - `handoff`: work moves to a channel, target, or person.
 - `subworkflow`: another workflow starts.
 - `wait`: the workflow pauses for time or an external signal.
 - `terminal`: the workflow is complete.
 
-Only add `command`, `handoff`, `subworkflow`, or `wait` when the current product can represent or safely ignore them. For early workflows, prefer `agent`, `gate`, and `terminal`.
+Only add `command`, `handoff`, `subworkflow`, or `wait` when the current product can represent or safely ignore them. For early workflows, prefer `agent`, `gate`, `checkpoint`, and `terminal`.
 
 ## Current Request Workflow
 
