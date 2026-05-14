@@ -398,11 +398,20 @@ export function RequestDetailsPanel({
     setTriageSummary(request.triageSummary ?? "");
     setAgentRecommendation(request.agentRecommendation ?? "");
     setManualWorkflowStepKey(request.currentWorkflowStepKey ?? "");
+    setIsDraftDirty(false);
+  }, [
+    request.agentRecommendation,
+    request.currentWorkflowStepKey,
+    request.id,
+    request.triageSummary,
+    request.workflowRunStatus,
+  ]);
+
+  useEffect(() => {
     setReopenStepKey(defaultReopenStepKey(currentWorkflowSteps, request.currentWorkflowStepKey));
     setReopenComment("");
     setIsReopenDialogOpen(false);
-    setIsDraftDirty(false);
-  }, [currentWorkflowSteps, request.id, request.updatedAt]);
+  }, [request.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1192,7 +1201,7 @@ export function RequestDetailsPanel({
                         </Button>
                       </div>
                     </>
-                      )}
+                  )}
                 </div>
               ) : null}
             </CardContent>
