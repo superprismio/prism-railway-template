@@ -371,6 +371,7 @@ export function RequestDetailsPanel({
   );
   const [commentDraft, setCommentDraft] = useState("");
   const artifactUploadInputRef = useRef<HTMLInputElement>(null);
+  const [latestUploadedArtifactName, setLatestUploadedArtifactName] = useState<string | null>(null);
   const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
   const [reopenStepKey, setReopenStepKey] = useState("");
   const [reopenComment, setReopenComment] = useState("");
@@ -414,6 +415,7 @@ export function RequestDetailsPanel({
     setReopenStepKey(defaultReopenStepKey(currentWorkflowSteps, request.currentWorkflowStepKey));
     setReopenComment("");
     setIsReopenDialogOpen(false);
+    setLatestUploadedArtifactName(null);
   }, [request.id]);
 
   useEffect(() => {
@@ -1010,6 +1012,7 @@ export function RequestDetailsPanel({
           throw new Error(payload.error || "Could not upload artifact");
         }
 
+        setLatestUploadedArtifactName(file.name);
         await refreshArtifacts();
       } catch (error) {
         setThreadError(error instanceof Error ? error.message : "Could not upload artifact");
@@ -1163,19 +1166,26 @@ export function RequestDetailsPanel({
                       className="hidden"
                       onChange={handleArtifactUploadChange}
                     />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => artifactUploadInputRef.current?.click()}
-                      disabled={isArtifactUploadPending}
-                    >
-                      {isArtifactUploadPending ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Upload className="h-4 w-4" />
-                      )}
-                      {isArtifactUploadPending ? "Uploading" : "Upload artifact"}
-                    </Button>
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => artifactUploadInputRef.current?.click()}
+                        disabled={isArtifactUploadPending}
+                      >
+                        {isArtifactUploadPending ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Upload className="h-4 w-4" />
+                        )}
+                        {isArtifactUploadPending ? "Uploading" : "Upload artifact"}
+                      </Button>
+                      {latestUploadedArtifactName ? (
+                        <span className="max-w-full truncate text-xs text-muted-foreground sm:max-w-64">
+                          Uploaded: {latestUploadedArtifactName}
+                        </span>
+                      ) : null}
+                    </div>
                     <Button
                       type="button"
                       variant="outline"
