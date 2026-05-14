@@ -5,18 +5,20 @@ export const closeCompletedWorkflowRequestsMigration = {
     SET completed_at = COALESCE(
           completed_at,
           (
-            SELECT wr.completed_at
+            SELECT MAX(wr.completed_at)
             FROM workflow_runs wr
             WHERE wr.request_id = change_requests.id
+              AND wr.status = 'completed'
           ),
           updated_at
         ),
         closed_at = COALESCE(
           closed_at,
           (
-            SELECT wr.completed_at
+            SELECT MAX(wr.completed_at)
             FROM workflow_runs wr
             WHERE wr.request_id = change_requests.id
+              AND wr.status = 'completed'
           ),
           updated_at
         )

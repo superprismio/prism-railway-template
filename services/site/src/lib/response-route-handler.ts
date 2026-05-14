@@ -1226,7 +1226,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         },
       })
       updateChangeRequest(activeLinkedChangeRequestId, {
-        workflowStepKey: linkedWorkflowRun.currentStepKey,
+        workflowStepKey: runnableStepKey,
       })
     }
 

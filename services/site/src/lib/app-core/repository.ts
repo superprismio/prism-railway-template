@@ -3446,14 +3446,26 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
 
 export function clearChangeRequestClosedAt(changeRequestId: string) {
   const now = new Date().toISOString();
-  getDb()
-    .prepare(
+  const db = getDb();
+
+  db.transaction(() => {
+    db.prepare(
       `UPDATE change_requests
        SET closed_at = NULL,
+           completed_at = NULL,
            updated_at = ?
        WHERE id = ?`,
-    )
-    .run(now, changeRequestId);
+    ).run(now, changeRequestId);
+
+    db.prepare(
+      `UPDATE workflow_runs
+       SET status = 'active',
+           completed_at = NULL,
+           updated_at = ?
+       WHERE request_id = ?
+         AND status = 'completed'`,
+    ).run(now, changeRequestId);
+  })();
 
   return getChangeRequest(changeRequestId);
 }

@@ -6,6 +6,7 @@ import {
   getChangeRequest,
   getWorkflowByKey,
   getWorkflowRunForRequest,
+  listChangeRequestExecutions,
   updateChangeRequest,
   updateWorkflowRun,
 } from "@/lib/app-core"
@@ -26,6 +27,10 @@ type RouteContext = {
 
 function isWorkflowStep(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value) && typeof (value as { key?: unknown }).key === "string"
+}
+
+function hasActiveExecution(changeRequestId: string) {
+  return listChangeRequestExecutions(changeRequestId).some((execution) => ["planned", "running"].includes(execution.status))
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -78,6 +83,21 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (nextWorkflowStepKey) {
       if (!nextWorkflowStep) {
         return NextResponse.json({ ok: false, error: "Invalid workflow step" }, { status: 400 })
+      }
+      const existingRun = getWorkflowRunForRequest(changeRequestId)
+      const effectiveCurrentStepKey = existingRun?.currentStepKey ?? existingChangeRequest.currentWorkflowStepKey
+      const effectiveCurrentStep = workflowSteps.find((step) => step.key === effectiveCurrentStepKey) ?? null
+      if (existingRun?.status === "completed" || effectiveCurrentStep?.type === "terminal") {
+        return NextResponse.json(
+          { ok: false, error: "Use the reopen endpoint to reopen a closed request" },
+          { status: 409 },
+        )
+      }
+      if (hasActiveExecution(changeRequestId)) {
+        return NextResponse.json(
+          { ok: false, error: "CHANGE_REQUEST_EXECUTION_ALREADY_RUNNING" },
+          { status: 409 },
+        )
       }
     }
 
