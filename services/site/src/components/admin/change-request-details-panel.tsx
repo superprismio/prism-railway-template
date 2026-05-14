@@ -9,6 +9,7 @@ import {
   ImageIcon,
   LoaderCircle,
   PlayCircle,
+  RotateCcw,
   X,
 } from "lucide-react";
 
@@ -24,6 +25,8 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -69,6 +72,7 @@ function CommandCenter({
   steps,
   isPending,
   isStepRunning,
+  isClosed,
   canRunWorkflowActions,
   onContinue,
 }: {
@@ -76,6 +80,7 @@ function CommandCenter({
   steps: WorkflowStep[];
   isPending: boolean;
   isStepRunning: boolean;
+  isClosed: boolean;
   canRunWorkflowActions: boolean;
   onContinue: () => void;
 }) {
@@ -83,7 +88,7 @@ function CommandCenter({
   const currentStepIndex = currentWorkflowPosition.index;
   const currentStep = currentWorkflowPosition.step;
   const isRunning = isStepRunning;
-  const isTerminal = currentStep.type === "terminal";
+  const isTerminal = currentStep.type === "terminal" || isClosed;
   const canContinue = canRunWorkflowActions && !isRunning && !isTerminal;
 
   return (
@@ -183,7 +188,9 @@ function CommandCenter({
               <Badge variant="outline">{currentStep.type}</Badge>
             </div>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              {currentStep.type === "agent" && isRunning
+              {isClosed
+                ? "This request is closed."
+                : currentStep.type === "agent" && isRunning
                 ? "The agent is running this workflow step."
                 : currentStep.type === "agent"
                   ? "This workflow step is ready for an agent run."
@@ -229,7 +236,7 @@ function CommandCenter({
           </div>
         ) : null}
 
-        {currentStep.type === "terminal" ? (
+        {isClosed ? (
           <div>
             <p className="font-medium">Closed</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -238,7 +245,7 @@ function CommandCenter({
           </div>
         ) : null}
 
-        {!canContinue && !isRunning && currentStep.type !== "terminal" ? (
+        {!canContinue && !isRunning && !isClosed ? (
           <div>
             <p className="font-medium">{currentStep.label}</p>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -276,6 +283,20 @@ function artifactPreviewKind(artifact: RequestArtifactRecord) {
     return "text";
   }
   return "raw";
+}
+
+function defaultReopenStepKey(steps: WorkflowStep[], currentStepKey: string | null | undefined) {
+  const nonTerminalSteps = steps.filter((step) => step.type !== "terminal");
+  if (!nonTerminalSteps.length) return "";
+
+  const currentIndex = currentStepKey ? steps.findIndex((step) => step.key === currentStepKey) : -1;
+  for (let index = currentIndex - 1; index >= 0; index -= 1) {
+    if (steps[index]?.type !== "terminal") {
+      return steps[index].key;
+    }
+  }
+
+  return nonTerminalSteps[0].key;
 }
 
 function hasAutoContinuedFlag(value: { meta?: Record<string, unknown>; payload?: Record<string, unknown> }) {
@@ -320,8 +341,18 @@ export function RequestDetailsPanel({
     targetEnvironment?.branch ?? targetApp?.defaultBranch ?? null;
   const currentWorkflowSteps = useMemo(() => workflowSteps(workflow), [workflow]);
   const [currentWorkflowStepKey, setCurrentWorkflowStepKey] = useState(request.currentWorkflowStepKey);
+  const [workflowRunStatus, setWorkflowRunStatus] = useState(request.workflowRunStatus);
   const currentWorkflowStep = useMemo(
     () => workflowStepForKey(currentWorkflowStepKey, currentWorkflowSteps).step,
+    [currentWorkflowStepKey, currentWorkflowSteps],
+  );
+  const isWorkflowClosed = currentWorkflowStep.type === "terminal" || workflowRunStatus === "completed";
+  const reopenableWorkflowSteps = useMemo(
+    () => currentWorkflowSteps.filter((step) => step.type !== "terminal"),
+    [currentWorkflowSteps],
+  );
+  const defaultReopenTargetStepKey = useMemo(
+    () => defaultReopenStepKey(currentWorkflowSteps, currentWorkflowStepKey),
     [currentWorkflowStepKey, currentWorkflowSteps],
   );
   const [triageSummary, setTriageSummary] = useState(
@@ -338,6 +369,9 @@ export function RequestDetailsPanel({
     [],
   );
   const [commentDraft, setCommentDraft] = useState("");
+  const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
+  const [reopenStepKey, setReopenStepKey] = useState("");
+  const [reopenComment, setReopenComment] = useState("");
   const [threadError, setThreadError] = useState<string | null>(null);
   const [executions, setExecutions] = useState<ChangeRequestExecutionRecord[]>(
     [],
@@ -355,15 +389,20 @@ export function RequestDetailsPanel({
   const [isDraftDirty, setIsDraftDirty] = useState(false);
   const [isCommentPending, startCommentTransition] = useTransition();
   const [isCommandPending, startCommandTransition] = useTransition();
+  const [isReopenPending, startReopenTransition] = useTransition();
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     setCurrentWorkflowStepKey(request.currentWorkflowStepKey);
+    setWorkflowRunStatus(request.workflowRunStatus);
     setTriageSummary(request.triageSummary ?? "");
     setAgentRecommendation(request.agentRecommendation ?? "");
     setManualWorkflowStepKey(request.currentWorkflowStepKey ?? "");
+    setReopenStepKey(defaultReopenStepKey(currentWorkflowSteps, request.currentWorkflowStepKey));
+    setReopenComment("");
+    setIsReopenDialogOpen(false);
     setIsDraftDirty(false);
-  }, [request.id, request.updatedAt]);
+  }, [currentWorkflowSteps, request.id, request.updatedAt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -492,6 +531,7 @@ export function RequestDetailsPanel({
 
         if (requestPayload.changeRequest) {
           setCurrentWorkflowStepKey(requestPayload.changeRequest.currentWorkflowStepKey);
+          setWorkflowRunStatus(requestPayload.changeRequest.workflowRunStatus);
           setTriageSummary(requestPayload.changeRequest.triageSummary ?? "");
           setAgentRecommendation(requestPayload.changeRequest.agentRecommendation ?? "");
           setManualWorkflowStepKey(requestPayload.changeRequest.currentWorkflowStepKey ?? "");
@@ -984,6 +1024,53 @@ export function RequestDetailsPanel({
     setManualWorkflowStepKey(nextStepKey);
   }
 
+  function handleOpenReopenDialog() {
+    setReopenStepKey(defaultReopenTargetStepKey);
+    setIsReopenDialogOpen(true);
+  }
+
+  function handleReopenRequest() {
+    const targetStep = reopenableWorkflowSteps.find((step) => step.key === reopenStepKey);
+    if (!targetStep) return;
+
+    setThreadError(null);
+    startReopenTransition(async () => {
+      try {
+        const response = await fetch(`/admin/change-requests/${request.id}/reopen`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            targetStepKey: reopenStepKey,
+            comment: reopenComment.trim(),
+          }),
+        });
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          error?: string;
+          changeRequest?: ChangeRequestRecord;
+        };
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "Could not reopen request");
+        }
+        if (payload.changeRequest) {
+          setCurrentWorkflowStepKey(payload.changeRequest.currentWorkflowStepKey);
+          setWorkflowRunStatus(payload.changeRequest.workflowRunStatus);
+          setManualWorkflowStepKey(payload.changeRequest.currentWorkflowStepKey ?? "");
+        }
+        setReopenComment("");
+        setIsReopenDialogOpen(false);
+        await refreshThread();
+        await refreshExecutions();
+        await refreshWorkflowEvents();
+        await refreshArtifacts();
+      } catch (error) {
+        setThreadError(error instanceof Error ? error.message : "Could not reopen request");
+      }
+    });
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 p-5 md:p-6">
@@ -993,6 +1080,7 @@ export function RequestDetailsPanel({
             steps={currentWorkflowSteps}
             isPending={isPending || isCommandPending}
             isStepRunning={Boolean(activeExecution)}
+            isClosed={isWorkflowClosed}
             canRunWorkflowActions={canRunWorkflowActions}
             onContinue={handleContinueWorkflow}
           />
@@ -1044,45 +1132,126 @@ export function RequestDetailsPanel({
               )}
               {canRunWorkflowActions ? (
                 <div className="border-t border-border/70 pt-4">
-                  <Label htmlFor="manual-workflow-step">Move to workflow step</Label>
-                  <div className="mt-2 flex flex-wrap items-center gap-3">
-                    <Select value={manualWorkflowStepKey} onValueChange={handleManualWorkflowStepChange}>
-                      <SelectTrigger
-                        id="manual-workflow-step"
-                        className="w-full border border-input shadow-sm sm:w-[360px]"
+                  {isWorkflowClosed ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">Closed request</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Reopen explicitly to move this request back into a workflow step.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleOpenReopenDialog}
+                        disabled={isReopenPending || !reopenableWorkflowSteps.length}
                       >
-                        <SelectValue placeholder="Select workflow step" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {currentWorkflowSteps.map((step) => (
-                          <SelectItem key={step.key} value={step.key}>
-                            {step.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      type="button"
-                      size="icon"
-                      onClick={handleSaveManualStatus}
-                      disabled={
-                        isPending ||
-                        (manualWorkflowStepKey || null) === currentWorkflowStepKey
-                      }
-                      aria-label="Save workflow step"
-                      title="Save workflow step"
-                    >
-                      {isPending ? (
-                        <LoaderCircle className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="h-4 w-4" />
+                        {isReopenPending ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-4 w-4" />
+                        )}
+                        Reopen
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <Label htmlFor="manual-workflow-step">Move to workflow step</Label>
+                      <div className="mt-2 flex flex-wrap items-center gap-3">
+                        <Select value={manualWorkflowStepKey} onValueChange={handleManualWorkflowStepChange}>
+                          <SelectTrigger
+                            id="manual-workflow-step"
+                            className="w-full border border-input shadow-sm sm:w-[360px]"
+                          >
+                            <SelectValue placeholder="Select workflow step" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {currentWorkflowSteps.map((step) => (
+                              <SelectItem key={step.key} value={step.key}>
+                                {step.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          size="icon"
+                          onClick={handleSaveManualStatus}
+                          disabled={
+                            isPending ||
+                            (manualWorkflowStepKey || null) === currentWorkflowStepKey
+                          }
+                          aria-label="Save workflow step"
+                          title="Save workflow step"
+                        >
+                          {isPending ? (
+                            <LoaderCircle className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </>
                       )}
-                    </Button>
-                  </div>
                 </div>
               ) : null}
             </CardContent>
           </Card>
+          <Dialog open={isReopenDialogOpen} onOpenChange={setIsReopenDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Reopen request</DialogTitle>
+                <DialogDescription>
+                  Choose the workflow step to resume from. Agent steps will start automatically after reopening.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="reopen-workflow-step">Workflow step</Label>
+                  <Select value={reopenStepKey} onValueChange={setReopenStepKey}>
+                    <SelectTrigger id="reopen-workflow-step" className="border border-input shadow-sm">
+                      <SelectValue placeholder="Select workflow step" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {reopenableWorkflowSteps.map((step) => (
+                        <SelectItem key={step.key} value={step.key}>
+                          {step.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="reopen-comment">Comment</Label>
+                  <Textarea
+                    id="reopen-comment"
+                    value={reopenComment}
+                    onChange={(event) => setReopenComment(event.target.value)}
+                    placeholder="Explain why this request is being reopened and what the next step should consider."
+                    className="min-h-24"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsReopenDialogOpen(false)}
+                  disabled={isReopenPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleReopenRequest}
+                  disabled={isReopenPending || !reopenStepKey}
+                >
+                  {isReopenPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                  Reopen request
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
           <Tabs defaultValue="details" className="space-y-4">
             <TabsList className="h-auto flex-wrap rounded-none bg-muted/50 p-1">
               <TabsTrigger value="details">Details</TabsTrigger>

@@ -3444,6 +3444,20 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
   return updated;
 }
 
+export function clearChangeRequestClosedAt(changeRequestId: string) {
+  const now = new Date().toISOString();
+  getDb()
+    .prepare(
+      `UPDATE change_requests
+       SET closed_at = NULL,
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .run(now, changeRequestId);
+
+  return getChangeRequest(changeRequestId);
+}
+
 export function listChangeRequestExecutions(changeRequestId: string) {
   const rows = getDb()
     .prepare(

@@ -22,6 +22,7 @@ export {
   createAuditLog,
   createChangeRequest,
   createChangeRequestExecution,
+  clearChangeRequestClosedAt,
   createRequestArtifact,
   createWorkflowEvent,
   createTaskRun,
