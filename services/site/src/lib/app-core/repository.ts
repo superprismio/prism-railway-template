@@ -321,7 +321,6 @@ export interface ChangeRequestRecord {
   title: string;
   description: string;
   requestType: string;
-  status: string;
   priority: string;
   source: string;
   requestedByUserId: string | null;
@@ -399,7 +398,6 @@ export interface CreateTargetEnvironmentInput {
 }
 
 export interface ListChangeRequestsInput {
-  status?: string;
   targetAppId?: string;
 }
 
@@ -408,7 +406,6 @@ export interface CreateChangeRequestInput {
   description: string;
   workflowKey?: string;
   requestType: string;
-  status?: string;
   priority?: string;
   source?: string;
   requestedByUserId?: string | null;
@@ -422,7 +419,6 @@ export interface CreateChangeRequestInput {
 }
 
 export interface UpdateChangeRequestInput {
-  status?: string;
   workflowStepKey?: string | null;
   priority?: string;
   targetEnvironmentId?: string | null;
@@ -430,7 +426,6 @@ export interface UpdateChangeRequestInput {
   reviewNotes?: string | null;
   resolutionSummary?: string | null;
   agentRecommendation?: string | null;
-  syncWorkflowRun?: boolean;
 }
 
 export interface CreateChangeRequestExecutionInput {
@@ -1306,7 +1301,6 @@ function parseTrackedChangeRequestRow(row: {
   title: string;
   description: string;
   request_type: string;
-  status: string;
   priority: string;
   source: string;
   requested_by_user_id: string | null;
@@ -1340,7 +1334,6 @@ function parseTrackedChangeRequestRow(row: {
     title: row.title,
     description: row.description,
     requestType: row.request_type,
-    status: row.status,
     priority: row.priority,
     source: row.source,
     requestedByUserId: row.requested_by_user_id,
@@ -2976,7 +2969,6 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
       cr.title,
       cr.description,
       cr.request_type,
-      cr.status,
       cr.priority,
       cr.source,
       cr.requested_by_user_id,
@@ -3009,10 +3001,6 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     LEFT JOIN workflow_runs wr ON wr.request_id = cr.id`;
 
   const conditions: string[] = [];
-  if (input.status) {
-    conditions.push('cr.status = ?');
-    params.push(input.status);
-  }
   if (input.targetAppId) {
     conditions.push('cr.target_app_id = ?');
     params.push(input.targetAppId);
@@ -3030,7 +3018,6 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     title: string;
     description: string;
     request_type: string;
-    status: string;
     priority: string;
     source: string;
     requested_by_user_id: string | null;
@@ -3063,7 +3050,6 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
 
 export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) {
   const params: Array<string> = [];
-  const runnableStatuses = ['submitted', 'in-progress'];
   const activeExecutionStatuses = ['planned', 'running'];
 
   let sql = `SELECT
@@ -3073,7 +3059,6 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
       cr.title,
       cr.description,
       cr.request_type,
-      cr.status,
       cr.priority,
       cr.source,
       cr.requested_by_user_id,
@@ -3084,6 +3069,8 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
       cr.target_environment_id,
       te.slug AS target_environment_slug,
       te.name AS target_environment_name,
+      wr.current_step_key AS current_workflow_step_key,
+      wr.status AS workflow_run_status,
       cr.triage_summary,
       cr.acceptance_criteria_json,
       cr.constraints_json,
@@ -3101,8 +3088,9 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
     LEFT JOIN profiles requester ON requester.user_id = cr.requested_by_user_id
     LEFT JOIN target_apps ta ON ta.id = cr.target_app_id
     LEFT JOIN target_environments te ON te.id = cr.target_environment_id
+    LEFT JOIN workflow_runs wr ON wr.request_id = cr.id
     WHERE (cr.target_app_id IS NULL OR ta.agent_enabled = 1)
-      AND cr.status IN (${runnableStatuses.map(() => '?').join(', ')})
+      AND COALESCE(wr.status, 'active') != 'completed'
       AND NOT EXISTS (
         SELECT 1
         FROM change_request_executions cre
@@ -3110,7 +3098,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
           AND cre.status IN (${activeExecutionStatuses.map(() => '?').join(', ')})
       )`;
 
-  params.push(...runnableStatuses, ...activeExecutionStatuses);
+  params.push(...activeExecutionStatuses);
 
   if (input.targetAppId) {
     sql += ' AND cr.target_app_id = ?';
@@ -3126,11 +3114,6 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
         WHEN 'low' THEN 3
         ELSE 4
       END,
-      CASE cr.status
-        WHEN 'in-progress' THEN 0
-        WHEN 'submitted' THEN 1
-        ELSE 4
-      END,
       COALESCE(cr.approved_for_work_at, cr.triaged_at, cr.created_at) ASC,
       cr.request_number ASC
     LIMIT 1`;
@@ -3143,7 +3126,6 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
         title: string;
         description: string;
         request_type: string;
-        status: string;
         priority: string;
         source: string;
         requested_by_user_id: string | null;
@@ -3186,7 +3168,6 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
       cr.title,
       cr.description,
       cr.request_type,
-      cr.status,
       cr.priority,
       cr.source,
       cr.requested_by_user_id,
@@ -3197,6 +3178,8 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
       cr.target_environment_id,
       te.slug AS target_environment_slug,
       te.name AS target_environment_name,
+      wr.current_step_key AS current_workflow_step_key,
+      wr.status AS workflow_run_status,
       cr.triage_summary,
       cr.acceptance_criteria_json,
       cr.constraints_json,
@@ -3214,7 +3197,9 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
     LEFT JOIN profiles requester ON requester.user_id = cr.requested_by_user_id
     LEFT JOIN target_apps ta ON ta.id = cr.target_app_id
     LEFT JOIN target_environments te ON te.id = cr.target_environment_id
+    LEFT JOIN workflow_runs wr ON wr.request_id = cr.id
     WHERE (cr.target_app_id IS NULL OR ta.agent_enabled = 1)
+      AND COALESCE(wr.status, 'active') != 'completed'
       AND EXISTS (
         SELECT 1
         FROM change_request_executions cre
@@ -3259,7 +3244,6 @@ export function getChangeRequest(changeRequestId: string) {
          cr.title,
          cr.description,
          cr.request_type,
-         cr.status,
          cr.priority,
          cr.source,
          cr.requested_by_user_id,
@@ -3300,7 +3284,6 @@ export function getChangeRequest(changeRequestId: string) {
         title: string;
         description: string;
         request_type: string;
-        status: string;
         priority: string;
         source: string;
         requested_by_user_id: string | null;
@@ -3346,10 +3329,6 @@ function getNextChangeRequestNumber() {
   return row.next_number;
 }
 
-function isTerminalRequestStatus(status: string | null | undefined) {
-  return status === 'closed';
-}
-
 export function createChangeRequest(input: CreateChangeRequestInput) {
   const now = new Date().toISOString();
   const id = randomUUID();
@@ -3361,18 +3340,16 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
   if (!workflow.enabled) {
     throw new Error('WORKFLOW_DISABLED');
   }
-  const status = input.status ?? 'submitted';
-
   const db = getDb();
   db.transaction(() => {
     db
       .prepare(
         `INSERT INTO change_requests (
-           id, request_number, workflow_key, title, description, request_type, status, priority, source,
+           id, request_number, workflow_key, title, description, request_type, priority, source,
            requested_by_user_id, target_app_id, target_environment_id, triage_summary,
            acceptance_criteria_json, constraints_json, attachments_json, agent_recommendation,
            created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -3381,7 +3358,6 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
         input.title,
         input.description,
         input.requestType,
-        status,
         input.priority ?? 'normal',
         input.source ?? 'manual',
         input.requestedByUserId ?? null,
@@ -3399,7 +3375,6 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
     ensureWorkflowRunForRequest({
       requestId: id,
       workflowKey,
-      status,
       currentStepKey: workflowEntrypoint(workflow),
     });
   })();
@@ -3414,37 +3389,29 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
   }
 
   const now = new Date().toISOString();
-  const nextStatus = input.status ?? current.status;
   const workflow = getWorkflowByKey(current.workflowKey);
   const lifecycleStepKey =
     normalizeText(input.workflowStepKey) ||
     getWorkflowRunForRequest(changeRequestId)?.currentStepKey ||
     workflowEntrypoint(workflow);
-  const terminalForTimeline = workflowStepIsTerminal(workflow, lifecycleStepKey, nextStatus);
+  const terminalForTimeline = workflowStepIsTerminal(workflow, lifecycleStepKey);
 
   getDb()
     .prepare(
       `UPDATE change_requests
-       SET status = ?,
-           priority = ?,
+       SET priority = ?,
            target_environment_id = ?,
            triage_summary = ?,
            review_notes = ?,
            resolution_summary = ?,
            agent_recommendation = ?,
-           triaged_at = CASE
-             WHEN ? IN ('in-progress', 'closed')
-               THEN COALESCE(triaged_at, ?)
-             ELSE triaged_at
-           END,
+           triaged_at = COALESCE(triaged_at, ?),
            approved_for_work_at = CASE
-             WHEN ? IN ('in-progress', 'closed')
-               THEN COALESCE(approved_for_work_at, ?)
+             WHEN ? THEN COALESCE(approved_for_work_at, ?)
              ELSE approved_for_work_at
            END,
            completed_at = CASE
-             WHEN ? IN ('closed')
-               THEN COALESCE(completed_at, ?)
+             WHEN ? THEN COALESCE(completed_at, ?)
              ELSE completed_at
            END,
            closed_at = CASE
@@ -3456,18 +3423,16 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
        WHERE id = ?`,
     )
     .run(
-      nextStatus,
       input.priority ?? current.priority,
       input.targetEnvironmentId !== undefined ? input.targetEnvironmentId : current.targetEnvironmentId,
       input.triageSummary !== undefined ? input.triageSummary : current.triageSummary,
       input.reviewNotes !== undefined ? input.reviewNotes : current.reviewNotes,
       input.resolutionSummary !== undefined ? input.resolutionSummary : current.resolutionSummary,
       input.agentRecommendation !== undefined ? input.agentRecommendation : current.agentRecommendation,
-      nextStatus,
       now,
-      nextStatus,
+      input.workflowStepKey ? 1 : 0,
       now,
-      nextStatus,
+      terminalForTimeline ? 1 : 0,
       now,
       terminalForTimeline ? 1 : 0,
       now,
@@ -3476,10 +3441,33 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
     );
 
   const updated = getChangeRequest(changeRequestId);
-  if (updated && input.syncWorkflowRun !== false) {
-    syncWorkflowRunToRequestStatus(updated);
-  }
   return updated;
+}
+
+export function clearChangeRequestClosedAt(changeRequestId: string) {
+  const now = new Date().toISOString();
+  const db = getDb();
+
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE change_requests
+       SET closed_at = NULL,
+           completed_at = NULL,
+           updated_at = ?
+       WHERE id = ?`,
+    ).run(now, changeRequestId);
+
+    db.prepare(
+      `UPDATE workflow_runs
+       SET status = 'active',
+           completed_at = NULL,
+           updated_at = ?
+       WHERE request_id = ?
+         AND status = 'completed'`,
+    ).run(now, changeRequestId);
+  })();
+
+  return getChangeRequest(changeRequestId);
 }
 
 export function listChangeRequestExecutions(changeRequestId: string) {
@@ -4612,12 +4600,9 @@ function workflowStepForKey(workflow: WorkflowRecord | null | undefined, stepKey
   return workflowStepsFromDefinition(workflow).find((step) => step.key === stepKey) ?? null;
 }
 
-function workflowStepIsTerminal(workflow: WorkflowRecord | null | undefined, stepKey: string | null | undefined, status?: string) {
+function workflowStepIsTerminal(workflow: WorkflowRecord | null | undefined, stepKey: string | null | undefined) {
   const step = workflowStepForKey(workflow, stepKey);
-  if (step) {
-    return step.type === 'terminal';
-  }
-  return isTerminalRequestStatus(status);
+  return step?.type === 'terminal';
 }
 
 export function getWorkflowRunForRequest(requestId: string): WorkflowRunRecord | null {
@@ -4647,7 +4632,6 @@ export function getWorkflowRun(workflowRunId: string): WorkflowRunRecord | null 
 export function ensureWorkflowRunForRequest(input: {
   requestId: string;
   workflowKey: string;
-  status?: string;
   currentStepKey?: string | null;
   meta?: Record<string, unknown>;
 }): WorkflowRunRecord {
@@ -4662,7 +4646,7 @@ export function ensureWorkflowRunForRequest(input: {
     workflowEntrypoint(workflow);
   const now = new Date().toISOString();
   const id = randomUUID();
-  const terminal = workflowStepIsTerminal(workflow, currentStepKey, input.status);
+  const terminal = workflowStepIsTerminal(workflow, currentStepKey);
   const runStatus = terminal ? 'completed' : 'active';
   const completedAt = terminal ? now : null;
 
@@ -4687,7 +4671,6 @@ export function ensureWorkflowRunForRequest(input: {
     actorType: 'system',
     payload: {
       workflowKey: run.workflowKey,
-      status: input.status ?? null,
     },
   });
 
@@ -4727,40 +4710,6 @@ export function updateWorkflowRun(input: {
     );
 
   return getWorkflowRunForRequest(input.requestId);
-}
-
-export function syncWorkflowRunToRequestStatus(request: ChangeRequestRecord, actorType = 'system') {
-  const workflow = getWorkflowByKey(request.workflowKey);
-  const existingRun = getWorkflowRunForRequest(request.id);
-  const nextStepKey = existingRun?.currentStepKey ?? workflowEntrypoint(workflow);
-  const terminal = workflowStepIsTerminal(workflow, nextStepKey, request.status);
-  const run = ensureWorkflowRunForRequest({
-    requestId: request.id,
-    workflowKey: request.workflowKey,
-    status: request.status,
-    currentStepKey: nextStepKey,
-  });
-  if (run.currentStepKey !== nextStepKey || (terminal && run.status !== 'completed')) {
-    const completedAt = terminal ? new Date().toISOString() : null;
-    updateWorkflowRun({
-      requestId: request.id,
-      currentStepKey: nextStepKey,
-      status: completedAt ? 'completed' : 'active',
-      completedAt,
-    });
-    createWorkflowEvent({
-      workflowRunId: run.id,
-      requestId: request.id,
-      stepKey: nextStepKey,
-      eventType: 'workflow.step_changed',
-      actorType,
-      payload: {
-        status: request.status,
-        previousStepKey: run.currentStepKey,
-        nextStepKey,
-      },
-    });
-  }
 }
 
 export function createWorkflowEvent(input: {

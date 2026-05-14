@@ -13,13 +13,11 @@ import {
 
 import { adminFetch } from "@/lib/admin"
 import {
-  hasActiveExecutionStatus,
   parseNullableString,
   readRouteParam,
   requireLocalAdminAccess,
   requireLocalMemberAccess,
   trackedChangeRequestPriorities,
-  trackedChangeRequestStatuses,
   useLocalAppApi,
 } from "@/lib/local-admin-api"
 
@@ -29,6 +27,10 @@ type RouteContext = {
 
 function isWorkflowStep(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value) && typeof (value as { key?: unknown }).key === "string"
+}
+
+function hasActiveExecution(changeRequestId: string) {
+  return listChangeRequestExecutions(changeRequestId).some((execution) => ["planned", "running"].includes(execution.status))
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -58,7 +60,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 })
     }
     const body = payload as Record<string, unknown>
-    const nextStatus = typeof body.status === "string" ? body.status : undefined
     const nextPriority = typeof body.priority === "string" ? body.priority : undefined
     const rawWorkflowStepKey = body.currentWorkflowStepKey ?? body.current_workflow_step_key
     const nextWorkflowStepKey =
@@ -74,33 +75,35 @@ export async function PATCH(request: Request, context: RouteContext) {
     const nextWorkflowStep = nextWorkflowStepKey
       ? workflowSteps.find((step) => step.key === nextWorkflowStepKey) ?? null
       : null
-    const projectedStatus = nextStatus
-
     if (
-      (projectedStatus && !trackedChangeRequestStatuses.includes(projectedStatus as typeof trackedChangeRequestStatuses[number])) ||
-      (nextPriority && !trackedChangeRequestPriorities.includes(nextPriority as typeof trackedChangeRequestPriorities[number]))
+      nextPriority && !trackedChangeRequestPriorities.includes(nextPriority as typeof trackedChangeRequestPriorities[number])
     ) {
-      return NextResponse.json({ ok: false, error: "Invalid status or priority" }, { status: 400 })
-    }
-
-    if (
-      projectedStatus &&
-      projectedStatus !== existingChangeRequest.status &&
-      listChangeRequestExecutions(changeRequestId).some((execution) => hasActiveExecutionStatus(execution.status))
-    ) {
-      return NextResponse.json({ ok: false, error: "CHANGE_REQUEST_EXECUTION_ALREADY_RUNNING" }, { status: 409 })
+      return NextResponse.json({ ok: false, error: "Invalid priority" }, { status: 400 })
     }
     if (nextWorkflowStepKey) {
       if (!nextWorkflowStep) {
         return NextResponse.json({ ok: false, error: "Invalid workflow step" }, { status: 400 })
       }
+      const existingRun = getWorkflowRunForRequest(changeRequestId)
+      const effectiveCurrentStepKey = existingRun?.currentStepKey ?? existingChangeRequest.currentWorkflowStepKey
+      const effectiveCurrentStep = workflowSteps.find((step) => step.key === effectiveCurrentStepKey) ?? null
+      if (existingRun?.status === "completed" || effectiveCurrentStep?.type === "terminal") {
+        return NextResponse.json(
+          { ok: false, error: "Use the reopen endpoint to reopen a closed request" },
+          { status: 409 },
+        )
+      }
+      if (hasActiveExecution(changeRequestId)) {
+        return NextResponse.json(
+          { ok: false, error: "CHANGE_REQUEST_EXECUTION_ALREADY_RUNNING" },
+          { status: 409 },
+        )
+      }
     }
 
     const changeRequest = updateChangeRequest(changeRequestId, {
-      status: projectedStatus,
       workflowStepKey: nextWorkflowStepKey,
       priority: nextPriority,
-      syncWorkflowRun: !nextWorkflowStepKey,
       targetEnvironmentId:
         body.targetEnvironmentId !== undefined || body.target_environment_id !== undefined
           ? parseNullableString(body.targetEnvironmentId ?? body.target_environment_id) ?? null
@@ -130,7 +133,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       const workflowRun = getWorkflowRunForRequest(changeRequestId) ?? ensureWorkflowRunForRequest({
         requestId: changeRequestId,
         workflowKey: changeRequest.workflowKey,
-        status: changeRequest.status,
         currentStepKey: nextWorkflowStepKey,
       })
       const previousStepKey = workflowRun?.currentStepKey ?? null
@@ -149,7 +151,6 @@ export async function PATCH(request: Request, context: RouteContext) {
           eventType: "workflow.step_changed",
           actorType: "admin",
           payload: {
-            status: changeRequest.status,
             previousStepKey,
             nextStepKey: nextWorkflowStepKey,
           },
@@ -163,7 +164,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       targetType: "change_request",
       targetId: changeRequest.id,
       meta: {
-        status: changeRequest.status,
         priority: changeRequest.priority,
         targetEnvironmentId: changeRequest.targetEnvironmentId,
       },

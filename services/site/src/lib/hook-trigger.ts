@@ -150,7 +150,6 @@ export async function triggerHook(
     ),
     workflowKey: hook.workflowKey,
     requestType: stringValue(requestTemplate.requestType ?? payload.requestType, "content"),
-    status: stringValue(requestTemplate.status ?? payload.status, "submitted"),
     priority: stringValue(requestTemplate.priority ?? payload.priority, "normal"),
     source: options.source ?? `hook:${hook.key}`,
     requestedByUserId: null,

@@ -8,7 +8,7 @@ export interface TargetEnvironmentDeployPlan {
     TargetEnvironmentRecord,
     'id' | 'slug' | 'name' | 'kind' | 'branch' | 'baseUrl' | 'deployBackend' | 'deployConfig' | 'agentWritable'
   >;
-  request: Pick<ChangeRequestRecord, 'id' | 'requestNumber' | 'title' | 'status' | 'targetEnvironmentId'>;
+  request: Pick<ChangeRequestRecord, 'id' | 'requestNumber' | 'title' | 'targetEnvironmentId'>;
   allowed: boolean;
   warnings: string[];
   nextAction: string;
@@ -28,10 +28,6 @@ export function buildTargetEnvironmentDeployPlan(input: {
 
   if (targetEnvironment.kind === 'production') {
     warnings.push('Production targets should not be redeployed by agent workflow.');
-  }
-
-  if (request.status !== 'in-progress') {
-    warnings.push('Change request is not in an agent-executable state.');
   }
 
   if (!targetEnvironment.deployConfig || Object.keys(targetEnvironment.deployConfig).length === 0) {
@@ -81,7 +77,6 @@ export function buildTargetEnvironmentDeployPlan(input: {
       id: request.id,
       requestNumber: request.requestNumber,
       title: request.title,
-      status: request.status,
       targetEnvironmentId: request.targetEnvironmentId,
     },
     allowed: warnings.length === 0,

@@ -75,7 +75,7 @@ Return:
 If findings are blocking:
 - save the review findings as a request artifact or comment
 - update next-step guidance
-- route to the revise step or changes-requested state
+- route to the revise step
 
 If no blocking findings:
 - save a review summary

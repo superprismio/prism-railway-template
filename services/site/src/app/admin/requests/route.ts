@@ -52,7 +52,6 @@ export async function POST(request: Request) {
       workflowKey,
       requestType,
       priority,
-      status: "submitted",
       source: "manual",
       requestedByUserId: null,
       targetAppId: targetAppId || null,
@@ -67,7 +66,7 @@ export async function POST(request: Request) {
       actionType: "admin.change_board_request.create",
       targetType: "change_request",
       targetId: changeRequest?.id ?? null,
-      meta: { requestType, priority, workflowKey, targetAppId: targetAppId || null, status: "submitted" },
+      meta: { requestType, priority, workflowKey, targetAppId: targetAppId || null },
     })
     if (changeRequest) {
       const origin = new URL(request.url).origin
@@ -95,7 +94,6 @@ export async function POST(request: Request) {
       priority,
       workflowKey,
       targetAppId: targetAppId || null,
-      status: "submitted",
     }),
   })
 

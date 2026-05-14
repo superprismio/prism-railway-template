@@ -1,11 +1,6 @@
 import { requireCapabilityAccess, requireMemberAccess, requireModeratorAccess } from "@/lib/admin-auth"
 
 export const targetEnvironmentKinds = ["production", "staging", "preview", "development"] as const
-export const trackedChangeRequestStatuses = [
-  "submitted",
-  "in-progress",
-  "closed",
-] as const
 export const trackedChangeRequestTypes = ["bug", "feature", "content", "design", "config", "ops"] as const
 export const trackedChangeRequestPriorities = ["low", "normal", "high", "urgent"] as const
 

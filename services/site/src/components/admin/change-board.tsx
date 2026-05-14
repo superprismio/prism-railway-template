@@ -123,7 +123,6 @@ export function ChangeBoard({
     workflowStepForKey(
       request.currentWorkflowStepKey,
       workflowSteps(workflowByKey.get(request.workflowKey) ?? null),
-      request.status,
     ).step;
   const closedCount = data.changeRequests.filter((request) => workflowStepForRequest(request).type === "terminal").length;
   const activeCount = data.changeRequests.length - closedCount;
@@ -147,7 +146,6 @@ export function ChangeBoard({
     ? workflowStepForKey(
         selectedRequest.currentWorkflowStepKey,
         workflowSteps(selectedWorkflow),
-        selectedRequest.status,
       ).step
     : null;
 
@@ -182,7 +180,6 @@ export function ChangeBoard({
   }
 
   function handleSaveTriage(payload: {
-    status?: string;
     currentWorkflowStepKey?: string | null;
     triageSummary: string;
     agentRecommendation: string;
@@ -461,7 +458,7 @@ export function ChangeBoard({
                   {selectedRequest ? (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <Badge variant={workflowStepVariant(selectedWorkflowStep)}>
-                        {selectedWorkflowStep?.label ?? selectedRequest.status}
+                        {selectedWorkflowStep?.label ?? "Request"}
                       </Badge>
                       <Badge
                         variant={priorityVariant(selectedRequest.priority)}

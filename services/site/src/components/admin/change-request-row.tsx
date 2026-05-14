@@ -37,7 +37,6 @@ export function ChangeRequestRow({
   const workflowStep = workflowStepForKey(
     request.currentWorkflowStepKey,
     workflowSteps(workflow),
-    request.status,
   ).step;
   const targetBranch =
     targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch";

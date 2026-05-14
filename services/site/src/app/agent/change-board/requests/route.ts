@@ -6,7 +6,7 @@ import {
   parseString,
   requireServiceAccess,
 } from "@/lib/internal-service"
-import { trackedChangeRequestPriorities, trackedChangeRequestStatuses, trackedChangeRequestTypes } from "@/lib/local-admin-api"
+import { trackedChangeRequestPriorities, trackedChangeRequestTypes } from "@/lib/local-admin-api"
 import { autoStartWorkflowRequest } from "@/lib/workflow-autostart"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -33,7 +33,6 @@ export async function POST(request: Request) {
   const requestType = parseString(body.requestType ?? body.request_type)
   const targetAppId = parseString(body.targetAppId ?? body.target_app_id)
   const workflowKey = parseString(body.workflowKey ?? body.workflow_key) || "change-request-default"
-  const status = parseString(body.status) || "submitted"
   const priority = parseString(body.priority) || "normal"
   const workflow = getWorkflowByKey(workflowKey)
   const target = workflow?.definition?.target
@@ -55,9 +54,6 @@ export async function POST(request: Request) {
   if (!trackedChangeRequestTypes.includes(requestType as typeof trackedChangeRequestTypes[number])) {
     return NextResponse.json({ ok: false, error: "Invalid request type" }, { status: 400 })
   }
-  if (!trackedChangeRequestStatuses.includes(status as typeof trackedChangeRequestStatuses[number])) {
-    return NextResponse.json({ ok: false, error: "Invalid status" }, { status: 400 })
-  }
   if (!trackedChangeRequestPriorities.includes(priority as typeof trackedChangeRequestPriorities[number])) {
     return NextResponse.json({ ok: false, error: "Invalid priority" }, { status: 400 })
   }
@@ -67,7 +63,6 @@ export async function POST(request: Request) {
     description,
     workflowKey,
     requestType,
-    status,
     priority,
     source: parseString(body.source) || "chat",
     requestedByUserId: null,

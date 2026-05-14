@@ -124,7 +124,6 @@ export function workflowSteps(workflow: WorkflowRecord | null | undefined): Work
 export function workflowStepForKey(
   stepKey: string | null | undefined,
   steps: WorkflowStep[],
-  _fallbackStatus: string,
 ): { step: WorkflowStep; index: number } {
   if (stepKey) {
     const index = steps.findIndex((step) => step.key === stepKey);

@@ -8,10 +8,6 @@ type RouteContext = {
   params: Promise<{ id: string }>
 }
 
-function isTriageOnlyStatus(status: string | null | undefined) {
-  return status === "submitted"
-}
-
 function hasActiveExecution(changeRequestId: string) {
   return listChangeRequestExecutions(changeRequestId).some((execution) => ["planned", "running"].includes(execution.status))
 }
@@ -50,9 +46,6 @@ export async function POST(request: Request, context: RouteContext) {
   const changeRequest = getChangeRequest(changeRequestId)
   if (!changeRequest) {
     return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })
-  }
-  if (isTriageOnlyStatus(changeRequest.status)) {
-    return NextResponse.json({ ok: false, error: "CHANGE_REQUEST_NOT_READY_FOR_EXECUTION" }, { status: 409 })
   }
   if (hasActiveExecution(changeRequestId)) {
     return NextResponse.json({ ok: false, error: "CHANGE_REQUEST_EXECUTION_ALREADY_RUNNING" }, { status: 409 })

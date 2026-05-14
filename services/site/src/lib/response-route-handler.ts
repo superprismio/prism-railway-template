@@ -192,16 +192,6 @@ function findStepByKey(steps: Record<string, unknown>[], key: string | null | un
   return steps.find((step) => stepKey(step) === key) ?? null
 }
 
-function requestStatusForWorkflowStep(step: Record<string, unknown> | null | undefined, phase: "running" | "waiting") {
-  if (!step) return null
-  const type = stepType(step)
-  if (type === "terminal") return "closed"
-  if (phase === "running") return "in-progress"
-  if (type === "gate") return "in-progress"
-  if (type === "agent") return "in-progress"
-  return "in-progress"
-}
-
 function nextStepForAction(steps: Record<string, unknown>[], step: Record<string, unknown>, action: string | null) {
   if (action && isRecord(step.routes)) {
     const routeValue = step.routes[action]
@@ -357,11 +347,9 @@ function completeWorkflowAgentStep(input: {
   workflowRunId: string
   workflowKey: string | null
   stepKey: string
-  completedStatus: string | null
   nextStep: Record<string, unknown> | null
   linkedWorkflowSteps: Record<string, unknown>[]
   sessionId: string
-  startedFromStatus?: string | null
   autoContinued?: boolean
 }) {
   const traceSummary = formatTraceSummary(input.runtimeResponse.trace as RuntimeTraceEntry[] | undefined)
@@ -380,7 +368,6 @@ function completeWorkflowAgentStep(input: {
         workflowStepKey: input.stepKey,
         transport: "site",
         sessionId: input.sessionId,
-        startedFromStatus: input.startedFromStatus,
         autoContinued: input.autoContinued === true,
         codexThreadId: input.runtimeResponse.thread_id ?? null,
         baseBranch: input.runtimeResponse.baseBranch ?? null,
@@ -401,7 +388,6 @@ function completeWorkflowAgentStep(input: {
     eventType: "agent.completed",
     actorType: "codex",
     payload: {
-      status: input.completedStatus,
       executionId: input.executionId,
       autoContinued: input.autoContinued === true,
       branchName: input.runtimeResponse.branchName ?? null,
@@ -409,16 +395,10 @@ function completeWorkflowAgentStep(input: {
     },
   })
 
-  if (!input.completedStatus) {
-    return input.stepKey
-  }
-
   const nextStep = input.nextStep
   const nextStepKey = nextStep ? stepKey(nextStep) : input.stepKey
   updateChangeRequest(input.requestId, {
-    status: input.completedStatus,
     workflowStepKey: nextStepKey,
-    syncWorkflowRun: false,
   })
   const terminal = isTerminalWorkflowStep(nextStep)
   updateWorkflowRun({
@@ -435,7 +415,6 @@ function completeWorkflowAgentStep(input: {
       eventType: "workflow.step_changed",
       actorType: "system",
       payload: {
-        status: input.completedStatus,
         previousStepKey: input.stepKey,
         nextStepKey,
         autoContinued: input.autoContinued === true,
@@ -454,8 +433,6 @@ function completeWorkflowGateStep(input: {
   toStep: Record<string, unknown>
   action: string
   note: string
-  status: string
-  startedFromStatus: string | null
 }) {
   const fromStepKey = stepKey(input.fromStep)
   const toStepKey = stepKey(input.toStep)
@@ -470,14 +447,11 @@ function completeWorkflowGateStep(input: {
     payload: {
       fromStepKey,
       toStepKey,
-      startedFromStatus: input.startedFromStatus,
     },
   })
 
   updateChangeRequest(input.requestId, {
-    status: input.status,
     workflowStepKey: toStepKey,
-    syncWorkflowRun: false,
   })
   updateWorkflowRun({
     requestId: input.requestId,
@@ -492,7 +466,6 @@ function completeWorkflowGateStep(input: {
     eventType: "workflow.step_changed",
     actorType: "system",
     payload: {
-      status: input.status,
       previousStepKey: fromStepKey,
       nextStepKey: toStepKey,
       action: input.action,
@@ -507,24 +480,17 @@ function completeWorkflowGateStep(input: {
 
 function startWorkflowAgentStep(input: {
   requestId: string
-  requestStatus: string
   targetEnvironmentId: string | null
   workflowRunId: string
   workflowKey: string
   stepKey: string
-  runningStatus: string
   sessionId: string
-  startedFromStatus: string | null
   action?: string | null
   autoContinued?: boolean
 }) {
-  if (input.requestStatus !== input.runningStatus) {
-    updateChangeRequest(input.requestId, {
-      status: input.runningStatus,
-      workflowStepKey: input.stepKey,
-      syncWorkflowRun: false,
-    })
-  }
+  updateChangeRequest(input.requestId, {
+    workflowStepKey: input.stepKey,
+  })
   updateWorkflowRun({
     requestId: input.requestId,
     currentStepKey: input.stepKey,
@@ -538,7 +504,6 @@ function startWorkflowAgentStep(input: {
     eventType: "agent.started",
     actorType: "codex",
     payload: {
-      status: input.runningStatus,
       action: input.action,
       autoContinued: input.autoContinued === true,
     },
@@ -556,7 +521,6 @@ function startWorkflowAgentStep(input: {
       workflowStepKey: input.stepKey,
       transport: "site",
       sessionId: input.sessionId,
-      startedFromStatus: input.startedFromStatus,
       autoContinued: input.autoContinued === true,
     },
   })
@@ -674,7 +638,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     ? ensureWorkflowRunForRequest({
         requestId: linkedChangeRequest.id,
         workflowKey: linkedChangeRequest.workflowKey,
-        status: linkedChangeRequest.status,
       })
     : null
   const currentWorkflowStep =
@@ -723,12 +686,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     },
   })
 
-  const requestStartedFromStatus = linkedChangeRequest?.status ?? null
-  const requestRunningStatus = requestStatusForWorkflowStep(runnableWorkflowStep, "running")
   const nextWorkflowStepAfterRun = runnableWorkflowStep
     ? nextStepForAction(linkedWorkflowSteps, runnableWorkflowStep, "approved")
     : null
-  const requestCompletedStatus = requestStatusForWorkflowStep(nextWorkflowStepAfterRun ?? runnableWorkflowStep, "waiting")
   const runnableStepKey = runnableWorkflowStep ? stepKey(runnableWorkflowStep) : null
   const nextStepKeyAfterRun = nextWorkflowStepAfterRun ? stepKey(nextWorkflowStepAfterRun) : null
   let activeExecutionId: string | null = null
@@ -741,7 +701,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     stepType(currentWorkflowStep) === "gate" &&
     runnableWorkflowStep &&
     runnableStepKey &&
-    requestCompletedStatus &&
     isTerminalWorkflowStep(runnableWorkflowStep)
   ) {
     const responseText = completeWorkflowGateStep({
@@ -753,8 +712,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       toStep: runnableWorkflowStep,
       action: workflowAction || "approved",
       note: latestUserMessage.content,
-      status: requestCompletedStatus,
-      startedFromStatus: requestStartedFromStatus,
     })
     const updatedSession = updateAgentSession(session.id, {
       title: session.title ?? latestUserMessage.content.slice(0, 80),
@@ -810,8 +767,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     linkedChangeRequest &&
     linkedWorkflowRun &&
     runnableWorkflowStep &&
-    runnableStepKey &&
-    requestRunningStatus
+    runnableStepKey
   ) {
     if (stepType(runnableWorkflowStep) !== "agent") {
       return NextResponse.json(
@@ -835,24 +791,20 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         eventType: `gate.${workflowAction || "approved"}`,
         actorType: "admin",
         note: latestUserMessage.content,
-        payload: {
-          fromStepKey: stepKey(currentWorkflowStep),
-          toStepKey: runnableStepKey,
-          startedFromStatus: requestStartedFromStatus,
-        },
-      })
+          payload: {
+            fromStepKey: stepKey(currentWorkflowStep),
+            toStepKey: runnableStepKey,
+          },
+        })
     }
 
     activeExecutionId = startWorkflowAgentStep({
       requestId: activeLinkedChangeRequestId,
-      requestStatus: linkedChangeRequest.status,
       targetEnvironmentId: activeLinkedTargetEnvironmentId ?? linkedChangeRequest.targetEnvironmentId,
       workflowRunId: linkedWorkflowRun.id,
       workflowKey: linkedChangeRequest.workflowKey,
       stepKey: runnableStepKey,
-      runningStatus: requestRunningStatus,
       sessionId: session.id,
-      startedFromStatus: requestStartedFromStatus,
       action: workflowAction,
     })
   }
@@ -895,7 +847,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
               id: linkedChangeRequest.id,
               requestNumber: linkedChangeRequest.requestNumber,
               title: linkedChangeRequest.title,
-              status: linkedChangeRequest.status,
               triageSummary: linkedChangeRequest.triageSummary,
               agentRecommendation: linkedChangeRequest.agentRecommendation,
               reviewNotes: linkedChangeRequest.reviewNotes,
@@ -908,7 +859,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                 : "This response is linked to a tracked request workflow step.",
               runnableStepKey ? `Current workflow step: ${runnableStepKey}.` : null,
               nextStepKeyAfterRun ? `When this step is complete, advance the workflow run to ${nextStepKeyAfterRun}.` : null,
-              requestCompletedStatus ? `The request status projection should move toward ${requestCompletedStatus}; workflow step state remains the source of truth.` : null,
               linkedChangeRequest
                 ? `To read prior workflow artifact bodies, call GET /agent/change-board/requests/by-number/${linkedChangeRequest.requestNumber}/artifacts with x-service-token. Filter by name or kind when useful.`
                 : null,
@@ -956,11 +906,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         stepKey: runnableStepKey,
         workflowRunId: linkedWorkflowRun.id,
         workflowKey: linkedChangeRequest?.workflowKey ?? null,
-        completedStatus: requestCompletedStatus,
         nextStep: nextWorkflowStepAfterRun,
         linkedWorkflowSteps,
         sessionId: session.id,
-        startedFromStatus: requestStartedFromStatus,
       })
     }
 
@@ -993,14 +941,11 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         const latestRun = ensureWorkflowRunForRequest({
           requestId: activeLinkedChangeRequestId,
           workflowKey: linkedChangeRequest.workflowKey,
-          status: latestRequest.status,
         })
-        const continuationRunningStatus = requestStatusForWorkflowStep(continuationStep, "running")
         const continuationNextStep = nextStepForAction(linkedWorkflowSteps, continuationStep, "approved")
-        const continuationCompletedStatus = requestStatusForWorkflowStep(continuationNextStep ?? continuationStep, "waiting")
         const continuationNextStepKey = continuationNextStep ? stepKey(continuationNextStep) : null
 
-        if (!latestRun || !continuationRunningStatus) {
+        if (!latestRun) {
           break
         }
 
@@ -1010,14 +955,11 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
 
         const continuationExecutionId = startWorkflowAgentStep({
           requestId: activeLinkedChangeRequestId,
-          requestStatus: latestRequest.status,
           targetEnvironmentId: activeLinkedTargetEnvironmentId ?? latestRequest.targetEnvironmentId,
           workflowRunId: latestRun.id,
           workflowKey: linkedChangeRequest.workflowKey,
           stepKey: continuationStepKey,
-          runningStatus: continuationRunningStatus,
           sessionId: session.id,
-          startedFromStatus: latestRequest.status,
           autoContinued: true,
         })
 
@@ -1072,7 +1014,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                 id: latestRequest.id,
                 requestNumber: latestRequest.requestNumber,
                 title: latestRequest.title,
-                status: latestRequest.status,
                 triageSummary: latestRequest.triageSummary,
                 agentRecommendation: latestRequest.agentRecommendation,
                 reviewNotes: latestRequest.reviewNotes,
@@ -1083,7 +1024,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                   : "This response is linked to a tracked request workflow step.",
                 `Current workflow step: ${continuationStepKey}.`,
                 continuationNextStepKey ? `When this step is complete, advance the workflow run to ${continuationNextStepKey}.` : null,
-                continuationCompletedStatus ? `The board status should move toward ${continuationCompletedStatus}.` : null,
                 `To read prior workflow artifact bodies, call GET /agent/change-board/requests/by-number/${latestRequest.requestNumber}/artifacts with x-service-token. Filter by name or kind when useful.`,
                 "Auto-continue is enabled; the site will run the next agent step until the workflow reaches a gate or terminal step.",
               ].filter(Boolean).join("\n\n"),
@@ -1129,11 +1069,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             stepKey: continuationStepKey,
             workflowRunId: latestRun.id,
             workflowKey: linkedChangeRequest.workflowKey,
-            completedStatus: continuationCompletedStatus,
             nextStep: continuationNextStep,
             linkedWorkflowSteps,
             sessionId: session.id,
-            startedFromStatus: latestRequest.status,
             autoContinued: true,
           })
 
@@ -1236,7 +1174,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     const failureTrace = Array.isArray(runtimeError.trace) ? runtimeError.trace : []
     const failureSummary = formatTraceSummary(failureTrace)
 
-    if (activeLinkedChangeRequestId && linkedChangeRequest && linkedWorkflowRun && runnableStepKey && requestRunningStatus) {
+    if (activeLinkedChangeRequestId && linkedChangeRequest && linkedWorkflowRun && runnableStepKey) {
       if (activeExecutionId) {
         updateChangeRequestExecution(activeExecutionId, {
           status: "failed",
@@ -1257,7 +1195,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             workflowStepKey: runnableStepKey,
             transport: "site",
             sessionId: session.id,
-            startedFromStatus: requestStartedFromStatus,
             codexThreadId: runtimeError.codexThreadId ?? null,
             baseBranch:
               typeof runtimeError.baseBranch === "string"
@@ -1288,14 +1225,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           runtimeTrace: failureTrace,
         },
       })
-      const refreshedChangeRequest = getChangeRequest(activeLinkedChangeRequestId)
-      if (refreshedChangeRequest?.status === requestRunningStatus) {
-        updateChangeRequest(activeLinkedChangeRequestId, {
-          status: "in-progress",
-          workflowStepKey: linkedWorkflowRun.currentStepKey,
-          syncWorkflowRun: false,
-        })
-      }
+      updateChangeRequest(activeLinkedChangeRequestId, {
+        workflowStepKey: runnableStepKey,
+      })
     }
 
     createAgentMessage({
