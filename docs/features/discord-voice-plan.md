@@ -110,6 +110,8 @@ Required for Discord voice:
 - `VOICE_CHAT_MAX_MESSAGES=200`
 - `VOICE_CHAT_IGNORE_BOT_MESSAGES=true`
 - `VOICE_DAVE_ENCRYPTION=true`
+- `VOICE_RECORDING_WARNING_MINUTES=50`
+- `VOICE_RECORDING_MAX_MINUTES=60`
 - `CODEX_RUNTIME_BASE_URL=https://<codex-runtime-domain>`
 - `PRISM_API_BASE=https://<prism-memory-domain>`
 - `PRISM_API_KEY=<same Prism API key>`
@@ -117,6 +119,7 @@ Required for Discord voice:
 Recommended:
 
 - `VOICE_FFMPEG_SEGMENT_SECONDS=180`
+- recordings warn at `VOICE_RECORDING_WARNING_MINUTES` and stop automatically at `VOICE_RECORDING_MAX_MINUTES`; set `VOICE_RECORDING_MAX_MINUTES=0` to disable the automatic stop
 - use public Railway service URLs for `CODEX_RUNTIME_BASE_URL` and `PRISM_API_BASE` until private `*.railway.internal` connectivity has been verified from inside the deployed service
 
 ## Local Development

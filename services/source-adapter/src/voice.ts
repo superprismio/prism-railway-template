@@ -203,6 +203,7 @@ type RecordingSession = {
   guildId: string;
   channelId: string;
   channelName: string;
+  announcementChannel: TextBasedChannel | null;
   startedAt: number;
   rootDir: string;
   rawDir: string;
@@ -214,6 +215,8 @@ type RecordingSession = {
   speakingHandler: (userId: string) => void;
   speakingEndHandler: (userId: string) => void;
   connectionSpeakingHandler: (userId: string, speaking: boolean) => void;
+  warningTimer?: NodeJS.Timeout;
+  autoStopTimer?: NodeJS.Timeout;
   recoveredFromDisk?: boolean;
 };
 
@@ -251,6 +254,15 @@ function parseIsoDate(value: string): Date {
   return parsed;
 }
 
+function parseMinuteEnv(name: string, defaultValue: number): number {
+  const raw = (process.env[name] ?? "").trim();
+  const value = raw ? Number.parseInt(raw, 10) : defaultValue;
+  if (!Number.isFinite(value)) {
+    return defaultValue;
+  }
+  return Math.max(0, value);
+}
+
 async function fileExists(filePath: string): Promise<boolean> {
   return fs.access(filePath).then(
     () => true,
@@ -268,6 +280,8 @@ export class DiscordVoiceManager {
   private readonly activeUserStreams = new Map<string, Map<string, ActiveAudioStream>>();
   private readonly ffmpegSegmentSeconds = Number.parseInt(process.env.VOICE_FFMPEG_SEGMENT_SECONDS ?? "180", 10) || 180;
   private readonly voiceChatMaxMessages = Number.parseInt(process.env.VOICE_CHAT_MAX_MESSAGES ?? "200", 10) || 200;
+  private readonly recordingWarningMinutes = parseMinuteEnv("VOICE_RECORDING_WARNING_MINUTES", 50);
+  private readonly recordingMaxMinutes = parseMinuteEnv("VOICE_RECORDING_MAX_MINUTES", 60);
   private readonly recordingsRoot: string;
 
   constructor(options: VoiceManagerOptions) {
@@ -442,6 +456,7 @@ export class DiscordVoiceManager {
       guildId: guild.id,
       channelId: channel.id,
       channelName: channel.name,
+      announcementChannel: interaction.channel && interaction.channel.isSendable() ? interaction.channel : null,
       startedAt: Date.now(),
       rootDir,
       rawDir,
@@ -471,6 +486,7 @@ export class DiscordVoiceManager {
     );
     this.activeUserStreams.set(guild.id, new Map());
     this.sessionsByGuild.set(guild.id, session);
+    this.scheduleRecordingTimers(session);
 
     const participantIds = [...session.participants.keys()];
     if (participantIds.length > 0) {
@@ -508,7 +524,86 @@ export class DiscordVoiceManager {
       "utf8",
     );
 
-    return `Recording started in **${channel.name}**.\nSession: \`${sessionId}\`\nRaw audio is being written to \`${rootDir}\`.`;
+    const timeoutLine = this.recordingMaxMinutes > 0
+      ? `This recording will stop automatically after ${this.recordingMaxMinutes} minutes${this.recordingWarningMinutes > 0 && this.recordingWarningMinutes < this.recordingMaxMinutes ? `, with a warning at ${this.recordingWarningMinutes} minutes` : ""}.`
+      : null;
+    return [
+      `Recording started in **${channel.name}**.`,
+      `Session: \`${sessionId}\``,
+      `Raw audio is being written to \`${rootDir}\`.`,
+      timeoutLine,
+    ].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n");
+  }
+
+  private scheduleRecordingTimers(session: RecordingSession): void {
+    this.clearRecordingTimers(session);
+    if (this.recordingMaxMinutes <= 0) {
+      return;
+    }
+
+    if (this.recordingWarningMinutes > 0 && this.recordingWarningMinutes < this.recordingMaxMinutes) {
+      session.warningTimer = setTimeout(() => {
+        void this.sendRecordingMessage(
+          session,
+          `Recording in **${session.channelName}** has been running for ${this.recordingWarningMinutes} minutes and will stop automatically in ${this.recordingMaxMinutes - this.recordingWarningMinutes} minutes.`,
+        );
+      }, this.recordingWarningMinutes * 60_000);
+    }
+
+    session.autoStopTimer = setTimeout(() => {
+      void this.autoStopRecording(session.guildId, session.sessionId);
+    }, this.recordingMaxMinutes * 60_000);
+  }
+
+  private clearRecordingTimers(session: RecordingSession): void {
+    if (session.warningTimer) {
+      clearTimeout(session.warningTimer);
+      session.warningTimer = undefined;
+    }
+    if (session.autoStopTimer) {
+      clearTimeout(session.autoStopTimer);
+      session.autoStopTimer = undefined;
+    }
+  }
+
+  private async sendRecordingMessage(session: RecordingSession, content: string): Promise<void> {
+    if (!session.announcementChannel?.isSendable()) {
+      return;
+    }
+    await session.announcementChannel.send(content).catch((error) => {
+      console.warn(`[discord-adapter] recording announcement failed session=${session.sessionId}: ${this.describeError(error)}`);
+    });
+  }
+
+  private async autoStopRecording(guildId: string, sessionId: string): Promise<void> {
+    const session = this.sessionsByGuild.get(guildId);
+    if (!session || session.sessionId !== sessionId) {
+      return;
+    }
+
+    console.warn(`[discord-adapter] auto-stopping recording session=${session.sessionId} guild=${guildId} maxMinutes=${this.recordingMaxMinutes}`);
+    await this.sendRecordingMessage(
+      session,
+      `Recording in **${session.channelName}** reached ${this.recordingMaxMinutes} minutes and is stopping automatically now.`,
+    );
+
+    try {
+      const metadata = await this.finalizeSession(session);
+      const transcriptArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemoryTranscriptPath);
+      const summaryArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemorySummaryPath);
+      const publicMessage = summaryArtifact
+        ? [
+            `Meeting summary for **${session.channelName}** is ready: ${summaryArtifact.url}`,
+            transcriptArtifact ? `Transcript: ${transcriptArtifact.url}` : null,
+          ].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n")
+        : `Recording for **${session.channelName}** stopped automatically. Summary was not generated.`;
+      await this.sendRecordingMessage(session, publicMessage);
+    } catch (error) {
+      await this.sendRecordingMessage(
+        session,
+        `Recording for **${session.channelName}** stopped automatically, but finalization failed: ${this.describeError(error)}`,
+      );
+    }
   }
 
   private async beginSpeakerCapture(session: RecordingSession, userId: string): Promise<void> {
@@ -703,6 +798,7 @@ export class DiscordVoiceManager {
       guildId: candidate.guildId,
       channelId: candidate.channelId,
       channelName: candidate.channelName,
+      announcementChannel: null,
       startedAt: parseIsoDate(candidate.startedAt).getTime(),
       rootDir,
       rawDir,
@@ -892,6 +988,7 @@ export class DiscordVoiceManager {
   }
 
   async finalizeSession(session: RecordingSession): Promise<RecordingSessionMetadata> {
+    this.clearRecordingTimers(session);
     this.sessionsByGuild.delete(session.guildId);
     const endedAt = Date.now();
     const connectionState = this.connections.get(session.guildId);
