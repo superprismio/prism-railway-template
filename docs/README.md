@@ -9,6 +9,7 @@ Design notes and system direction:
 - [Adapter Output Interface](architecture/adapter-output-interface.md)
 - [Agentic Ingest Future Work](architecture/agentic-ingest-future-work.md)
 - [API Execution Flow](architecture/api-execution-flow.md)
+- [Artifact Storage](architecture/artifact-storage.md)
 - [Codex-First Architecture](architecture/codex-first-architecture.md)
 - [Custom Source Strategy](architecture/custom-source-strategy.md)
 - [Site API Consolidation Plan](architecture/site-api-consolidation-plan.md)

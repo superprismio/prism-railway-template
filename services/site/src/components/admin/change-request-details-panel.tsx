@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   CheckCircle2,
   Circle,
@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   PlayCircle,
   RotateCcw,
+  Upload,
   X,
 } from "lucide-react";
 
@@ -369,6 +370,8 @@ export function RequestDetailsPanel({
     [],
   );
   const [commentDraft, setCommentDraft] = useState("");
+  const artifactUploadInputRef = useRef<HTMLInputElement>(null);
+  const [latestUploadedArtifactName, setLatestUploadedArtifactName] = useState<string | null>(null);
   const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
   const [reopenStepKey, setReopenStepKey] = useState("");
   const [reopenComment, setReopenComment] = useState("");
@@ -390,6 +393,7 @@ export function RequestDetailsPanel({
   const [isCommentPending, startCommentTransition] = useTransition();
   const [isCommandPending, startCommandTransition] = useTransition();
   const [isReopenPending, startReopenTransition] = useTransition();
+  const [isArtifactUploadPending, startArtifactUploadTransition] = useTransition();
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
 
   useEffect(() => {
@@ -411,6 +415,7 @@ export function RequestDetailsPanel({
     setReopenStepKey(defaultReopenStepKey(currentWorkflowSteps, request.currentWorkflowStepKey));
     setReopenComment("");
     setIsReopenDialogOpen(false);
+    setLatestUploadedArtifactName(null);
   }, [request.id]);
 
   useEffect(() => {
@@ -983,6 +988,40 @@ export function RequestDetailsPanel({
     });
   }
 
+  function handleArtifactUploadChange(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setThreadError(null);
+    startArtifactUploadTransition(async () => {
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("kind", "upload");
+
+        const response = await fetch(`/admin/change-requests/${request.id}/artifacts/upload`, {
+          method: "POST",
+          body: formData,
+        });
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          error?: string;
+        };
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "Could not upload artifact");
+        }
+
+        setLatestUploadedArtifactName(file.name);
+        await refreshArtifacts();
+      } catch (error) {
+        setThreadError(error instanceof Error ? error.message : "Could not upload artifact");
+      } finally {
+        input.value = "";
+      }
+    });
+  }
+
   function handleContinueWorkflow() {
     const latestComment =
       [...threadMessages]
@@ -1120,7 +1159,33 @@ export function RequestDetailsPanel({
                     placeholder="Leave review feedback, approval context, or a clarification before continuing."
                     className="min-h-24"
                   />
-                  <div className="flex justify-end">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <input
+                      ref={artifactUploadInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={handleArtifactUploadChange}
+                    />
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => artifactUploadInputRef.current?.click()}
+                        disabled={isArtifactUploadPending}
+                      >
+                        {isArtifactUploadPending ? (
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Upload className="h-4 w-4" />
+                        )}
+                        {isArtifactUploadPending ? "Uploading" : "Upload artifact"}
+                      </Button>
+                      {latestUploadedArtifactName ? (
+                        <span className="max-w-full truncate text-xs text-muted-foreground sm:max-w-64">
+                          Uploaded: {latestUploadedArtifactName}
+                        </span>
+                      ) : null}
+                    </div>
                     <Button
                       type="button"
                       variant="outline"
