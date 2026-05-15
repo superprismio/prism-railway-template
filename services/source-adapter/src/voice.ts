@@ -277,6 +277,7 @@ export class DiscordVoiceManager {
   private readonly describeError: (error: unknown) => string;
   private readonly connections = new Map<string, VoiceConnectionState>();
   private readonly sessionsByGuild = new Map<string, RecordingSession>();
+  private readonly recordingOperationsByGuild = new Map<string, "starting" | "stopping">();
   private readonly activeUserStreams = new Map<string, Map<string, ActiveAudioStream>>();
   private readonly ffmpegSegmentSeconds = Number.parseInt(process.env.VOICE_FFMPEG_SEGMENT_SECONDS ?? "180", 10) || 180;
   private readonly voiceChatMaxMessages = Number.parseInt(process.env.VOICE_CHAT_MAX_MESSAGES ?? "200", 10) || 200;
@@ -436,6 +437,12 @@ export class DiscordVoiceManager {
   async startRecording(interaction: ChatInputCommandInteraction): Promise<string> {
     const { guild, channel } = await this.resolveMemberVoiceChannel(interaction);
     this.requireBotVoicePermissions(guild, channel);
+    const activeOperation = this.recordingOperationsByGuild.get(guild.id);
+    if (activeOperation) {
+      return `A recording is currently ${activeOperation} for this server. Try again after that operation finishes.`;
+    }
+    this.recordingOperationsByGuild.set(guild.id, "starting");
+    try {
     const active = this.sessionsByGuild.get(guild.id);
     if (active) {
       return `Already recording in **${active.channelName}** with session \`${active.sessionId}\`.`;
@@ -533,6 +540,9 @@ export class DiscordVoiceManager {
       `Raw audio is being written to \`${rootDir}\`.`,
       timeoutLine,
     ].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n");
+    } finally {
+      this.recordingOperationsByGuild.delete(guild.id);
+    }
   }
 
   private scheduleRecordingTimers(session: RecordingSession): void {
@@ -576,6 +586,12 @@ export class DiscordVoiceManager {
   }
 
   private async autoStopRecording(guildId: string, sessionId: string): Promise<void> {
+    if (this.recordingOperationsByGuild.has(guildId)) {
+      console.warn(`[discord-adapter] skipped auto-stop while recording operation is active guild=${guildId} session=${sessionId}`);
+      return;
+    }
+    this.recordingOperationsByGuild.set(guildId, "stopping");
+    try {
     const session = this.sessionsByGuild.get(guildId);
     if (!session || session.sessionId !== sessionId) {
       return;
@@ -603,6 +619,9 @@ export class DiscordVoiceManager {
         session,
         `Recording for **${session.channelName}** stopped automatically, but finalization failed: ${this.describeError(error)}`,
       );
+    }
+    } finally {
+      this.recordingOperationsByGuild.delete(guildId);
     }
   }
 
@@ -947,6 +966,12 @@ export class DiscordVoiceManager {
     if (!interaction.guildId) {
       throw new Error("This command must be used inside a Discord server.");
     }
+    const activeOperation = this.recordingOperationsByGuild.get(interaction.guildId);
+    if (activeOperation) {
+      throw new Error(`A recording is currently ${activeOperation} for this server. Try again after that operation finishes.`);
+    }
+    this.recordingOperationsByGuild.set(interaction.guildId, "stopping");
+    try {
     const session = this.sessionsByGuild.get(interaction.guildId) ?? (await this.recoverLatestSessionFromDisk(interaction.guildId));
     if (!session) {
       throw new Error("No active recording session found.");
@@ -985,6 +1010,9 @@ export class DiscordVoiceManager {
       privateMessage,
       publicMessage,
     };
+    } finally {
+      this.recordingOperationsByGuild.delete(interaction.guildId);
+    }
   }
 
   async finalizeSession(session: RecordingSession): Promise<RecordingSessionMetadata> {
