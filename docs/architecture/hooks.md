@@ -58,7 +58,7 @@ Common fields:
 {
   "titleTemplate": "Support Request - {{date}}",
   "descriptionTemplate": "Handle this support event.\n\nPayload:\n{{payload}}",
-  "requestType": "support",
+  "requestType": "issue",
   "priority": "normal",
   "targetAppId": null,
   "targetEnvironmentId": null,

@@ -39,7 +39,7 @@ Example:
 {
   "key": "change-request-default",
   "name": "Change Request",
-  "version": 1,
+  "version": 2,
   "entrypoint": "triage",
   "workflowPath": "workflows/change-request-default/workflow.md",
   "agentConfig": {
@@ -67,6 +67,20 @@ Example:
       "label": "Approve",
       "type": "gate",
       "next": "implement"
+    },
+    {
+      "key": "implement",
+      "label": "Work",
+      "type": "agent",
+      "instructionPath": "workflows/change-request-default/steps/implement.md",
+      "next": "pr-review"
+    },
+    {
+      "key": "pr-review",
+      "label": "PR Review",
+      "type": "checkpoint",
+      "instructionPath": "workflows/change-request-default/steps/pr-review.md",
+      "next": "review"
     }
   ]
 }
@@ -85,7 +99,9 @@ The markdown answers judgment-heavy agent questions:
 - what the step is trying to accomplish
 - what context matters
 - what skills/scripts/files are relevant
-- how to handle loops such as review sending work back to implementation
+- how to handle loops such as PR review sending work back to implementation
+- which artifacts to create, such as `triage-fix-notes.md`
+- which external refs to create or check, such as GitHub issues and pull requests
 
 ## External Refs
 
@@ -185,7 +201,7 @@ The default request workflow declares a repository target because it uses branch
 
 ## Step Types
 
-The schema is descriptive and intentionally narrow. The default request workflow currently exercises `agent`, `gate`, and `terminal`; custom workflows can also use `checkpoint` for manual external-state checks.
+The schema is descriptive and intentionally narrow. The default request workflow exercises `agent`, `gate`, `checkpoint`, and `terminal`; custom workflows can also use checkpoints for manual external-state checks.
 
 Supported step types:
 
