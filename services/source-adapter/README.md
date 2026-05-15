@@ -65,6 +65,8 @@ Discord-specific envs you can add later:
 - `VOICE_CHAT_MAX_MESSAGES=200`
 - `VOICE_CHAT_IGNORE_BOT_MESSAGES=true`
 - `VOICE_DAVE_ENCRYPTION=true`
+- `VOICE_RECORDING_WARNING_MINUTES=50`
+- `VOICE_RECORDING_MAX_MINUTES=60`
 - `VOICE_TRANSCRIPTION_BASE_URL=https://api.venice.ai/api/v1/audio/transcriptions`
 - `VOICE_TRANSCRIPTION_API_KEY=...`
 - `VOICE_TRANSCRIPTION_MODEL=nvidia/parakeet-tdt-0.6b-v3`
@@ -108,6 +110,7 @@ Current voice command status:
 - `/prism-stoprecord` stops the session, runs `ffmpeg`, and writes FLAC chunks under `/data/recordings/<session-id>/flac`
 - `/prism-rollcall` inspects the active/current voice channel and lists non-bot participants
 - if `VOICE_TRANSCRIPTION_API_KEY` is set, `/prism-stoprecord` sends FLAC chunks to the configured Whisper-compatible transcription endpoint and writes transcript artifacts under `/data/recordings/<session-id>/transcript`
+- recordings warn at `VOICE_RECORDING_WARNING_MINUTES` and stop automatically at `VOICE_RECORDING_MAX_MINUTES`; set `VOICE_RECORDING_MAX_MINUTES=0` to disable the automatic stop
 - `/prism-stoprecord` also fetches messages posted in the Discord voice channel during the recording window and stitches them into the merged transcript timeline as `chat` segments
 - if the adapter restarts during recording, `/prism-stoprecord` can recover the newest unfinished session for the guild from `/data/recordings/<session-id>/session.json` and `/raw/*.ogg`
 - if `CODEX_RUNTIME_BASE_URL` is set, the adapter asks codex-runtime to synthesize a meeting summary from the merged transcript
@@ -158,6 +161,8 @@ The verified Railway path uses:
 - `VOICE_CHAT_MAX_MESSAGES=200`
 - `VOICE_CHAT_IGNORE_BOT_MESSAGES=true`
 - `VOICE_DAVE_ENCRYPTION=true`
+- `VOICE_RECORDING_WARNING_MINUTES=50`
+- `VOICE_RECORDING_MAX_MINUTES=60`
 - `CODEX_RUNTIME_BASE_URL=https://codex-runtime-production.up.railway.app` or a verified reachable private URL
 - `PRISM_API_BASE=https://prism-memory-production.up.railway.app` or a verified reachable private URL
 - `PRISM_ARTIFACT_PUBLIC_BASE_URL=https://prism-memory-production.up.railway.app`

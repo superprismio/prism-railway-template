@@ -119,10 +119,13 @@ Recommended first-pass values:
 - `VOICE_CHAT_MAX_MESSAGES=200`
 - `VOICE_CHAT_IGNORE_BOT_MESSAGES=true`
 - `VOICE_DAVE_ENCRYPTION=true`
+- `VOICE_RECORDING_WARNING_MINUTES=50`
+- `VOICE_RECORDING_MAX_MINUTES=60`
 
 Recommended:
 
 - mount a persistent volume or otherwise persist `SOURCE_ADAPTER_DATA_ROOT`
+- set `VOICE_RECORDING_MAX_MINUTES=0` only if the instance should allow unbounded voice recordings
 - prefer Railway private domains once verified from inside the deployed service; the current voice path has been validated with public Railway service URLs for `codex-runtime` and `prism-memory`
 
 Manual smoke tests:

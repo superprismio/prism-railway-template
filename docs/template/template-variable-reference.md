@@ -75,6 +75,8 @@ Use this while filling out the Railway template composer.
 | `DISCORD_EMBED_TEXT_ENABLED` | `true` | Enables preservation of Discord embed text. | No |
 | `VOICE_DAVE_ENCRYPTION` | `true` | Enables Discord DAVE voice encryption support when available. | No |
 | `VOICE_CHAT_IGNORE_BOT_MESSAGES` | `true` | Skips bot messages when stitching voice channel chat into transcripts. | No |
+| `VOICE_RECORDING_WARNING_MINUTES` | `50` | Sends a warning before a long Discord voice recording is stopped automatically. Set `0` to disable the warning. | No |
+| `VOICE_RECORDING_MAX_MINUTES` | `60` | Stops long Discord voice recordings automatically. Set `0` to disable the automatic stop. | No |
 | `VOICE_TRANSCRIPTION_BASE_URL` | `https://api.venice.ai/api/v1/audio/transcriptions` | Whisper-compatible transcription endpoint for Discord voice recordings. | Yes |
 | `VOICE_TRANSCRIPTION_API_KEY` | empty | API key for the configured voice transcription endpoint. | Yes |
 | `VOICE_TRANSCRIPTION_MODEL` | `nvidia/parakeet-tdt-0.6b-v3` | Model sent to the transcription endpoint. | Yes |

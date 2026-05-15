@@ -245,6 +245,8 @@ function EnvironmentInstructions() {
           {serviceLabel("discord-adapter")}
           {copyBlock([
             'VOICE_DAVE_ENCRYPTION="true"',
+            'VOICE_RECORDING_WARNING_MINUTES="50"',
+            'VOICE_RECORDING_MAX_MINUTES="60"',
             'VOICE_TRANSCRIPTION_BASE_URL="https://api.venice.ai/api/v1/audio/transcriptions"',
             'VOICE_TRANSCRIPTION_API_KEY=""',
             'VOICE_TRANSCRIPTION_MODEL="nvidia/parakeet-tdt-0.6b-v3"',

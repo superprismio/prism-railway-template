@@ -1245,6 +1245,7 @@ async function handleVoiceCommand(interaction: ChatInputCommandInteraction, acti
         content = await voiceManager.startRecording(interaction);
         break;
       case "stoprecord": {
+        await interaction.editReply({ content: "Stopping the recording and processing the transcript. This can take a few minutes." });
         const result = await voiceManager.stopRecording(interaction);
         content = result.privateMessage;
         publicContent = result.publicMessage ?? null;

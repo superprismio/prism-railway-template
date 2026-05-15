@@ -175,6 +175,8 @@ Set on `discord-adapter`:
 ```text
 VOICE_TRANSCRIPTION_BASE_URL=https://api.venice.ai/api/v1/audio/transcriptions # Optional Whisper-compatible transcription endpoint for Discord voice recordings.
 VOICE_TRANSCRIPTION_API_KEY=<transcription-key> # Optional API key for the configured voice transcription endpoint.
+VOICE_RECORDING_WARNING_MINUTES=50 # Warns before a long Discord voice recording is stopped automatically.
+VOICE_RECORDING_MAX_MINUTES=60 # Stops long Discord voice recordings automatically. Set to 0 to disable.
 ```
 
 Then test `/prism-record` and `/prism-stoprecord` in Discord.
@@ -256,6 +258,8 @@ DISCORD_ATTACHMENT_TEXT_ENABLED="true" # Enables extraction of text-like Discord
 DISCORD_EMBED_TEXT_ENABLED="true" # Enables preservation of Discord embed text.
 VOICE_DAVE_ENCRYPTION="true" # Enables Discord DAVE voice encryption support when available.
 VOICE_CHAT_IGNORE_BOT_MESSAGES="true" # Skips bot messages when stitching voice channel chat into transcripts.
+VOICE_RECORDING_WARNING_MINUTES="50" # Warns before a long Discord voice recording is stopped automatically.
+VOICE_RECORDING_MAX_MINUTES="60" # Stops long Discord voice recordings automatically. Set to 0 to disable.
 VOICE_TRANSCRIPTION_BASE_URL="https://api.venice.ai/api/v1/audio/transcriptions" # Whisper-compatible transcription endpoint for Discord voice recordings.
 VOICE_TRANSCRIPTION_API_KEY="" # Optional API key for the configured voice transcription endpoint.
 VOICE_TRANSCRIPTION_MODEL="nvidia/parakeet-tdt-0.6b-v3" # Model sent to the transcription endpoint.
