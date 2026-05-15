@@ -13,6 +13,7 @@ import { userInvitesMigration } from './012_user_invites';
 import { hooksMigration } from './013_hooks';
 import { closeCompletedWorkflowRequestsMigration } from './015_close_completed_workflow_requests';
 import { dropChangeRequestStatusMigration } from './016_drop_change_request_status';
+import { changeRequestPrReviewCheckpointMigration } from './017_change_request_pr_review_checkpoint';
 
 export interface Migration {
   name: string;
@@ -35,4 +36,5 @@ export const migrations: Migration[] = [
   hooksMigration,
   closeCompletedWorkflowRequestsMigration,
   dropChangeRequestStatusMigration,
+  changeRequestPrReviewCheckpointMigration,
 ];

@@ -25,7 +25,7 @@ Hooks should stay thin. They should not contain large prompts, arbitrary code, o
 1. accept a JSON payload
 2. create a request from a small template
 3. preserve the raw payload as an artifact
-4. optionally auto-run the workflow until the next gate
+4. optionally auto-run the workflow until the next gate, checkpoint, or terminal step
 
 The workflow and its step markdown own the behavior after that.
 
@@ -58,7 +58,7 @@ Common fields:
 {
   "titleTemplate": "Support Request - {{date}}",
   "descriptionTemplate": "Handle this support event.\n\nPayload:\n{{payload}}",
-  "requestType": "support",
+  "requestType": "issue",
   "priority": "normal",
   "targetAppId": null,
   "targetEnvironmentId": null,

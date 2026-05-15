@@ -2,6 +2,8 @@
 
 The human reviewer checks the branch, execution output, and any preview or compare links.
 
+Use the latest PR Review Checkpoint output when available. If a linked pull request exists, final approval should consider PR review state, requested changes, checks, and linked issue comments. Final merge should still happen through GitHub or the target repository's normal review process unless the operator explicitly directs otherwise.
+
 Review outcomes:
 
 - approve the request when the work is acceptable

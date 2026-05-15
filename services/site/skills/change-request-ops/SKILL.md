@@ -28,6 +28,9 @@ Core endpoints:
 - `PATCH /agent/change-board/requests/:id`
 - `GET /agent/change-board/requests/:id/external-refs`
 - `POST /agent/change-board/requests/:id/external-refs`
+- `GET /agent/change-board/requests/:id/artifacts`
+- `POST /agent/change-board/requests/:id/artifacts`
+- `GET /agent/change-board/requests/:id/artifacts/:artifactId/content`
 - `GET /agent/change-board/requests/:id/executions`
 - `POST /agent/change-board/requests/:id/executions`
 - `PATCH /agent/change-board/executions/:executionId`
@@ -62,9 +65,11 @@ Create request pattern:
 1. If the user is asking to create or open a tracked change request, do not write to Prism memory.
 2. If the target app is unclear, list target apps first and either infer the best match or ask a focused follow-up.
 3. Create the request through the internal change-board API.
-4. Confirm the new request number, title, target app, and initial status back to the user.
+4. Confirm the new request number, title, target app, and current workflow step back to the user.
 5. By default, workflow-backed requests auto-start when their entry step is an agent step. Send `"autoStart": false` only when the user explicitly wants to create a request without running it.
 6. If the entry step is a gate, the request waits for an operator decision.
+7. The create response returns the created row as `request`; read `changeRequest` only as a compatibility fallback.
+8. Valid `requestType` values are `bug`, `feature`, `issue`, `content`, `design`, `config`, and `ops`.
 
 List target apps:
 
@@ -88,7 +93,6 @@ curl -fsSL \
     "requestType": "'"$REQUEST_TYPE"'",
     "targetAppId": "'"$TARGET_APP_ID"'",
     "priority": "'"${PRIORITY:-normal}"'",
-    "status": "submitted",
     "source": "chat",
     "autoStart": true
   }'
@@ -101,10 +105,9 @@ Start-of-run pattern:
 3. Read `changeRequest`, `targetApp`, `targetEnvironment`, `deployPlan`, `latestExecution`, and `externalRefs`.
 4. During triage, write substantive detail into `triageSummary` and `agentRecommendation` before routing the request onward.
 5. If operating on a queued request, create an execution record before changing code.
-6. Request `status` is only a coarse projection: use `submitted`, `in-progress`, or `closed`.
-7. Do not use legacy queue statuses such as `ready-for-agent`, `awaiting-review`, `changes-requested`, `approved`, or `rejected`.
-8. The current workflow step is stored in `workflow_runs.current_step_key` and exposed as `currentWorkflowStepKey`; use that field to understand where the request is.
-9. Do not begin implementation, deployment, or execution in the same turn that finishes triage unless the user explicitly says to continue immediately on an already reviewed request.
+6. Do not use legacy queue statuses such as `submitted`, `in-progress`, `ready-for-agent`, `awaiting-review`, `changes-requested`, `approved`, or `rejected`.
+7. The current workflow step is stored in `workflow_runs.current_step_key` and exposed as `currentWorkflowStepKey`; use that field to understand where the request is.
+8. Do not begin implementation, deployment, or execution in the same turn that finishes triage unless the user explicitly says to continue immediately on an already reviewed request.
 
 Create execution:
 
@@ -121,7 +124,7 @@ curl -fsSL \
   }'
 ```
 
-Patch request metadata or coarse board status:
+Patch request metadata:
 
 ```bash
 curl -fsSL \
@@ -129,7 +132,7 @@ curl -fsSL \
   -H "content-type: application/json" \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
   "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/$CHANGE_REQUEST_ID" \
-  -d '{"status":"in-progress"}'
+  -d '{"triageSummary":"...","agentRecommendation":"..."}'
 ```
 
 Attach external records when the request interacts with a live system outside Prism. Use this for GitHub issues, GitHub pull requests, Discord messages or threads, deployments, publishing targets, or DAO proposal pages. Do not leave these only in comments if later workflow steps need to inspect or sync them.
@@ -155,7 +158,33 @@ curl -fsSL \
   }'
 ```
 
-For richer triage updates, patch the request with both status and suggested changes:
+When a request has a linked GitHub issue, leave concise issue comments for meaningful workflow state changes such as triage completed, PR opened, review changes requested, checks passing, or ready for final review. Do not spam the issue with every internal execution update.
+
+When implementation pushes a request branch and repository access is configured, create a pull request from the request feature branch into the target repository base branch. Then attach it as a GitHub `pull_request` external ref. If a PR ref already exists, reuse and update it instead of creating duplicates.
+
+Checkpoint steps should use external refs as live lookup handles. For the default change request workflow, the `pr-review` checkpoint should inspect linked PR reviews, review comments, check status, and merge readiness. If changes were requested, summarize the specific fixes and recommend moving back to `implement`; if the PR is ready, recommend moving to `review`.
+
+Create request artifacts for durable notes that later steps or humans need to inspect. Triage should write detailed fix notes as `triage-fix-notes.md`:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/$CHANGE_REQUEST_ID/artifacts" \
+  -d '{
+    "kind": "triage-fix-notes",
+    "name": "triage-fix-notes.md",
+    "mimeType": "text/markdown",
+    "encoding": "utf8",
+    "content": "'"$TRIAGE_FIX_NOTES"'",
+    "metadata": {
+      "workflowStep": "triage"
+    }
+  }'
+```
+
+For richer triage updates, patch the request with both summary and suggested changes:
 
 ```bash
 curl -fsSL \
@@ -164,7 +193,6 @@ curl -fsSL \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
   "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/$CHANGE_REQUEST_ID" \
   -d '{
-    "status": "in-progress",
     "triageSummary": "'"$TRIAGE_SUMMARY"'",
     "agentRecommendation": "'"$SUGGESTED_CHANGES"'"
   }'
@@ -193,15 +221,15 @@ End-of-run pattern:
 1. A triage pass should end by recording useful triage details and leaving the workflow/request ready for the next explicit workflow step.
 2. An execution pass should update execution records and any durable artifacts/external refs. Workflow step movement is owned by the site workflow engine when running through `/agent/responses`.
 3. Update the execution with branch, commit, deploy URL, summary, error, timestamps, and notable runtime trace details.
-4. If work fails, record the failure on the execution and leave the request on the current workflow step with status `in-progress` unless the workflow reaches a terminal step.
+4. If work fails, record the failure on the execution and leave the request on the current workflow step unless the workflow reaches a terminal step.
 
 Rules:
 
 - Treat the API as the source of truth.
 - Re-read the request if the scope seems stale.
 - If the user explicitly asks to create a change request, prefer the change-board API path over Prism memory writing.
-- A chat-created request should default to `submitted`, then move through workflow steps. It should not auto-run implementation unless the user or task explicitly requests workflow execution.
-- Do not use request `status` as the workflow source of truth. The current workflow step is stored in `workflow_runs.current_step_key` and is exposed on request records as `currentWorkflowStepKey`.
+- A chat-created request should start at the workflow entry step. It should not auto-run implementation unless the user or task explicitly requests workflow execution.
+- Do not use request `status`; request progress is owned by `workflow_runs.current_step_key` and exposed on request records as `currentWorkflowStepKey`.
 - Keep summaries factual, but make triage useful enough that a human can understand the proposed edits without reopening the whole conversation.
 - `agentRecommendation` should describe the suggested changes, touched areas, and intended outcome, not just say "ready for agent".
 - Store machine-usable fields in execution metadata instead of burying them in prose.

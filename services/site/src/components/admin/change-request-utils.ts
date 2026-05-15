@@ -31,6 +31,7 @@ export type WorkflowStep = {
   instructionPath: string | null;
   next: string | null;
   routes: Record<string, string>;
+  resumeLabel: string | null;
 };
 
 export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
@@ -41,6 +42,7 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     instructionPath: "workflows/change-request-default/steps/triage.md",
     next: "approve-for-work",
     routes: {},
+    resumeLabel: null,
   },
   {
     key: "approve-for-work",
@@ -49,6 +51,7 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     instructionPath: null,
     next: "implement",
     routes: {},
+    resumeLabel: null,
   },
   {
     key: "implement",
@@ -57,6 +60,7 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     instructionPath: "workflows/change-request-default/steps/implement.md",
     next: "review",
     routes: {},
+    resumeLabel: null,
   },
   {
     key: "review",
@@ -69,6 +73,7 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
       changesRequested: "implement",
       rejected: "closed",
     },
+    resumeLabel: null,
   },
   {
     key: "closed",
@@ -77,6 +82,7 @@ export const fallbackRequestWorkflowSteps: WorkflowStep[] = [
     instructionPath: null,
     next: null,
     routes: {},
+    resumeLabel: null,
   },
 ];
 
@@ -103,6 +109,12 @@ export function workflowSteps(workflow: WorkflowRecord | null | undefined): Work
           ? step.instructionPath.trim()
           : null;
       const next = typeof step.next === "string" && step.next.trim() ? step.next.trim() : null;
+      const resumeLabel =
+        typeof step.resumeLabel === "string" && step.resumeLabel.trim()
+          ? step.resumeLabel.trim()
+          : typeof step.resume_label === "string" && step.resume_label.trim()
+            ? step.resume_label.trim()
+            : null;
       const routes = isRecord(step.routes)
         ? Object.fromEntries(
             Object.entries(step.routes).filter(
@@ -114,7 +126,7 @@ export function workflowSteps(workflow: WorkflowRecord | null | undefined): Work
             ),
           )
         : {};
-      return { key, label, type, instructionPath, next, routes };
+      return { key, label, type, instructionPath, next, routes, resumeLabel };
     })
     .filter((step): step is WorkflowStep => Boolean(step));
 
@@ -145,6 +157,7 @@ export function priorityVariant(priority: string) {
 export function workflowStepVariant(step: WorkflowStep | null | undefined) {
   if (step?.type === "terminal") return "muted";
   if (step?.type === "gate") return "secondary";
+  if (step?.type === "checkpoint") return "outline";
   if (step?.type === "agent") return "default";
   return "outline";
 }

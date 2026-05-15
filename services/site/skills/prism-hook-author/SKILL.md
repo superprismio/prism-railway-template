@@ -5,7 +5,7 @@ description: Use this skill when Codex is asked to create, update, test, or dele
 
 Use this skill to turn an event trigger idea into a durable Prism hook.
 
-Hooks are on-demand entrypoints. A hook receives a JSON payload, creates a workflow-backed request, and can auto-run that request until the next human gate.
+Hooks are on-demand entrypoints. A hook receives a JSON payload, creates a workflow-backed request, and can auto-run that request until the next human gate, checkpoint, or terminal step.
 
 Every hook-triggered request stores the incoming trigger body as a `hook-payload.json` request artifact with kind `hook-payload`. Workflow steps should read that artifact when they need the exact event body. The request `source` is set to `hook:<hook-key>` so the board can distinguish hook-created requests from task, agent, and manual requests.
 

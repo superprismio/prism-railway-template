@@ -62,7 +62,7 @@ Workflow runner task shape:
 {
   "key": "weekly-blog-workflow",
   "name": "Weekly blog workflow",
-  "description": "Create a weekly blog request and run the workflow until the next gate.",
+  "description": "Create a weekly blog request and run the workflow until the next gate or checkpoint.",
   "enabled": false,
   "triggerType": "schedule",
   "scheduleCron": "0 16 * * 5",
@@ -89,7 +89,7 @@ Workflow runner task shape:
 }
 ```
 
-Workflow-runner tasks create requests through `/agent/change-board/requests`. When `inputConfig.autoRun.enabled` is true, the created request should start automatically if the workflow entry step is an agent step. If the entry step is a gate, it waits for an operator decision.
+Workflow-runner tasks create requests through `/agent/change-board/requests`. When `inputConfig.autoRun.enabled` is true, the created request should start automatically if the workflow entry step is an agent step. If the entry step is a gate or checkpoint, it waits for an operator decision/check.
 
 When creating a task through the Prism API, use the site internal task endpoint if credentials are available:
 
