@@ -80,6 +80,25 @@ Requests and artifacts:
 - `GET /agent/change-board/requests/:id/external-refs`
 - `POST /agent/change-board/requests/:id/external-refs`
 
+Request creation accepts these `requestType` values:
+
+- `bug`
+- `feature`
+- `issue`
+- `content`
+- `design`
+- `config`
+- `ops`
+
+Request creation accepts these `priority` values:
+
+- `low`
+- `normal`
+- `high`
+- `urgent`
+
+If a request creation call sends an invalid type or priority, the `400` response includes `validRequestTypes` or `validPriorities` so agents can retry with a supported value.
+
 Branding:
 
 - `GET /agent/site-content/branding`
