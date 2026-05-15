@@ -5,6 +5,7 @@ import {
   createWorkflowEvent,
   getDefaultTargetEnvironmentForApp,
   getHookByKey,
+  getTargetApp,
   getWorkflowByKey,
   getWorkflowRunForRequest,
   markHookTriggered,
@@ -134,6 +135,10 @@ export async function triggerHook(
 
   const requestTemplate = hook.requestTemplate
   const targetAppId = stringValue(requestTemplate.targetAppId ?? payload.targetAppId)
+  const targetApp = targetAppId ? getTargetApp(targetAppId) : null
+  if (targetAppId && (!targetApp || !targetApp.agentEnabled)) {
+    throw new Error("TARGET_APP_INACTIVE")
+  }
   const targetEnvironmentId =
     stringValue(requestTemplate.targetEnvironmentId ?? payload.targetEnvironmentId) ||
     (targetAppId ? getDefaultTargetEnvironmentForApp(targetAppId)?.id ?? "" : "")

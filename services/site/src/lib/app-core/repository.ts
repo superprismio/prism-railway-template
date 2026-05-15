@@ -382,6 +382,14 @@ export interface CreateTargetAppInput {
   agentEnabled?: boolean;
 }
 
+export interface UpdateTargetAppInput {
+  name?: string;
+  description?: string | null;
+  repoUrl?: string | null;
+  defaultBranch?: string | null;
+  agentEnabled?: boolean;
+}
+
 export interface CreateTargetEnvironmentInput {
   targetAppId: string;
   slug: string;
@@ -394,6 +402,12 @@ export interface CreateTargetEnvironmentInput {
   agentWritable?: boolean;
   autoDeployEnabled?: boolean;
   humanReviewRequired?: boolean;
+  isDefaultForAgent?: boolean;
+}
+
+export interface UpdateTargetEnvironmentInput {
+  branch?: string | null;
+  agentWritable?: boolean;
   isDefaultForAgent?: boolean;
 }
 
@@ -2769,6 +2783,40 @@ export function createTargetApp(input: CreateTargetAppInput) {
   return getTargetApp(id);
 }
 
+export function updateTargetApp(targetAppId: string, input: UpdateTargetAppInput) {
+  const current = getTargetApp(targetAppId);
+  if (!current) {
+    return null;
+  }
+
+  const name = normalizeText(input.name) || current.name;
+  const defaultBranch = normalizeText(input.defaultBranch) || current.defaultBranch || 'main';
+  const now = new Date().toISOString();
+
+  getDb()
+    .prepare(
+      `UPDATE target_apps
+       SET name = ?,
+           description = ?,
+           repo_url = ?,
+           default_branch = ?,
+           agent_enabled = ?,
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .run(
+      name,
+      input.description !== undefined ? input.description : current.description,
+      input.repoUrl !== undefined ? input.repoUrl : current.repoUrl,
+      defaultBranch,
+      input.agentEnabled !== undefined ? (input.agentEnabled ? 1 : 0) : current.agentEnabled ? 1 : 0,
+      now,
+      targetAppId,
+    );
+
+  return getTargetApp(targetAppId);
+}
+
 export function listTargetEnvironments(targetAppId?: string) {
   const params: Array<string> = [];
   let sql = `SELECT
@@ -2851,6 +2899,48 @@ export function createTargetEnvironment(input: CreateTargetEnvironmentInput) {
     );
 
   return listTargetEnvironments(input.targetAppId).find((environment) => environment.id === id) ?? null;
+}
+
+export function updateTargetEnvironment(targetEnvironmentId: string, input: UpdateTargetEnvironmentInput) {
+  const current = getTargetEnvironment(targetEnvironmentId);
+  if (!current) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const branch = input.branch !== undefined ? normalizeText(input.branch) || null : current.branch;
+  const db = getDb();
+
+  db.transaction(() => {
+    if (input.isDefaultForAgent === true && current.targetAppId) {
+      db.prepare(
+        `UPDATE target_environments
+         SET is_default_for_agent = 0,
+             updated_at = ?
+         WHERE target_app_id = ?
+           AND id != ?`,
+      ).run(now, current.targetAppId, targetEnvironmentId);
+    }
+
+    db.prepare(
+      `UPDATE target_environments
+       SET branch = ?,
+           agent_writable = ?,
+           is_default_for_agent = ?,
+           updated_at = ?
+       WHERE id = ?`,
+    ).run(
+      branch,
+      input.agentWritable !== undefined ? (input.agentWritable ? 1 : 0) : current.agentWritable ? 1 : 0,
+      input.isDefaultForAgent !== undefined
+        ? (input.isDefaultForAgent ? 1 : 0)
+        : current.isDefaultForAgent ? 1 : 0,
+      now,
+      targetEnvironmentId,
+    );
+  })();
+
+  return getTargetEnvironment(targetEnvironmentId);
 }
 
 export function getTargetEnvironment(targetEnvironmentId: string) {
@@ -3339,6 +3429,15 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
   }
   if (!workflow.enabled) {
     throw new Error('WORKFLOW_DISABLED');
+  }
+  if (input.targetAppId) {
+    const targetApp = getTargetApp(input.targetAppId);
+    if (!targetApp) {
+      throw new Error('TARGET_APP_NOT_FOUND');
+    }
+    if (!targetApp.agentEnabled) {
+      throw new Error('TARGET_APP_INACTIVE');
+    }
   }
   const db = getDb();
   db.transaction(() => {

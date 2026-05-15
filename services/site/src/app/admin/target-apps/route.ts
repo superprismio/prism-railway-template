@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { createAuditLog, createTargetApp } from "@/lib/app-core"
+import { createAuditLog, createTargetApp, createTargetEnvironment } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
 import { requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
@@ -56,6 +56,33 @@ export async function POST(request: Request) {
       targetId: targetApp?.id ?? null,
       meta: { slug, name, deployBackend: "github" },
     })
+
+    if (targetApp) {
+      const targetEnvironment = createTargetEnvironment({
+        targetAppId: targetApp.id,
+        slug: `${slug || "repo"}-default`,
+        name: "Default",
+        kind: "development",
+        branch: defaultBranch,
+        baseUrl: null,
+        deployBackend: "local",
+        deployConfig: {
+          path: "/data/workspaces",
+        },
+        agentWritable: true,
+        autoDeployEnabled: false,
+        humanReviewRequired: true,
+        isDefaultForAgent: true,
+      })
+
+      createAuditLog({
+        actorUserId: null,
+        actionType: "admin.target_environment.create",
+        targetType: "target_environment",
+        targetId: targetEnvironment?.id ?? null,
+        meta: { targetAppId: targetApp.id, slug: `${slug || "repo"}-default`, kind: "development", deployBackend: "local" },
+      })
+    }
 
     redirect("/admin?tab=settings")
   }

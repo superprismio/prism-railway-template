@@ -57,6 +57,10 @@ export function NewChangeRequestDialog({
   targetApps: TargetAppRecord[];
   workflows: WorkflowRecord[];
 }) {
+  const activeTargetApps = useMemo(
+    () => targetApps.filter((targetApp) => targetApp.agentEnabled),
+    [targetApps],
+  );
   const enabledWorkflows = useMemo(() => workflows.filter((workflow) => workflow.enabled), [workflows]);
   const defaultWorkflowKey = enabledWorkflows.find((workflow) => workflow.key === "change-request-default")?.key
     ?? enabledWorkflows[0]?.key
@@ -78,14 +82,14 @@ export function NewChangeRequestDialog({
     const workflowChanged = previousWorkflowKeyRef.current !== workflowKey;
     previousWorkflowKeyRef.current = workflowKey;
     setTargetAppId((current) => {
-      const currentIsValid = targetApps.some((targetApp) => targetApp.id === current);
+      const currentIsValid = activeTargetApps.some((targetApp) => targetApp.id === current);
       if (!targetRequired) {
         return workflowChanged ? "" : currentIsValid ? current : "";
       }
       if (currentIsValid) return current;
-      return targetRequired ? targetApps[0]?.id ?? "" : "";
+      return targetRequired ? activeTargetApps[0]?.id ?? "" : "";
     });
-  }, [targetRequired, targetApps, workflowKey]);
+  }, [targetRequired, activeTargetApps, workflowKey]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -196,7 +200,7 @@ export function NewChangeRequestDialog({
                 value={targetAppId}
                 onChange={(event) => setTargetAppId(event.target.value)}
               >
-                {targetApps.map((targetApp) => (
+                {activeTargetApps.map((targetApp) => (
                   <option key={targetApp.id} value={targetApp.id}>
                     {targetApp.name}
                   </option>
@@ -220,7 +224,7 @@ export function NewChangeRequestDialog({
                   onChange={(event) => setTargetAppId(event.target.value)}
                 >
                   <option value="">No target context</option>
-                  {targetApps.map((targetApp) => (
+                  {activeTargetApps.map((targetApp) => (
                     <option key={targetApp.id} value={targetApp.id}>
                       {targetApp.name}
                     </option>
