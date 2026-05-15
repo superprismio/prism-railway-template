@@ -2,6 +2,8 @@
 
 Review the request, target repository, environment, comments, and recent thread history.
 
+If repository access is configured and no linked GitHub issue external ref exists, create a GitHub issue in the target repository during triage. Use the request title as the issue title and include the request number, original request description, triage summary, and initial fix notes in the issue body. Attach the created issue as a GitHub `issue` external ref. If the request came from an existing GitHub issue or another durable external source, attach that source instead of creating a duplicate issue.
+
 Produce a concise triage summary that identifies:
 
 - the likely implementation scope

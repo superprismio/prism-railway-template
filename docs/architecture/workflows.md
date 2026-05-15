@@ -199,6 +199,8 @@ Existing request rows are not deleted by the workflow migration. A workflow run 
 
 The default request workflow declares a repository target because it uses branch, commit, and deploy-preview helpers. Other workflows can omit a repository target and produce artifacts, Discord notifications, summaries, or other outputs through step instructions.
 
+In the default request workflow, triage creates a linked GitHub issue when repository access is configured and no GitHub issue ref already exists. Imported GitHub issues should be attached as external refs instead of duplicated.
+
 ## Step Types
 
 The schema is descriptive and intentionally narrow. The default request workflow exercises `agent`, `gate`, `checkpoint`, and `terminal`; custom workflows can also use checkpoints for manual external-state checks.

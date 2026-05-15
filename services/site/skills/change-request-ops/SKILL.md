@@ -137,6 +137,8 @@ curl -fsSL \
 
 Attach external records when the request interacts with a live system outside Prism. Use this for GitHub issues, GitHub pull requests, Discord messages or threads, deployments, publishing targets, or DAO proposal pages. Do not leave these only in comments if later workflow steps need to inspect or sync them.
 
+For the built-in repository-backed change request workflow, triage should create a GitHub issue in the target repository when repository access is configured and no GitHub issue external ref already exists. Do not create a duplicate issue when the request was imported from GitHub or already has an issue ref; attach the existing source issue instead.
+
 ```bash
 curl -fsSL \
   -X POST \
