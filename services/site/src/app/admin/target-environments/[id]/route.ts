@@ -13,8 +13,14 @@ type RouteContext = {
   params: Promise<{ id: string }>
 }
 
-function parseBoolean(value: unknown) {
-  return typeof value === "boolean" ? value : undefined
+function parseBoolean(value: unknown, fieldName: string) {
+  if (value === null || value === undefined) {
+    return undefined
+  }
+  if (typeof value !== "boolean") {
+    throw new TypeError(`${fieldName} must be a boolean`)
+  }
+  return value
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -50,10 +56,22 @@ export async function PATCH(request: Request, context: RouteContext) {
         ? parseNullableString(body.branch) ?? null
         : undefined
 
+    let agentWritable: boolean | undefined
+    let isDefaultForAgent: boolean | undefined
+    try {
+      agentWritable = parseBoolean(body.agentWritable ?? body.agent_writable, "agentWritable")
+      isDefaultForAgent = parseBoolean(body.isDefaultForAgent ?? body.is_default_for_agent, "isDefaultForAgent")
+    } catch (error) {
+      return NextResponse.json(
+        { ok: false, error: error instanceof Error ? error.message : "Invalid boolean value" },
+        { status: 400 },
+      )
+    }
+
     const targetEnvironment = updateTargetEnvironment(targetEnvironmentId, {
       branch,
-      agentWritable: parseBoolean(body.agentWritable ?? body.agent_writable),
-      isDefaultForAgent: parseBoolean(body.isDefaultForAgent ?? body.is_default_for_agent),
+      agentWritable,
+      isDefaultForAgent,
     })
 
     if (!targetEnvironment) {

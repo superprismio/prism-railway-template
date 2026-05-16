@@ -14,8 +14,14 @@ type RouteContext = {
   params: Promise<{ id: string }>
 }
 
-function parseBoolean(value: unknown) {
-  return typeof value === "boolean" ? value : undefined
+function parseBoolean(value: unknown, fieldName: string) {
+  if (value === null || value === undefined) {
+    return undefined
+  }
+  if (typeof value !== "boolean") {
+    throw new TypeError(`${fieldName} must be a boolean`)
+  }
+  return value
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -57,6 +63,16 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ ok: false, error: "Target branch is required" }, { status: 400 })
     }
 
+    let agentEnabled: boolean | undefined
+    try {
+      agentEnabled = parseBoolean(body.agentEnabled ?? body.agent_enabled, "agentEnabled")
+    } catch (error) {
+      return NextResponse.json(
+        { ok: false, error: error instanceof Error ? error.message : "Invalid boolean value" },
+        { status: 400 },
+      )
+    }
+
     const targetApp = updateTargetApp(targetAppId, {
       name,
       description:
@@ -68,7 +84,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           ? parseNullableString(body.repoUrl ?? body.repo_url) ?? null
           : undefined,
       defaultBranch,
-      agentEnabled: parseBoolean(body.agentEnabled ?? body.agent_enabled),
+      agentEnabled,
     })
 
     if (!targetApp) {
