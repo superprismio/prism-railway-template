@@ -30,7 +30,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { AdminBoardData, AdminWorkspaceData, ChangeRequestRecord } from "@/lib/admin";
+import type {
+  AdminBoardData,
+  AdminWorkspaceData,
+  ChangeRequestRecord,
+} from "@/lib/admin";
 import type { Capability } from "@/lib/role-access";
 
 import {
@@ -46,7 +50,15 @@ import {
   type RequestSortValue,
 } from "./change-request-utils";
 
-const workspaceTabs = ["requests", "codex-console", "tasks", "skills", "workflows", "hooks", "settings"];
+const workspaceTabs = [
+  "requests",
+  "codex-console",
+  "tasks",
+  "skills",
+  "workflows",
+  "hooks",
+  "settings",
+];
 
 function canUse(capabilities: readonly Capability[], capability: Capability) {
   return capabilities.includes(capability);
@@ -116,15 +128,22 @@ export function ChangeBoard({
   }, []);
 
   const workflowByKey = useMemo(
-    () => new Map((data.workflows ?? []).map((workflow) => [workflow.key, workflow])),
+    () =>
+      new Map(
+        (data.workflows ?? []).map((workflow) => [workflow.key, workflow]),
+      ),
     [data.workflows],
   );
-  const workflowStepForRequest = (request: AdminBoardData["changeRequests"][number]) =>
+  const workflowStepForRequest = (
+    request: AdminBoardData["changeRequests"][number],
+  ) =>
     workflowStepForKey(
       request.currentWorkflowStepKey,
       workflowSteps(workflowByKey.get(request.workflowKey) ?? null),
     ).step;
-  const closedCount = data.changeRequests.filter((request) => workflowStepForRequest(request).type === "terminal").length;
+  const closedCount = data.changeRequests.filter(
+    (request) => workflowStepForRequest(request).type === "terminal",
+  ).length;
   const activeCount = data.changeRequests.length - closedCount;
 
   const selectedRequest = useMemo(
@@ -140,7 +159,7 @@ export function ChangeBoard({
     ? environmentForRequest(selectedRequest, data.targetEnvironments)
     : null;
   const selectedWorkflow = selectedRequest
-    ? workflowByKey.get(selectedRequest.workflowKey) ?? null
+    ? (workflowByKey.get(selectedRequest.workflowKey) ?? null)
     : null;
   const selectedWorkflowStep = selectedRequest
     ? workflowStepForKey(
@@ -234,7 +253,9 @@ export function ChangeBoard({
     return data.changeRequests
       .filter((request) => {
         const workflowStep = workflowStepForRequest(request);
-        const isClosed = workflowStep.type === "terminal" || request.workflowRunStatus === "completed";
+        const isClosed =
+          workflowStep.type === "terminal" ||
+          request.workflowRunStatus === "completed";
         const needsReview = !isClosed && workflowStep.type === "gate";
         if (lifecycleFilter === "open" && isClosed) {
           return false;
@@ -312,7 +333,13 @@ export function ChangeBoard({
         if (tab === "settings") return canManageSettings;
         return true;
       }),
-    [canManageSettings, canManageSkills, canManageTasks, canManageWorkflows, canRunAgent],
+    [
+      canManageSettings,
+      canManageSkills,
+      canManageTasks,
+      canManageWorkflows,
+      canRunAgent,
+    ],
   );
 
   useEffect(() => {
@@ -327,12 +354,6 @@ export function ChangeBoard({
         branding={data.branding}
         actions={
           <>
-            {canCreateRequest ? (
-              <Button type="button" onClick={() => setIsNewRequestOpen(true)}>
-                <FilePlus className="h-4 w-4" />
-                <span className="hidden sm:inline">Add Request</span>
-              </Button>
-            ) : null}
             {data.setup.prismMemory.configured ? (
               <Button asChild variant="outline">
                 <Link href="/admin/memory">
@@ -457,7 +478,9 @@ export function ChangeBoard({
                   </h1>
                   {selectedRequest ? (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <Badge variant={workflowStepVariant(selectedWorkflowStep)}>
+                      <Badge
+                        variant={workflowStepVariant(selectedWorkflowStep)}
+                      >
                         {selectedWorkflowStep?.label ?? "Request"}
                       </Badge>
                       <Badge
@@ -627,7 +650,8 @@ export function ChangeBoard({
             <div className="border-b border-border/60 px-5 py-4 md:px-6">
               <h1 className="text-2xl font-semibold tracking-tight">Skills</h1>
               <p className="text-sm text-muted-foreground">
-                View built-in and instance custom Codex skills available to Prism.
+                View built-in and instance custom Codex skills available to
+                Prism.
               </p>
             </div>
 
@@ -638,7 +662,9 @@ export function ChangeBoard({
         <TabsContent value="workflows" className="mt-0 flex-1">
           <section className="min-h-full">
             <div className="border-b border-border/60 px-5 py-4 md:px-6">
-              <h1 className="text-2xl font-semibold tracking-tight">Workflows</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Workflows
+              </h1>
               <p className="text-sm text-muted-foreground">
                 View request workflow definitions and their agent configuration.
               </p>
