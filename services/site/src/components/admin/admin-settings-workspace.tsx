@@ -6,6 +6,8 @@ import {
   Bot,
   GitBranch,
   KeyRound,
+  Power,
+  Save,
   ShieldAlert,
   UserPlus,
   Users,
@@ -683,6 +685,149 @@ function RepositorySetup({
   targetApps: TargetAppRecord[];
   targetEnvironments: TargetEnvironmentRecord[];
 }) {
+  const [drafts, setDrafts] = useState(() =>
+    Object.fromEntries(
+      targetApps.map((targetApp) => {
+        const environments = targetEnvironments.filter(
+          (environment) => environment.targetAppId === targetApp.id,
+        );
+        const defaultEnvironment =
+          environments.find((environment) => environment.isDefaultForAgent) ??
+          environments[0];
+
+        return [
+          targetApp.id,
+          {
+            name: targetApp.name,
+            repoUrl: targetApp.repoUrl ?? "",
+            defaultBranch: defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
+            description: targetApp.description ?? "",
+            agentEnabled: targetApp.agentEnabled,
+            defaultEnvironmentId: defaultEnvironment?.id ?? "",
+          },
+        ];
+      }),
+    ),
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [savingTargetId, setSavingTargetId] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setDrafts(
+      Object.fromEntries(
+        targetApps.map((targetApp) => {
+          const environments = targetEnvironments.filter(
+            (environment) => environment.targetAppId === targetApp.id,
+          );
+          const defaultEnvironment =
+            environments.find((environment) => environment.isDefaultForAgent) ??
+            environments[0];
+
+          return [
+            targetApp.id,
+            {
+              name: targetApp.name,
+              repoUrl: targetApp.repoUrl ?? "",
+              defaultBranch: defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
+              description: targetApp.description ?? "",
+              agentEnabled: targetApp.agentEnabled,
+              defaultEnvironmentId: defaultEnvironment?.id ?? "",
+            },
+          ];
+        }),
+      ),
+    );
+  }, [targetApps, targetEnvironments]);
+
+  function updateDraft(
+    targetAppId: string,
+    patch: Partial<{
+      name: string;
+      repoUrl: string;
+      defaultBranch: string;
+      description: string;
+      agentEnabled: boolean;
+      defaultEnvironmentId: string;
+    }>,
+  ) {
+    setDrafts((current) => ({
+      ...current,
+      [targetAppId]: Object.assign(
+        {
+          name: "",
+          repoUrl: "",
+          defaultBranch: "main",
+          description: "",
+          agentEnabled: true,
+          defaultEnvironmentId: "",
+        },
+        current[targetAppId],
+        patch,
+      ),
+    }));
+  }
+
+  function saveTarget(targetApp: TargetAppRecord) {
+    const draft = drafts[targetApp.id];
+    if (!draft) return;
+    const name = draft.name.trim();
+    const defaultBranch = draft.defaultBranch.trim();
+
+    if (!name || !defaultBranch) {
+      setError("Name and target branch are required.");
+      return;
+    }
+
+    setError(null);
+    setSavingTargetId(targetApp.id);
+    startTransition(async () => {
+      try {
+        const targetResponse = await fetch(`/admin/target-apps/${targetApp.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            name,
+            repoUrl: draft.repoUrl.trim() || null,
+            defaultBranch,
+            description: draft.description.trim() || null,
+            agentEnabled: draft.agentEnabled,
+          }),
+        });
+        const targetPayload = (await targetResponse.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+        };
+        if (!targetResponse.ok || targetPayload.ok === false) {
+          throw new Error(targetPayload.error || "Could not save target");
+        }
+
+        if (draft.defaultEnvironmentId) {
+          const environmentResponse = await fetch(`/admin/target-environments/${draft.defaultEnvironmentId}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              branch: defaultBranch,
+              isDefaultForAgent: true,
+            }),
+          });
+          const environmentPayload = (await environmentResponse.json().catch(() => ({}))) as {
+            ok?: boolean;
+            error?: string;
+          };
+          if (!environmentResponse.ok || environmentPayload.ok === false) {
+            throw new Error(environmentPayload.error || "Saved target, but could not update target branch");
+          }
+        }
+
+        window.location.reload();
+      } catch (saveError) {
+        setError(saveError instanceof Error ? saveError.message : "Could not save target");
+        setSavingTargetId(null);
+      }
+    });
+  }
+
   return (
     <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
       <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
@@ -731,6 +876,11 @@ function RepositorySetup({
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3">
+          {error ? (
+            <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          ) : null}
           {targetApps.length ? (
             targetApps.map((targetApp) => {
               const environments = targetEnvironments.filter(
@@ -739,37 +889,91 @@ function RepositorySetup({
               const defaultEnvironment =
                 environments.find((environment) => environment.isDefaultForAgent) ??
                 environments[0];
+              const draft = drafts[targetApp.id] ?? {
+                name: targetApp.name,
+                repoUrl: targetApp.repoUrl ?? "",
+                defaultBranch: defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
+                description: targetApp.description ?? "",
+                agentEnabled: targetApp.agentEnabled,
+                defaultEnvironmentId: defaultEnvironment?.id ?? "",
+              };
               return (
                 <div
                   key={targetApp.id}
-                  className="rounded-xl border border-border bg-background/70 p-4"
+                  className="grid gap-4 rounded-xl border border-border bg-background/70 p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold">{targetApp.name}</p>
+                      <p className="font-semibold">{draft.name || targetApp.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {targetApp.repoUrl ?? "No repo URL"}
+                        {draft.repoUrl || "No repo URL"}
                       </p>
                     </div>
-                    <Badge variant={targetApp.agentEnabled ? "secondary" : "muted"}>
-                      {targetApp.agentEnabled ? "Agent on" : "Agent off"}
+                    <Badge variant={draft.agentEnabled ? "secondary" : "muted"}>
+                      {draft.agentEnabled ? "Active" : "Inactive"}
                     </Badge>
                   </div>
-                  <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-                    <span>
-                      Target branch:{" "}
-                      <span className="font-medium text-foreground">
-                        {defaultEnvironment?.branch ??
-                          targetApp.defaultBranch ??
-                          "main"}
-                      </span>
-                    </span>
-                    <span>
-                      Workspace:{" "}
-                      <span className="font-medium text-foreground">
-                        {defaultEnvironment ? "ready" : "not created"}
-                      </span>
-                    </span>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor={`target-name-${targetApp.id}`}>Name</Label>
+                      <Input
+                        id={`target-name-${targetApp.id}`}
+                        value={draft.name}
+                        onChange={(event) => updateDraft(targetApp.id, { name: event.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`target-branch-${targetApp.id}`}>Target Branch</Label>
+                      <Input
+                        id={`target-branch-${targetApp.id}`}
+                        value={draft.defaultBranch}
+                        onChange={(event) => updateDraft(targetApp.id, { defaultBranch: event.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label htmlFor={`target-repo-${targetApp.id}`}>GitHub Repo URL</Label>
+                      <Input
+                        id={`target-repo-${targetApp.id}`}
+                        value={draft.repoUrl}
+                        onChange={(event) => updateDraft(targetApp.id, { repoUrl: event.target.value })}
+                        placeholder="https://github.com/org/repo.git"
+                      />
+                    </div>
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label htmlFor={`target-description-${targetApp.id}`}>Description</Label>
+                      <Textarea
+                        id={`target-description-${targetApp.id}`}
+                        value={draft.description}
+                        onChange={(event) => updateDraft(targetApp.id, { description: event.target.value })}
+                        placeholder="What this target repo represents."
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-3">
+                    <label className="inline-flex items-center gap-2 text-sm font-medium">
+                      <input
+                        type="checkbox"
+                        checked={draft.agentEnabled}
+                        onChange={(event) => updateDraft(targetApp.id, { agentEnabled: event.target.checked })}
+                        className="h-4 w-4 accent-primary"
+                      />
+                      Available for new requests
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">
+                        {defaultEnvironment ? "default env ready" : "no default env"}
+                      </Badge>
+                      <Button
+                        type="button"
+                        onClick={() => saveTarget(targetApp)}
+                        disabled={isPending && savingTargetId === targetApp.id}
+                      >
+                        {draft.agentEnabled ? <Save className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+                        Save target
+                      </Button>
+                    </div>
                   </div>
                 </div>
               );

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { createAuditLog, createTargetApp } from "@/lib/app-core"
+import { createAuditLog, createTargetApp, createTargetEnvironment } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
 import { requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
@@ -49,12 +49,45 @@ export async function POST(request: Request) {
       agentEnabled: true,
     })
 
+    if (!targetApp) {
+      redirect("/admin?tab=settings&error=target-app")
+    }
+
+    const targetEnvironment = createTargetEnvironment({
+      targetAppId: targetApp.id,
+      slug: `${slug || "repo"}-default`,
+      name: "Default",
+      kind: "development",
+      branch: defaultBranch,
+      baseUrl: null,
+      deployBackend: "local",
+      deployConfig: {
+        path: "/data/workspaces",
+      },
+      agentWritable: true,
+      autoDeployEnabled: false,
+      humanReviewRequired: true,
+      isDefaultForAgent: true,
+    })
+
+    if (!targetEnvironment) {
+      redirect("/admin?tab=settings&error=target-environment")
+    }
+
     createAuditLog({
       actorUserId: null,
       actionType: "admin.target_app.create",
       targetType: "target_app",
-      targetId: targetApp?.id ?? null,
+      targetId: targetApp.id,
       meta: { slug, name, deployBackend: "github" },
+    })
+
+    createAuditLog({
+      actorUserId: null,
+      actionType: "admin.target_environment.create",
+      targetType: "target_environment",
+      targetId: targetEnvironment.id,
+      meta: { targetAppId: targetApp.id, slug: `${slug || "repo"}-default`, kind: "development", deployBackend: "local" },
     })
 
     redirect("/admin?tab=settings")

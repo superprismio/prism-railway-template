@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createChangeRequest, getChangeRequest, getDefaultTargetEnvironmentForApp, getWorkflowByKey } from "@/lib/app-core"
+import { createChangeRequest, getChangeRequest, getDefaultTargetEnvironmentForApp, getTargetApp, getWorkflowByKey } from "@/lib/app-core"
 
 import {
   parseNullableString,
@@ -50,6 +50,10 @@ export async function POST(request: Request) {
   }
   if (targetRequired && !targetAppId) {
     return NextResponse.json({ ok: false, error: `Workflow ${workflowKey} requires targetAppId` }, { status: 400 })
+  }
+  const targetApp = targetAppId ? getTargetApp(targetAppId) : null
+  if (targetAppId && (!targetApp || !targetApp.agentEnabled)) {
+    return NextResponse.json({ ok: false, error: "Target app is inactive or unavailable" }, { status: 400 })
   }
   if (!trackedChangeRequestTypes.includes(requestType as typeof trackedChangeRequestTypes[number])) {
     return NextResponse.json({

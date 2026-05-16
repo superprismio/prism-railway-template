@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { createAuditLog, createChangeRequest, getDefaultTargetEnvironmentForApp, getWorkflowByKey } from "@/lib/app-core"
+import { createAuditLog, createChangeRequest, getDefaultTargetEnvironmentForApp, getTargetApp, getWorkflowByKey } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
 import {
@@ -33,6 +33,7 @@ export async function POST(request: Request) {
     const target = workflow?.definition?.target
     const targetRequired = workflowKey === "change-request-default"
       || (isRecord(target) && target.required === true)
+    const targetApp = targetAppId ? getTargetApp(targetAppId) : null
 
     if (
       !title ||
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
       !workflow ||
       !workflow.enabled ||
       (targetRequired && !targetAppId) ||
+      (targetAppId && (!targetApp || !targetApp.agentEnabled)) ||
       !trackedChangeRequestTypes.includes(requestType as typeof trackedChangeRequestTypes[number]) ||
       !trackedChangeRequestPriorities.includes(priority as typeof trackedChangeRequestPriorities[number])
     ) {
