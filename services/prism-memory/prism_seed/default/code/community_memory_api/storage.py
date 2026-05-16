@@ -4,7 +4,6 @@ import json
 import os
 import re
 import uuid
-from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -13,7 +12,6 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 _BUCKET_RE = re.compile(r"^[a-z0-9_-]+$")
 _SAFE_DOC_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 _SAFE_ARTIFACT_ID_RE = re.compile(r"^[a-zA-Z0-9._~-]+$")
-_MEMORY_ARTIFACT_B64_PREFIX = "memory--b64--"
 
 
 class StorageError(RuntimeError):
@@ -613,29 +611,16 @@ class FilesystemStorageBackend:
 
     def _resolve_artifact_path(self, artifact_id: str) -> Tuple[Path, str, str]:
         normalized = artifact_id.strip().removesuffix(".json")
-        if not normalized:
+        if not normalized or not _SAFE_ARTIFACT_ID_RE.fullmatch(normalized):
             raise StorageError("invalid_query", "Invalid artifact id")
         matches: List[Tuple[Path, str, str]] = []
-        matched_paths: Set[Path] = set()
-        def add_match(path: Path, status: str, category: str) -> None:
-            resolved = path.resolve()
-            if resolved in matched_paths:
-                return
-            matched_paths.add(resolved)
-            matches.append((path, status, category))
-
-        direct_memory_id = self._decode_memory_artifact_id(normalized)
-        if direct_memory_id and _SAFE_ARTIFACT_ID_RE.fullmatch(direct_memory_id):
-            for status in ("incoming", "processed", "rejected"):
-                candidate = self.root / "inbox" / "memory" / status / f"{direct_memory_id}.json"
-                if candidate.is_file():
-                    add_match(candidate, status, "memory")
-        for item in self._list_memory_artifacts():
-            if item.get("id") == normalized or Path(str(item.get("path") or "")).stem == normalized:
-                add_match(self.root / str(item["path"]), str(item["status"]), "memory")
+        for status in ("incoming", "processed", "rejected"):
+            candidate = self.root / "inbox" / "memory" / status / f"{normalized}.json"
+            if candidate.is_file():
+                matches.append((candidate, status, "memory"))
         for item in self._list_knowledge_artifacts():
             if item.get("id") == normalized:
-                add_match(self.root / str(item["path"]), str(item["status"]), "knowledge")
+                matches.append((self.root / str(item["path"]), str(item["status"]), "knowledge"))
         if not matches:
             raise StorageError("not_found", f"Artifact not found: {artifact_id}")
         if len(matches) > 1:
@@ -707,10 +692,7 @@ class FilesystemStorageBackend:
     def _artifact_id_for_path(self, path: Path, status: str) -> str:
         category = self._artifact_category_for_path(path)
         if category == "memory":
-            if _SAFE_ARTIFACT_ID_RE.fullmatch(path.stem):
-                return path.stem
-            encoded = urlsafe_b64encode(path.stem.encode("utf-8")).decode("ascii").rstrip("=")
-            return f"{_MEMORY_ARTIFACT_B64_PREFIX}{encoded}"
+            return path.stem
         try:
             if path.is_relative_to(self.knowledge_docs):
                 relative = path.relative_to(self.knowledge_docs).with_suffix("").as_posix()
@@ -723,18 +705,6 @@ class FilesystemStorageBackend:
         relative = path.relative_to(self.root).as_posix()
         safe_relative = relative.replace("/", "~")
         return f"knowledge-inbox--{status}--{safe_relative}"
-
-    def _decode_memory_artifact_id(self, artifact_id: str) -> Optional[str]:
-        if not artifact_id.startswith(_MEMORY_ARTIFACT_B64_PREFIX):
-            return artifact_id
-        encoded = artifact_id[len(_MEMORY_ARTIFACT_B64_PREFIX):]
-        if not encoded or not _SAFE_ARTIFACT_ID_RE.fullmatch(encoded):
-            return None
-        padded = encoded + ("=" * (-len(encoded) % 4))
-        try:
-            return urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
-        except (UnicodeDecodeError, ValueError):
-            return None
 
     def _artifact_category_for_path(self, path: Path) -> str:
         try:

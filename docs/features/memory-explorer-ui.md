@@ -236,8 +236,6 @@ The production build includes:
 - `/admin/memory/api/artifacts/[id]`
 - `/admin/memory/api/knowledge/sources`
 
-Prism Memory also has regression coverage for opening memory artifacts whose filenames are not safe URL IDs, including Discord message artifacts.
-
 ## Next Steps
 
 Near-term:

@@ -482,6 +482,9 @@ export function MemoryExplorerWorkspace({
   const [limit, setLimit] = useState("50");
   const [sortValue, setSortValue] = useState<SortValue>("created-desc");
   const [selectedArtifactIds, setSelectedArtifactIds] = useState<string[]>([]);
+  const [selectedArtifactSnapshots, setSelectedArtifactSnapshots] = useState<
+    Record<string, PrismArtifactSummary>
+  >({});
 
   const [sources, setSources] = useState<PrismKnowledgeSource[]>([]);
   const [sourceError, setSourceError] = useState<string | null>(null);
@@ -490,9 +493,9 @@ export function MemoryExplorerWorkspace({
 
   const selectedArtifactsForChat = useMemo(
     () => selectedArtifactIds
-      .map((id) => artifacts.find((artifact) => artifact.id === id))
+      .map((id) => selectedArtifactSnapshots[id] ?? artifacts.find((artifact) => artifact.id === id))
       .filter((artifact): artifact is PrismArtifactSummary => Boolean(artifact)),
-    [artifacts, selectedArtifactIds],
+    [artifacts, selectedArtifactIds, selectedArtifactSnapshots],
   );
 
   const selectedSource = useMemo(
@@ -626,12 +629,24 @@ export function MemoryExplorerWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, status, source, type, limit]);
 
-  function toggleArtifactForChat(artifactId: string) {
-    setSelectedArtifactIds((current) =>
-      current.includes(artifactId)
-        ? current.filter((id) => id !== artifactId)
-        : [...current, artifactId],
-    );
+  function setArtifactChatSelection(artifact: PrismArtifactSummary, selected: boolean) {
+    setSelectedArtifactIds((current) => {
+      if (selected) {
+        return current.includes(artifact.id) ? current : [...current, artifact.id];
+      }
+      return current.filter((id) => id !== artifact.id);
+    });
+    setSelectedArtifactSnapshots((current) => {
+      if (!selected) {
+        const next = { ...current };
+        delete next[artifact.id];
+        return next;
+      }
+      return {
+        ...current,
+        [artifact.id]: artifact,
+      };
+    });
   }
 
   return (
@@ -843,7 +858,7 @@ export function MemoryExplorerWorkspace({
                         <TableCell onClick={(event) => event.stopPropagation()}>
                           <Checkbox
                             checked={selectedArtifactIds.includes(artifact.id)}
-                            onCheckedChange={() => toggleArtifactForChat(artifact.id)}
+                            onCheckedChange={(checked) => setArtifactChatSelection(artifact, checked === true)}
                             aria-label={`Attach ${artifact.filename} to chat`}
                           />
                         </TableCell>
@@ -1105,10 +1120,18 @@ export function MemoryExplorerWorkspace({
         <TabsContent value="chat" className="mt-0 flex-1">
           <MemoryChat
             selectedArtifacts={selectedArtifactsForChat}
-            onRemoveArtifact={(id) =>
-              setSelectedArtifactIds((current) => current.filter((artifactId) => artifactId !== id))
-            }
-            onClearArtifacts={() => setSelectedArtifactIds([])}
+            onRemoveArtifact={(id) => {
+              setSelectedArtifactIds((current) => current.filter((artifactId) => artifactId !== id));
+              setSelectedArtifactSnapshots((current) => {
+                const next = { ...current };
+                delete next[id];
+                return next;
+              });
+            }}
+            onClearArtifacts={() => {
+              setSelectedArtifactIds([]);
+              setSelectedArtifactSnapshots({});
+            }}
           />
         </TabsContent>
       </Tabs>
