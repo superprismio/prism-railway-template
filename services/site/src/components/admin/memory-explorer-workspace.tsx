@@ -2,15 +2,21 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  Bot,
   ExternalLink,
   FileSearch,
   Loader2,
+  LoaderCircle,
+  MessageSquare,
+  Paperclip,
+  Plus,
   RefreshCw,
-  Search,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -29,14 +35,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import type {
   AdminSetupStatus,
 } from "@/lib/admin";
 import type {
   PrismArtifactDetail,
   PrismArtifactSummary,
-  PrismKnowledgeDoc,
-  PrismKnowledgeSearchResult,
   PrismKnowledgeSource,
 } from "@/lib/prism-memory";
 
@@ -50,11 +55,6 @@ type SourcesPayload = {
   sources: PrismKnowledgeSource[];
   total: number;
 };
-
-type KnowledgeSearchPayload =
-  | { results: PrismKnowledgeSearchResult[]; total?: number }
-  | { docs: PrismKnowledgeSearchResult[]; total?: number }
-  | { items: PrismKnowledgeSearchResult[]; total?: number };
 
 type SortValue =
   | "created-desc"
@@ -101,19 +101,6 @@ function statusVariant(status?: string | null) {
 
 function jsonPreview(value: unknown) {
   return JSON.stringify(value ?? {}, null, 2);
-}
-
-function knowledgeResults(payload: KnowledgeSearchPayload) {
-  if ("results" in payload && Array.isArray(payload.results)) {
-    return payload.results;
-  }
-  if ("docs" in payload && Array.isArray(payload.docs)) {
-    return payload.docs;
-  }
-  if ("items" in payload && Array.isArray(payload.items)) {
-    return payload.items;
-  }
-  return [];
 }
 
 function extractErrorMessage(payload: unknown, response: Response) {
@@ -194,6 +181,287 @@ function DetailShell({
   );
 }
 
+type MemoryChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
+
+type StoredMemoryChatMessage = {
+  id: string;
+  role: string;
+  content: string;
+};
+
+const memoryChatSessionStorageKey = "prism-memory-chat-session-id";
+
+function randomMessageId(prefix: string) {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function artifactContextBlock(artifacts: PrismArtifactSummary[]) {
+  if (!artifacts.length) return "";
+  const rows = artifacts.map((artifact) =>
+    [
+      `- id: ${artifact.id}`,
+      `  filename: ${artifact.filename}`,
+      `  type: ${artifact.type ?? "unknown"}`,
+      `  source: ${artifact.source ?? "unknown"}`,
+      `  status: ${artifact.status}`,
+      artifact.url ? `  source_url: ${artifact.url}` : null,
+      `  preview: ${artifact.preview || artifact.path}`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
+  return [
+    "Selected Prism Memory artifacts:",
+    ...rows,
+    "",
+    "Use these artifact IDs as citations when answering. If more detail is needed, use Prism Memory reader access to fetch the specific artifacts instead of guessing from previews.",
+  ].join("\n");
+}
+
+function displayMemoryChatContent(role: string, content: string) {
+  if (role !== "user") return content;
+  const marker = "\n\nAdmin question:\n";
+  const markerIndex = content.lastIndexOf(marker);
+  return markerIndex >= 0 ? content.slice(markerIndex + marker.length).trim() : content;
+}
+
+function MemoryChat({
+  selectedArtifacts,
+  onRemoveArtifact,
+  onClearArtifacts,
+}: {
+  selectedArtifacts: PrismArtifactSummary[];
+  onRemoveArtifact: (id: string) => void;
+  onClearArtifacts: () => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<MemoryChatMessage[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isPending, setIsPending] = useState(false);
+
+  useEffect(() => {
+    const storedSessionId = window.localStorage.getItem(memoryChatSessionStorageKey);
+    if (!storedSessionId) return;
+
+    setIsLoadingHistory(true);
+    fetch(`/admin/responses?session_id=${encodeURIComponent(storedSessionId)}`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          messages?: StoredMemoryChatMessage[];
+          error?: string;
+        };
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "Could not load memory chat history");
+        }
+        const restoredMessages = Array.isArray(payload.messages)
+          ? payload.messages
+              .filter((message) => message.role === "user" || message.role === "assistant")
+              .map((message) => ({
+                id: message.id,
+                role: message.role as "user" | "assistant",
+                content: displayMemoryChatContent(message.role, message.content),
+              }))
+          : [];
+        setSessionId(storedSessionId);
+        setMessages(restoredMessages);
+      })
+      .catch(() => {
+        window.localStorage.removeItem(memoryChatSessionStorageKey);
+      })
+      .finally(() => setIsLoadingHistory(false));
+  }, []);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const prompt = draft.trim();
+    if (!prompt || isPending) return;
+
+    const context = artifactContextBlock(selectedArtifacts);
+    const runtimePrompt = [
+      "You are answering inside the Prism Memory Explorer.",
+      "Answer questions about Prism Memory and cite artifact IDs, doc slugs, or source URLs when available.",
+      "If the admin asks you to create content for the knowledge base, draft it first and explain that writing it back should use the Prism Memory write path or knowledge inbox with explicit approval.",
+      context || "No artifacts are currently attached by the admin.",
+      "",
+      `Admin question:\n${prompt}`,
+    ].join("\n\n");
+
+    setDraft("");
+    setError(null);
+    setMessages((current) => [
+      ...current,
+      { id: randomMessageId("user"), role: "user", content: prompt },
+    ]);
+    setIsPending(true);
+
+    try {
+      const response = await fetch("/admin/responses", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          input: [{ role: "user", content: runtimePrompt }],
+          session_id: sessionId,
+          requested_skills: ["prism-api-reader"],
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        error?: string;
+        output_text?: string;
+        session_id?: string;
+      };
+
+      if (!response.ok || !payload.output_text) {
+        throw new Error(payload.error || "The response endpoint did not return output_text");
+      }
+
+      const nextSessionId = payload.session_id ?? sessionId;
+      setSessionId(nextSessionId);
+      if (nextSessionId) {
+        window.localStorage.setItem(memoryChatSessionStorageKey, nextSessionId);
+      }
+      setMessages((current) => [
+        ...current,
+        {
+          id: randomMessageId("assistant"),
+          role: "assistant",
+          content: payload.output_text!,
+        },
+      ]);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unknown memory chat error");
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  function startNewSession() {
+    window.localStorage.removeItem(memoryChatSessionStorageKey);
+    setSessionId(null);
+    setMessages([]);
+    setError(null);
+  }
+
+  return (
+    <section className="grid min-h-full xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="flex min-h-[calc(100vh-186px)] flex-col">
+        <div className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4 md:px-6">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Bot className="h-4 w-4" />
+            <span>{sessionId ? "Session live" : "New session"}</span>
+          </div>
+          {sessionId ? (
+            <Button type="button" variant="outline" size="sm" onClick={startNewSession}>
+              <Plus className="h-4 w-4" />
+              New
+            </Button>
+          ) : null}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 md:px-6">
+          {isLoadingHistory ? (
+            <EmptyState title="Loading memory chat" body="Restoring the latest Memory Chat session for this browser." />
+          ) : messages.length ? (
+            <div className="space-y-3">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`px-4 py-3 text-sm leading-6 ${
+                    message.role === "assistant"
+                      ? "border-l-2 border-border bg-muted/20 text-foreground"
+                      : "ml-auto max-w-3xl border-l-2 border-primary/60 bg-primary/12 text-foreground"
+                  }`}
+                >
+                  <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.18em]">
+                    <Badge variant={message.role === "assistant" ? "outline" : "secondary"}>
+                      {message.role}
+                    </Badge>
+                  </div>
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="Ask about memory"
+              body="Attach artifacts from the Artifacts tab or ask a broader question about the knowledge base."
+            />
+          )}
+        </div>
+        <form onSubmit={handleSubmit} className="border-t border-border/60 px-5 py-4 md:px-6">
+          <div className="space-y-3">
+            <Textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Ask about selected artifacts, summaries, provenance, or what should become knowledge."
+              className="min-h-28 rounded-none border-x-0 border-t-0 px-0 shadow-none focus-visible:ring-0"
+              required
+            />
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Reader access is requested automatically; write-back should be explicitly approved.
+              </p>
+              <Button type="submit" disabled={isPending || !draft.trim()}>
+                {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
+                {isPending ? "Running" : "Send"}
+              </Button>
+            </div>
+          </div>
+        </form>
+      </div>
+      <aside className="border-t border-border/60 bg-card/30 xl:border-l xl:border-t-0">
+        <div className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Paperclip className="h-4 w-4" />
+            Attached
+            <Badge variant="outline">{selectedArtifacts.length}</Badge>
+          </div>
+          {selectedArtifacts.length ? (
+            <Button type="button" variant="ghost" size="sm" onClick={onClearArtifacts}>
+              Clear
+            </Button>
+          ) : null}
+        </div>
+        <div className="max-h-[calc(100vh-230px)] overflow-auto p-5">
+          {selectedArtifacts.length ? (
+            <div className="space-y-3">
+              {selectedArtifacts.map((artifact) => (
+                <div key={artifact.id} className="border border-border bg-background/70 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{artifact.filename}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{artifact.type ?? "unknown"}</p>
+                    </div>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => onRemoveArtifact(artifact.id)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">
+                    {artifact.preview || artifact.path}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No attachments" body="Use checkboxes in Artifacts to add files to this chat." />
+          )}
+        </div>
+      </aside>
+    </section>
+  );
+}
+
 export function MemoryExplorerWorkspace({
   setup,
 }: {
@@ -213,25 +481,19 @@ export function MemoryExplorerWorkspace({
   const [artifactSearch, setArtifactSearch] = useState("");
   const [limit, setLimit] = useState("50");
   const [sortValue, setSortValue] = useState<SortValue>("created-desc");
-
-  const [knowledgeQuery, setKnowledgeQuery] = useState("");
-  const [knowledgeKind, setKnowledgeKind] = useState("");
-  const [knowledgeTag, setKnowledgeTag] = useState("");
-  const [knowledgeEntity, setKnowledgeEntity] = useState("");
-  const [knowledgeResultsState, setKnowledgeResultsState] = useState<
-    PrismKnowledgeSearchResult[]
-  >([]);
-  const [knowledgeDoc, setKnowledgeDoc] = useState<PrismKnowledgeDoc | null>(
-    null,
-  );
-  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
-  const [knowledgeDetailLoading, setKnowledgeDetailLoading] = useState(false);
-  const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
+  const [selectedArtifactIds, setSelectedArtifactIds] = useState<string[]>([]);
 
   const [sources, setSources] = useState<PrismKnowledgeSource[]>([]);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [sourceLoading, setSourceLoading] = useState(false);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
+
+  const selectedArtifactsForChat = useMemo(
+    () => selectedArtifactIds
+      .map((id) => artifacts.find((artifact) => artifact.id === id))
+      .filter((artifact): artifact is PrismArtifactSummary => Boolean(artifact)),
+    [artifacts, selectedArtifactIds],
+  );
 
   const selectedSource = useMemo(
     () => sources.find((item) => item.id === selectedSourceId) ?? null,
@@ -353,54 +615,9 @@ export function MemoryExplorerWorkspace({
     }
   }
 
-  async function runKnowledgeSearch(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
-    setKnowledgeLoading(true);
-    setKnowledgeError(null);
-    try {
-      const params = new URLSearchParams();
-      if (knowledgeQuery.trim()) params.set("q", knowledgeQuery.trim());
-      if (knowledgeKind.trim()) params.set("kind", knowledgeKind.trim());
-      if (knowledgeTag.trim()) params.set("tag", knowledgeTag.trim());
-      if (knowledgeEntity.trim()) params.set("entity", knowledgeEntity.trim());
-      params.set("limit", "25");
-
-      const payload = await fetchJson<KnowledgeSearchPayload>(
-        `/admin/memory/api/knowledge/search?${params.toString()}`,
-      );
-      setKnowledgeResultsState(knowledgeResults(payload));
-      setKnowledgeDoc(null);
-    } catch (error) {
-      setKnowledgeError(
-        error instanceof Error ? error.message : "Knowledge search failed",
-      );
-    } finally {
-      setKnowledgeLoading(false);
-    }
-  }
-
-  async function loadKnowledgeDoc(slug: string) {
-    setKnowledgeDetailLoading(true);
-    setKnowledgeError(null);
-    try {
-      const path = slug.split("/").map(encodeURIComponent).join("/");
-      const payload = await fetchJson<PrismKnowledgeDoc>(
-        `/admin/memory/api/knowledge/docs/${path}`,
-      );
-      setKnowledgeDoc(payload);
-    } catch (error) {
-      setKnowledgeError(
-        error instanceof Error ? error.message : "Could not load knowledge doc",
-      );
-    } finally {
-      setKnowledgeDetailLoading(false);
-    }
-  }
-
   useEffect(() => {
     loadArtifacts();
     loadSources();
-    void runKnowledgeSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -408,6 +625,14 @@ export function MemoryExplorerWorkspace({
     loadArtifacts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, status, source, type, limit]);
+
+  function toggleArtifactForChat(artifactId: string) {
+    setSelectedArtifactIds((current) =>
+      current.includes(artifactId)
+        ? current.filter((id) => id !== artifactId)
+        : [...current, artifactId],
+    );
+  }
 
   return (
     <div className="flex min-h-[calc(100vh-65px)] flex-col">
@@ -421,8 +646,8 @@ export function MemoryExplorerWorkspace({
               Memory Explorer
             </h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Browse artifacts, search durable knowledge, and inspect source
-              sync status without exposing Prism keys to the browser.
+              Browse artifacts, inspect knowledge sources, and ask scoped
+              memory questions without exposing Prism keys to the browser.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -450,18 +675,21 @@ export function MemoryExplorerWorkspace({
                 </Badge>
               </TabsTrigger>
               <TabsTrigger
-                value="knowledge"
-                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
-              >
-                Knowledge Search
-              </TabsTrigger>
-              <TabsTrigger
                 value="sources"
                 className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
               >
                 Sources
                 <Badge variant="outline" className="ml-2">
                   {sources.length}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger
+                value="chat"
+                className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+              >
+                Chat
+                <Badge variant="outline" className="ml-2">
+                  {selectedArtifactsForChat.length}
                 </Badge>
               </TabsTrigger>
             </TabsList>
@@ -595,6 +823,7 @@ export function MemoryExplorerWorkspace({
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-12">Chat</TableHead>
                       <TableHead className="w-40">Created</TableHead>
                       <TableHead>File</TableHead>
                       <TableHead className="w-32">Source</TableHead>
@@ -611,6 +840,13 @@ export function MemoryExplorerWorkspace({
                         data-state={selectedArtifact?.id === artifact.id ? "selected" : undefined}
                         onClick={() => loadArtifactDetail(artifact.id)}
                       >
+                        <TableCell onClick={(event) => event.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedArtifactIds.includes(artifact.id)}
+                            onCheckedChange={() => toggleArtifactForChat(artifact.id)}
+                            aria-label={`Attach ${artifact.filename} to chat`}
+                          />
+                        </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {formatDate(artifact.created_at)}
                         </TableCell>
@@ -699,149 +935,6 @@ export function MemoryExplorerWorkspace({
                 <EmptyState
                   title="Select an artifact"
                   body="Choose a row to inspect content, provenance, and the raw JSON payload."
-                />
-              )}
-            </DetailShell>
-          </section>
-        </TabsContent>
-
-        <TabsContent value="knowledge" className="mt-0 flex-1">
-          <section className="grid min-h-full xl:grid-cols-[minmax(0,1fr)_430px]">
-            <div className="min-w-0">
-              <form
-                className="grid gap-3 border-b border-border/60 px-5 py-4 md:px-6 lg:grid-cols-[1.5fr_repeat(3,minmax(140px,180px))_auto]"
-                onSubmit={runKnowledgeSearch}
-              >
-                <div className="space-y-2">
-                  <Label>Question or keyword</Label>
-                  <Input
-                    value={knowledgeQuery}
-                    onChange={(event) => setKnowledgeQuery(event.target.value)}
-                    placeholder="Search handbook, notes, policies..."
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Kind</Label>
-                  <Input
-                    value={knowledgeKind}
-                    onChange={(event) => setKnowledgeKind(event.target.value)}
-                    placeholder="guide"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Tag</Label>
-                  <Input
-                    value={knowledgeTag}
-                    onChange={(event) => setKnowledgeTag(event.target.value)}
-                    placeholder="onboarding"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Entity</Label>
-                  <Input
-                    value={knowledgeEntity}
-                    onChange={(event) => setKnowledgeEntity(event.target.value)}
-                    placeholder="Prism"
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button type="submit" disabled={knowledgeLoading}>
-                    {knowledgeLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Search className="h-4 w-4" />
-                    )}
-                    Search
-                  </Button>
-                </div>
-              </form>
-
-              {knowledgeError ? (
-                <div className="border-b border-border/60 px-5 py-3 text-sm text-destructive md:px-6">
-                  {knowledgeError}
-                </div>
-              ) : null}
-
-              {knowledgeResultsState.length ? (
-                <div className="divide-y divide-border/60">
-                  {knowledgeResultsState.map((result, index) => (
-                    <button
-                      key={`${result.slug ?? result.title ?? index}`}
-                      type="button"
-                      className="block w-full px-5 py-4 text-left hover:bg-muted/40 md:px-6"
-                      onClick={() => result.slug && loadKnowledgeDoc(result.slug)}
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium">
-                          {result.title ?? result.slug ?? "Untitled doc"}
-                        </p>
-                        {result.kind ? (
-                          <Badge variant="outline">{result.kind}</Badge>
-                        ) : null}
-                      </div>
-                      <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-                        {result.summary ?? result.slug}
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {(result.tags ?? []).slice(0, 6).map((tag) => (
-                          <Badge key={tag} variant="muted">
-                            {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-5 md:p-6">
-                  <EmptyState
-                    title={knowledgeLoading ? "Searching knowledge" : "No knowledge results"}
-                    body="Search all indexed knowledge or narrow by kind, tag, or entity."
-                  />
-                </div>
-              )}
-            </div>
-
-            <DetailShell
-              title={knowledgeDoc?.title ?? "Knowledge Detail"}
-              subtitle={knowledgeDoc?.slug}
-            >
-              {knowledgeDetailLoading ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading document...
-                </div>
-              ) : knowledgeDoc ? (
-                <div className="space-y-5">
-                  <div className="flex flex-wrap gap-2">
-                    {knowledgeDoc.kind ? (
-                      <Badge variant="outline">{knowledgeDoc.kind}</Badge>
-                    ) : null}
-                    {(knowledgeDoc.tags ?? []).slice(0, 6).map((tag) => (
-                      <Badge key={tag} variant="muted">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                  {knowledgeDoc.source_url ? (
-                    <Button asChild variant="outline">
-                      <a href={knowledgeDoc.source_url} target="_blank" rel="noreferrer">
-                        <ExternalLink className="h-4 w-4" />
-                        Source
-                      </a>
-                    </Button>
-                  ) : null}
-                  <pre className="max-h-[34rem] overflow-auto whitespace-pre-wrap border border-border bg-background/70 p-3 text-xs leading-5">
-                    {knowledgeDoc.content ?? knowledgeDoc.summary ?? ""}
-                  </pre>
-                  <pre className="max-h-80 overflow-auto border border-border bg-[var(--code-surface)] p-3 text-xs leading-5 text-[var(--code-surface-foreground)]">
-                    {jsonPreview(knowledgeDoc)}
-                  </pre>
-                </div>
-              ) : (
-                <EmptyState
-                  title="Select a knowledge result"
-                  body="Open a result to inspect its content, source metadata, tags, and entities."
                 />
               )}
             </DetailShell>
@@ -1007,6 +1100,16 @@ export function MemoryExplorerWorkspace({
               )}
             </DetailShell>
           </section>
+        </TabsContent>
+
+        <TabsContent value="chat" className="mt-0 flex-1">
+          <MemoryChat
+            selectedArtifacts={selectedArtifactsForChat}
+            onRemoveArtifact={(id) =>
+              setSelectedArtifactIds((current) => current.filter((artifactId) => artifactId !== id))
+            }
+            onClearArtifacts={() => setSelectedArtifactIds([])}
+          />
         </TabsContent>
       </Tabs>
     </div>

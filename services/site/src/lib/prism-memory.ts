@@ -65,23 +65,6 @@ export type PrismKnowledgeSource = {
   }
 }
 
-export type PrismKnowledgeSearchResult = {
-  slug?: string
-  title?: string
-  kind?: string
-  summary?: string
-  tags?: string[]
-  entities?: string[]
-  source_url?: string
-  source_path?: string
-  updated?: string
-  [key: string]: unknown
-}
-
-export type PrismKnowledgeDoc = PrismKnowledgeSearchResult & {
-  content?: string
-}
-
 function prismMemoryBaseUrl() {
   return (
     process.env.PRISM_MEMORY_BASE_URL ||
