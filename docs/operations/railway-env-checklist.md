@@ -25,6 +25,10 @@ Recommended shared references in this project:
 | `codex-runtime` | `APP_API_BASE_URL` | `http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}` |
 | `codex-runtime` | `PRISM_API_BASE` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}` |
 | `codex-runtime` | `APP_API_SERVICE_TOKEN` | `${{site.INTERNAL_SERVICE_TOKEN}}` |
+| `codex-runtime` | `OUTPUT_ADAPTER_BASE_URL` | `http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}` |
+| `codex-runtime` | `OUTPUT_ADAPTER_TOKEN` | `${{discord-adapter.SOURCE_ADAPTER_TOKEN}}` |
+| `task-runner` | `OUTPUT_ADAPTER_BASE_URL` | `http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}` |
+| `task-runner` | `OUTPUT_ADAPTER_TOKEN` | `${{discord-adapter.SOURCE_ADAPTER_TOKEN}}` |
 | `discord-adapter` | `APP_API_BASE_URL` | `http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}` |
 | `discord-adapter` | `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}` |
 | `discord-adapter` | `PRISM_API_BASE` | `https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}` |
@@ -74,11 +78,14 @@ Recommended:
 - `PRISM_API_KEY=<read-or-limited prism api key>`
 - `APP_API_BASE_URL=http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}`
 - `APP_API_SERVICE_TOKEN=${{site.INTERNAL_SERVICE_TOKEN}}`
+- `OUTPUT_ADAPTER_BASE_URL=http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}`
+- `OUTPUT_ADAPTER_TOKEN=${{discord-adapter.SOURCE_ADAPTER_TOKEN}}`
 
 Notes:
 
 - complete `codex login` once inside the running service so auth is written into `CODEX_HOME`
 - this service exposes `POST /v1/responses` for transport adapters
+- set the output adapter env refs if Codex agents should directly resolve destinations or send one-off Discord messages; scheduled task output delivery can still be handled by `task-runner`
 - external target apps like `daohaus-admin` need a writable target workspace path on the mounted volume so Codex can clone and edit the repo outside the runtime service source tree
 - follow [Codex Runtime Device Auth](codex-runtime-auth.md) for the exact Railway shell steps
 

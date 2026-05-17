@@ -109,6 +109,17 @@ The runner calls:
 - `POST /sync`
 - header: `X-Adapter-Token`
 
+### Output delivery
+
+- `OUTPUT_ADAPTER_BASE_URL=http://discord-adapter.railway.internal:8789`
+- `OUTPUT_ADAPTER_TOKEN=...`
+
+The runner calls:
+
+- `GET /destinations`
+- `POST /messages`
+- header: `X-Adapter-Token`
+
 ### Memory run
 
 - `PRISM_MEMORY_BASE_URL=http://prism-memory.railway.internal:8788`

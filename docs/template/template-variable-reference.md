@@ -99,11 +99,31 @@ Use this while filling out the Railway template composer.
 | `CODEX_TARGET_WORKSPACE_ROOT` | `/data/workspaces` | Mounted directory for cloned target repositories. | No |
 | `PRISM_API_BASE` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}` | Private URL for Prism Memory. References the memory service port. | No |
 | `PRISM_API_KEY` | `${{prism-memory.PRISM_API_KEY}}` | Prism Memory API key reference. | No |
-| `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}` | Private URL for the API service. References the API service port. | No |
-| `APP_API_SERVICE_TOKEN` | `${{api.INTERNAL_SERVICE_TOKEN}}` | Internal API service token reference. | No |
+| `APP_API_BASE_URL` | `http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}` | Private URL for the site-owned app API. References the site service port. | No |
+| `APP_API_SERVICE_TOKEN` | `${{site.INTERNAL_SERVICE_TOKEN}}` | Internal site service token reference. | No |
+| `OUTPUT_ADAPTER_BASE_URL` | `http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}` | Private URL for output adapter destination lookup and direct message sends from Codex agents. | No |
+| `OUTPUT_ADAPTER_TOKEN` | `${{discord-adapter.SOURCE_ADAPTER_TOKEN}}` | Shared adapter token sent as `X-Adapter-Token` for direct output adapter calls. | No |
 | `TARGET_REPO_GITHUB_TOKEN` | empty | GitHub token for cloning or pushing private target repositories. | Yes |
 | `GIT_AUTHOR_NAME` | `Prism Codex` | Git author name used for Codex-created commits. | No |
 | `GIT_AUTHOR_EMAIL` | `prism-codex@users.noreply.github.com` | Git author email used for Codex-created commits. | No |
+
+## Task Runner
+
+| Variable | Value | Description | Optional? |
+| --- | --- | --- | --- |
+| `PORT` | `8790` | Port the task-runner service listens on. | No |
+| `TASK_RUNNER_DISABLED` | `false` | Keeps the scheduler enabled. Set true only to pause all task execution. | No |
+| `TASK_RUNNER_POLL_SECONDS` | `60` | Poll interval for due task schedules. | No |
+| `TASK_RUNNER_TOKEN` | `${{site.INTERNAL_SERVICE_TOKEN}}` | Token for task-runner health/admin calls. | No |
+| `APP_API_BASE_URL` | `http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}` | Private URL for the site-owned app API. References the site service port. | No |
+| `APP_API_SERVICE_TOKEN` | `${{site.INTERNAL_SERVICE_TOKEN}}` | Internal site service token reference. | No |
+| `DISCORD_ADAPTER_BASE_URL` | `http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}` | Private URL for the Discord adapter sync endpoint used by the built-in Discord sync task. | No |
+| `SOURCE_ADAPTER_TOKEN` | `${{discord-adapter.SOURCE_ADAPTER_TOKEN}}` | Shared adapter token sent as `X-Adapter-Token` for Discord sync. | No |
+| `OUTPUT_ADAPTER_BASE_URL` | `http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}` | Private URL for task output destination lookup and message delivery. | No |
+| `OUTPUT_ADAPTER_TOKEN` | `${{discord-adapter.SOURCE_ADAPTER_TOKEN}}` | Shared adapter token sent as `X-Adapter-Token` for task output delivery. | No |
+| `PRISM_MEMORY_BASE_URL` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}` | Private URL for Prism Memory. References the memory service port. | No |
+| `PRISM_API_KEY` | `${{prism-memory.PRISM_API_KEY}}` | Prism Memory API key reference. | No |
+| `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}` | Private URL for Codex Runtime. References the runtime service port. | No |
 
 ## Discord Sync Cron
 

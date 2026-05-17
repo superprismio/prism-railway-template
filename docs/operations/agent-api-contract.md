@@ -113,6 +113,38 @@ Agent sessions:
 - `GET /agent/agent-sessions/discord/lookup`
 - `POST /agent/agent-sessions/discord/upsert`
 
+## Adapter Delivery
+
+The site `/agent/*` API owns Prism content. Transport adapters own destination discovery and message delivery.
+
+For Discord one-off sends from Codex Runtime, use the adapter directly only when the user explicitly asks for immediate delivery:
+
+```bash
+OUTPUT_ADAPTER_BASE_URL
+OUTPUT_ADAPTER_TOKEN
+```
+
+Resolve destinations:
+
+```bash
+curl -fsSL \
+  -H "X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN" \
+  "$OUTPUT_ADAPTER_BASE_URL/destinations"
+```
+
+Send a message after resolving the destination id:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN" \
+  "$OUTPUT_ADAPTER_BASE_URL/messages" \
+  -d '{"destinationId":"<channel-id>","content":"Test message"}'
+```
+
+If `OUTPUT_ADAPTER_TOKEN` is missing, the adapter returns `401`. Do not use the site service token for adapter `/messages`; it is a different service boundary.
+
 ## Content Ownership
 
 The site service owns Prism-managed custom content:
