@@ -55,6 +55,36 @@ Send service auth as:
 
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
 
+## Output Adapter Delivery
+
+Use the output adapter only when the user explicitly asks to send a message or a workflow/task needs immediate delivery.
+
+Expected env:
+
+- `OUTPUT_ADAPTER_BASE_URL`
+- `OUTPUT_ADAPTER_TOKEN`
+
+Resolve destinations:
+
+```bash
+curl -fsSL \
+  -H "X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN" \
+  "$OUTPUT_ADAPTER_BASE_URL/destinations"
+```
+
+Send a message:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN" \
+  "$OUTPUT_ADAPTER_BASE_URL/messages" \
+  -d '{"destinationId":"<channel-id>","content":"Test message"}'
+```
+
+Do not use the site service token against adapter `/messages`.
+
 ## Instance-Owned Content
 
 Custom skills and workflows are owned by the site service:

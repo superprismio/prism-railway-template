@@ -120,16 +120,16 @@ The site `/agent/*` API owns Prism content. Transport adapters own destination d
 For Discord one-off sends from Codex Runtime, use the adapter directly only when the user explicitly asks for immediate delivery:
 
 ```bash
-DISCORD_ADAPTER_BASE_URL
-SOURCE_ADAPTER_TOKEN
+OUTPUT_ADAPTER_BASE_URL
+OUTPUT_ADAPTER_TOKEN
 ```
 
 Resolve destinations:
 
 ```bash
 curl -fsSL \
-  -H "X-Adapter-Token: $SOURCE_ADAPTER_TOKEN" \
-  "$DISCORD_ADAPTER_BASE_URL/destinations"
+  -H "X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN" \
+  "$OUTPUT_ADAPTER_BASE_URL/destinations"
 ```
 
 Send a message after resolving the destination id:
@@ -138,12 +138,12 @@ Send a message after resolving the destination id:
 curl -fsSL \
   -X POST \
   -H "content-type: application/json" \
-  -H "X-Adapter-Token: $SOURCE_ADAPTER_TOKEN" \
-  "$DISCORD_ADAPTER_BASE_URL/messages" \
+  -H "X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN" \
+  "$OUTPUT_ADAPTER_BASE_URL/messages" \
   -d '{"destinationId":"<channel-id>","content":"Test message"}'
 ```
 
-If `SOURCE_ADAPTER_TOKEN` is missing, the adapter returns `401`. Do not use the site service token for adapter `/messages`; it is a different service boundary.
+If `OUTPUT_ADAPTER_TOKEN` is missing, the adapter returns `401`. Do not use the site service token for adapter `/messages`; it is a different service boundary.
 
 ## Content Ownership
 

@@ -27,8 +27,8 @@ Useful environment variables may include:
 - `PRISM_AGENT_SERVICE_TOKEN`
 - `APP_API_BASE_URL`
 - `APP_API_SERVICE_TOKEN`
-- `DISCORD_ADAPTER_BASE_URL`
-- `SOURCE_ADAPTER_TOKEN`
+- `OUTPUT_ADAPTER_BASE_URL`
+- `OUTPUT_ADAPTER_TOKEN`
 
 In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the site API is unavailable.
 
@@ -38,8 +38,8 @@ If the prompt explicitly asks you to send a one-off message through Discord now,
 
 ```bash
 curl -fsSL \
-  -H "X-Adapter-Token: $SOURCE_ADAPTER_TOKEN" \
-  "$DISCORD_ADAPTER_BASE_URL/destinations"
+  -H "X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN" \
+  "$OUTPUT_ADAPTER_BASE_URL/destinations"
 ```
 
 Then send to the resolved destination id:
@@ -48,12 +48,12 @@ Then send to the resolved destination id:
 curl -fsSL \
   -X POST \
   -H "content-type: application/json" \
-  -H "X-Adapter-Token: $SOURCE_ADAPTER_TOKEN" \
-  "$DISCORD_ADAPTER_BASE_URL/messages" \
+  -H "X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN" \
+  "$OUTPUT_ADAPTER_BASE_URL/messages" \
   -d '{"destinationId":"<channel-id>","content":"Test message"}'
 ```
 
-If `SOURCE_ADAPTER_TOKEN` is missing, report that direct adapter delivery is not wired into Codex Runtime. Do not use `APP_API_SERVICE_TOKEN` or `PRISM_AGENT_SERVICE_TOKEN` against adapter `/messages`.
+If `OUTPUT_ADAPTER_TOKEN` is missing, report that direct adapter delivery is not wired into Codex Runtime. Do not use `APP_API_SERVICE_TOKEN` or `PRISM_AGENT_SERVICE_TOKEN` against adapter `/messages`.
 
 For Prism Memory reads, use:
 

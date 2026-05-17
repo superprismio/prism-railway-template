@@ -7,14 +7,14 @@ Prism adapters can expose a small internal delivery interface so agent-authored 
 Adapter delivery routes require the adapter token:
 
 ```bash
-X-Adapter-Token: $SOURCE_ADAPTER_TOKEN
+X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN
 ```
 
 If Codex Runtime agents should call the adapter directly, wire these env vars into `codex-runtime`:
 
 ```text
-DISCORD_ADAPTER_BASE_URL=http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}
-SOURCE_ADAPTER_TOKEN=${{discord-adapter.SOURCE_ADAPTER_TOKEN}}
+OUTPUT_ADAPTER_BASE_URL=http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}
+OUTPUT_ADAPTER_TOKEN=${{discord-adapter.SOURCE_ADAPTER_TOKEN}}
 ```
 
 Scheduled tasks should usually store resolved destinations in `outputConfig.outputDestinations` and let `task-runner` deliver the returned content. Direct adapter calls are for explicit one-off sends or agent workflows that need to post immediately.
@@ -46,8 +46,8 @@ Example:
 
 ```bash
 curl -fsSL \
-  -H "X-Adapter-Token: $SOURCE_ADAPTER_TOKEN" \
-  "$DISCORD_ADAPTER_BASE_URL/destinations"
+  -H "X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN" \
+  "$OUTPUT_ADAPTER_BASE_URL/destinations"
 ```
 
 ```json
@@ -76,8 +76,8 @@ Example:
 curl -fsSL \
   -X POST \
   -H "content-type: application/json" \
-  -H "X-Adapter-Token: $SOURCE_ADAPTER_TOKEN" \
-  "$DISCORD_ADAPTER_BASE_URL/messages" \
+  -H "X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN" \
+  "$OUTPUT_ADAPTER_BASE_URL/messages" \
   -d '{"destinationId":"1234567890","content":"Test message"}'
 ```
 

@@ -37,8 +37,8 @@ Good reference variable examples:
 - `discord-adapter.PRISM_API_BASE=https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}`
 - `codex-runtime.APP_API_BASE_URL=http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}`
 - `codex-runtime.PRISM_API_BASE=http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}`
-- `codex-runtime.DISCORD_ADAPTER_BASE_URL=http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}`
-- `codex-runtime.SOURCE_ADAPTER_TOKEN=${{discord-adapter.SOURCE_ADAPTER_TOKEN}}`
+- `codex-runtime.OUTPUT_ADAPTER_BASE_URL=http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}`
+- `codex-runtime.OUTPUT_ADAPTER_TOKEN=${{discord-adapter.SOURCE_ADAPTER_TOKEN}}`
 - `discord-sync-cron.PRISM_API_BASE=https://${{discord-adapter.RAILWAY_PUBLIC_DOMAIN}}`
 - `memory-cron.PRISM_API_BASE=https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}`
 - `knowledge-cron.PRISM_API_BASE=https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}`

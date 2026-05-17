@@ -461,14 +461,14 @@ function responseTextFromResult(result: TaskRunResult): string {
 
 function adapterBaseUrl(adapter: string): string {
   if (adapter === "discord") {
-    return trimBaseUrl(process.env.DISCORD_ADAPTER_BASE_URL);
+    return trimBaseUrl(process.env.OUTPUT_ADAPTER_BASE_URL);
   }
   return "";
 }
 
 function adapterHeaders(adapter: string): Record<string, string> {
   if (adapter === "discord") {
-    const token = (process.env.SOURCE_ADAPTER_TOKEN ?? "").trim();
+    const token = (process.env.OUTPUT_ADAPTER_TOKEN ?? "").trim();
     return token ? { "X-Adapter-Token": token } : {};
   }
   return {};
