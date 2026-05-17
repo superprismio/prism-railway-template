@@ -291,19 +291,31 @@ async function requestCodexRuntimeResponse(input: {
     throw new Error("CODEX_RUNTIME_BASE_URL_MISSING")
   }
 
-  const response = await fetch(`${config.codexRuntimeBaseUrl}/v1/responses`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      prompt: input.prompt,
-      sessionId: input.sessionId,
-      codexThreadId: input.codexThreadId ?? null,
-      recentHistory: input.recentHistory,
-      metadata: input.metadata,
-    }),
-  })
+  const runtimeUrl = `${config.codexRuntimeBaseUrl}/v1/responses`
+  let response: Response
+  try {
+    response = await fetch(runtimeUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt: input.prompt,
+        sessionId: input.sessionId,
+        codexThreadId: input.codexThreadId ?? null,
+        recentHistory: input.recentHistory,
+        metadata: input.metadata,
+      }),
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "fetch failed"
+    console.warn(JSON.stringify({
+      event: "codex_runtime.fetch_failed",
+      url: runtimeUrl,
+      error: message,
+    }))
+    throw new Error(`CODEX_RUNTIME_FETCH_FAILED:${message}`)
+  }
 
   const payload = (await response.json().catch(() => null)) as RuntimeResponsePayload | null
 

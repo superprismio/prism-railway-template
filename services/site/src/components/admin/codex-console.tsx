@@ -6,6 +6,7 @@ import { Bot, LoaderCircle, Plus, Wrench } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { describeFetchError, readApiError } from "@/lib/client-api-errors"
 
 type ConsoleMessage = {
   id: string
@@ -138,14 +139,17 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
           }),
         })
 
-        const payload = (await response.json()) as {
+        if (!response.ok) {
+          throw new Error(await readApiError(response, "Could not run Prism Console"))
+        }
+        const payload = (await response.json().catch(() => null)) as {
           error?: string
           output_text?: string
           session_id?: string
-        }
+        } | null
 
-        if (!response.ok || !payload.output_text) {
-          throw new Error(payload.error || "The response endpoint did not return output_text")
+        if (!payload?.output_text) {
+          throw new Error("The response endpoint did not return output_text")
         }
 
         const nextSessionId = payload.session_id ?? sessionId
@@ -162,8 +166,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
           },
         ])
       } catch (submitError) {
-        const message = submitError instanceof Error ? submitError.message : "Unknown console error"
-        setError(message)
+        setError(describeFetchError(submitError, "Could not run Prism Console"))
       }
     })
   }
