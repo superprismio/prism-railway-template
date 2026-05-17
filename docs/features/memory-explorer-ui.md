@@ -8,7 +8,7 @@ It lives outside the change board at:
 /admin/memory
 ```
 
-The change board remains focused on change requests, target apps, execution records, and Codex runs. Memory exploration is a related operator workflow, but it needs its own route because it has different layout needs: artifact tables, document previews, source status, raw payload inspection, and future retrieval or graph tools.
+The change board remains focused on change requests, target apps, execution records, and Codex runs. Memory exploration is a related operator workflow, but it needs its own route because it has different layout needs: artifact tables, document previews, raw payload inspection, scoped memory chat, and future retrieval or graph tools.
 
 ## Purpose
 
@@ -17,13 +17,13 @@ The first Memory Explorer POC lets admins:
 - browse Prism Memory artifacts
 - filter and sort returned artifacts
 - inspect artifact content and raw JSON payloads
-- search indexed knowledge docs
-- inspect knowledge doc content and metadata
 - review registered knowledge sources and sync status
+- attach artifacts to a Memory Chat session
+- ask the Prism agent questions about selected artifacts or the broader knowledge base
 
-The POC is intentionally read-only.
+The browser-facing explorer remains read-first. Memory Chat can ask the agent to draft new knowledge-base content, but publishing that content should go through an explicit Prism Memory write path or knowledge inbox approval flow.
 
-`Ask Memory` and graph visualization are deferred until the team has tested the base explorer and reviewed the metadata/provenance gaps.
+Graph visualization is deferred until the team has tested the explorer and reviewed the metadata/provenance gaps.
 
 ## Current Shape
 
@@ -70,17 +70,15 @@ Current site route handlers:
 
 - `GET /admin/memory/api/artifacts`
 - `GET /admin/memory/api/artifacts/:id`
-- `GET /admin/memory/api/knowledge/search`
-- `GET /admin/memory/api/knowledge/docs/:slug`
 - `GET /admin/memory/api/knowledge/sources`
 
 They proxy these Prism Memory endpoints:
 
 - `GET /api/artifacts`
 - `GET /api/artifacts/{id}`
-- `GET /knowledge/search`
-- `GET /knowledge/docs/{slug}`
 - `GET /knowledge/sources`
+
+The Artifacts view is the browsing surface for memory and knowledge artifacts; Chat is the question-answering surface.
 
 ## Required Env
 
@@ -139,6 +137,7 @@ Current controls:
 
 Current table fields:
 
+- chat attachment checkbox
 - created
 - filename
 - preview
@@ -154,31 +153,7 @@ Selecting a row loads `GET /api/artifacts/{id}` and shows:
 - content preview
 - raw payload JSON
 
-## Knowledge Search
-
-The knowledge search view reads from `GET /knowledge/search`.
-
-Current controls:
-
-- query
-- kind
-- tag
-- entity
-
-Search results show:
-
-- title
-- slug
-- kind
-- summary
-- tags
-
-Selecting a result loads `GET /knowledge/docs/{slug}` and shows:
-
-- full content when available
-- tags
-- source link when available
-- raw doc metadata
+Checking a row adds that artifact to the Chat tab attachment tray. Attachments are removable individually or as a group.
 
 ## Knowledge Sources
 
@@ -205,7 +180,27 @@ Selecting a source shows:
 - current sync error when present
 - raw source JSON
 
-Source creation, editing, and sync controls are not part of the POC.
+Source creation, editing, and sync controls are not part of the explorer.
+
+## Memory Chat
+
+The Chat tab reuses the existing admin response endpoint:
+
+```text
+POST /admin/responses
+GET /admin/responses?session_id=...
+```
+
+Memory Chat stores its session ID in browser local storage separately from the Change Board Prism Console. New sessions can be started from the Chat tab.
+
+Current behavior:
+
+- selected artifacts from the Artifacts tab are passed as bounded context
+- `prism-api-reader` is requested automatically so the agent can inspect Prism Memory when needed
+- the prompt asks the agent to cite artifact IDs, doc slugs, or source URLs
+- content creation requests are treated as drafts unless an explicit write-back flow is added
+
+The recommended write-back path is for the agent to draft a summary or knowledge article, then submit it through a Prism Memory write endpoint or knowledge inbox with explicit approval and provenance. Direct browser writes to Prism Memory are intentionally avoided.
 
 ## Current Limitations
 
@@ -218,8 +213,10 @@ Known limitations:
 - date-range filters are not implemented yet
 - source/type dropdowns are derived from the currently returned artifacts
 - graph relationships are not exposed by Prism Memory yet
-- `Ask Memory` is not implemented yet
+- Memory Chat passes selected artifact summaries as bounded context; it does not automatically inline every full artifact body
+- Memory Chat write-back is not implemented yet
 - the explorer is admin-password gated, not role-scoped beyond the current admin model
+- the explorer does not expose a separate document search tab; use Artifacts for browsing and Chat for question-answering
 
 These are acceptable for the first POC because the immediate goal is to validate the route, proxy boundary, and operator browsing workflow.
 
@@ -237,8 +234,6 @@ The production build includes:
 - `/admin/memory`
 - `/admin/memory/api/artifacts`
 - `/admin/memory/api/artifacts/[id]`
-- `/admin/memory/api/knowledge/search`
-- `/admin/memory/api/knowledge/docs/[...slug]`
 - `/admin/memory/api/knowledge/sources`
 
 ## Next Steps
@@ -251,10 +246,11 @@ Near-term:
 - decide whether artifact search should move into Prism Memory
 - add stable pagination or cursors if needed
 - add a clearer link from settings/setup into `/admin/memory`
+- add a dedicated agent-readable memory route if selected artifacts should be fetched by the runtime through the site service instead of Prism Memory reader skills
+- add an explicit knowledge inbox write-back action with review/provenance
 
 After team review:
 
-- add `Ask Memory` as an explicit retrieval workflow over selected artifacts/docs
 - require citations back to artifact IDs, doc slugs, and source URLs
 - keep Codex context bounded instead of letting it crawl all memory by default
 - add graph-ready provenance fields where missing
@@ -266,10 +262,10 @@ Possible graph endpoint shape:
 GET /api/graph?category=memory&source=discord-voice&limit=500
 ```
 
-Possible `Ask Memory` route shape:
+Possible dedicated Memory Chat route shape if `/admin/responses` becomes too generic:
 
 ```text
 POST /admin/memory/api/ask
 ```
 
-The recommended next product step is to use the POC with real data before adding either graph visualization or question-answering.
+The recommended next product step is to use the POC with real data before adding graph visualization or direct knowledge write-back.
