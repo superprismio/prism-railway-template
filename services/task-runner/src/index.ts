@@ -461,14 +461,14 @@ function responseTextFromResult(result: TaskRunResult): string {
 
 function adapterBaseUrl(adapter: string): string {
   if (adapter === "discord") {
-    return trimBaseUrl(process.env.OUTPUT_ADAPTER_BASE_URL);
+    return trimBaseUrl(process.env.COMMUNICATION_ADAPTER_BASE_URL);
   }
   return "";
 }
 
 function adapterHeaders(adapter: string): Record<string, string> {
   if (adapter === "discord") {
-    const token = (process.env.OUTPUT_ADAPTER_TOKEN ?? "").trim();
+    const token = (process.env.COMMUNICATION_ADAPTER_TOKEN ?? "").trim();
     return token ? { "X-Adapter-Token": token } : {};
   }
   return {};
@@ -984,8 +984,8 @@ async function updateTaskRunInSite(
 function buildBuiltInTasks(): BuiltInTask[] {
   const prismMemoryBaseUrl = trimBaseUrl(process.env.PRISM_MEMORY_BASE_URL ?? process.env.PRISM_API_BASE);
   const prismApiKey = (process.env.PRISM_API_KEY ?? "").trim();
-  const discordAdapterBaseUrl = trimBaseUrl(process.env.DISCORD_ADAPTER_BASE_URL);
-  const sourceAdapterToken = (process.env.SOURCE_ADAPTER_TOKEN ?? "").trim();
+  const communicationAdapterBaseUrl = trimBaseUrl(process.env.COMMUNICATION_ADAPTER_BASE_URL);
+  const communicationAdapterToken = (process.env.COMMUNICATION_ADAPTER_TOKEN ?? "").trim();
 
   return [
     {
@@ -998,10 +998,10 @@ function buildBuiltInTasks(): BuiltInTask[] {
       taskType: "builtin",
       outputConfig: {},
       run: async () => {
-        const baseUrl = requireBaseUrl("DISCORD_ADAPTER_BASE_URL", discordAdapterBaseUrl);
+        const baseUrl = requireBaseUrl("COMMUNICATION_ADAPTER_BASE_URL", communicationAdapterBaseUrl);
         const headers: Record<string, string> = {};
-        if (sourceAdapterToken) {
-          headers["X-Adapter-Token"] = sourceAdapterToken;
+        if (communicationAdapterToken) {
+          headers["X-Adapter-Token"] = communicationAdapterToken;
         }
         return postJson(baseUrl, "/sync", headers);
       },

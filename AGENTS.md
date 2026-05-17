@@ -61,15 +61,15 @@ Use the output adapter only when the user explicitly asks to send a message or a
 
 Expected env:
 
-- `OUTPUT_ADAPTER_BASE_URL`
-- `OUTPUT_ADAPTER_TOKEN`
+- `COMMUNICATION_ADAPTER_BASE_URL`
+- `COMMUNICATION_ADAPTER_TOKEN`
 
 Resolve destinations:
 
 ```bash
 curl -fsSL \
-  -H "X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN" \
-  "$OUTPUT_ADAPTER_BASE_URL/destinations"
+  -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
+  "$COMMUNICATION_ADAPTER_BASE_URL/destinations"
 ```
 
 Send a message:
@@ -78,8 +78,8 @@ Send a message:
 curl -fsSL \
   -X POST \
   -H "content-type: application/json" \
-  -H "X-Adapter-Token: $OUTPUT_ADAPTER_TOKEN" \
-  "$OUTPUT_ADAPTER_BASE_URL/messages" \
+  -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
+  "$COMMUNICATION_ADAPTER_BASE_URL/messages" \
   -d '{"destinationId":"<channel-id>","content":"Test message"}'
 ```
 

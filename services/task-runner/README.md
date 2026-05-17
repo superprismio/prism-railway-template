@@ -101,8 +101,8 @@ The runner calls:
 
 ### Discord sync
 
-- `DISCORD_ADAPTER_BASE_URL=http://discord-adapter.railway.internal:8789`
-- `SOURCE_ADAPTER_TOKEN=...`
+- `COMMUNICATION_ADAPTER_BASE_URL=http://discord-adapter.railway.internal:8789`
+- `COMMUNICATION_ADAPTER_TOKEN=...`
 
 The runner calls:
 
@@ -111,8 +111,8 @@ The runner calls:
 
 ### Output delivery
 
-- `OUTPUT_ADAPTER_BASE_URL=http://discord-adapter.railway.internal:8789`
-- `OUTPUT_ADAPTER_TOKEN=...`
+- `COMMUNICATION_ADAPTER_BASE_URL=http://discord-adapter.railway.internal:8789`
+- `COMMUNICATION_ADAPTER_TOKEN=...`
 
 The runner calls:
 

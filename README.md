@@ -182,8 +182,8 @@ PRISM_API_BASE=http://127.0.0.1:8788
 PRISM_API_KEY=replace-me
 INTERNAL_SERVICE_TOKEN=replace-me
 SOURCE_ADAPTER_TOKEN=replace-me
-OUTPUT_ADAPTER_BASE_URL=http://127.0.0.1:8789
-OUTPUT_ADAPTER_TOKEN=replace-me
+COMMUNICATION_ADAPTER_BASE_URL=http://127.0.0.1:8789
+COMMUNICATION_ADAPTER_TOKEN=replace-me
 ```
 
 Codex runtime needs local Codex auth. The default `.env.example` uses your normal `~/.codex`:
@@ -259,7 +259,7 @@ For a first Railway bring-up:
 7. Deploy `codex-runtime` with persistent `CODEX_HOME` storage and complete `codex login` once in the running service.
 8. Deploy `discord-adapter` with Discord bot credentials, app API base URL, internal service token, and `CODEX_RUNTIME_BASE_URL`.
 9. Set shared URLs so `codex-runtime` and `discord-adapter` point to `site`, and services point to `prism-memory` where needed.
-10. Set secrets in Railway, especially `SESSION_SECRET`, `INTERNAL_SERVICE_TOKEN`, `ADMIN_PASSWORD`, `PRISM_API_KEY`, `SOURCE_ADAPTER_TOKEN`, `OUTPUT_ADAPTER_TOKEN`, and Codex/Discord credentials.
+10. Set secrets in Railway, especially `SESSION_SECRET`, `INTERNAL_SERVICE_TOKEN`, `ADMIN_PASSWORD`, `PRISM_API_KEY`, `SOURCE_ADAPTER_TOKEN`, `COMMUNICATION_ADAPTER_TOKEN`, and Codex/Discord credentials.
 10. Deploy `site` and confirm `/admin` loads.
 
 API bootstrap split:
