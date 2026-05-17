@@ -99,8 +99,10 @@ Use this while filling out the Railway template composer.
 | `CODEX_TARGET_WORKSPACE_ROOT` | `/data/workspaces` | Mounted directory for cloned target repositories. | No |
 | `PRISM_API_BASE` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}` | Private URL for Prism Memory. References the memory service port. | No |
 | `PRISM_API_KEY` | `${{prism-memory.PRISM_API_KEY}}` | Prism Memory API key reference. | No |
-| `APP_API_BASE_URL` | `http://${{api.RAILWAY_PRIVATE_DOMAIN}}:${{api.PORT}}` | Private URL for the API service. References the API service port. | No |
-| `APP_API_SERVICE_TOKEN` | `${{api.INTERNAL_SERVICE_TOKEN}}` | Internal API service token reference. | No |
+| `APP_API_BASE_URL` | `http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}` | Private URL for the site-owned app API. References the site service port. | No |
+| `APP_API_SERVICE_TOKEN` | `${{site.INTERNAL_SERVICE_TOKEN}}` | Internal site service token reference. | No |
+| `DISCORD_ADAPTER_BASE_URL` | `http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}` | Private URL for Discord adapter destination lookup and direct message sends from Codex agents. | No |
+| `SOURCE_ADAPTER_TOKEN` | `${{discord-adapter.SOURCE_ADAPTER_TOKEN}}` | Shared adapter token sent as `X-Adapter-Token` for direct Discord adapter calls. | No |
 | `TARGET_REPO_GITHUB_TOKEN` | empty | GitHub token for cloning or pushing private target repositories. | Yes |
 | `GIT_AUTHOR_NAME` | `Prism Codex` | Git author name used for Codex-created commits. | No |
 | `GIT_AUTHOR_EMAIL` | `prism-codex@users.noreply.github.com` | Git author email used for Codex-created commits. | No |
