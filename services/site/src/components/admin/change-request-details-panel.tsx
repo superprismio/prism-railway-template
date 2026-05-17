@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { describeFetchError, readApiError } from "@/lib/client-api-errors";
 import type {
   ChangeRequestExecutionRecord,
   ChangeRequestRecord,
@@ -961,16 +962,16 @@ export function RequestDetailsPanel({
       }),
     });
 
-    const payload = (await response.json()) as {
-      error?: string;
-      session_id?: string;
-    };
-
     if (!response.ok) {
-      throw new Error(payload.error || "Could not continue agent");
+      throw new Error(await readApiError(response, "Could not continue agent"));
     }
 
-    if (payload.session_id) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string;
+      session_id?: string;
+    } | null;
+
+    if (payload?.session_id) {
       setThreadSession({ id: payload.session_id });
     }
     await refreshThread();
@@ -1060,7 +1061,7 @@ export function RequestDetailsPanel({
         await runAgent(prompt, null, workflowAction, true);
       } catch (error) {
         setThreadError(
-          error instanceof Error ? error.message : "Could not continue agent",
+          describeFetchError(error, "Could not continue agent"),
         );
       }
     });
