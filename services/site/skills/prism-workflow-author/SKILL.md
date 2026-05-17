@@ -5,6 +5,8 @@ description: Use this skill when Codex is asked to create, update, or reason abo
 
 Use this skill to author Prism workflows in the style expected by the site service.
 
+When this skill is loaded in a deployed Prism instance, do not fall back to browser admin routes or local filesystem probing before using the site service workflow API. Missing local files under `/data/codex/skills`, `/data/workflows`, or `/app` do not mean the workflow is inaccessible. Runtime agents usually cannot write the site service volume directly.
+
 Prism workflows are markdown-first and DB-indexed:
 
 - Workflow and step instructions are human/agent-authored markdown.

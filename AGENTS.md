@@ -55,6 +55,18 @@ Send service auth as:
 
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
 
+## Prism Skills
+
+Prism skills are authoritative when a user asks for work covered by a listed skill. Use the skill instructions before probing local paths or browser admin routes.
+
+Do not treat missing local files under `/data/codex/skills`, `/data/workflows`, or `/app` as a blocker for Prism-managed content. In deployed instances, skills and workflows are normally hosted by the site service and reached through `/agent/*`.
+
+Examples:
+
+- Workflow create/update/reasoning: use `prism-workflow-author`, then `GET /agent/workflows` or `POST /agent/workflows`.
+- Task create/update/reasoning: use `prism-task-author`, then `GET /agent/tasks` or `POST /agent/tasks`.
+- Skill create/update/reasoning: use `prism-skill-author`, then `GET /agent/skills` or `POST /agent/skills`.
+
 ## Output Adapter Delivery
 
 Use the output adapter only when the user explicitly asks to send a message or a workflow/task needs immediate delivery.
