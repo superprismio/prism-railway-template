@@ -24,6 +24,7 @@ Core endpoints:
 - `GET /agent/change-board/requests/next`
 - `GET /agent/change-board/requests/current`
 - `GET /agent/change-board/requests/by-number/:requestNumber/review`
+- `GET /agent/change-board/requests/by-number/:requestNumber/artifacts`
 - `GET /agent/change-board/requests/:id`
 - `PATCH /agent/change-board/requests/:id`
 - `GET /agent/change-board/requests/:id/external-refs`
@@ -59,6 +60,25 @@ curl -fsSL \
 ```
 
 Use this endpoint when a user asks what happened to request `#10`, why a workflow got stuck, or what should improve next time. It returns the request, workflow definition, workflow run, executions, workflow events, artifacts, external refs, latest linked agent session, and agent messages. Review the timeline before recommending changes.
+
+Inspect request artifacts by request number:
+
+```bash
+curl -fsSL \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/by-number/$REQUEST_NUMBER/artifacts"
+```
+
+The by-number artifact route includes text, markdown, and JSON bodies by default. Use query params when narrowing the read:
+
+- `?name=draft.md`
+- `?artifactId=<artifact-id>`
+- `?kind=markdown`
+- `?includeContent=false`
+- `?includeBinary=true`
+- `?maxBytes=500000`
+
+If a user asks whether artifacts were created for a request number, this endpoint is the first API to call. Do not claim the board is admin-password gated until the `/agent/.../by-number/...` routes have been tried with service-token auth.
 
 Create request pattern:
 

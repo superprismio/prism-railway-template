@@ -48,12 +48,33 @@ Send service auth as:
 - `GET /agent/target-apps`
 - `GET /agent/change-board/requests/:id`
 - `POST /agent/change-board/requests`
+- `GET /agent/change-board/requests/next`
+- `GET /agent/change-board/requests/current`
+- `GET /agent/change-board/requests/by-number/:requestNumber/review`
 - `GET /agent/change-board/requests/by-number/:requestNumber/artifacts`
 - `GET /agent/change-board/requests/:id/artifacts/:artifactId/content`
 - `GET /agent/site-content/branding`
 - `PATCH /agent/site-content/branding`
 
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
+
+For questions like "what happened to request #10?" or "what artifacts did request #10 create?", do not use `/admin/board`. Use:
+
+```bash
+curl -fsSL \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/by-number/10/review"
+```
+
+To inspect artifact bodies by request number:
+
+```bash
+curl -fsSL \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/by-number/10/artifacts"
+```
+
+The by-number artifact route includes text, markdown, and JSON bodies by default. Use query params like `?name=draft.md`, `?artifactId=<id>`, `?includeContent=false`, or `?includeBinary=true` when needed.
 
 ## Prism Skills
 
