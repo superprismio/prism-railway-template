@@ -20,6 +20,7 @@ import path from "node:path";
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { DiscordVoiceManager } from "./voice.js";
+import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 const DISCORD_TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
@@ -61,11 +62,41 @@ type AdapterDestination = {
   parentId?: string | null;
 };
 
+type DiscordAccessMode = "off" | "readonly" | "run-approved" | "full";
+
+type DiscordRateLimitConfig = {
+  windowSeconds: number;
+  maxRequests: number;
+};
+
+type DiscordAccessPolicyRule = {
+  mode?: DiscordAccessMode;
+  capabilities?: string[];
+  rateLimit?: Partial<DiscordRateLimitConfig>;
+};
+
+type DiscordAccessPolicyConfig = {
+  defaultMode: DiscordAccessMode;
+  defaultRateLimit: DiscordRateLimitConfig;
+  targets: Record<string, DiscordAccessPolicyRule>;
+  groups: Record<string, DiscordAccessPolicyRule>;
+  users: Record<string, DiscordAccessPolicyRule>;
+};
+
+type ResolvedDiscordAccessPolicy = {
+  mode: DiscordAccessMode;
+  capabilities: string[];
+  rateLimit: DiscordRateLimitConfig;
+  matchedRules: string[];
+};
+
 let bridgeClient: Client | null = null;
 let voiceManager: DiscordVoiceManager | null = null;
 let discordReady = false;
 let discordUserTag: string | null = null;
 const discordPromptQueues = new Map<string, Promise<void>>();
+const discordRateLimitBuckets = new Map<string, { windowStartMs: number; count: number }>();
+let sourceAdapterPolicyCache: { expiresAt: number; discord: DiscordAccessPolicyConfig } | null = null;
 
 function nowUtcIso(): string {
   return new Date().toISOString();
@@ -106,6 +137,73 @@ function parseBoolEnv(name: string, defaultValue: boolean): boolean {
     return defaultValue;
   }
   return new Set(["1", "true", "yes", "on"]).has(raw);
+}
+
+function parseJsonEnv(name: string): unknown {
+  const raw = (process.env[name] ?? "").trim();
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new Error(`${name} must be valid JSON: ${describeError(error)}`);
+  }
+}
+
+function parseAccessMode(value: unknown, fallback: DiscordAccessMode): DiscordAccessMode {
+  if (value === "off" || value === "readonly" || value === "run-approved" || value === "full") {
+    return value;
+  }
+  return fallback;
+}
+
+function parseStringRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function parseCapabilities(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value
+    .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    .map((entry) => entry.trim());
+}
+
+function parseRateLimitConfig(value: unknown, fallback: DiscordRateLimitConfig): DiscordRateLimitConfig {
+  const record = parseStringRecord(value);
+  const windowSeconds = typeof record.windowSeconds === "number"
+    ? record.windowSeconds
+    : typeof record.window_seconds === "number"
+      ? record.window_seconds
+      : fallback.windowSeconds;
+  const maxRequests = typeof record.maxRequests === "number"
+    ? record.maxRequests
+    : typeof record.max_requests === "number"
+      ? record.max_requests
+      : fallback.maxRequests;
+
+  return {
+    windowSeconds: Math.max(1, Math.min(86_400, Math.floor(windowSeconds))),
+    maxRequests: Math.max(1, Math.min(10_000, Math.floor(maxRequests))),
+  };
+}
+
+function parseAccessPolicyRule(value: unknown): DiscordAccessPolicyRule {
+  const record = parseStringRecord(value);
+  const rawMode = record.mode;
+  return {
+    mode: rawMode === "off" || rawMode === "readonly" || rawMode === "run-approved" || rawMode === "full"
+      ? rawMode
+      : undefined,
+    capabilities: parseCapabilities(record.capabilities),
+    rateLimit: Object.keys(parseStringRecord(record.rateLimit ?? record.rate_limit)).length
+      ? parseRateLimitConfig(record.rateLimit ?? record.rate_limit, { windowSeconds: 60, maxRequests: 6 })
+      : undefined,
+  };
 }
 
 function dataRoot(): string {
@@ -181,6 +279,163 @@ function adapterConfig() {
     codexRuntimeRequestTimeoutSeconds: parseIntEnv("CODEX_RUNTIME_REQUEST_TIMEOUT_SECONDS", 660, 30, 3600),
     checkpointOverlapMinutes: checkpointOverlapMinutes(),
   };
+}
+
+function capabilitiesForMode(mode: DiscordAccessMode): string[] {
+  switch (mode) {
+    case "off":
+      return [];
+    case "readonly":
+      return ["chat.read", "memory.read", "requests.read", "artifacts.read"];
+    case "run-approved":
+      return [
+        "chat.read",
+        "memory.read",
+        "requests.read",
+        "artifacts.read",
+        "tasks.run_existing",
+        "workflows.run_existing",
+        "requests.create",
+      ];
+    case "full":
+      return [
+        "chat.read",
+        "memory.read",
+        "requests.read",
+        "artifacts.read",
+        "tasks.run_existing",
+        "workflows.run_existing",
+        "requests.create",
+        "adapter.send_message",
+        "skills.author",
+        "tasks.author",
+        "workflows.author",
+      ];
+  }
+}
+
+function mergePolicyRule(
+  current: ResolvedDiscordAccessPolicy,
+  rule: DiscordAccessPolicyRule | undefined,
+  matchedRule: string,
+): ResolvedDiscordAccessPolicy {
+  if (!rule) {
+    return current;
+  }
+
+  const mode = rule.mode ?? current.mode;
+  const capabilities = rule.capabilities ?? capabilitiesForMode(mode);
+  const ruleLimit = rule.rateLimit
+    ? {
+        windowSeconds: rule.rateLimit.windowSeconds ?? current.rateLimit.windowSeconds,
+        maxRequests: rule.rateLimit.maxRequests ?? current.rateLimit.maxRequests,
+      }
+    : current.rateLimit;
+
+  return {
+    mode,
+    capabilities,
+    rateLimit: ruleLimit,
+    matchedRules: [...current.matchedRules, matchedRule],
+  };
+}
+
+function parseDiscordAccessPolicyConfig(rawInput: unknown): DiscordAccessPolicyConfig {
+  const raw = parseStringRecord(rawInput);
+  const defaultMode = parseAccessMode(raw.defaultMode ?? raw.default_mode, "readonly");
+  const defaultRateLimit = parseRateLimitConfig(raw.defaultRateLimit ?? raw.default_rate_limit, {
+    windowSeconds: parseIntEnv("DISCORD_RATE_LIMIT_WINDOW_SECONDS", 60, 1, 86_400),
+    maxRequests: parseIntEnv("DISCORD_RATE_LIMIT_MAX_REQUESTS", 6, 1, 10_000),
+  });
+
+  const parseRules = (value: unknown) =>
+    Object.fromEntries(
+      Object.entries(parseStringRecord(value)).map(([key, rule]) => [key, parseAccessPolicyRule(rule)]),
+    );
+
+  return {
+    defaultMode,
+    defaultRateLimit,
+    targets: parseRules(raw.targets ?? raw.channels),
+    groups: parseRules(raw.groups ?? raw.roles),
+    users: parseRules(raw.users),
+  };
+}
+
+function loadDiscordAccessPolicyConfigFromEnv(): DiscordAccessPolicyConfig {
+  const raw = parseStringRecord(parseJsonEnv("DISCORD_ACCESS_POLICY_JSON"));
+  return parseDiscordAccessPolicyConfig(raw);
+}
+
+async function loadDiscordAccessPolicyConfig(): Promise<DiscordAccessPolicyConfig> {
+  const now = Date.now();
+  if (sourceAdapterPolicyCache && sourceAdapterPolicyCache.expiresAt > now) {
+    return sourceAdapterPolicyCache.discord;
+  }
+
+  try {
+    const payload = await appApiRequest("/agent/source-adapter-policy");
+    const policy = parseStringRecord(payload.policy);
+    const platforms = parseStringRecord(policy.platforms);
+    const discord = parseDiscordAccessPolicyConfig(platforms.discord);
+    sourceAdapterPolicyCache = {
+      discord,
+      expiresAt: now + 30_000,
+    };
+    return discord;
+  } catch (error) {
+    console.warn(`[source-adapter] using env Discord access policy fallback: ${describeError(error)}`);
+    const discord = loadDiscordAccessPolicyConfigFromEnv();
+    sourceAdapterPolicyCache = {
+      discord,
+      expiresAt: now + 30_000,
+    };
+    return discord;
+  }
+}
+
+async function resolveDiscordAccessPolicy(input: {
+  channelId: string;
+  threadId: string | null;
+  authorId: string;
+  roleIds: string[];
+}): Promise<ResolvedDiscordAccessPolicy> {
+  const config = await loadDiscordAccessPolicyConfig();
+  let resolved: ResolvedDiscordAccessPolicy = {
+    mode: config.defaultMode,
+    capabilities: capabilitiesForMode(config.defaultMode),
+    rateLimit: config.defaultRateLimit,
+    matchedRules: ["default"],
+  };
+
+  resolved = mergePolicyRule(resolved, config.targets[input.channelId], `target:${input.channelId}`);
+  if (input.threadId) {
+    resolved = mergePolicyRule(resolved, config.targets[input.threadId], `target:${input.threadId}`);
+  }
+  for (const roleId of input.roleIds) {
+    resolved = mergePolicyRule(resolved, config.groups[roleId], `group:${roleId}`);
+  }
+  resolved = mergePolicyRule(resolved, config.users[input.authorId], `user:${input.authorId}`);
+
+  return resolved;
+}
+
+function checkDiscordRateLimit(key: string, limit: DiscordRateLimitConfig): { ok: true } | { ok: false; retryAfterSeconds: number } {
+  const now = Date.now();
+  const windowMs = limit.windowSeconds * 1000;
+  const bucket = discordRateLimitBuckets.get(key);
+  if (!bucket || now - bucket.windowStartMs >= windowMs) {
+    discordRateLimitBuckets.set(key, { windowStartMs: now, count: 1 });
+    return { ok: true };
+  }
+  if (bucket.count >= limit.maxRequests) {
+    return {
+      ok: false,
+      retryAfterSeconds: Math.max(1, Math.ceil((windowMs - (now - bucket.windowStartMs)) / 1000)),
+    };
+  }
+  bucket.count += 1;
+  return { ok: true };
 }
 
 function checkpointKey(config: AdapterConfig): string {
@@ -823,6 +1078,26 @@ function cleanPrompt(message: Message, botUserId: string): string {
   return message.content.replace(new RegExp(`<@!?${botUserId}>`, "g"), "").trim();
 }
 
+function roleIdsFromMessage(message: Message): string[] {
+  return message.member?.roles.cache.map((role) => role.id) ?? [];
+}
+
+function roleIdsFromInteraction(interaction: ChatInputCommandInteraction): string[] {
+  const roles = interaction.member && typeof interaction.member === "object" && "roles" in interaction.member
+    ? interaction.member.roles
+    : null;
+  if (Array.isArray(roles)) {
+    return roles.filter((role): role is string => typeof role === "string");
+  }
+  if (roles && typeof roles === "object" && "cache" in roles) {
+    const cache = (roles as { cache?: { map?: (callback: (role: { id: string }) => string) => string[] } }).cache;
+    if (cache && typeof cache.map === "function") {
+      return cache.map((role) => role.id);
+    }
+  }
+  return [];
+}
+
 async function ensureConversationThread(message: Message): Promise<TextBasedChannel | null> {
   if (message.channel.isThread()) {
     return message.channel;
@@ -943,11 +1218,29 @@ type DiscordPromptTransport = {
   threadName: string | null;
   authorId: string;
   authorName: string;
+  authorRoleIds: string[];
   userSourceMessageId: string | null;
   createdAt: string;
   sendTyping?: () => Promise<void>;
   sendAssistantMessage: (content: string) => Promise<{ sourceMessageId: string | null }>;
 };
+
+async function sendSanitizedAssistantMessage(
+  transport: DiscordPromptTransport,
+  content: string,
+): Promise<{ sourceMessageId: string | null; text: string; redactions: ReturnType<typeof sanitizePublicOutput>["redactions"] }> {
+  const sanitized = sanitizePublicOutput(content);
+  if (sanitized.redactions.length) {
+    console.warn("[discord-adapter] sanitized public Discord reply", {
+      guildId: transport.guildId,
+      channelId: transport.channelId,
+      threadId: transport.threadId,
+      redactions: sanitized.redactions,
+    });
+  }
+  const sent = await transport.sendAssistantMessage(sanitized.text);
+  return { ...sent, text: sanitized.text, redactions: sanitized.redactions };
+}
 
 function startTypingHeartbeat(sendTyping: (() => Promise<void>) | undefined): () => void {
   if (!sendTyping) {
@@ -972,6 +1265,40 @@ function startTypingHeartbeat(sendTyping: (() => Promise<void>) | undefined): ()
 }
 
 async function runDiscordPrompt(prompt: string, transport: DiscordPromptTransport): Promise<void> {
+  const accessPolicy = await resolveDiscordAccessPolicy({
+    channelId: transport.channelId,
+    threadId: transport.threadId,
+    authorId: transport.authorId,
+    roleIds: transport.authorRoleIds,
+  });
+  if (accessPolicy.mode === "off") {
+    await sendSanitizedAssistantMessage(
+      transport,
+      "Prism is not enabled for this Discord channel.",
+    );
+    return;
+  }
+
+  const userLimit = checkDiscordRateLimit(
+    `discord:user:${transport.authorId}:${accessPolicy.mode}`,
+    accessPolicy.rateLimit,
+  );
+  const channelLimit = checkDiscordRateLimit(
+    `discord:channel:${transport.threadId ?? transport.channelId}:${accessPolicy.mode}`,
+    {
+      windowSeconds: accessPolicy.rateLimit.windowSeconds,
+      maxRequests: Math.max(1, accessPolicy.rateLimit.maxRequests * 2),
+    },
+  );
+  const blockedLimit = !userLimit.ok ? userLimit : !channelLimit.ok ? channelLimit : null;
+  if (blockedLimit) {
+    await sendSanitizedAssistantMessage(
+      transport,
+      `Prism is rate limited here. Try again in about ${blockedLimit.retryAfterSeconds} seconds.`,
+    );
+    return;
+  }
+
   let existing: JsonObject | null = null;
   try {
     existing = await lookupDiscordSession(transport.channelId, transport.threadId);
@@ -988,6 +1315,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
       transport: "discord",
       channelName: transport.channelName,
       threadName: transport.threadName,
+      accessPolicy,
     },
     lastMessageAt: transport.createdAt,
   });
@@ -1001,6 +1329,8 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
     meta: {
       authorId: transport.authorId,
       authorName: transport.authorName,
+      authorRoleIds: transport.authorRoleIds,
+      accessPolicy,
     },
     createdAt: transport.createdAt,
   });
@@ -1036,6 +1366,15 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
           discordGuildId: transport.guildId,
           discordChannelId: transport.channelId,
           discordThreadId: transport.threadId,
+          discordAuthorId: transport.authorId,
+          discordAuthorRoleIds: transport.authorRoleIds,
+          discordAccessPolicy: accessPolicy,
+          policyInstructions:
+            accessPolicy.mode === "readonly"
+              ? "This Discord session is readonly. Do not call writer endpoints, create or mutate tasks/workflows/skills/requests, send adapter messages beyond this reply, or modify repositories. Answer from available context only."
+              : accessPolicy.mode === "run-approved"
+                ? "This Discord session may run existing approved tasks or workflows, but must not author new skills/tasks/workflows or perform broad administrative changes."
+                : "This Discord session is trusted for full agent behavior, subject to normal Prism safeguards.",
           adapterCapabilities: {
             adapter: "discord",
             capabilities: ["list-destinations", "send-message"],
@@ -1068,14 +1407,14 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         });
       }
 
-      const sent = await transport.sendAssistantMessage(reply);
+      const sent = await sendSanitizedAssistantMessage(transport, reply);
       await appendSessionMessage({
         sessionId: String(session.id),
         role: "assistant",
         source: "discord",
         sourceMessageId: sent.sourceMessageId,
-        content: reply,
-        meta: { inThread: Boolean(transport.threadId), codexThreadId },
+        content: sent.text,
+        meta: { inThread: Boolean(transport.threadId), codexThreadId, redactions: sent.redactions, accessPolicy },
         createdAt: nowUtcIso(),
       });
     } catch (error) {
@@ -1083,14 +1422,14 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
       const reply =
         "I hit a chat-engine error. This bridge can keep the Discord thread and session state, but the model-backed reply path is not available right now. " +
         `Error: ${errorMessage}`;
-      const sent = await transport.sendAssistantMessage(reply);
+      const sent = await sendSanitizedAssistantMessage(transport, reply);
       await appendSessionMessage({
         sessionId: String(session.id),
         role: "assistant",
         source: "discord",
         sourceMessageId: sent.sourceMessageId,
-        content: reply,
-        meta: { inThread: Boolean(transport.threadId), codexThreadId, failed: true },
+        content: sent.text,
+        meta: { inThread: Boolean(transport.threadId), codexThreadId, failed: true, redactions: sent.redactions, accessPolicy },
         createdAt: nowUtcIso(),
       });
     } finally {
@@ -1098,16 +1437,16 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
     }
   };
 
-  if (isAsyncChangeRequestCommand(prompt)) {
+  if (isAsyncChangeRequestCommand(prompt) && accessPolicy.capabilities.includes("workflows.run_existing")) {
     const ack = buildAsyncChangeRequestAck(prompt);
-    const sent = await transport.sendAssistantMessage(ack);
+    const sent = await sendSanitizedAssistantMessage(transport, ack);
     await appendSessionMessage({
       sessionId: String(session.id),
       role: "assistant",
       source: "discord",
       sourceMessageId: sent.sourceMessageId,
-      content: ack,
-      meta: { inThread: Boolean(transport.threadId), codexThreadId, asyncAck: true },
+      content: sent.text,
+      meta: { inThread: Boolean(transport.threadId), codexThreadId, asyncAck: true, redactions: sent.redactions, accessPolicy },
       createdAt: nowUtcIso(),
     });
     void runAndSendCodexReply();
@@ -1167,6 +1506,7 @@ async function handleDiscordChatMessage(message: Message): Promise<void> {
       threadName: targetChannel.isThread() ? targetChannel.name : null,
       authorId: message.author.id,
       authorName: message.member?.displayName ?? message.author.displayName,
+      authorRoleIds: roleIdsFromMessage(message),
       userSourceMessageId: message.id,
       createdAt: message.createdAt.toISOString(),
       sendTyping:
@@ -1372,6 +1712,7 @@ async function handleSlashPrompt(interaction: ChatInputCommandInteraction, promp
     threadName: channel.isThread() ? channel.name : null,
     authorId: interaction.user.id,
     authorName: interaction.member && "displayName" in interaction.member ? String(interaction.member.displayName) : interaction.user.displayName,
+    authorRoleIds: roleIdsFromInteraction(interaction),
     userSourceMessageId: interaction.id,
     createdAt: interaction.createdAt.toISOString(),
     sendTyping: async () => {},

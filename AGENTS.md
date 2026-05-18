@@ -55,8 +55,12 @@ Send service auth as:
 - `GET /agent/change-board/requests/:id/artifacts/:artifactId/content`
 - `GET /agent/site-content/branding`
 - `PATCH /agent/site-content/branding`
+- `GET /agent/source-adapter-policy`
+- `PATCH /agent/source-adapter-policy`
 
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
+
+For source adapter access rules, use `/agent/source-adapter-policy`. Policies are platform-scoped. Use `platforms.discord.targets` for Discord channels or threads, `platforms.discord.groups` for Discord role IDs, and `platforms.discord.users` for Discord user IDs.
 
 For questions like "what happened to request #10?" or "what artifacts did request #10 create?", do not use `/admin/board`. Use:
 
