@@ -51,6 +51,9 @@ Discord-specific envs you can add later:
 - `DISCORD_REGISTER_COMMANDS=true`
 - `DISCORD_COMMAND_GUILD_ID=<optional guild for fast command registration during dev>`
 - `DISCORD_APPLICATION_ID=<optional explicit app id>`
+- `DISCORD_ACCESS_POLICY_JSON=<optional fallback Discord chat access policy>`
+- `DISCORD_RATE_LIMIT_WINDOW_SECONDS=60`
+- `DISCORD_RATE_LIMIT_MAX_REQUESTS=6`
 - `DISCORD_SYNC_WINDOW_HOURS=24`
 - `DISCORD_MAX_MESSAGES_PER_CHANNEL=200`
 - `DISCORD_INCLUDE_ARCHIVED_THREADS=false`
@@ -80,6 +83,69 @@ Chat bridge envs:
 - `APP_API_BASE_URL=https://your-api.up.railway.app`
 - `APP_API_SERVICE_TOKEN=...`
 - `CODEX_RUNTIME_BASE_URL=https://your-codex-runtime.up.railway.app`
+
+Discord chat access policy defaults to `readonly`. The preferred configuration is
+site-owned and can be changed from the admin Settings tab without rebuilding:
+
+- `GET /agent/source-adapter-policy`
+- `PATCH /agent/source-adapter-policy`
+
+The source adapter refreshes this policy from the site service and falls back to
+env configuration if the site route is unavailable. Use `targets` for platform
+conversation surfaces, `groups` for platform permission groups, and `users` for
+platform users. For Discord, targets are channel/thread IDs and groups are role
+IDs:
+
+```json
+{
+  "platforms": {
+    "discord": {
+      "defaultMode": "readonly",
+      "defaultRateLimit": { "windowSeconds": 60, "maxRequests": 6 },
+      "targets": {
+        "123456789012345678": { "mode": "run-approved" },
+        "234567890123456789": { "mode": "full", "rateLimit": { "windowSeconds": 60, "maxRequests": 12 } }
+      },
+      "groups": {
+        "345678901234567890": { "mode": "full" }
+      },
+      "users": {
+        "456789012345678901": { "mode": "full" }
+      }
+    }
+  }
+}
+```
+
+`DISCORD_ACCESS_POLICY_JSON` remains as an emergency/bootstrap fallback:
+
+```json
+{
+  "defaultMode": "readonly",
+  "defaultRateLimit": { "windowSeconds": 60, "maxRequests": 6 },
+  "targets": {
+    "123456789012345678": { "mode": "run-approved" },
+    "234567890123456789": { "mode": "full", "rateLimit": { "windowSeconds": 60, "maxRequests": 12 } }
+  },
+  "groups": {
+    "345678901234567890": { "mode": "full" }
+  },
+  "users": {
+    "456789012345678901": { "mode": "full" }
+  }
+}
+```
+
+Modes:
+
+- `off`: refuse Discord prompts in that scope
+- `readonly`: answer/read context only
+- `run-approved`: run existing approved tasks/workflows, but do not author new custom assets
+- `full`: trusted behavior, still subject to Prism/runtime safeguards
+
+Discord replies are sanitized before posting publicly. The sanitizer redacts common
+internal Railway URLs, service hosts, token-looking values, private keys, and local
+filesystem paths.
 
 Notes:
 

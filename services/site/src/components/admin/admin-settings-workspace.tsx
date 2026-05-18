@@ -26,6 +26,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type {
   AdminSetupStatus,
@@ -53,6 +60,32 @@ type AdminBranding = {
   logoUrl: string;
   logoAlt: string;
   workspaceLabel: string;
+};
+
+type SourceAdapterAccessMode = "off" | "readonly" | "run-approved" | "full";
+
+type SourceAdapterPolicyRule = {
+  mode?: SourceAdapterAccessMode;
+  capabilities?: string[];
+  rateLimit?: {
+    windowSeconds?: number;
+    maxRequests?: number;
+  };
+};
+
+type SourceAdapterPlatformPolicy = {
+  defaultMode: SourceAdapterAccessMode;
+  defaultRateLimit: {
+    windowSeconds: number;
+    maxRequests: number;
+  };
+  targets: Record<string, SourceAdapterPolicyRule>;
+  groups: Record<string, SourceAdapterPolicyRule>;
+  users: Record<string, SourceAdapterPolicyRule>;
+};
+
+type SourceAdapterPolicySettings = {
+  platforms: Record<string, SourceAdapterPlatformPolicy>;
 };
 
 const managedRoleOptions: Array<{ value: RoleSlug; label: string; description: string }> = [
@@ -393,6 +426,254 @@ function BrandingSettings({
             Save branding
           </Button>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const accessModeOptions: Array<{ value: SourceAdapterAccessMode; label: string; description: string }> = [
+  { value: "off", label: "Off", description: "Do not answer in this surface." },
+  { value: "readonly", label: "Readonly", description: "Answer questions and read context only." },
+  { value: "run-approved", label: "Run approved", description: "Run existing approved tasks and workflows." },
+  { value: "full", label: "Full", description: "Allow authoring and write actions through runtime policy." },
+];
+
+function formatPolicyMap(value: Record<string, SourceAdapterPolicyRule>) {
+  return JSON.stringify(value, null, 2);
+}
+
+function parsePolicyMap(value: string, label: string): Record<string, SourceAdapterPolicyRule> {
+  const parsed = value.trim() ? JSON.parse(value) : {};
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object`);
+  }
+  return parsed as Record<string, SourceAdapterPolicyRule>;
+}
+
+function SourceAdapterPolicySettings() {
+  const [policy, setPolicy] = useState<SourceAdapterPolicySettings | null>(null);
+  const [targetsJson, setTargetsJson] = useState("{}");
+  const [groupsJson, setGroupsJson] = useState("{}");
+  const [usersJson, setUsersJson] = useState("{}");
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  const discordPolicy = policy?.platforms.discord;
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPolicy() {
+      try {
+        const response = await fetch("/admin/source-adapter-policy", { cache: "no-store" });
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean;
+          policy?: SourceAdapterPolicySettings;
+          error?: string;
+        };
+        if (!response.ok || payload.ok === false || !payload.policy) {
+          throw new Error(payload.error || "Could not load source adapter policy");
+        }
+        if (cancelled) return;
+        setPolicy(payload.policy);
+        const discord = payload.policy.platforms.discord;
+        setTargetsJson(formatPolicyMap(discord?.targets ?? {}));
+        setGroupsJson(formatPolicyMap(discord?.groups ?? {}));
+        setUsersJson(formatPolicyMap(discord?.users ?? {}));
+        setError(null);
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "Could not load source adapter policy");
+        }
+      }
+    }
+    void loadPolicy();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function updateDiscordPolicy(updater: (current: SourceAdapterPlatformPolicy) => SourceAdapterPlatformPolicy) {
+    setPolicy((current) => {
+      if (!current?.platforms.discord) {
+        return current;
+      }
+      return {
+        ...current,
+        platforms: {
+          ...current.platforms,
+          discord: updater(current.platforms.discord),
+        },
+      };
+    });
+  }
+
+  function savePolicy() {
+    if (!policy?.platforms.discord) return;
+    setError(null);
+    startTransition(async () => {
+      try {
+        const nextPolicy: SourceAdapterPolicySettings = {
+          ...policy,
+          platforms: {
+            ...policy.platforms,
+            discord: {
+              ...policy.platforms.discord,
+              targets: parsePolicyMap(targetsJson, "Targets"),
+              groups: parsePolicyMap(groupsJson, "Groups"),
+              users: parsePolicyMap(usersJson, "Users"),
+            },
+          },
+        };
+        const response = await fetch("/admin/source-adapter-policy", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ policy: nextPolicy }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          ok?: boolean;
+          policy?: SourceAdapterPolicySettings;
+          error?: string;
+        };
+        if (!response.ok || payload.ok === false || !payload.policy) {
+          throw new Error(payload.error || "Could not save source adapter policy");
+        }
+        setPolicy(payload.policy);
+        const discord = payload.policy.platforms.discord;
+        setTargetsJson(formatPolicyMap(discord?.targets ?? {}));
+        setGroupsJson(formatPolicyMap(discord?.groups ?? {}));
+        setUsersJson(formatPolicyMap(discord?.users ?? {}));
+      } catch (saveError) {
+        setError(saveError instanceof Error ? saveError.message : "Could not save source adapter policy");
+      }
+    });
+  }
+
+  return (
+    <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ShieldAlert className="h-4 w-4" />
+          Source Adapter Access
+        </CardTitle>
+        <CardDescription>
+          Configure public chat access without changing environment variables or rebuilding services.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        {error ? (
+          <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
+        ) : null}
+        {discordPolicy ? (
+          <>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label>Default mode</Label>
+                <Select
+                  value={discordPolicy.defaultMode}
+                  onValueChange={(value) =>
+                    updateDiscordPolicy((current) => ({
+                      ...current,
+                      defaultMode: value as SourceAdapterAccessMode,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accessModeOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {accessModeOptions.find((option) => option.value === discordPolicy.defaultMode)?.description}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="source-rate-window">Rate window seconds</Label>
+                <Input
+                  id="source-rate-window"
+                  type="number"
+                  min={1}
+                  value={discordPolicy.defaultRateLimit.windowSeconds}
+                  onChange={(event) =>
+                    updateDiscordPolicy((current) => ({
+                      ...current,
+                      defaultRateLimit: {
+                        ...current.defaultRateLimit,
+                        windowSeconds: Number.parseInt(event.target.value, 10) || current.defaultRateLimit.windowSeconds,
+                      },
+                    }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="source-rate-max">Max requests</Label>
+                <Input
+                  id="source-rate-max"
+                  type="number"
+                  min={1}
+                  value={discordPolicy.defaultRateLimit.maxRequests}
+                  onChange={(event) =>
+                    updateDiscordPolicy((current) => ({
+                      ...current,
+                      defaultRateLimit: {
+                        ...current.defaultRateLimit,
+                        maxRequests: Number.parseInt(event.target.value, 10) || current.defaultRateLimit.maxRequests,
+                      },
+                    }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="source-target-rules">Targets</Label>
+                <Textarea
+                  id="source-target-rules"
+                  className="min-h-40 font-mono text-xs"
+                  value={targetsJson}
+                  onChange={(event) => setTargetsJson(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Discord channels or threads today; Slack channels or Telegram chats later.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="source-group-rules">Groups</Label>
+                <Textarea
+                  id="source-group-rules"
+                  className="min-h-40 font-mono text-xs"
+                  value={groupsJson}
+                  onChange={(event) => setGroupsJson(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Discord roles today; platform groups later.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="source-user-rules">Users</Label>
+                <Textarea
+                  id="source-user-rules"
+                  className="min-h-40 font-mono text-xs"
+                  value={usersJson}
+                  onChange={(event) => setUsersJson(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Platform user IDs with optional mode, capabilities, or rate limits.</p>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button type="button" onClick={savePolicy} disabled={isPending}>
+                Save source policy
+              </Button>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-none border border-border/60 px-4 py-3 text-sm text-muted-foreground">
+            Loading source adapter policy.
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -1015,6 +1296,9 @@ export function AdminSettingsWorkspace({
       </div>
       <div className="border-t border-border/60 px-5 py-4 md:px-6">
         <BrandingSettings branding={branding} onBrandingChange={onBrandingChange} />
+      </div>
+      <div className="border-t border-border/60 px-5 py-4 md:px-6">
+        <SourceAdapterPolicySettings />
       </div>
       <div className="border-t border-border/60 px-5 py-4 md:px-6">
         <EnvironmentInstructions />
