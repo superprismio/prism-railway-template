@@ -71,25 +71,30 @@ import {
 
 function CommandCenter({
   currentWorkflowStepKey,
+  workflowRunStatus,
   steps,
   isPending,
   isStepRunning,
   isClosed,
   canRunWorkflowActions,
   onContinue,
+  onStop,
 }: {
   currentWorkflowStepKey: string | null;
+  workflowRunStatus: string | null;
   steps: WorkflowStep[];
   isPending: boolean;
   isStepRunning: boolean;
   isClosed: boolean;
   canRunWorkflowActions: boolean;
   onContinue: () => void;
+  onStop: () => void;
 }) {
   const currentWorkflowPosition = workflowStepForKey(currentWorkflowStepKey, steps);
   const currentStepIndex = currentWorkflowPosition.index;
   const currentStep = currentWorkflowPosition.step;
   const isRunning = isStepRunning;
+  const isCanceled = workflowRunStatus === "canceled";
   const isTerminal = currentStep.type === "terminal" || isClosed;
   const canContinue = canRunWorkflowActions && !isRunning && !isTerminal;
   const actionLabel =
@@ -117,9 +122,9 @@ function CommandCenter({
             }}
           />
           <div
-            className={`absolute top-4 hidden h-px bg-primary md:block ${
+            className={`absolute top-4 hidden h-px md:block ${
               isRunning ? "animate-pulse" : ""
-            }`}
+            } ${isCanceled ? "bg-destructive" : "bg-primary"}`}
             style={{
               left: `calc(100% / ${steps.length * 2})`,
               width:
@@ -131,16 +136,21 @@ function CommandCenter({
             }}
           />
           {steps.map((step, index) => {
-            const isComplete = currentStep.type === "terminal" || currentStepIndex > index;
+            const isComplete = !isCanceled && (currentStep.type === "terminal" || currentStepIndex > index);
             const isCurrent = currentStepIndex === index;
             const isCurrentRunning = isCurrent && isRunning;
+            const isCurrentCanceled = isCurrent && isCanceled;
 
             return (
               <div key={step.key} className="relative flex gap-3 md:block">
                 {index < steps.length - 1 ? (
                   <div
                     className={`absolute left-4 top-8 h-[calc(100%+0.75rem)] w-px md:hidden ${
-                      isComplete ? "bg-primary" : "bg-border"
+                      isCurrentCanceled || (isCanceled && index < currentStepIndex)
+                        ? "bg-destructive"
+                        : isComplete
+                          ? "bg-primary"
+                          : "bg-border"
                     }`}
                   />
                 ) : null}
@@ -150,7 +160,9 @@ function CommandCenter({
                   ) : null}
                   <div
                     className={`relative flex h-8 w-8 items-center justify-center rounded-full border ${
-                      isComplete
+                      isCurrentCanceled
+                        ? "border-destructive bg-destructive text-destructive-foreground shadow-[0_0_0_4px_hsl(var(--destructive)/0.18)]"
+                        : isComplete
                         ? "border-primary bg-primary text-primary-foreground"
                         : isCurrentRunning
                           ? "border-primary bg-primary text-primary-foreground shadow-[0_0_0_4px_hsl(var(--primary)/0.18)]"
@@ -159,7 +171,9 @@ function CommandCenter({
                             : "border-border bg-background text-muted-foreground"
                     }`}
                   >
-                    {isComplete ? (
+                    {isCurrentCanceled ? (
+                      <X className="h-4 w-4" />
+                    ) : isComplete ? (
                       <CheckCircle2 className="h-4 w-4" />
                     ) : isCurrentRunning ? (
                       <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -192,10 +206,13 @@ function CommandCenter({
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-medium">{currentStep.label}</p>
               <Badge variant="outline">{currentStep.type}</Badge>
+              {isCanceled ? <Badge variant="destructive">canceled</Badge> : null}
             </div>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               {isClosed
-                ? "This request is closed."
+                ? isCanceled
+                  ? "This request was canceled and moved to a terminal step."
+                  : "This request is closed."
                 : currentStep.type === "agent" && isRunning
                 ? "The agent is running this workflow step."
                 : currentStep.type === "agent"
@@ -238,9 +255,15 @@ function CommandCenter({
               <p className="font-medium">Step running</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 Prism is working through the current workflow step. The request
-                will move forward when the run completes.
+                will move forward when the run completes, unless it is canceled.
               </p>
             </div>
+            {canRunWorkflowActions ? (
+              <Button type="button" variant="outline" onClick={onStop} disabled={isPending}>
+                {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                Cancel run
+              </Button>
+            ) : null}
           </div>
         ) : null}
 
@@ -356,7 +379,10 @@ export function RequestDetailsPanel({
     () => workflowStepForKey(currentWorkflowStepKey, currentWorkflowSteps).step,
     [currentWorkflowStepKey, currentWorkflowSteps],
   );
-  const isWorkflowClosed = currentWorkflowStep.type === "terminal" || workflowRunStatus === "completed";
+  const isWorkflowClosed =
+    currentWorkflowStep.type === "terminal" ||
+    workflowRunStatus === "completed" ||
+    workflowRunStatus === "canceled";
   const reopenableWorkflowSteps = useMemo(
     () => currentWorkflowSteps.filter((step) => step.type !== "terminal"),
     [currentWorkflowSteps],
@@ -379,6 +405,7 @@ export function RequestDetailsPanel({
     [],
   );
   const [commentDraft, setCommentDraft] = useState("");
+  const threadScrollAreaRef = useRef<HTMLDivElement>(null);
   const artifactUploadInputRef = useRef<HTMLInputElement>(null);
   const [latestUploadedArtifactName, setLatestUploadedArtifactName] = useState<string | null>(null);
   const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
@@ -595,6 +622,19 @@ export function RequestDetailsPanel({
       window.clearInterval(intervalId);
     };
   }, [executions, isCommandPending, request.id]);
+
+  useEffect(() => {
+    const scrollArea = threadScrollAreaRef.current;
+    if (!scrollArea) return;
+    const frameId = window.requestAnimationFrame(() => {
+      const viewport = scrollArea.querySelector<HTMLDivElement>(
+        "[data-slot='scroll-area-viewport']",
+      );
+      if (!viewport) return;
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [request.id, threadMessages.length]);
 
   const activeExecution = useMemo(
     () =>
@@ -1067,6 +1107,37 @@ export function RequestDetailsPanel({
     });
   }
 
+  function handleStopWorkflowRun() {
+    if (!activeExecution) return;
+
+    setThreadError(null);
+    startCommandTransition(async () => {
+      try {
+        const response = await fetch(
+          `/admin/change-requests/${request.id}/executions/${activeExecution.id}/stop`,
+          { method: "POST" },
+        );
+        const payload = (await response.json().catch(() => null)) as {
+          ok?: boolean;
+          error?: string;
+          changeRequest?: ChangeRequestRecord;
+        } | null;
+        if (!response.ok || payload?.ok === false) {
+          throw new Error(payload?.error || "Could not stop workflow run");
+        }
+        if (payload?.changeRequest) {
+          setCurrentWorkflowStepKey(payload.changeRequest.currentWorkflowStepKey);
+          setWorkflowRunStatus(payload.changeRequest.workflowRunStatus);
+          setManualWorkflowStepKey(payload.changeRequest.currentWorkflowStepKey ?? "");
+        }
+        await refreshExecutions();
+        await refreshWorkflowEvents();
+      } catch (error) {
+        setThreadError(error instanceof Error ? error.message : "Could not stop workflow run");
+      }
+    });
+  }
+
   function handleSaveManualStatus() {
     const nextStep = currentWorkflowSteps.find((step) => step.key === manualWorkflowStepKey);
     if (!nextStep) return;
@@ -1136,12 +1207,14 @@ export function RequestDetailsPanel({
         <div className="space-y-6">
           <CommandCenter
             currentWorkflowStepKey={currentWorkflowStepKey}
+            workflowRunStatus={workflowRunStatus}
             steps={currentWorkflowSteps}
             isPending={isPending || isCommandPending}
             isStepRunning={Boolean(activeExecution)}
             isClosed={isWorkflowClosed}
             canRunWorkflowActions={canRunWorkflowActions}
             onContinue={handleContinueWorkflow}
+            onStop={handleStopWorkflowRun}
           />
           {error || threadError ? (
             <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -1632,7 +1705,10 @@ export function RequestDetailsPanel({
                 </div>
               ) : null}
 
-              <ScrollArea className="h-[320px] min-h-0 rounded-none border border-border/70 bg-background/70 p-4">
+              <ScrollArea
+                ref={threadScrollAreaRef}
+                className="h-[320px] min-h-0 rounded-none border border-border/70 bg-background/70 p-4"
+              >
                 <div className="space-y-3">
                   {threadMessages.length ? (
                     threadMessages.map((message) => (

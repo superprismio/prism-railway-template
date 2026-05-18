@@ -180,27 +180,26 @@ export function WorkflowsWorkspace() {
           <p className="mt-2 truncate text-xs text-muted-foreground">{workflow.key}</p>
         </div>
 
-        <div className="grid gap-2">
-          {steps.slice(0, 5).map((step, index) => (
+        <div className="flex flex-wrap gap-2">
+          {steps.map((step, index) => (
             <div
               key={`${workflow.key}:${String(step.key ?? index)}`}
-              className="grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2 text-sm"
+              className="grid min-w-[150px] max-w-[220px] flex-1 grid-cols-[28px_minmax(0,1fr)] items-center gap-2 border border-border/60 bg-muted/20 p-2 text-sm"
             >
               <div className="flex h-7 w-7 items-center justify-center border border-border/70 bg-muted/30 text-xs">
                 {index + 1}
               </div>
               <div className="min-w-0">
-                <p className="truncate font-medium">{stepLabel(step)}</p>
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate font-medium">{stepLabel(step)}</p>
+                  <Badge variant="outline" className="shrink-0">{stepType(step)}</Badge>
+                </div>
                 <p className="truncate text-xs text-muted-foreground">
                   {typeof step.key === "string" ? step.key : "unkeyed"}
                 </p>
               </div>
-              <Badge variant="outline">{stepType(step)}</Badge>
             </div>
           ))}
-          {steps.length > 5 ? (
-            <p className="text-xs text-muted-foreground">+{steps.length - 5} more steps</p>
-          ) : null}
           {!steps.length ? (
             <p className="text-sm text-muted-foreground">No steps in definition.</p>
           ) : null}

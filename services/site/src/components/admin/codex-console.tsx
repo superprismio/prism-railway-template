@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, useTransition } from "react"
-import { Bot, LoaderCircle, Plus, Wrench } from "lucide-react"
+import { Bot, LoaderCircle, Plus } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -19,12 +19,6 @@ type StoredConsoleMessage = {
   role: string
   content: string
 }
-
-const skillOptions = [
-  { id: "prism-api-reader", label: "Reader" },
-  { id: "prism-api-writer", label: "Writer" },
-  { id: "prism-api-ops", label: "Ops" },
-] as const
 
 const consoleSessionStorageKey = "prism-console-session-id"
 
@@ -44,7 +38,6 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
   const [draft, setDraft] = useState("")
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ConsoleMessage[]>([])
-  const [requestedSkills, setRequestedSkills] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -105,12 +98,6 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
     }
   }, [isActive, isLoadingHistory])
 
-  function toggleSkill(skillId: string) {
-    setRequestedSkills((current) =>
-      current.includes(skillId) ? current.filter((value) => value !== skillId) : [...current, skillId]
-    )
-  }
-
   function handleSubmit(formData: FormData) {
     const prompt = String(formData.get("prompt") ?? "").trim()
     if (!prompt) return
@@ -135,7 +122,6 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
           body: JSON.stringify({
             input: [{ role: "user", content: prompt }],
             session_id: sessionId,
-            requested_skills: requestedSkills,
           }),
         })
 
@@ -181,27 +167,9 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
   return (
     <div className="flex h-[calc(100vh-248px)] min-h-0 flex-col">
       <div className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4 md:px-6">
-        <div className="flex flex-wrap gap-2">
-          {skillOptions.map((skill) => {
-            const active = requestedSkills.includes(skill.id)
-            return (
-              <button
-                key={skill.id}
-                type="button"
-                onClick={() => toggleSkill(skill.id)}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs transition ${
-                  active
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border bg-background text-muted-foreground"
-                }`}
-              >
-                <Wrench className="h-3 w-3" />
-                {skill.label}
-              </button>
-            )
-          })}
+        <div className="text-sm text-muted-foreground">
+          {isPending ? "Prism is thinking..." : "Shared Prism session"}
         </div>
-
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Bot className="h-4 w-4" />
@@ -272,12 +240,13 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
             }}
             placeholder="Ask Codex about a request, review branch, preview state, or Prism context."
             className="min-h-28 rounded-none border-x-0 border-t-0 px-0 shadow-none focus-visible:ring-0"
+            disabled={isPending}
             required
           />
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
-              Optional skills are forwarded as hints to the shared runtime.
+              Enter sends. Shift+Enter adds a new line.
             </p>
             <Button type="submit" disabled={isPending}>
               {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}

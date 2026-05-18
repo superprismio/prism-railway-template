@@ -1,4 +1,4 @@
-import { Bot, GitBranch } from "lucide-react";
+import { Bot, GitBranch, LoaderCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import type {
@@ -40,6 +40,8 @@ export function ChangeRequestRow({
   ).step;
   const targetBranch =
     targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch";
+  const isRunning = request.workflowRunStatus === "running";
+  const isCanceled = request.workflowRunStatus === "canceled";
 
   return (
     <button
@@ -59,6 +61,13 @@ export function ChangeRequestRow({
           <Badge variant={workflowStepVariant(workflowStep)}>
             {workflowStep.label}
           </Badge>
+          {isRunning ? (
+            <Badge variant="default" className="gap-1">
+              <LoaderCircle className="h-3 w-3 animate-spin" />
+              running
+            </Badge>
+          ) : null}
+          {isCanceled ? <Badge variant="destructive">canceled</Badge> : null}
           <Badge variant={priorityVariant(request.priority)}>
             {request.priority}
           </Badge>

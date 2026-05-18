@@ -258,12 +258,14 @@ export function SkillsWorkspace() {
       </section>
 
       <Dialog open={isViewing} onOpenChange={setIsViewing}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] max-w-4xl min-w-0 flex-col overflow-hidden">
           <DialogHeader>
-            <DialogTitle>{selectedSkill?.name ?? "Skill"}</DialogTitle>
+            <DialogTitle className="min-w-0 truncate pr-8">
+              {selectedSkill?.name ?? "Skill"}
+            </DialogTitle>
           </DialogHeader>
-          <ScrollArea className="max-h-[70vh] border border-border/70 bg-muted/20">
-            <pre className="whitespace-pre-wrap break-words p-4 text-xs leading-6">
+          <ScrollArea className="min-h-0 flex-1 overflow-x-auto border border-border/70 bg-muted/20">
+            <pre className="max-w-full whitespace-pre-wrap break-words p-4 text-xs leading-6">
               {selectedContent || "Loading..."}
             </pre>
           </ScrollArea>

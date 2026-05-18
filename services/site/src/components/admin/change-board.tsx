@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   BotMessageSquare,
   BookOpen,
   CalendarClock,
   FilePlus,
+  LoaderCircle,
   LogOut,
   Search,
   Rows3,
@@ -71,14 +73,17 @@ export function ChangeBoard({
   data: AdminWorkspaceData;
   initialTab?: string;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [data, setData] = useState(initialData);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(
     null,
   );
   const [isNewRequestOpen, setIsNewRequestOpen] = useState(false);
-  const [lifecycleFilter, setLifecycleFilter] = useState("all");
+  const [lifecycleFilter, setLifecycleFilter] = useState("open");
   const [typeFilter, setTypeFilter] = useState("all");
   const [repositoryFilter, setRepositoryFilter] = useState("all");
+  const [stepFilters, setStepFilters] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortValue, setSortValue] = useState<RequestSortValue>("updated-desc");
   const [activeTab, setActiveTab] = useState(() =>
@@ -90,6 +95,20 @@ export function ChangeBoard({
   );
   const [isSaving, startSaving] = useTransition();
   const [modalError, setModalError] = useState<string | null>(null);
+
+  function updateAdminUrl(next: { tab?: string; request?: ChangeRequestRecord | null }) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next.tab) {
+      params.set("tab", next.tab);
+    }
+    if (next.request === null) {
+      params.delete("request");
+    } else if (next.request) {
+      params.set("request", String(next.request.requestNumber));
+    }
+    const query = params.toString();
+    router.replace(query ? `/admin?${query}` : "/admin", { scroll: false });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -145,6 +164,9 @@ export function ChangeBoard({
     (request) => workflowStepForRequest(request).type === "terminal",
   ).length;
   const activeCount = data.changeRequests.length - closedCount;
+  const runningCount = data.changeRequests.filter(
+    (request) => request.workflowRunStatus === "running",
+  ).length;
 
   const selectedRequest = useMemo(
     () =>
@@ -175,6 +197,46 @@ export function ChangeBoard({
       ).sort((left, right) => left.localeCompare(right)),
     [data.changeRequests],
   );
+
+  const workflowStepOptions = useMemo(() => {
+    const options = new Map<string, { key: string; label: string }>();
+    for (const request of data.changeRequests) {
+      const step = workflowStepForRequest(request);
+      options.set(step.key, { key: step.key, label: step.label });
+    }
+    return Array.from(options.values()).sort((left, right) =>
+      left.label.localeCompare(right.label),
+    );
+  }, [data.changeRequests, workflowByKey]);
+
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    const requestParam = searchParams.get("request");
+    const nextTab =
+      tabParam && workspaceTabs.includes(tabParam)
+        ? tabParam
+        : tabParam === "change-requests"
+          ? "requests"
+          : "requests";
+
+    if (nextTab !== activeTab) {
+      setActiveTab(nextTab);
+    }
+
+    if (requestParam) {
+      const nextRequest =
+        data.changeRequests.find(
+          (request) =>
+            request.id === requestParam ||
+            String(request.requestNumber) === requestParam,
+        ) ?? null;
+      if (nextRequest && nextRequest.id !== selectedRequestId) {
+        setSelectedRequestId(nextRequest.id);
+      }
+    } else if (selectedRequestId) {
+      setSelectedRequestId(null);
+    }
+  }, [activeTab, data.changeRequests, searchParams, selectedRequestId]);
 
   async function refreshOnce() {
     const response = await fetch("/admin/board", { cache: "no-store" });
@@ -255,7 +317,8 @@ export function ChangeBoard({
         const workflowStep = workflowStepForRequest(request);
         const isClosed =
           workflowStep.type === "terminal" ||
-          request.workflowRunStatus === "completed";
+          request.workflowRunStatus === "completed" ||
+          request.workflowRunStatus === "canceled";
         const needsReview = !isClosed && workflowStep.type === "gate";
         if (lifecycleFilter === "open" && isClosed) {
           return false;
@@ -268,6 +331,10 @@ export function ChangeBoard({
         }
 
         if (typeFilter !== "all" && request.requestType !== typeFilter) {
+          return false;
+        }
+
+        if (stepFilters.length && !stepFilters.includes(workflowStep.key)) {
           return false;
         }
 
@@ -311,6 +378,7 @@ export function ChangeBoard({
     searchQuery,
     sortValue,
     lifecycleFilter,
+    stepFilters,
     typeFilter,
     workflowByKey,
   ]);
@@ -384,7 +452,13 @@ export function ChangeBoard({
 
       <Tabs
         value={activeTab}
-        onValueChange={setActiveTab}
+        onValueChange={(nextTab) => {
+          setActiveTab(nextTab);
+          updateAdminUrl({
+            tab: nextTab,
+            request: nextTab === "requests" ? selectedRequest : null,
+          });
+        }}
         className="flex min-h-[calc(100vh-65px)] flex-col"
       >
         <div className="sticky top-16 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
@@ -455,6 +529,12 @@ export function ChangeBoard({
                 </TabsTrigger>
               ) : null}
             </TabsList>
+            {runningCount ? (
+              <div className="mt-3 inline-flex items-center gap-2 border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm text-primary">
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+                Prism is working on {runningCount} request{runningCount === 1 ? "" : "s"}
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -517,6 +597,7 @@ export function ChangeBoard({
                     onClick={() => {
                       setSelectedRequestId(null);
                       setModalError(null);
+                      updateAdminUrl({ tab: "requests", request: null });
                     }}
                   >
                     <X className="h-4 w-4" />
@@ -557,16 +638,20 @@ export function ChangeBoard({
                   lifecycleFilter={lifecycleFilter}
                   typeFilter={typeFilter}
                   repositoryFilter={repositoryFilter}
+                  stepFilters={stepFilters}
+                  workflowStepOptions={workflowStepOptions}
                   searchQuery={searchQuery}
                   sortValue={sortValue}
                   onLifecycleFilterChange={setLifecycleFilter}
                   onTypeFilterChange={setTypeFilter}
                   onRepositoryFilterChange={setRepositoryFilter}
+                  onStepFiltersChange={setStepFilters}
                   onSearchQueryChange={setSearchQuery}
                   onSortValueChange={setSortValue}
                   onOpenRequest={(nextRequest) => {
                     setSelectedRequestId(nextRequest.id);
                     setModalError(null);
+                    updateAdminUrl({ tab: "requests", request: nextRequest });
                   }}
                 />
               )}

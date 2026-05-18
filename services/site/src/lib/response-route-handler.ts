@@ -11,6 +11,7 @@ import {
   ensureWorkflowRunForRequest,
   getAgentSession,
   getChangeRequest,
+  getChangeRequestExecution,
   getTargetApp,
   getTargetEnvironment,
   getWorkflowByKey,
@@ -368,6 +369,24 @@ function completeWorkflowAgentStep(input: {
   sessionId: string
   autoContinued?: boolean
 }) {
+  if (
+    input.executionId &&
+    getChangeRequestExecution(input.executionId)?.status === "canceled"
+  ) {
+    createWorkflowEvent({
+      workflowRunId: input.workflowRunId,
+      requestId: input.requestId,
+      stepKey: input.stepKey,
+      eventType: "agent.completion_ignored",
+      actorType: "system",
+      note: "Ignored a late runtime completion because the execution was stopped by an operator.",
+      payload: {
+        executionId: input.executionId,
+      },
+    })
+    return false
+  }
+
   const traceSummary = formatTraceSummary(input.runtimeResponse.trace as RuntimeTraceEntry[] | undefined)
   const gitPushState = summarizeGitPushState(input.runtimeResponse.trace as RuntimeTraceEntry[] | undefined)
   if (input.executionId) {
@@ -925,7 +944,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     })
 
     if (activeLinkedChangeRequestId && linkedWorkflowRun && runnableStepKey) {
-      completeWorkflowAgentStep({
+      const completedStepKey = completeWorkflowAgentStep({
         executionId: activeExecutionId,
         runtimeResponse,
         responseText,
@@ -937,6 +956,13 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         linkedWorkflowSteps,
         sessionId: session.id,
       })
+      if (!completedStepKey) {
+        return NextResponse.json({
+          ok: true,
+          output_text: "The canceled workflow execution returned after cancellation and was ignored.",
+          session_id: updatedSession?.id ?? session.id,
+        })
+      }
     }
 
     const autoContinuedSteps: string[] = []
@@ -1088,7 +1114,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             },
           })
 
-          completeWorkflowAgentStep({
+          const completedContinuationStepKey = completeWorkflowAgentStep({
             executionId: continuationExecutionId,
             runtimeResponse: continuationResponse,
             responseText: continuationText,
@@ -1101,6 +1127,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             sessionId: session.id,
             autoContinued: true,
           })
+          if (!completedContinuationStepKey) {
+            break
+          }
 
           autoContinuedSteps.push(continuationStepKey)
           continuationHistory = [
@@ -1200,9 +1229,15 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     const runtimeError = error as RuntimeError
     const failureTrace = Array.isArray(runtimeError.trace) ? runtimeError.trace : []
     const failureSummary = formatTraceSummary(failureTrace)
+    const activeExecutionWasCanceled =
+      Boolean(activeExecutionId) &&
+      getChangeRequestExecution(activeExecutionId!)?.status === "canceled"
 
     if (activeLinkedChangeRequestId && linkedChangeRequest && linkedWorkflowRun && runnableStepKey) {
-      if (activeExecutionId) {
+      if (
+        activeExecutionId &&
+        !activeExecutionWasCanceled
+      ) {
         updateChangeRequestExecution(activeExecutionId, {
           status: "failed",
           branchName:
@@ -1244,16 +1279,28 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         workflowRunId: linkedWorkflowRun.id,
         requestId: activeLinkedChangeRequestId,
         stepKey: runnableStepKey,
-        eventType: "agent.failed",
-        actorType: "codex",
-        note: message,
+        eventType: activeExecutionWasCanceled ? "agent.failure_ignored" : "agent.failed",
+        actorType: activeExecutionWasCanceled ? "system" : "codex",
+        note: activeExecutionWasCanceled
+          ? "Ignored a late runtime failure because the execution was stopped by an operator."
+          : message,
         payload: {
           executionId: activeExecutionId,
           runtimeTrace: failureTrace,
         },
       })
-      updateChangeRequest(activeLinkedChangeRequestId, {
-        workflowStepKey: runnableStepKey,
+      if (!activeExecutionWasCanceled) {
+        updateChangeRequest(activeLinkedChangeRequestId, {
+          workflowStepKey: runnableStepKey,
+        })
+      }
+    }
+
+    if (activeExecutionWasCanceled) {
+      return NextResponse.json({
+        ok: true,
+        output_text: "The canceled workflow execution returned after cancellation and was ignored.",
+        session_id: session.id,
       })
     }
 
