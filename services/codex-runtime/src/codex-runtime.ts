@@ -705,6 +705,7 @@ function parseJsonEvent(rawLine: string) {
     return JSON.parse(rawLine) as {
       type?: string;
       thread_id?: string;
+      message?: string;
       item?: {
         type?: string;
         text?: string;
@@ -716,6 +717,35 @@ function parseJsonEvent(rawLine: string) {
   } catch {
     return null;
   }
+}
+
+function codexEventErrorMessage(event: ReturnType<typeof parseJsonEvent>) {
+  if (!event) {
+    return null;
+  }
+
+  if (event.type === 'error') {
+    return typeof event.message === 'string'
+      ? event.message
+      : typeof event.error === 'string'
+        ? event.error
+        : event.error?.message ?? null;
+  }
+
+  if (event.type === 'turn.failed') {
+    return typeof event.error === 'string' ? event.error : event.error?.message ?? null;
+  }
+
+  return null;
+}
+
+function meaningfulStderr(stderr: string) {
+  return stderr
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && line !== 'Reading additional input from stdin...')
+    .join('\n')
+    .trim();
 }
 
 function appendTrace(
@@ -788,6 +818,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     let stdoutBuffer = '';
     let threadId = input.codexThreadId ?? null;
     let lastAgentText = '';
+    let runtimeErrorMessage = '';
     let settled = false;
 
     appendTrace(trace, 'run.started', isResume ? 'Resuming Codex thread' : 'Starting Codex thread');
@@ -825,11 +856,10 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         if (event.type === 'item.completed' && event.item?.type && event.item.type !== 'agent_message') {
           appendTrace(trace, 'item.completed', `${event.item.type} completed`);
         }
-        if (event.type === 'error') {
-          const message =
-            typeof event.error === 'string'
-              ? event.error
-              : event.error?.message || 'Codex emitted an error event';
+        const eventErrorMessage = codexEventErrorMessage(event);
+        if (eventErrorMessage) {
+          runtimeErrorMessage = eventErrorMessage;
+          const message = eventErrorMessage || 'Codex emitted an error event';
           appendTrace(trace, 'runtime.error', message);
         }
       }
@@ -868,7 +898,8 @@ async function runCodexProcess(input: CodexRuntimeInput) {
 
         if (code !== 0) {
           appendTrace(trace, 'run.failed', `Codex exited with code ${code}`);
-          const error = new Error(`CODEX_RUNTIME_FAILED:${code}:${stderr.trim().slice(0, 500)}`) as CodexRuntimeError;
+          const failureDetails = runtimeErrorMessage || meaningfulStderr(stderr) || `Codex exited with code ${code}`;
+          const error = new Error(`CODEX_RUNTIME_FAILED:${code}:${failureDetails.slice(0, 500)}`) as CodexRuntimeError;
           error.codexThreadId = threadId;
           error.trace = trace;
           reject(error);
