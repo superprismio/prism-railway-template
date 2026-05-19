@@ -38,6 +38,7 @@ export function ChangeRequestRow({
     request.currentWorkflowStepKey,
     workflowSteps(workflow),
   ).step;
+  const workflowLabel = workflow?.name ?? request.workflowKey;
   const targetBranch =
     targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch";
   const isRunning = request.workflowRunStatus === "running";
@@ -58,6 +59,7 @@ export function ChangeRequestRow({
 
       <div className="min-w-0 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">Workflow: {workflowLabel}</Badge>
           <Badge variant={workflowStepVariant(workflowStep)}>
             {workflowStep.label}
           </Badge>
