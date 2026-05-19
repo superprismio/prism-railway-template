@@ -9,6 +9,7 @@ export {
   readSourceAdapterPolicy,
   writeSourceAdapterPolicy,
   normalizeSourceAdapterPolicy,
+  mergeSourceAdapterPolicy,
   type SourceAdapterAccessMode,
   type SourceAdapterPolicySettings,
 } from './source-adapter-policy';

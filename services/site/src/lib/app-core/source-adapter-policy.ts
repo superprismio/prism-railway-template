@@ -91,14 +91,23 @@ function normalizeRateLimit(value: unknown, fallback: SourceAdapterRateLimit): S
   };
 }
 
+function normalizePartialRateLimit(value: unknown): Partial<SourceAdapterRateLimit> | undefined {
+  const record = parseRecord(value);
+  const rateLimit: Partial<SourceAdapterRateLimit> = {};
+  if (record.windowSeconds !== undefined || record.window_seconds !== undefined) {
+    rateLimit.windowSeconds = parseInteger(record.windowSeconds ?? record.window_seconds, 60, 1, 86_400);
+  }
+  if (record.maxRequests !== undefined || record.max_requests !== undefined) {
+    rateLimit.maxRequests = parseInteger(record.maxRequests ?? record.max_requests, 6, 1, 10_000);
+  }
+  return Object.keys(rateLimit).length ? rateLimit : undefined;
+}
+
 function normalizeRule(value: unknown): SourceAdapterPolicyRule {
   const record = parseRecord(value);
   const mode = parseOptionalAccessMode(record.mode);
   const capabilities = parseCapabilities(record.capabilities);
-  const rateLimitRecord = parseRecord(record.rateLimit ?? record.rate_limit);
-  const rateLimit = Object.keys(rateLimitRecord).length
-    ? normalizeRateLimit(rateLimitRecord, defaultSourceAdapterPolicy.platforms.discord.defaultRateLimit)
-    : undefined;
+  const rateLimit = normalizePartialRateLimit(record.rateLimit ?? record.rate_limit);
 
   return {
     ...(mode ? { mode } : {}),
@@ -149,6 +158,33 @@ export function normalizeSourceAdapterPolicy(value: unknown): SourceAdapterPolic
   };
 }
 
+export function mergeSourceAdapterPolicy(
+  current: SourceAdapterPolicySettings,
+  patch: unknown,
+): SourceAdapterPolicySettings {
+  const patchRecord = parseRecord(patch);
+  const patchPlatforms = parseRecord(patchRecord.platforms);
+  const platforms = { ...current.platforms };
+
+  for (const [platformKey, platformPatch] of Object.entries(patchPlatforms)) {
+    const currentPlatform = platforms[platformKey] ?? defaultSourceAdapterPolicy.platforms.discord;
+    const platformRecord = parseRecord(platformPatch);
+
+    platforms[platformKey] = normalizePlatformPolicy(
+      {
+        defaultMode: platformRecord.defaultMode ?? platformRecord.default_mode ?? currentPlatform.defaultMode,
+        defaultRateLimit: platformRecord.defaultRateLimit ?? platformRecord.default_rate_limit ?? currentPlatform.defaultRateLimit,
+        targets: platformRecord.targets ?? platformRecord.channels ?? currentPlatform.targets,
+        groups: platformRecord.groups ?? platformRecord.roles ?? currentPlatform.groups,
+        users: platformRecord.users ?? currentPlatform.users,
+      },
+      currentPlatform,
+    );
+  }
+
+  return normalizeSourceAdapterPolicy({ platforms });
+}
+
 export function getSourceAdapterPolicyPath(config: AppConfig) {
   return path.resolve(config.dataRoot, 'source-adapter-policy.json');
 }
@@ -173,7 +209,7 @@ export function readSourceAdapterPolicy(config: AppConfig): SourceAdapterPolicyS
 }
 
 export function writeSourceAdapterPolicy(config: AppConfig, value: unknown): SourceAdapterPolicySettings {
-  const normalized = normalizeSourceAdapterPolicy(value);
+  const normalized = mergeSourceAdapterPolicy(readSourceAdapterPolicy(config), value);
   const filePath = getSourceAdapterPolicyPath(config);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');

@@ -42,7 +42,7 @@ const sanitizerRules: SanitizerRule[] = [
   },
   {
     label: "github-token",
-    pattern: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,}\b/g,
+    pattern: /\b(?:github_pat_[A-Za-z0-9_]{20,}|(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,})\b/g,
     replacement: "[redacted GitHub token]",
   },
   {
@@ -52,7 +52,7 @@ const sanitizerRules: SanitizerRule[] = [
   },
   {
     label: "local-project-path",
-    pattern: /\/(?:home|Users|workspace|app|data)\/[^\s<>"')\]]{8,}/g,
+    pattern: /(?<![:/\w.-])\/(?:home|Users|workspace|app|data)\/[^\s<>"')\]]{8,}/g,
     replacement: "[redacted local path]",
   },
 ];

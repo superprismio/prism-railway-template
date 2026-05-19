@@ -192,17 +192,28 @@ function parseRateLimitConfig(value: unknown, fallback: DiscordRateLimitConfig):
   };
 }
 
+function parsePartialRateLimitConfig(value: unknown): Partial<DiscordRateLimitConfig> | undefined {
+  const record = parseStringRecord(value);
+  const rateLimit: Partial<DiscordRateLimitConfig> = {};
+  if (record.windowSeconds !== undefined || record.window_seconds !== undefined) {
+    rateLimit.windowSeconds = parseRateLimitConfig(record, { windowSeconds: 60, maxRequests: 6 }).windowSeconds;
+  }
+  if (record.maxRequests !== undefined || record.max_requests !== undefined) {
+    rateLimit.maxRequests = parseRateLimitConfig(record, { windowSeconds: 60, maxRequests: 6 }).maxRequests;
+  }
+  return Object.keys(rateLimit).length ? rateLimit : undefined;
+}
+
 function parseAccessPolicyRule(value: unknown): DiscordAccessPolicyRule {
   const record = parseStringRecord(value);
   const rawMode = record.mode;
+  const rateLimit = parsePartialRateLimitConfig(record.rateLimit ?? record.rate_limit);
   return {
     mode: rawMode === "off" || rawMode === "readonly" || rawMode === "run-approved" || rawMode === "full"
       ? rawMode
       : undefined,
     capabilities: parseCapabilities(record.capabilities),
-    rateLimit: Object.keys(parseStringRecord(record.rateLimit ?? record.rate_limit)).length
-      ? parseRateLimitConfig(record.rateLimit ?? record.rate_limit, { windowSeconds: 60, maxRequests: 6 })
-      : undefined,
+    ...(rateLimit ? { rateLimit } : {}),
   };
 }
 
@@ -324,7 +335,8 @@ function mergePolicyRule(
   }
 
   const mode = rule.mode ?? current.mode;
-  const capabilities = rule.capabilities ?? capabilitiesForMode(mode);
+  const modeChanged = Boolean(rule.mode && rule.mode !== current.mode);
+  const capabilities = rule.capabilities ?? (modeChanged ? capabilitiesForMode(mode) : current.capabilities);
   const ruleLimit = rule.rateLimit
     ? {
         windowSeconds: rule.rateLimit.windowSeconds ?? current.rateLimit.windowSeconds,
@@ -423,6 +435,11 @@ async function resolveDiscordAccessPolicy(input: {
 function checkDiscordRateLimit(key: string, limit: DiscordRateLimitConfig): { ok: true } | { ok: false; retryAfterSeconds: number } {
   const now = Date.now();
   const windowMs = limit.windowSeconds * 1000;
+  for (const [bucketKey, bucket] of discordRateLimitBuckets) {
+    if (now - bucket.windowStartMs >= windowMs) {
+      discordRateLimitBuckets.delete(bucketKey);
+    }
+  }
   const bucket = discordRateLimitBuckets.get(key);
   if (!bucket || now - bucket.windowStartMs >= windowMs) {
     discordRateLimitBuckets.set(key, { windowStartMs: now, count: 1 });
@@ -1278,6 +1295,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
     );
     return;
   }
+  const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
 
   const userLimit = checkDiscordRateLimit(
     `discord:user:${transport.authorId}:${accessPolicy.mode}`,
@@ -1377,13 +1395,15 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
                 : "This Discord session is trusted for full agent behavior, subject to normal Prism safeguards.",
           adapterCapabilities: {
             adapter: "discord",
-            capabilities: ["list-destinations", "send-message"],
-            destinationTypes: ["discord-channel"],
+            capabilities: canSendAdapterMessages ? ["list-destinations", "send-message"] : [],
+            destinationTypes: canSendAdapterMessages ? ["discord-channel"] : [],
           },
-          availableOutputDestinations: await listDiscordDestinations().catch((error) => {
-            console.warn("[discord-adapter] destination discovery failed", describeError(error));
-            return [];
-          }),
+          availableOutputDestinations: canSendAdapterMessages
+            ? await listDiscordDestinations().catch((error) => {
+                console.warn("[discord-adapter] destination discovery failed", describeError(error));
+                return [];
+              })
+            : [],
         },
       });
       const reply = result.responseText;
@@ -1480,6 +1500,20 @@ async function handleDiscordChatMessage(message: Message): Promise<void> {
   }
   const prompt = cleanPrompt(message, bridgeClient.user.id);
   if (!prompt) {
+    return;
+  }
+  const sourceThreadId = message.channel.isThread() ? message.channel.id : null;
+  const sourceChannelId = message.channel.isThread() ? message.channel.parentId : message.channel.id;
+  if (!sourceChannelId) {
+    return;
+  }
+  const sourcePolicy = await resolveDiscordAccessPolicy({
+    channelId: sourceChannelId,
+    threadId: sourceThreadId,
+    authorId: message.author.id,
+    roleIds: roleIdsFromMessage(message),
+  });
+  if (sourcePolicy.mode === "off") {
     return;
   }
   const targetChannel = (await ensureConversationThread(message)) ?? message.channel;
