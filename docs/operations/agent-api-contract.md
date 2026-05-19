@@ -40,9 +40,12 @@ Tasks:
 - `GET /agent/tasks`
 - `POST /agent/tasks`
 - `DELETE /agent/tasks/:key`
+- `POST /agent/tasks/:key/run`
 - `GET /agent/tasks/runs`
 - `POST /agent/tasks/runs`
 - `PATCH /agent/tasks/runs/:id`
+
+Use `POST /agent/tasks/:key/run` to manually execute an existing task from Codex Runtime. The `/agent/tasks/runs` routes are for run history and task-runner run-row recording; posting there does not execute task behavior.
 
 Skills:
 

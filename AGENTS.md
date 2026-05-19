@@ -32,6 +32,7 @@ Send service auth as:
 
 - `GET /agent/tasks`
 - `POST /agent/tasks`
+- `POST /agent/tasks/:key/run`
 - `GET /agent/tasks/runs`
 - `POST /agent/tasks/runs`
 - `GET /agent/skills`
@@ -57,6 +58,17 @@ Send service auth as:
 - `PATCH /agent/site-content/branding`
 
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
+
+To manually execute an existing task from Codex Runtime, use:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/tasks/daily-memory-brief/run"
+```
+
+Do not use `/agent/tasks/runs` to start a task. That route is for task-runner run history and run-row recording.
 
 For questions like "what happened to request #10?" or "what artifacts did request #10 create?", do not use `/admin/board`. Use:
 
