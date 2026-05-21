@@ -23,6 +23,7 @@ Feature-specific behavior and UI notes:
 - [Change Request Flow](features/change-request-flow.md)
 - [Custom Skills](features/custom-skills.md)
 - [Discord Voice Plan](features/discord-voice-plan.md)
+- [Discord Access Policy Checklist](features/discord-access-policy-checklist.md)
 - [Member Roles](features/member-roles.md)
 - [Memory Explorer UI](features/memory-explorer-ui.md)
 - [Prism Stack Landing Page](features/prism-stack-landing-page.md)

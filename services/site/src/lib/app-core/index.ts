@@ -5,6 +5,15 @@ export { buildTargetEnvironmentDeployPlan, type TargetEnvironmentDeployPlan } fr
 export { buildHostedSkillArchive, deleteCustomSkill, listHostedSkills, readHostedSkillMarkdown, upsertCustomSkill, type HostedSkillSummary } from './hosted-skills';
 export { readSiteContent, writeSiteContent, normalizeSiteContent, type SiteContent } from './site-content';
 export {
+  defaultSourceAdapterPolicy,
+  readSourceAdapterPolicy,
+  writeSourceAdapterPolicy,
+  normalizeSourceAdapterPolicy,
+  mergeSourceAdapterPolicy,
+  type SourceAdapterAccessMode,
+  type SourceAdapterPolicySettings,
+} from './source-adapter-policy';
+export {
   buildRequestArtifactStoragePath,
   deleteRequestArtifactFile,
   readRequestArtifactFile,

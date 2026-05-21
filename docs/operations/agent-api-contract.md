@@ -106,6 +106,16 @@ Branding:
 
 Use the branding routes for logo, platform title, brand name, workspace label, and logo alt text updates.
 
+Source adapter access policy:
+
+- `GET /agent/source-adapter-policy`
+- `PATCH /agent/source-adapter-policy`
+
+Use source adapter policy routes for public chat/input access controls. Policies
+are platform-scoped. For Discord, `platforms.discord.targets` are channel or
+thread IDs, `platforms.discord.groups` are role IDs, and
+`platforms.discord.users` are Discord user IDs. The default mode is `readonly`.
+
 Agent sessions:
 
 - `GET /agent/agent-sessions/:sessionId`
