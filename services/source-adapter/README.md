@@ -97,6 +97,13 @@ conversation surfaces, `groups` for platform permission groups, and `users` for
 platform users. For Discord, targets are channel/thread IDs and groups are role
 IDs:
 
+Do not configure chat access in Prism Memory `space.json`. Memory config owns
+collection semantics such as Discord category-to-bucket mapping; source adapter
+policy owns access modes, rate limits, and write permissions. Older instance
+config may contain `source_adapter.discord.chat.allowed_role_ids`; current
+adapter code does not read that allow-list. Migrate those IDs into
+`platforms.discord.groups` instead.
+
 ```json
 {
   "platforms": {

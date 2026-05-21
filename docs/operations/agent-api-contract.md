@@ -115,6 +115,10 @@ Use source adapter policy routes for public chat/input access controls. Policies
 are platform-scoped. For Discord, `platforms.discord.targets` are channel or
 thread IDs, `platforms.discord.groups` are role IDs, and
 `platforms.discord.users` are Discord user IDs. The default mode is `readonly`.
+Prism Memory `space.json` is not the access-policy source of truth; it should
+only carry memory collection semantics such as Discord bucket mappings. Treat
+legacy `source_adapter.discord.chat.allowed_role_ids` entries as no-op
+migration input and move those IDs into `platforms.discord.groups`.
 
 Agent sessions:
 

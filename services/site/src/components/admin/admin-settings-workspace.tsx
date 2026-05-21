@@ -583,7 +583,8 @@ function SourceAdapterPolicySettings() {
           Source Adapter Access
         </CardTitle>
         <CardDescription>
-          Configure public chat access without changing environment variables or rebuilding services.
+          Configure canonical adapter chat access without changing environment variables or rebuilding services.
+          Prism Memory space config only controls collection semantics.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">

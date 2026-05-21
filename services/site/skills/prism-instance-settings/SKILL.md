@@ -77,6 +77,15 @@ curl -fsSL \
 Use platform-scoped policy. For Discord, `targets` are channel or thread IDs,
 `groups` are role IDs, and `users` are Discord user IDs.
 
+Source adapter access policy is the only current source of truth for adapter
+chat/input permissions. Do not add access rules to Prism Memory `space.json`.
+That file owns memory semantics such as Discord category-to-bucket mappings,
+ingestion behavior, and repair/reindex inputs. If you find legacy config such
+as `source_adapter.discord.chat.allowed_role_ids`, do not keep it in sync.
+Migrate those role IDs into `platforms.discord.groups` with the intended mode,
+then leave the legacy block unused or remove it during a full `space.json`
+replacement.
+
 ```json
 {
   "platforms": {
