@@ -618,6 +618,7 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
           outputConfig: siteTask.outputConfig,
           agentConfig: siteTask.agentConfig,
           requestedSkills: mergeRequestedSkills(siteTask),
+          allowEmptyResponse: true,
         },
       }, longRunningHttpTimeoutMs());
       return response;
