@@ -20,6 +20,7 @@ Current behavior:
 - `GET /health` for service health and config visibility
 - `POST /sync` runs a Discord REST sync and posts a normalized batch to `prism-memory`
 - `GET /capabilities`, `GET /destinations`, and `POST /messages` expose the adapter output interface for agent-authored task delivery
+- `GET /guild/channels` exposes a protected guild channel inventory for instance setup and Prism Memory bucket mapping
 - optional live Discord mention/thread chat forwarding to `codex-runtime`
 - slash commands can now route into the same Discord session/Codex path as mentions
 - Discord sync keeps message text, Discord embed summary text, and text-like attachment body text for small `.md`/`.txt`/similar files
@@ -221,6 +222,18 @@ The verified Railway path uses:
 
 - `SOURCE_ADAPTER_DATA_ROOT=/data` with a mounted volume
 - `DISCORD_BOT_TOKEN` and `DISCORD_GUILD_ID`
+
+### Guild Channel Inventory
+
+Use the protected inventory endpoint when configuring a new instance:
+
+```bash
+curl -fsSL \
+  -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
+  "$COMMUNICATION_ADAPTER_BASE_URL/guild/channels"
+```
+
+The response groups Discord categories with child text/thread channels. Use it to propose the instance-specific `discord.category_to_bucket` mapping in Prism Memory. Do not copy category IDs from another community.
 - `VOICE_TRANSCRIPTION_BASE_URL=https://api.venice.ai/api/v1/audio/transcriptions`
 - `VOICE_TRANSCRIPTION_API_KEY`
 - `VOICE_TRANSCRIPTION_LANGUAGE=en`

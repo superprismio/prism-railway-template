@@ -80,6 +80,19 @@ curl -fsSL \
 
 The by-number artifact route includes text, markdown, and JSON bodies by default. Use query params like `?name=draft.md`, `?artifactId=<id>`, `?includeContent=false`, or `?includeBinary=true` when needed.
 
+For Prism Memory Discord bucket repair after `discord.category_to_bucket` changes, use Prism Memory ops auth and start with a dry-run:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
+  "$PRISM_MEMORY_BASE_URL/ops/memory/repair-discord-buckets" \
+  -d '{"from_date":"YYYY-MM-DD","to_date":"YYYY-MM-DD","dry_run":true}'
+```
+
+Then rerun with `dry_run:false` and `rebuild:true` if the planned reclassification looks correct.
+
 ## Prism Skills
 
 Prism skills are authoritative when a user asks for work covered by a listed skill. Use the skill instructions before probing local paths or browser admin routes.
@@ -108,6 +121,16 @@ curl -fsSL \
   -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
   "$COMMUNICATION_ADAPTER_BASE_URL/destinations"
 ```
+
+Inspect the live Discord guild structure before changing Prism Memory bucket mappings:
+
+```bash
+curl -fsSL \
+  -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
+  "$COMMUNICATION_ADAPTER_BASE_URL/guild/channels"
+```
+
+Use the returned category IDs for that instance only. Do not reuse `discord.category_to_bucket` IDs from another community.
 
 Send a message:
 

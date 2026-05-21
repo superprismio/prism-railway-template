@@ -272,6 +272,28 @@ function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>)
   }
 
   if (
+    normalized.includes('brand')
+    || normalized.includes('branding')
+    || normalized.includes('logo')
+    || normalized.includes('workspace label')
+    || normalized.includes('site title')
+    || normalized.includes('instance settings')
+    || normalized.includes('source adapter')
+    || normalized.includes('access policy')
+    || normalized.includes('bot access')
+    || normalized.includes('bot permission')
+    || normalized.includes('discord access')
+    || normalized.includes('discord bucket')
+    || normalized.includes('discord category')
+    || normalized.includes('category_to_bucket')
+    || normalized.includes('memory bucket')
+    || normalized.includes('repair-discord-buckets')
+    || normalized.includes('repair discord')
+  ) {
+    requested.add('prism-instance-settings');
+  }
+
+  if (
     normalized.includes('change request')
     || normalized.includes('change-request')
     || normalized.includes('next request')

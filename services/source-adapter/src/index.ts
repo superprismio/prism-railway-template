@@ -788,6 +788,64 @@ async function listDiscordDestinations(): Promise<AdapterDestination[]> {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
+async function inspectDiscordGuildChannels(): Promise<JsonObject> {
+  const config = adapterConfig();
+  if (!config.discordGuildId) {
+    throw new Error("DISCORD_GUILD_ID is required to inspect Discord channels");
+  }
+  const channelsPayload = await discordApiRequest<JsonValue[]>(`/guilds/${config.discordGuildId}/channels`);
+  if (!Array.isArray(channelsPayload)) {
+    throw new Error("Discord guild channels response was not a list");
+  }
+  const channels = channelsPayload
+    .filter((item): item is JsonObject => !!item && typeof item === "object" && !Array.isArray(item))
+    .filter((channel) => typeof channel.id === "string")
+    .map((channel) => ({
+      id: String(channel.id),
+      name: typeof channel.name === "string" ? channel.name : String(channel.id),
+      type: Number(channel.type),
+      parentId: typeof channel.parent_id === "string" ? channel.parent_id : null,
+      position: typeof channel.position === "number" ? channel.position : 0,
+    }));
+  const channelById = new Map(channels.map((channel) => [channel.id, channel]));
+  const channelParentCategoryId = (channel: (typeof channels)[number]) => {
+    if ([10, 11, 12].includes(channel.type) && channel.parentId) {
+      return channelById.get(channel.parentId)?.parentId ?? null;
+    }
+    return channel.parentId;
+  };
+  const toInventoryChannel = (channel: (typeof channels)[number]) => ({
+    id: channel.id,
+    name: channel.name,
+    type: channel.type,
+    parentId: channel.parentId,
+    parentCategoryId: channelParentCategoryId(channel),
+    position: channel.position,
+  });
+  const categories = channels
+    .filter((channel) => channel.type === 4)
+    .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
+    .map((category) => ({
+      id: category.id,
+      name: category.name,
+      position: category.position,
+      children: channels
+        .filter((channel) => channelParentCategoryId(channel) === category.id && DISCORD_TEXT_CHANNEL_TYPES.has(channel.type))
+        .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
+        .map(toInventoryChannel),
+    }));
+  const uncategorized = channels
+    .filter((channel) => !channelParentCategoryId(channel) && DISCORD_TEXT_CHANNEL_TYPES.has(channel.type))
+    .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
+    .map(toInventoryChannel);
+
+  return {
+    guildId: config.discordGuildId,
+    categories,
+    uncategorized,
+  };
+}
+
 async function sendDiscordMessage(destinationId: string, content: string): Promise<JsonObject> {
   const normalizedDestinationId = destinationId.trim();
   const normalizedContent = content.trim();
@@ -848,6 +906,7 @@ async function normalizeDiscordMessage(input: {
   guildId: string;
   channel: JsonObject;
   threadParentId?: string | null;
+  parentCategoryId?: string | null;
 }): Promise<JsonObject> {
   const config = adapterConfig();
   const attachments = Array.isArray(input.message.attachments) ? (input.message.attachments.filter((item): item is JsonObject => !!item && typeof item === "object") as JsonObject[]) : [];
@@ -875,6 +934,7 @@ async function normalizeDiscordMessage(input: {
       channelName: typeof input.channel.name === "string" ? input.channel.name : null,
       channelType: input.channel.type ?? null,
       parentChannelId: input.threadParentId ?? (typeof input.channel.parent_id === "string" ? input.channel.parent_id : null),
+      parentCategoryId: input.parentCategoryId ?? null,
       messageUrl: channelId && messageId ? `https://discord.com/channels/${input.guildId}/${channelId}/${messageId}` : null,
       attachmentCount: attachments.length,
       attachments: attachments.map((attachment) => ({
@@ -993,6 +1053,12 @@ async function collectDiscordBatch(resetCheckpoint = false): Promise<{ payload: 
     throw new Error("Discord guild channels response was not a list");
   }
   const channels = channelsPayload.filter((item): item is JsonObject => !!item && typeof item === "object" && !Array.isArray(item));
+  const channelById = new Map<string, JsonObject>();
+  for (const channel of channels) {
+    if (typeof channel.id === "string") {
+      channelById.set(channel.id, channel);
+    }
+  }
   const textChannels = channels.filter((channel) => DISCORD_TEXT_CHANNEL_TYPES.has(Number(channel.type)));
   const parentChannels = channels.filter((channel) => DISCORD_PARENT_CHANNEL_TYPES.has(Number(channel.type)));
   const threadMap = new Map<string, JsonObject>();
@@ -1040,7 +1106,20 @@ async function collectDiscordBatch(resetCheckpoint = false): Promise<{ payload: 
         if (config.discordIgnoreBotMessages && Boolean(author.bot)) {
           continue;
         }
-        normalizedMessages.push(await normalizeDiscordMessage({ message, guildId: config.discordGuildId, channel }));
+        const channelParentId = typeof channel.parent_id === "string" ? channel.parent_id : null;
+        const parentChannel = channelParentId ? channelById.get(channelParentId) : null;
+        const parentCategoryId = [10, 11, 12].includes(Number(channel.type))
+          ? (parentChannel && typeof parentChannel.parent_id === "string" ? parentChannel.parent_id : null)
+          : channelParentId;
+        normalizedMessages.push(
+          await normalizeDiscordMessage({
+            message,
+            guildId: config.discordGuildId,
+            channel,
+            threadParentId: channelParentId,
+            parentCategoryId,
+          }),
+        );
       }
     } catch (error) {
       skippedChannels.push({
@@ -1941,6 +2020,7 @@ async function main(): Promise<void> {
       destinationTypes: ["discord-channel"],
       routes: {
         destinations: "/destinations",
+        guildChannels: "/guild/channels",
         messages: "/messages",
       },
     });
@@ -1953,6 +2033,20 @@ async function main(): Promise<void> {
         ok: true,
         adapter: "discord",
         destinations: await listDiscordDestinations(),
+      });
+    } catch (error) {
+      const message = describeError(error);
+      response.status(message === "Unauthorized" ? 401 : 500).json({ ok: false, error: message });
+    }
+  });
+
+  app.get("/guild/channels", async (request: Request, response: Response) => {
+    try {
+      requireAdapterToken(request);
+      response.json({
+        ok: true,
+        adapter: "discord",
+        guild: await inspectDiscordGuildChannels(),
       });
     } catch (error) {
       const message = describeError(error);

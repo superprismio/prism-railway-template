@@ -6,6 +6,7 @@ import hashlib
 import html
 import logging
 import os
+import re
 import secrets
 import sys
 import time
@@ -242,6 +243,131 @@ def create_app(settings: Settings) -> FastAPI:
             else:
                 merged[key] = value
         return merged
+
+    def _parse_local_date(value: str, *, field: str):
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"{field} must be YYYY-MM-DD") from exc
+
+    def _validate_bucket_name(value: str) -> str:
+        bucket = value.strip()
+        if not re.fullmatch(r"[a-z0-9_-]+", bucket):
+            raise HTTPException(status_code=400, detail=f"Invalid bucket name: {value}")
+        return bucket
+
+    def _discord_mapping_from_request(mapping: Optional[dict[str, str]]) -> dict[str, str]:
+        source = mapping
+        if source is None:
+            active = _load_active_config().model_dump(mode="json")
+            discord = active.get("discord") if isinstance(active.get("discord"), dict) else {}
+            source = discord.get("category_to_bucket") if isinstance(discord.get("category_to_bucket"), dict) else {}
+        cleaned: dict[str, str] = {}
+        for raw_key, raw_bucket in dict(source or {}).items():
+            key = str(raw_key).strip()
+            if not key:
+                continue
+            cleaned[key] = _validate_bucket_name(str(raw_bucket))
+        return cleaned
+
+    def _raw_window_paths_for_dates(start_date, end_date) -> list[Path]:
+        buckets_dir = data_root / "buckets"
+        if not buckets_dir.is_dir():
+            return []
+        paths: list[Path] = []
+        current = start_date
+        while current <= end_date:
+            paths.extend(sorted(buckets_dir.glob(f"*/raw/{current.isoformat()}/*.json")))
+            current += timedelta(days=1)
+        return sorted(paths)
+
+    def _message_mapping_ids(channel: dict, message: dict) -> list[str]:
+        metadata = message.get("metadata") if isinstance(message.get("metadata"), dict) else {}
+        candidates = [
+            metadata.get("parentCategoryId"),
+            metadata.get("parent_category_id"),
+            message.get("parentCategoryId"),
+            message.get("parent_category_id"),
+            channel.get("parentCategoryId"),
+            channel.get("parent_category_id"),
+            metadata.get("parentChannelId"),
+            metadata.get("parent_channel_id"),
+            message.get("parentChannelId"),
+            message.get("parent_channel_id"),
+            channel.get("parentChannelId"),
+            channel.get("parent_channel_id"),
+            channel.get("category_id"),
+            metadata.get("channelId"),
+            metadata.get("channel_id"),
+            message.get("channelId"),
+            message.get("channel_id"),
+            channel.get("channel_id"),
+        ]
+        seen: set[str] = set()
+        ids: list[str] = []
+        for candidate in candidates:
+            value = str(candidate or "").strip()
+            if value and value not in seen:
+                ids.append(value)
+                seen.add(value)
+        return ids
+
+    def _target_bucket_for_raw_window(payload: dict, mapping: dict[str, str]) -> tuple[str | None, bool]:
+        targets: set[str] = set()
+        for channel in payload.get("channels", []):
+            if not isinstance(channel, dict):
+                continue
+            for message in channel.get("messages", []):
+                if not isinstance(message, dict):
+                    continue
+                for candidate in _message_mapping_ids(channel, message):
+                    if candidate in mapping:
+                        targets.add(mapping[candidate])
+                        break
+        if not targets:
+            return None, False
+        if len(targets) > 1:
+            return None, True
+        return next(iter(targets)), False
+
+    def _unique_raw_destination(target_dir: Path, stem: str) -> tuple[Path, Path]:
+        json_path = target_dir / f"{stem}.json"
+        md_path = target_dir / f"{stem}.md"
+        if not json_path.exists() and not md_path.exists():
+            return json_path, md_path
+        idx = 1
+        while True:
+            candidate_stem = f"{stem}-{idx}"
+            json_path = target_dir / f"{candidate_stem}.json"
+            md_path = target_dir / f"{candidate_stem}.md"
+            if not json_path.exists() and not md_path.exists():
+                return json_path, md_path
+            idx += 1
+
+    def _rewrite_raw_markdown_bucket(path: Path, bucket: str) -> None:
+        if not path.is_file():
+            return
+        lines = path.read_text(encoding="utf-8").splitlines()
+        updated = False
+        for idx, line in enumerate(lines):
+            if line.startswith("bucket: "):
+                lines[idx] = f"bucket: {bucket}"
+                updated = True
+                break
+        if not updated:
+            lines.insert(1, f"bucket: {bucket}")
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def _remove_derived_outputs(dates: set[str], buckets: set[str]) -> list[str]:
+        removed: list[str] = []
+        for date_str in sorted(dates):
+            for bucket in sorted(buckets):
+                for suffix in ("md", "json"):
+                    path = data_root / "buckets" / bucket / "digests" / f"{date_str}.{suffix}"
+                    if path.is_file():
+                        path.unlink()
+                        removed.append(str(path.relative_to(data_root)))
+        return removed
 
     def _normalize_space_config(config_payload: dict) -> dict:
         normalized = dict(config_payload)
@@ -1187,6 +1313,178 @@ def create_app(settings: Settings) -> FastAPI:
             days=days,
             collect=collect_result,
             results=results,
+        )
+
+    @app.post(
+        "/ops/memory/repair-discord-buckets",
+        response_model=schemas.DiscordBucketRepairResponse,
+        dependencies=[ops_auth_dependency],
+        tags=["ops"],
+    )
+    async def ops_memory_repair_discord_buckets(
+        request: Request,
+        payload: schemas.DiscordBucketRepairRequest,
+    ):
+        start_date = _parse_local_date(payload.from_date, field="from_date")
+        end_date = _parse_local_date(payload.to_date, field="to_date")
+        if end_date < start_date:
+            raise HTTPException(status_code=400, detail="to_date must be on or after from_date")
+
+        mapping = _discord_mapping_from_request(payload.category_to_bucket)
+        if not mapping:
+            raise HTTPException(status_code=400, detail="No Discord category_to_bucket mapping configured")
+
+        changes: list[dict] = []
+        warnings: list[str] = []
+        affected_dates: set[str] = set()
+        affected_buckets: set[str] = set()
+        reclassified_files = 0
+        unchanged_files = 0
+        unmapped_files = 0
+        split_required_files = 0
+        raw_paths = _raw_window_paths_for_dates(start_date, end_date)
+        scanned_files = len(raw_paths)
+
+        for raw_path in raw_paths:
+            try:
+                raw_payload = json.loads(raw_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                warnings.append(f"Skipped malformed raw window: {raw_path.relative_to(data_root)}")
+                continue
+            if not isinstance(raw_payload, dict):
+                warnings.append(f"Skipped non-object raw window: {raw_path.relative_to(data_root)}")
+                continue
+
+            current_bucket = str(raw_payload.get("bucket") or raw_path.parts[-4]).strip()
+            target_bucket, split_required = _target_bucket_for_raw_window(raw_payload, mapping)
+            date_str = raw_path.parent.name
+            if split_required:
+                split_required_files += 1
+                changes.append(
+                    {
+                        "path": str(raw_path.relative_to(data_root)),
+                        "status": "split_required",
+                        "current_bucket": current_bucket,
+                    }
+                )
+                continue
+            if not target_bucket:
+                unmapped_files += 1
+                changes.append(
+                    {
+                        "path": str(raw_path.relative_to(data_root)),
+                        "status": "unmapped",
+                        "current_bucket": current_bucket,
+                    }
+                )
+                continue
+            if target_bucket == current_bucket and raw_payload.get("bucket") == target_bucket:
+                unchanged_files += 1
+                continue
+
+            affected_dates.add(date_str)
+            affected_buckets.update({current_bucket, target_bucket})
+            target_dir = data_root / "buckets" / target_bucket / "raw" / date_str
+            target_json = target_dir / raw_path.name
+            target_md = target_dir / f"{raw_path.stem}.md"
+            source_md = raw_path.with_suffix(".md")
+
+            change = {
+                "path": str(raw_path.relative_to(data_root)),
+                "status": "would_reclassify" if payload.dry_run else "reclassified",
+                "from_bucket": current_bucket,
+                "to_bucket": target_bucket,
+                "date": date_str,
+                "target_path": str(target_json.relative_to(data_root)),
+            }
+            changes.append(change)
+            reclassified_files += 1
+
+            if payload.dry_run:
+                continue
+
+            target_dir.mkdir(parents=True, exist_ok=True)
+            if target_json.resolve() == raw_path.resolve():
+                raw_payload["bucket"] = target_bucket
+                raw_path.write_text(
+                    json.dumps(raw_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                _rewrite_raw_markdown_bucket(source_md, target_bucket)
+                continue
+            if target_json.exists() or target_md.exists():
+                target_json, target_md = _unique_raw_destination(target_dir, raw_path.stem)
+                change["target_path"] = str(target_json.relative_to(data_root))
+            raw_payload["bucket"] = target_bucket
+            raw_path.write_text(json.dumps(raw_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            shutil.move(str(raw_path), str(target_json))
+            if source_md.is_file():
+                _rewrite_raw_markdown_bucket(source_md, target_bucket)
+                shutil.move(str(source_md), str(target_md))
+
+        rebuild_results: list[schemas.OpsResponse] = []
+        if not payload.dry_run and payload.rebuild and affected_dates:
+            removed = _remove_derived_outputs(affected_dates, affected_buckets)
+            if removed:
+                warnings.append(f"Removed {len(removed)} stale digest file(s) before rebuild")
+            for date_str in sorted(affected_dates):
+                for stage in ("digest", "memory", "seeds"):
+                    stage_args = [
+                        "-m",
+                        "community_memory.pipeline",
+                        stage,
+                        "--base",
+                        ops_base_arg,
+                        "--space",
+                        settings.space,
+                        "--date",
+                        date_str,
+                        "--force",
+                    ]
+                    rebuild_results.append(_run_ops_command(f"memory.{stage}", stage_args))
+
+        ok = not rebuild_results or all(result.exit_code == 0 for result in rebuild_results)
+        _append_audit_entry(
+            {
+                "ts": _now_iso(),
+                "action": "ops.memory.repair_discord_buckets",
+                "actor": _audit_actor(request),
+                "reason": _audit_reason(request),
+                "status": "dry_run" if payload.dry_run else ("ok" if ok else "error"),
+                "changed_keys": [],
+                "before": None,
+                "after": None,
+                "details": {
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                    "dry_run": payload.dry_run,
+                    "rebuild": payload.rebuild,
+                    "scanned_files": scanned_files,
+                    "reclassified_files": reclassified_files,
+                    "unchanged_files": unchanged_files,
+                    "unmapped_files": unmapped_files,
+                    "split_required_files": split_required_files,
+                    "affected_dates": sorted(affected_dates),
+                    "affected_buckets": sorted(affected_buckets),
+                },
+            }
+        )
+
+        return schemas.DiscordBucketRepairResponse(
+            ok=ok,
+            dry_run=payload.dry_run,
+            start_date=start_date.isoformat(),
+            end_date=end_date.isoformat(),
+            scanned_files=scanned_files,
+            reclassified_files=reclassified_files,
+            unchanged_files=unchanged_files,
+            unmapped_files=unmapped_files,
+            split_required_files=split_required_files,
+            affected_dates=sorted(affected_dates),
+            affected_buckets=sorted(affected_buckets),
+            changes=changes,
+            warnings=warnings,
+            rebuild_results=rebuild_results,
         )
 
     @app.post(

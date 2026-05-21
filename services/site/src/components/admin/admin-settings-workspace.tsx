@@ -244,7 +244,7 @@ function EnvironmentInstructions() {
   );
 
   return (
-    <section className="grid gap-4 lg:grid-cols-3">
+    <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
       <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -263,6 +263,33 @@ function EnvironmentInstructions() {
             'DISCORD_APPLICATION_ID=""',
             'PRISM_TRIGGER_DISABLED="true"',
           ])}
+        </CardContent>
+      </Card>
+
+      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Bot className="h-4 w-4" />
+            Discord Memory Buckets
+          </CardTitle>
+          <CardDescription>
+            Configure buckets from the live server before enabling recurring sync.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {serviceLabel("prism-memory")}
+          <div className="space-y-2 text-xs leading-relaxed text-muted-foreground">
+            <p>
+              Use the adapter inventory endpoint to inspect Discord categories,
+              then patch Prism Memory <code>discord.category_to_bucket</code>.
+            </p>
+            <p>
+              If messages were collected before the mapping was corrected, run
+              <code> /ops/memory/repair-discord-buckets</code> with
+              <code> dry_run:true</code>, then rerun with
+              <code> rebuild:true</code>.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
