@@ -4102,20 +4102,24 @@ export function listAgentMessages(sessionId: string, limit = 100) {
   const safeLimit = Math.max(1, Math.min(limit, 500));
   const rows = getDb()
     .prepare(
-      `SELECT
-         id,
-         session_id,
-         role,
-         source,
-         source_message_id,
-         content,
-         meta_json,
-         created_at,
-         updated_at
-       FROM agent_messages
-       WHERE session_id = ?
-       ORDER BY created_at ASC
-       LIMIT ?`,
+      `SELECT *
+       FROM (
+         SELECT
+           id,
+           session_id,
+           role,
+           source,
+           source_message_id,
+           content,
+           meta_json,
+           created_at,
+           updated_at
+         FROM agent_messages
+         WHERE session_id = ?
+         ORDER BY created_at DESC
+         LIMIT ?
+       )
+       ORDER BY created_at ASC`,
     )
     .all(sessionId, safeLimit) as Array<Parameters<typeof parseAgentMessageRow>[0]>;
 
