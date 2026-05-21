@@ -13,7 +13,7 @@ import time
 import io
 import tarfile
 from datetime import datetime, timedelta, timezone
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 import shutil
 from typing import Callable, Optional
@@ -160,6 +160,9 @@ def create_app(settings: Settings) -> FastAPI:
         except Exception:
             return _load_config(bundled_config_path)
 
+    def _load_active_config_dict() -> dict:
+        return asdict(_load_active_config())
+
     def _now_iso() -> str:
         return datetime.now(timezone.utc).isoformat()
 
@@ -259,7 +262,7 @@ def create_app(settings: Settings) -> FastAPI:
     def _discord_mapping_from_request(mapping: Optional[dict[str, str]]) -> dict[str, str]:
         source = mapping
         if source is None:
-            active = _load_active_config().model_dump(mode="json")
+            active = _load_active_config_dict()
             discord = active.get("discord") if isinstance(active.get("discord"), dict) else {}
             source = discord.get("category_to_bucket") if isinstance(discord.get("category_to_bucket"), dict) else {}
         cleaned: dict[str, str] = {}
@@ -802,7 +805,7 @@ def create_app(settings: Settings) -> FastAPI:
         tags=["system"],
     )
     async def config_space_update(request: Request, payload: schemas.SpaceConfigUpdateRequest):
-        current = _load_active_config().model_dump(mode="json")
+        current = _load_active_config_dict()
         return _write_space_config(payload.config, request=request, action="config.put", before_config=current)
 
     @app.patch(
