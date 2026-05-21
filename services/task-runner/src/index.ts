@@ -218,6 +218,14 @@ function scriptRunnerTimeoutMs() {
   return parseIntEnv("TASK_RUNNER_SCRIPT_TIMEOUT_MS", 120_000, 1_000, 3_600_000);
 }
 
+function scriptRunnerOutputMaxBytes() {
+  return parseIntEnv("TASK_RUNNER_SCRIPT_OUTPUT_MAX_BYTES", 256_000, 1_024, 10_000_000);
+}
+
+function scriptRunnerKillGraceMs() {
+  return parseIntEnv("TASK_RUNNER_SCRIPT_KILL_GRACE_MS", 5_000, 100, 60_000);
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -507,6 +515,8 @@ function responseTextFromResult(result: TaskRunResult): string {
     const direct =
       body.responseText ??
       body.output_text ??
+      body.summary ??
+      body.message ??
       body.text;
     if (typeof direct === "string" && direct.trim()) {
       return direct.trim();
@@ -711,6 +721,8 @@ async function runRegisteredScript(input: {
     throw new Error(`SCRIPT_RUNNER_SCRIPT_NOT_REGISTERED:${input.scriptKey}`);
   }
   const timeoutMs = input.timeoutMs ?? script.timeoutMs ?? scriptRunnerTimeoutMs();
+  const outputMaxBytes = scriptRunnerOutputMaxBytes();
+  const killGraceMs = scriptRunnerKillGraceMs();
 
   const payload = {
     task: {
@@ -741,37 +753,89 @@ async function runRegisteredScript(input: {
 
     let stdout = "";
     let stderr = "";
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
     let settled = false;
+    let killTimeout: NodeJS.Timeout | null = null;
+
+    function appendBounded(current: string, chunk: Buffer | string, currentBytes: number): {
+      value: string;
+      bytes: number;
+      truncated: boolean;
+    } {
+      const text = String(chunk);
+      const bytes = Buffer.byteLength(text);
+      const nextBytes = currentBytes + bytes;
+      if (currentBytes >= outputMaxBytes) {
+        return { value: current, bytes: nextBytes, truncated: true };
+      }
+      if (nextBytes <= outputMaxBytes) {
+        return { value: current + text, bytes: nextBytes, truncated: false };
+      }
+      const remaining = Math.max(0, outputMaxBytes - currentBytes);
+      return {
+        value: current + Buffer.from(text).subarray(0, remaining).toString(),
+        bytes: nextBytes,
+        truncated: true,
+      };
+    }
+
+    function cleanupTimers() {
+      clearTimeout(timeout);
+      if (killTimeout) {
+        clearTimeout(killTimeout);
+        killTimeout = null;
+      }
+    }
+
     const timeout = setTimeout(() => {
       if (settled) return;
       settled = true;
       child.kill("SIGTERM");
+      child.stdout.destroy();
+      child.stderr.destroy();
+      killTimeout = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGKILL");
+        }
+      }, killGraceMs);
       reject(new Error(`SCRIPT_RUNNER_TIMEOUT:${input.scriptKey}:${timeoutMs}`));
     }, timeoutMs);
 
     child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
+      if (settled) return;
+      const next = appendBounded(stdout, chunk, stdoutBytes);
+      stdout = next.value;
+      stdoutBytes = next.bytes;
+      stdoutTruncated = stdoutTruncated || next.truncated;
     });
     child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
+      if (settled) return;
+      const next = appendBounded(stderr, chunk, stderrBytes);
+      stderr = next.value;
+      stderrBytes = next.bytes;
+      stderrTruncated = stderrTruncated || next.truncated;
     });
     child.on("error", (error) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeout);
+      cleanupTimers();
       reject(error);
     });
     child.on("close", (code) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeout);
-      const stderrText = stderr.trim();
+      cleanupTimers();
+      const stderrText = `${stderr.trim()}${stderrTruncated ? "\n[stderr truncated]" : ""}`;
       if (code !== 0) {
         reject(new Error(`SCRIPT_RUNNER_FAILED:${input.scriptKey}:${code}:${stderrText.slice(0, 500)}`));
         return;
       }
 
-      const body = stdout.trim() || JSON.stringify({
+      const stdoutText = `${stdout.trim()}${stdoutTruncated ? "\n[stdout truncated]" : ""}`;
+      const body = stdoutText || JSON.stringify({
         ok: true,
         scriptKey: input.scriptKey,
         summary: `Script ${input.scriptKey} completed without output.`,

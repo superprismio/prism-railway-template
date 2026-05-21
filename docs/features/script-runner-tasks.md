@@ -76,4 +76,8 @@ Scripts should write JSON to stdout:
 
 When `outputConfig.outputDestinations` is set, task-runner delivers the script output unless the JSON body includes `shouldNotify:false` or `notify:false`.
 
+For destination messages, task-runner prefers `responseText`, `output_text`, `summary`, `message`, or `text` before falling back to raw JSON. Prefer `summary` for human-readable watchdog alerts.
+
+Script stdout and stderr capture is bounded by `TASK_RUNNER_SCRIPT_OUTPUT_MAX_BYTES`, and timed-out scripts receive `SIGTERM` followed by `SIGKILL` after `TASK_RUNNER_SCRIPT_KILL_GRACE_MS`.
+
 Escalation to workflows is intentionally separate from this first slice. A script can return `shouldEscalate:true`; a later task-runner slice can use that to create a request or trigger a workflow.

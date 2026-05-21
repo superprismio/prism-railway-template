@@ -31,6 +31,8 @@ Manual runs require `X-Task-Runner-Token` when `TASK_RUNNER_TOKEN` is configured
 - `TASK_RUNNER_HTTP_TIMEOUT_MS=120000`
 - `TASK_RUNNER_LONG_RUNNING_HTTP_TIMEOUT_MS=960000`
 - `TASK_RUNNER_SCRIPT_TIMEOUT_MS=120000`
+- `TASK_RUNNER_SCRIPT_OUTPUT_MAX_BYTES=256000`
+- `TASK_RUNNER_SCRIPT_KILL_GRACE_MS=5000`
 - `TASK_RUNNER_SCRIPT_REGISTRY_JSON={}`
 
 When `APP_API_BASE_URL` is set, the runner idempotently registers built-in task defaults, reads effective enabled state and cron schedules from `site`, and writes task run history through internal APIs.
@@ -129,6 +131,8 @@ Scripts should write JSON to stdout. Recommended output:
 ```
 
 If `outputConfig.outputDestinations` is configured, task-runner posts the script output unless the JSON body contains `shouldNotify:false` or `notify:false`.
+
+For notifications, task-runner prefers a JSON `responseText`, `output_text`, `summary`, `message`, or `text` field before falling back to raw output. Stdout/stderr capture is bounded by `TASK_RUNNER_SCRIPT_OUTPUT_MAX_BYTES` so noisy scripts cannot exhaust task-runner memory.
 
 ## Workflow runner tasks
 
