@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Bot, LoaderCircle, Plus } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -46,9 +46,33 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
   const transcriptRef = useRef<HTMLDivElement | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
-  const handledJobIdsRef = useRef(new Set<string>())
 
   const isPending = isSubmitting || Boolean(activeJobId)
+
+  const loadConsoleHistory = useCallback(async (targetSessionId: string) => {
+    const response = await fetch(`/admin/responses?session_id=${encodeURIComponent(targetSessionId)}`, {
+      cache: "no-store",
+    })
+    const payload = (await response.json()) as {
+      ok?: boolean
+      messages?: StoredConsoleMessage[]
+      error?: string
+    }
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.error || "Could not load console history")
+    }
+    const restoredMessages = Array.isArray(payload.messages)
+      ? payload.messages
+          .filter((message) => message.role === "user" || message.role === "assistant")
+          .map((message) => ({
+            id: message.id,
+            role: message.role as "user" | "assistant",
+            content: message.content,
+          }))
+      : []
+    setSessionId(targetSessionId)
+    setMessages(restoredMessages)
+  }, [])
 
   useEffect(() => {
     const storedSessionId = window.localStorage.getItem(consoleSessionStorageKey)
@@ -59,35 +83,12 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
     if (!storedSessionId) return
 
     setIsLoadingHistory(true)
-    fetch(`/admin/responses?session_id=${encodeURIComponent(storedSessionId)}`, {
-      cache: "no-store",
-    })
-      .then(async (response) => {
-        const payload = (await response.json()) as {
-          ok?: boolean
-          messages?: StoredConsoleMessage[]
-          error?: string
-        }
-        if (!response.ok || payload.ok === false) {
-          throw new Error(payload.error || "Could not load console history")
-        }
-        const restoredMessages = Array.isArray(payload.messages)
-          ? payload.messages
-              .filter((message) => message.role === "user" || message.role === "assistant")
-              .map((message) => ({
-                id: message.id,
-                role: message.role as "user" | "assistant",
-                content: message.content,
-              }))
-          : []
-        setSessionId(storedSessionId)
-        setMessages(restoredMessages)
-      })
+    loadConsoleHistory(storedSessionId)
       .catch(() => {
         window.localStorage.removeItem(consoleSessionStorageKey)
       })
       .finally(() => setIsLoadingHistory(false))
-  }, [])
+  }, [loadConsoleHistory])
 
   useEffect(() => {
     scrollToLatestMessage(transcriptRef.current, messages.length > 1 ? "smooth" : "auto")
@@ -142,16 +143,13 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
           window.localStorage.removeItem(consoleActiveJobStorageKey)
           setActiveJobId(null)
           setError(null)
-          if (job.outputText && !handledJobIdsRef.current.has(job.id)) {
-            handledJobIdsRef.current.add(job.id)
-            setMessages((current) => [
-              ...current,
-              {
-                id: randomMessageId("assistant"),
-                role: "assistant",
-                content: job.outputText!,
-              },
-            ])
+          const nextSessionId = job.sessionId ?? sessionId
+          if (nextSessionId) {
+            try {
+              await loadConsoleHistory(nextSessionId)
+            } catch (historyError) {
+              setError(describeFetchError(historyError, "Could not refresh Prism Console history"))
+            }
           }
           return
         }
@@ -180,7 +178,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
         window.clearTimeout(timeoutId)
       }
     }
-  }, [activeJobId])
+  }, [activeJobId, loadConsoleHistory, sessionId])
 
   async function handleSubmit(formData: FormData) {
     const prompt = String(formData.get("prompt") ?? "").trim()
