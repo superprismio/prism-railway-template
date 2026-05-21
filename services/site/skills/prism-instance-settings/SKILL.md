@@ -134,19 +134,40 @@ curl -fsSL \
   "$COMMUNICATION_ADAPTER_BASE_URL/guild/channels"
 ```
 
-Use the returned category IDs and channel structure to decide the
-`discord.category_to_bucket` mapping. Do not copy category IDs from another
-community; Discord IDs are instance-specific.
+Use `mappingCandidates[].id` or `categories[].id` as the default keys for
+`discord.category_to_bucket`. These are Discord category IDs. Do not map every
+child channel ID to a bucket. Child channels should inherit the bucket from
+their parent category through `parentCategoryId`. Only use a channel ID as a key
+for a channel that is truly uncategorized and needs its own bucket.
 
-Read current Prism Memory config:
+Do not copy category IDs from another community; Discord IDs are
+instance-specific.
+
+Read current Prism Memory config and save it to a file before editing:
 
 ```bash
 curl -fsSL \
   -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
-  "$PRISM_MEMORY_BASE_URL/config/space"
+  "$PRISM_MEMORY_BASE_URL/config/space" \
+  > /tmp/prism-space.json
 ```
 
-Patch only the Discord mapping when possible:
+When replacing `discord.category_to_bucket`, prefer a full config replacement so
+stale category IDs are removed. Edit `/tmp/prism-space.json` so
+`discord.category_to_bucket` contains exactly the approved mapping, then write
+the full config back:
+
+```bash
+curl -fsSL \
+  -X PUT \
+  -H "content-type: application/json" \
+  -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
+  "$PRISM_MEMORY_BASE_URL/config/space" \
+  -d "{\"config\":$(cat /tmp/prism-space.json)}"
+```
+
+Use `PATCH /config/space` only for additive changes where retaining existing
+nested keys is intended:
 
 ```bash
 curl -fsSL \
@@ -190,5 +211,7 @@ When reporting back, include:
 
 - the categories inspected
 - the final bucket mapping
+- confirmation that the mapping keys are category IDs, except any explicitly
+  named uncategorized channel exceptions
 - dry-run counts for reclassified, unmapped, and split-required files
 - whether rebuild ran and whether any stage failed

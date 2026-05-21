@@ -314,10 +314,16 @@ def create_app(settings: Settings) -> FastAPI:
 
     def _target_bucket_for_raw_window(payload: dict, mapping: dict[str, str]) -> tuple[str | None, bool]:
         targets: set[str] = set()
-        for channel in payload.get("channels", []):
+        channels = payload.get("channels", [])
+        if not isinstance(channels, list):
+            return None, False
+        for channel in channels:
             if not isinstance(channel, dict):
                 continue
-            for message in channel.get("messages", []):
+            messages = channel.get("messages", [])
+            if not isinstance(messages, list):
+                continue
+            for message in messages:
                 if not isinstance(message, dict):
                     continue
                 for candidate in _message_mapping_ids(channel, message):
@@ -1355,72 +1361,81 @@ def create_app(settings: Settings) -> FastAPI:
                 warnings.append(f"Skipped non-object raw window: {raw_path.relative_to(data_root)}")
                 continue
 
-            current_bucket = str(raw_payload.get("bucket") or raw_path.parts[-4]).strip()
-            target_bucket, split_required = _target_bucket_for_raw_window(raw_payload, mapping)
-            date_str = raw_path.parent.name
-            if split_required:
-                split_required_files += 1
-                changes.append(
-                    {
-                        "path": str(raw_path.relative_to(data_root)),
-                        "status": "split_required",
-                        "current_bucket": current_bucket,
-                    }
-                )
-                continue
-            if not target_bucket:
-                unmapped_files += 1
-                changes.append(
-                    {
-                        "path": str(raw_path.relative_to(data_root)),
-                        "status": "unmapped",
-                        "current_bucket": current_bucket,
-                    }
-                )
-                continue
-            if target_bucket == current_bucket and raw_payload.get("bucket") == target_bucket:
-                unchanged_files += 1
-                continue
+            try:
+                current_bucket = str(raw_payload.get("bucket") or raw_path.parts[-4]).strip()
+                target_bucket, split_required = _target_bucket_for_raw_window(raw_payload, mapping)
+                date_str = raw_path.parent.name
+                if split_required:
+                    split_required_files += 1
+                    changes.append(
+                        {
+                            "path": str(raw_path.relative_to(data_root)),
+                            "status": "split_required",
+                            "current_bucket": current_bucket,
+                        }
+                    )
+                    continue
+                if not target_bucket:
+                    unmapped_files += 1
+                    changes.append(
+                        {
+                            "path": str(raw_path.relative_to(data_root)),
+                            "status": "unmapped",
+                            "current_bucket": current_bucket,
+                        }
+                    )
+                    continue
+                if target_bucket == current_bucket and raw_payload.get("bucket") == target_bucket:
+                    unchanged_files += 1
+                    continue
 
-            affected_dates.add(date_str)
-            affected_buckets.update({current_bucket, target_bucket})
-            target_dir = data_root / "buckets" / target_bucket / "raw" / date_str
-            target_json = target_dir / raw_path.name
-            target_md = target_dir / f"{raw_path.stem}.md"
-            source_md = raw_path.with_suffix(".md")
+                affected_dates.add(date_str)
+                affected_buckets.update({current_bucket, target_bucket})
+                target_dir = data_root / "buckets" / target_bucket / "raw" / date_str
+                target_json = target_dir / raw_path.name
+                target_md = target_dir / f"{raw_path.stem}.md"
+                source_md = raw_path.with_suffix(".md")
 
-            change = {
-                "path": str(raw_path.relative_to(data_root)),
-                "status": "would_reclassify" if payload.dry_run else "reclassified",
-                "from_bucket": current_bucket,
-                "to_bucket": target_bucket,
-                "date": date_str,
-                "target_path": str(target_json.relative_to(data_root)),
-            }
-            changes.append(change)
-            reclassified_files += 1
+                change = {
+                    "path": str(raw_path.relative_to(data_root)),
+                    "status": "would_reclassify" if payload.dry_run else "reclassified",
+                    "from_bucket": current_bucket,
+                    "to_bucket": target_bucket,
+                    "date": date_str,
+                    "target_path": str(target_json.relative_to(data_root)),
+                }
+                changes.append(change)
+                reclassified_files += 1
 
-            if payload.dry_run:
-                continue
+                if payload.dry_run:
+                    continue
 
-            target_dir.mkdir(parents=True, exist_ok=True)
-            if target_json.resolve() == raw_path.resolve():
+                target_dir.mkdir(parents=True, exist_ok=True)
+                if target_json.resolve() == raw_path.resolve():
+                    raw_payload["bucket"] = target_bucket
+                    raw_path.write_text(
+                        json.dumps(raw_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8",
+                    )
+                    _rewrite_raw_markdown_bucket(source_md, target_bucket)
+                    continue
+                if target_json.exists() or target_md.exists():
+                    target_json, target_md = _unique_raw_destination(target_dir, raw_path.stem)
+                    change["target_path"] = str(target_json.relative_to(data_root))
                 raw_payload["bucket"] = target_bucket
                 raw_path.write_text(
                     json.dumps(raw_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
                     encoding="utf-8",
                 )
-                _rewrite_raw_markdown_bucket(source_md, target_bucket)
+                shutil.move(str(raw_path), str(target_json))
+                if source_md.is_file():
+                    _rewrite_raw_markdown_bucket(source_md, target_bucket)
+                    shutil.move(str(source_md), str(target_md))
+            except Exception as exc:
+                warnings.append(
+                    f"Skipped raw window after unexpected repair error: {raw_path.relative_to(data_root)} ({exc})"
+                )
                 continue
-            if target_json.exists() or target_md.exists():
-                target_json, target_md = _unique_raw_destination(target_dir, raw_path.stem)
-                change["target_path"] = str(target_json.relative_to(data_root))
-            raw_payload["bucket"] = target_bucket
-            raw_path.write_text(json.dumps(raw_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            shutil.move(str(raw_path), str(target_json))
-            if source_md.is_file():
-                _rewrite_raw_markdown_bucket(source_md, target_bucket)
-                shutil.move(str(source_md), str(target_md))
 
         rebuild_results: list[schemas.OpsResponse] = []
         if not payload.dry_run and payload.rebuild and affected_dates:

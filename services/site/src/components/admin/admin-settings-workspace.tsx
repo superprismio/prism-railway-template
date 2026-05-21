@@ -281,7 +281,7 @@ function EnvironmentInstructions() {
           <div className="space-y-2 text-xs leading-relaxed text-muted-foreground">
             <p>
               Use the adapter inventory endpoint to inspect Discord categories,
-              then patch Prism Memory <code>discord.category_to_bucket</code>.
+              then map category IDs to Prism Memory buckets.
             </p>
             <p>
               If messages were collected before the mapping was corrected, run
