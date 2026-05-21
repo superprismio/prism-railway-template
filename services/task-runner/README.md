@@ -30,6 +30,10 @@ Manual runs require `X-Task-Runner-Token` when `TASK_RUNNER_TOKEN` is configured
 - `CODEX_RUNTIME_BASE_URL=http://codex-runtime.railway.internal:3030`
 - `TASK_RUNNER_HTTP_TIMEOUT_MS=120000`
 - `TASK_RUNNER_LONG_RUNNING_HTTP_TIMEOUT_MS=960000`
+- `TASK_RUNNER_SCRIPT_TIMEOUT_MS=120000`
+- `TASK_RUNNER_SCRIPT_OUTPUT_MAX_BYTES=256000`
+- `TASK_RUNNER_SCRIPT_KILL_GRACE_MS=5000`
+- `TASK_RUNNER_SCRIPT_REGISTRY_JSON={}`
 
 When `APP_API_BASE_URL` is set, the runner idempotently registers built-in task defaults, reads effective enabled state and cron schedules from `site`, and writes task run history through internal APIs.
 
@@ -62,6 +66,73 @@ Supported config:
 The runner calls:
 
 - `POST /v1/responses` on `CODEX_RUNTIME_BASE_URL`
+
+## Script runner tasks
+
+Deterministic scheduled tasks use `taskType=script-runner`. Use this for watchdogs, pollers, API checks, checkpoint updates, and other jobs that should not spend LLM tokens on every run.
+
+Task rows reference a registered script by key. They do not store inline code.
+
+Supported config:
+
+```json
+{
+  "taskType": "script-runner",
+  "inputConfig": {
+    "scriptKey": "http-health-watchdog",
+    "params": {
+      "url": "https://example.com/health",
+      "expectedStatus": 200,
+      "unhealthyThreshold": 3
+    },
+    "timeoutMs": 60000
+  },
+  "outputConfig": {
+    "outputDestinations": [
+      {
+        "adapter": "discord",
+        "type": "discord-channel",
+        "id": "1234567890",
+        "label": "#ops"
+      }
+    ]
+  }
+}
+```
+
+Register script commands on the task-runner service:
+
+```json
+{
+  "http-health-watchdog": {
+    "command": "node",
+    "args": ["/data/task-runner/scripts/http-health-watchdog.mjs"],
+    "timeoutMs": 60000
+  }
+}
+```
+
+The runner passes a JSON payload on stdin and also sets:
+
+- `PRISM_TASK_KEY`
+- `PRISM_TASK_SCRIPT_KEY`
+- `PRISM_TASK_PARAMS_JSON`
+
+Scripts should write JSON to stdout. Recommended output:
+
+```json
+{
+  "ok": true,
+  "status": "healthy",
+  "summary": "API healthy",
+  "shouldNotify": false,
+  "shouldEscalate": false
+}
+```
+
+If `outputConfig.outputDestinations` is configured, task-runner posts the script output unless the JSON body contains `shouldNotify:false` or `notify:false`.
+
+For notifications, task-runner prefers a JSON `responseText`, `output_text`, `summary`, `message`, or `text` field before falling back to raw output. Stdout/stderr capture is bounded by `TASK_RUNNER_SCRIPT_OUTPUT_MAX_BYTES` so noisy scripts cannot exhaust task-runner memory.
 
 ## Workflow runner tasks
 

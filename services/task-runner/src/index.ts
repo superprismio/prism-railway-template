@@ -1,5 +1,6 @@
 import express, { type Request, type Response } from "express";
 import { CronExpressionParser } from "cron-parser";
+import { spawn } from "node:child_process";
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -58,6 +59,13 @@ type OutputDeliveryResult = {
   url?: string;
   body?: string;
   error?: string;
+};
+
+type ScriptRegistryEntry = {
+  command: string;
+  args: string[];
+  cwd: string | null;
+  timeoutMs: number | null;
 };
 
 type AppTaskRun = {
@@ -206,6 +214,18 @@ function longRunningHttpTimeoutMs() {
   );
 }
 
+function scriptRunnerTimeoutMs() {
+  return parseIntEnv("TASK_RUNNER_SCRIPT_TIMEOUT_MS", 120_000, 1_000, 3_600_000);
+}
+
+function scriptRunnerOutputMaxBytes() {
+  return parseIntEnv("TASK_RUNNER_SCRIPT_OUTPUT_MAX_BYTES", 256_000, 1_024, 10_000_000);
+}
+
+function scriptRunnerKillGraceMs() {
+  return parseIntEnv("TASK_RUNNER_SCRIPT_KILL_GRACE_MS", 5_000, 100, 60_000);
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -333,6 +353,52 @@ function recordFromConfig(config: Record<string, unknown>, key: string): Record<
   return isRecord(value) ? value : {};
 }
 
+function parseStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean);
+}
+
+function parseScriptRegistry(): Record<string, ScriptRegistryEntry> {
+  const raw = (process.env.TASK_RUNNER_SCRIPT_REGISTRY_JSON ?? "").trim();
+  if (!raw) {
+    return {};
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "task.script_registry_invalid_json", error: describeError(error) }));
+    return {};
+  }
+
+  if (!isRecord(parsed)) {
+    return {};
+  }
+
+  const registry: Record<string, ScriptRegistryEntry> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!isRecord(value)) {
+      continue;
+    }
+    const command = typeof value.command === "string" ? value.command.trim() : "";
+    if (!key.trim() || !command) {
+      continue;
+    }
+    registry[key.trim()] = {
+      command,
+      args: parseStringArray(value.args),
+      cwd: typeof value.cwd === "string" && value.cwd.trim() ? value.cwd.trim() : null,
+      timeoutMs: typeof value.timeoutMs === "number" && Number.isFinite(value.timeoutMs)
+        ? Math.max(1_000, Math.min(3_600_000, Math.trunc(value.timeoutMs)))
+        : null,
+    };
+  }
+  return registry;
+}
+
 async function registerTaskWithSite(task: BuiltInTask): Promise<void> {
   try {
     await appApiRequest("/agent/tasks", {
@@ -449,6 +515,8 @@ function responseTextFromResult(result: TaskRunResult): string {
     const direct =
       body.responseText ??
       body.output_text ??
+      body.summary ??
+      body.message ??
       body.text;
     if (typeof direct === "string" && direct.trim()) {
       return direct.trim();
@@ -457,6 +525,18 @@ function responseTextFromResult(result: TaskRunResult): string {
     // The task may return plain text.
   }
   return result.body.trim();
+}
+
+function taskResultShouldNotify(result: TaskRunResult): boolean {
+  try {
+    const body = JSON.parse(result.body) as Record<string, unknown>;
+    if (body.shouldNotify === false || body.notify === false) {
+      return false;
+    }
+  } catch {
+    // Plain text task output is deliverable when destinations are configured.
+  }
+  return true;
 }
 
 function adapterBaseUrl(adapter: string): string {
@@ -510,6 +590,9 @@ async function resolveOutputDestinationId(destination: OutputDestination): Promi
 async function deliverTaskOutput(task: RunnableTask, result: TaskRunResult): Promise<OutputDeliveryResult[]> {
   const destinations = outputDestinationsFromConfig(task.outputConfig);
   if (!destinations.length) {
+    return [];
+  }
+  if (!taskResultShouldNotify(result)) {
     return [];
   }
   const content = responseTextFromResult(result);
@@ -623,6 +706,175 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
       }, longRunningHttpTimeoutMs());
       return response;
     },
+    outputConfig: siteTask.outputConfig,
+  };
+}
+
+async function runRegisteredScript(input: {
+  siteTask: AppTask;
+  scriptKey: string;
+  params: Record<string, unknown>;
+  timeoutMs: number | null;
+}): Promise<TaskRunResult> {
+  const registry = parseScriptRegistry();
+  const script = registry[input.scriptKey];
+  if (!script) {
+    throw new Error(`SCRIPT_RUNNER_SCRIPT_NOT_REGISTERED:${input.scriptKey}`);
+  }
+  const timeoutMs = input.timeoutMs ?? script.timeoutMs ?? scriptRunnerTimeoutMs();
+  const outputMaxBytes = scriptRunnerOutputMaxBytes();
+  const killGraceMs = scriptRunnerKillGraceMs();
+
+  const payload = {
+    task: {
+      key: input.siteTask.key,
+      name: input.siteTask.name,
+      taskType: input.siteTask.taskType,
+    },
+    scriptKey: input.scriptKey,
+    params: input.params,
+    inputConfig: input.siteTask.inputConfig,
+    outputConfig: input.siteTask.outputConfig,
+    agentConfig: input.siteTask.agentConfig,
+    triggeredAt: nowIso(),
+  };
+
+  const startedAt = Date.now();
+  return await new Promise<TaskRunResult>((resolve, reject) => {
+    const child = spawn(script.command, script.args, {
+      cwd: script.cwd ?? undefined,
+      env: {
+        ...process.env,
+        PRISM_TASK_KEY: input.siteTask.key,
+        PRISM_TASK_SCRIPT_KEY: input.scriptKey,
+        PRISM_TASK_PARAMS_JSON: JSON.stringify(input.params),
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
+    let settled = false;
+    let killTimeout: NodeJS.Timeout | null = null;
+
+    function appendBounded(current: string, chunk: Buffer | string, currentBytes: number): {
+      value: string;
+      bytes: number;
+      truncated: boolean;
+    } {
+      const text = String(chunk);
+      const bytes = Buffer.byteLength(text);
+      const nextBytes = currentBytes + bytes;
+      if (currentBytes >= outputMaxBytes) {
+        return { value: current, bytes: nextBytes, truncated: true };
+      }
+      if (nextBytes <= outputMaxBytes) {
+        return { value: current + text, bytes: nextBytes, truncated: false };
+      }
+      const remaining = Math.max(0, outputMaxBytes - currentBytes);
+      return {
+        value: current + Buffer.from(text).subarray(0, remaining).toString(),
+        bytes: nextBytes,
+        truncated: true,
+      };
+    }
+
+    function cleanupTimers() {
+      clearTimeout(timeout);
+      if (killTimeout) {
+        clearTimeout(killTimeout);
+        killTimeout = null;
+      }
+    }
+
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill("SIGTERM");
+      child.stdout.destroy();
+      child.stderr.destroy();
+      killTimeout = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGKILL");
+        }
+      }, killGraceMs);
+      reject(new Error(`SCRIPT_RUNNER_TIMEOUT:${input.scriptKey}:${timeoutMs}`));
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk) => {
+      if (settled) return;
+      const next = appendBounded(stdout, chunk, stdoutBytes);
+      stdout = next.value;
+      stdoutBytes = next.bytes;
+      stdoutTruncated = stdoutTruncated || next.truncated;
+    });
+    child.stderr.on("data", (chunk) => {
+      if (settled) return;
+      const next = appendBounded(stderr, chunk, stderrBytes);
+      stderr = next.value;
+      stderrBytes = next.bytes;
+      stderrTruncated = stderrTruncated || next.truncated;
+    });
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      cleanupTimers();
+      reject(error);
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      cleanupTimers();
+      const stderrText = `${stderr.trim()}${stderrTruncated ? "\n[stderr truncated]" : ""}`;
+      if (code !== 0) {
+        reject(new Error(`SCRIPT_RUNNER_FAILED:${input.scriptKey}:${code}:${stderrText.slice(0, 500)}`));
+        return;
+      }
+
+      const stdoutText = `${stdout.trim()}${stdoutTruncated ? "\n[stdout truncated]" : ""}`;
+      const body = stdoutText || JSON.stringify({
+        ok: true,
+        scriptKey: input.scriptKey,
+        summary: `Script ${input.scriptKey} completed without output.`,
+        durationMs: Date.now() - startedAt,
+      });
+      resolve({
+        ok: true,
+        status: 200,
+        url: `script://${input.scriptKey}`,
+        body,
+      });
+    });
+
+    child.stdin.end(JSON.stringify(payload));
+  });
+}
+
+function buildScriptRunnerTask(siteTask: AppTask): RunnableTask | null {
+  const scriptKey = stringFromConfig(siteTask.inputConfig, "scriptKey");
+  if (!scriptKey) {
+    console.warn(JSON.stringify({ event: "task.script_runner_missing_script", task: siteTask.key }));
+    return null;
+  }
+  const cron = (siteTask.scheduleCron ?? "").trim() || "0 * * * *";
+  const params = recordFromConfig(siteTask.inputConfig, "params");
+  const timeoutMs = Object.prototype.hasOwnProperty.call(siteTask.inputConfig, "timeoutMs")
+    ? intFromConfig(siteTask.inputConfig, "timeoutMs", scriptRunnerTimeoutMs(), 1_000, 3_600_000)
+    : null;
+
+  return {
+    key: siteTask.key,
+    name: siteTask.name,
+    taskType: "script-runner",
+    defaultEnabled: false,
+    defaultCron: cron,
+    enabled: siteTask.enabled,
+    cron,
+    run: async () => runRegisteredScript({ siteTask, scriptKey, params, timeoutMs }),
     outputConfig: siteTask.outputConfig,
   };
 }
@@ -872,6 +1124,9 @@ function buildDynamicTask(siteTask: AppTask): RunnableTask | null {
   if (siteTask.taskType === "codex-prompt") {
     return buildCodexPromptTask(siteTask);
   }
+  if (siteTask.taskType === "script-runner") {
+    return buildScriptRunnerTask(siteTask);
+  }
   if (siteTask.taskType === "workflow-runner") {
     return buildWorkflowRunnerTask(siteTask);
   }
@@ -904,7 +1159,7 @@ function syncDynamicTasks(runnableTasks: RunnableTask[], siteTasks: AppTask[]): 
 
   for (let index = runnableTasks.length - 1; index >= 0; index -= 1) {
     const task = runnableTasks[index];
-    if ((task.taskType === "codex-prompt" || task.taskType === "workflow-runner") && !seen.has(task.key)) {
+    if ((task.taskType === "codex-prompt" || task.taskType === "script-runner" || task.taskType === "workflow-runner") && !seen.has(task.key)) {
       runnableTasks.splice(index, 1);
       state.delete(task.key);
     }
