@@ -241,6 +241,35 @@ class OpsBackfillResponse(BaseModel):
     results: list[OpsResponse]
 
 
+class DiscordBucketRepairRequest(BaseModel):
+    from_date: str = Field(..., description="Inclusive YYYY-MM-DD start date")
+    to_date: str = Field(..., description="Inclusive YYYY-MM-DD end date")
+    dry_run: bool = True
+    category_to_bucket: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Optional mapping override. Defaults to active config.discord.category_to_bucket.",
+    )
+    rebuild: bool = True
+
+
+class DiscordBucketRepairResponse(BaseModel):
+    ok: bool
+    operation: str = "memory.repair_discord_buckets"
+    dry_run: bool
+    start_date: str
+    end_date: str
+    scanned_files: int
+    reclassified_files: int
+    unchanged_files: int
+    unmapped_files: int
+    split_required_files: int
+    affected_dates: list[str]
+    affected_buckets: list[str]
+    changes: list[Dict[str, Any]]
+    warnings: list[str] = Field(default_factory=list)
+    rebuild_results: list[OpsResponse] = Field(default_factory=list)
+
+
 class SpaceConfigUpdateRequest(BaseModel):
     config: Dict[str, Any] = Field(..., description="Full replacement for config/space.json")
 

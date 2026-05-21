@@ -121,6 +121,26 @@ curl -fsSL \
 
 Use that inventory to configure the instance-specific Prism Memory `discord.category_to_bucket` mapping. The template does not ship category IDs because Discord category IDs are unique to each community.
 
+If the instance already collected Discord messages before the mapping was corrected, repair the existing memory files after patching config:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
+  "$PRISM_MEMORY_BASE_URL/ops/memory/repair-discord-buckets" \
+  -d '{"from_date":"YYYY-MM-DD","to_date":"YYYY-MM-DD","dry_run":true}'
+
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
+  "$PRISM_MEMORY_BASE_URL/ops/memory/repair-discord-buckets" \
+  -d '{"from_date":"YYYY-MM-DD","to_date":"YYYY-MM-DD","dry_run":false,"rebuild":true}'
+```
+
+The repair keeps ingest/activity history intact, reclassifies raw windows using saved Discord channel metadata, and force-rebuilds affected digests, rolling memory, and seeds.
+
 ## 7. Enable Discord Sync Cron
 
 `discord-sync-cron` deploys disabled by default:

@@ -901,6 +901,7 @@ async function normalizeDiscordMessage(input: {
   guildId: string;
   channel: JsonObject;
   threadParentId?: string | null;
+  parentCategoryId?: string | null;
 }): Promise<JsonObject> {
   const config = adapterConfig();
   const attachments = Array.isArray(input.message.attachments) ? (input.message.attachments.filter((item): item is JsonObject => !!item && typeof item === "object") as JsonObject[]) : [];
@@ -928,6 +929,7 @@ async function normalizeDiscordMessage(input: {
       channelName: typeof input.channel.name === "string" ? input.channel.name : null,
       channelType: input.channel.type ?? null,
       parentChannelId: input.threadParentId ?? (typeof input.channel.parent_id === "string" ? input.channel.parent_id : null),
+      parentCategoryId: input.parentCategoryId ?? null,
       messageUrl: channelId && messageId ? `https://discord.com/channels/${input.guildId}/${channelId}/${messageId}` : null,
       attachmentCount: attachments.length,
       attachments: attachments.map((attachment) => ({
@@ -1046,6 +1048,12 @@ async function collectDiscordBatch(resetCheckpoint = false): Promise<{ payload: 
     throw new Error("Discord guild channels response was not a list");
   }
   const channels = channelsPayload.filter((item): item is JsonObject => !!item && typeof item === "object" && !Array.isArray(item));
+  const channelById = new Map<string, JsonObject>();
+  for (const channel of channels) {
+    if (typeof channel.id === "string") {
+      channelById.set(channel.id, channel);
+    }
+  }
   const textChannels = channels.filter((channel) => DISCORD_TEXT_CHANNEL_TYPES.has(Number(channel.type)));
   const parentChannels = channels.filter((channel) => DISCORD_PARENT_CHANNEL_TYPES.has(Number(channel.type)));
   const threadMap = new Map<string, JsonObject>();
@@ -1093,7 +1101,20 @@ async function collectDiscordBatch(resetCheckpoint = false): Promise<{ payload: 
         if (config.discordIgnoreBotMessages && Boolean(author.bot)) {
           continue;
         }
-        normalizedMessages.push(await normalizeDiscordMessage({ message, guildId: config.discordGuildId, channel }));
+        const channelParentId = typeof channel.parent_id === "string" ? channel.parent_id : null;
+        const parentChannel = channelParentId ? channelById.get(channelParentId) : null;
+        const parentCategoryId = [10, 11, 12].includes(Number(channel.type))
+          ? (parentChannel && typeof parentChannel.parent_id === "string" ? parentChannel.parent_id : null)
+          : channelParentId;
+        normalizedMessages.push(
+          await normalizeDiscordMessage({
+            message,
+            guildId: config.discordGuildId,
+            channel,
+            threadParentId: channelParentId,
+            parentCategoryId,
+          }),
+        );
       }
     } catch (error) {
       skippedChannels.push({
