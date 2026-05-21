@@ -109,6 +109,16 @@ curl -fsSL \
   "$COMMUNICATION_ADAPTER_BASE_URL/destinations"
 ```
 
+Inspect the live Discord guild structure before changing Prism Memory bucket mappings:
+
+```bash
+curl -fsSL \
+  -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
+  "$COMMUNICATION_ADAPTER_BASE_URL/guild/channels"
+```
+
+Use the returned category IDs for that instance only. Do not reuse `discord.category_to_bucket` IDs from another community.
+
 Send a message:
 
 ```bash

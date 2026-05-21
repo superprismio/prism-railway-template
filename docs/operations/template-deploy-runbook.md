@@ -111,6 +111,16 @@ Expected:
 "discordReady": true
 ```
 
+After the adapter is healthy, inspect the live Discord server structure before enabling sync:
+
+```bash
+curl -fsSL \
+  -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
+  "$COMMUNICATION_ADAPTER_BASE_URL/guild/channels"
+```
+
+Use that inventory to configure the instance-specific Prism Memory `discord.category_to_bucket` mapping. The template does not ship category IDs because Discord category IDs are unique to each community.
+
 ## 7. Enable Discord Sync Cron
 
 `discord-sync-cron` deploys disabled by default:

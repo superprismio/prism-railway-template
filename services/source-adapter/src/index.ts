@@ -788,6 +788,59 @@ async function listDiscordDestinations(): Promise<AdapterDestination[]> {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
+async function inspectDiscordGuildChannels(): Promise<JsonObject> {
+  const config = adapterConfig();
+  if (!config.discordGuildId) {
+    throw new Error("DISCORD_GUILD_ID is required to inspect Discord channels");
+  }
+  const channelsPayload = await discordApiRequest<JsonValue[]>(`/guilds/${config.discordGuildId}/channels`);
+  if (!Array.isArray(channelsPayload)) {
+    throw new Error("Discord guild channels response was not a list");
+  }
+  const channels = channelsPayload
+    .filter((item): item is JsonObject => !!item && typeof item === "object" && !Array.isArray(item))
+    .filter((channel) => typeof channel.id === "string")
+    .map((channel) => ({
+      id: String(channel.id),
+      name: typeof channel.name === "string" ? channel.name : String(channel.id),
+      type: Number(channel.type),
+      parentId: typeof channel.parent_id === "string" ? channel.parent_id : null,
+      position: typeof channel.position === "number" ? channel.position : 0,
+    }));
+  const categories = channels
+    .filter((channel) => channel.type === 4)
+    .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
+    .map((category) => ({
+      id: category.id,
+      name: category.name,
+      position: category.position,
+      children: channels
+        .filter((channel) => channel.parentId === category.id && DISCORD_TEXT_CHANNEL_TYPES.has(channel.type))
+        .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
+        .map((channel) => ({
+          id: channel.id,
+          name: channel.name,
+          type: channel.type,
+          position: channel.position,
+        })),
+    }));
+  const uncategorized = channels
+    .filter((channel) => !channel.parentId && DISCORD_TEXT_CHANNEL_TYPES.has(channel.type))
+    .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
+    .map((channel) => ({
+      id: channel.id,
+      name: channel.name,
+      type: channel.type,
+      position: channel.position,
+    }));
+
+  return {
+    guildId: config.discordGuildId,
+    categories,
+    uncategorized,
+  };
+}
+
 async function sendDiscordMessage(destinationId: string, content: string): Promise<JsonObject> {
   const normalizedDestinationId = destinationId.trim();
   const normalizedContent = content.trim();
@@ -1941,6 +1994,7 @@ async function main(): Promise<void> {
       destinationTypes: ["discord-channel"],
       routes: {
         destinations: "/destinations",
+        guildChannels: "/guild/channels",
         messages: "/messages",
       },
     });
@@ -1953,6 +2007,20 @@ async function main(): Promise<void> {
         ok: true,
         adapter: "discord",
         destinations: await listDiscordDestinations(),
+      });
+    } catch (error) {
+      const message = describeError(error);
+      response.status(message === "Unauthorized" ? 401 : 500).json({ ok: false, error: message });
+    }
+  });
+
+  app.get("/guild/channels", async (request: Request, response: Response) => {
+    try {
+      requireAdapterToken(request);
+      response.json({
+        ok: true,
+        adapter: "discord",
+        guild: await inspectDiscordGuildChannels(),
       });
     } catch (error) {
       const message = describeError(error);

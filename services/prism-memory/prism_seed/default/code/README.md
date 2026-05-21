@@ -107,16 +107,19 @@ GitHub backup/push uses `GITHUB_OWNER`, `GITHUB_REPO`, and `GITHUB_TOKEN` (alrea
 The CLI autoloads repo-root `.env` values if present.
 Use `.env.example` as a template.
 
-## Canonical Discord Bucket Mapping
+## Discord Bucket Mapping
 
-`prism_seed/default/config/space.json` is the source of truth:
+The starter `space.json` intentionally does not ship community-specific Discord category IDs. Configure `discord.category_to_bucket` per instance after the Discord adapter is connected.
 
-- `684227450955235329` → `townsquare`
-- `685273857338376246` → `guildhq`
-- `1470894727342723082` → `governance`
-- `1009434800676946022` → `cohort`
-- `1470888731241087128` → `agency`
-- `724249951005179915` → `knowledge`
+Use the source adapter inventory endpoint to inspect the live server structure:
+
+```bash
+curl -fsSL \
+  -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
+  "$COMMUNICATION_ADAPTER_BASE_URL/guild/channels"
+```
+
+Then map each relevant category ID to a local bucket name. Do not reuse category IDs from another community.
 
 Additional collector bucket:
 - `inbox_memory` → bucket from inbox payload `bucket_hint` (default from `config.space.json.inbox.memory.default_bucket`)
