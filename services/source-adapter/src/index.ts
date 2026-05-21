@@ -807,6 +807,21 @@ async function inspectDiscordGuildChannels(): Promise<JsonObject> {
       parentId: typeof channel.parent_id === "string" ? channel.parent_id : null,
       position: typeof channel.position === "number" ? channel.position : 0,
     }));
+  const channelById = new Map(channels.map((channel) => [channel.id, channel]));
+  const channelParentCategoryId = (channel: (typeof channels)[number]) => {
+    if ([10, 11, 12].includes(channel.type) && channel.parentId) {
+      return channelById.get(channel.parentId)?.parentId ?? null;
+    }
+    return channel.parentId;
+  };
+  const toInventoryChannel = (channel: (typeof channels)[number]) => ({
+    id: channel.id,
+    name: channel.name,
+    type: channel.type,
+    parentId: channel.parentId,
+    parentCategoryId: channelParentCategoryId(channel),
+    position: channel.position,
+  });
   const categories = channels
     .filter((channel) => channel.type === 4)
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
@@ -815,24 +830,14 @@ async function inspectDiscordGuildChannels(): Promise<JsonObject> {
       name: category.name,
       position: category.position,
       children: channels
-        .filter((channel) => channel.parentId === category.id && DISCORD_TEXT_CHANNEL_TYPES.has(channel.type))
+        .filter((channel) => channelParentCategoryId(channel) === category.id && DISCORD_TEXT_CHANNEL_TYPES.has(channel.type))
         .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
-        .map((channel) => ({
-          id: channel.id,
-          name: channel.name,
-          type: channel.type,
-          position: channel.position,
-        })),
+        .map(toInventoryChannel),
     }));
   const uncategorized = channels
-    .filter((channel) => !channel.parentId && DISCORD_TEXT_CHANNEL_TYPES.has(channel.type))
+    .filter((channel) => !channelParentCategoryId(channel) && DISCORD_TEXT_CHANNEL_TYPES.has(channel.type))
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
-    .map((channel) => ({
-      id: channel.id,
-      name: channel.name,
-      type: channel.type,
-      position: channel.position,
-    }));
+    .map(toInventoryChannel);
 
   return {
     guildId: config.discordGuildId,

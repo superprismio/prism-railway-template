@@ -1342,8 +1342,10 @@ def create_app(settings: Settings) -> FastAPI:
         unchanged_files = 0
         unmapped_files = 0
         split_required_files = 0
+        raw_paths = _raw_window_paths_for_dates(start_date, end_date)
+        scanned_files = len(raw_paths)
 
-        for raw_path in _raw_window_paths_for_dates(start_date, end_date):
+        for raw_path in raw_paths:
             try:
                 raw_payload = json.loads(raw_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
@@ -1457,7 +1459,7 @@ def create_app(settings: Settings) -> FastAPI:
                     "end_date": end_date.isoformat(),
                     "dry_run": payload.dry_run,
                     "rebuild": payload.rebuild,
-                    "scanned_files": len(_raw_window_paths_for_dates(start_date, end_date)),
+                    "scanned_files": scanned_files,
                     "reclassified_files": reclassified_files,
                     "unchanged_files": unchanged_files,
                     "unmapped_files": unmapped_files,
@@ -1473,7 +1475,7 @@ def create_app(settings: Settings) -> FastAPI:
             dry_run=payload.dry_run,
             start_date=start_date.isoformat(),
             end_date=end_date.isoformat(),
-            scanned_files=len(_raw_window_paths_for_dates(start_date, end_date)),
+            scanned_files=scanned_files,
             reclassified_files=reclassified_files,
             unchanged_files=unchanged_files,
             unmapped_files=unmapped_files,
