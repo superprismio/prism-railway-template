@@ -503,6 +503,37 @@ export interface AgentMessageRecord {
   updatedAt: string;
 }
 
+export interface AgentResponseJobRecord {
+  id: string;
+  sessionId: string | null;
+  status: string;
+  input: Record<string, unknown>;
+  response: Record<string, unknown>;
+  outputText: string | null;
+  errorMessage: string | null;
+  trace: Array<Record<string, unknown>>;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAgentResponseJobInput {
+  sessionId?: string | null;
+  input: Record<string, unknown>;
+}
+
+export interface UpdateAgentResponseJobInput {
+  sessionId?: string | null;
+  status?: string;
+  response?: Record<string, unknown>;
+  outputText?: string | null;
+  errorMessage?: string | null;
+  trace?: Array<Record<string, unknown>>;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+}
+
 export interface UpsertAgentSessionInput {
   source: string;
   status?: string;
@@ -1474,6 +1505,36 @@ function parseAgentMessageRow(row: {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   } satisfies AgentMessageRecord;
+}
+
+function parseAgentResponseJobRow(row: {
+  id: string;
+  session_id: string | null;
+  status: string;
+  input_json: string;
+  response_json: string;
+  output_text: string | null;
+  error_message: string | null;
+  trace_json: string;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+}) {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    status: row.status,
+    input: parseJsonValue<Record<string, unknown>>(row.input_json, {}),
+    response: parseJsonValue<Record<string, unknown>>(row.response_json, {}),
+    outputText: row.output_text,
+    errorMessage: row.error_message,
+    trace: parseJsonValue<Array<Record<string, unknown>>>(row.trace_json, []),
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  } satisfies AgentResponseJobRecord;
 }
 
 function listSkillLabelsForUser(userId: string | null) {
@@ -4114,6 +4175,98 @@ export function createAgentMessage(input: CreateAgentMessageInput) {
     .get(id) as Parameters<typeof parseAgentMessageRow>[0] | undefined;
 
   return row ? parseAgentMessageRow(row) : null;
+}
+
+export function createAgentResponseJob(input: CreateAgentResponseJobInput) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+
+  getDb()
+    .prepare(
+      `INSERT INTO agent_response_jobs (
+         id, session_id, status, input_json, response_json, output_text, error_message,
+         trace_json, started_at, finished_at, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.sessionId ?? null,
+      'queued',
+      JSON.stringify(input.input),
+      '{}',
+      null,
+      null,
+      '[]',
+      null,
+      null,
+      now,
+      now,
+    );
+
+  return getAgentResponseJob(id);
+}
+
+export function getAgentResponseJob(id: string) {
+  const row = getDb()
+    .prepare(
+      `SELECT
+         id,
+         session_id,
+         status,
+         input_json,
+         response_json,
+         output_text,
+         error_message,
+         trace_json,
+         started_at,
+         finished_at,
+         created_at,
+         updated_at
+       FROM agent_response_jobs
+       WHERE id = ?`,
+    )
+    .get(id) as Parameters<typeof parseAgentResponseJobRow>[0] | undefined;
+
+  return row ? parseAgentResponseJobRow(row) : null;
+}
+
+export function updateAgentResponseJob(id: string, input: UpdateAgentResponseJobInput) {
+  const existing = getAgentResponseJob(id);
+  if (!existing) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  getDb()
+    .prepare(
+      `UPDATE agent_response_jobs
+       SET session_id = ?,
+           status = ?,
+           input_json = ?,
+           response_json = ?,
+           output_text = ?,
+           error_message = ?,
+           trace_json = ?,
+           started_at = ?,
+           finished_at = ?,
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .run(
+      input.sessionId !== undefined ? input.sessionId : existing.sessionId,
+      input.status ?? existing.status,
+      JSON.stringify(existing.input),
+      JSON.stringify(input.response ?? existing.response),
+      input.outputText !== undefined ? input.outputText : existing.outputText,
+      input.errorMessage !== undefined ? input.errorMessage : existing.errorMessage,
+      JSON.stringify(input.trace ?? existing.trace),
+      input.startedAt !== undefined ? input.startedAt : existing.startedAt,
+      input.finishedAt !== undefined ? input.finishedAt : existing.finishedAt,
+      now,
+      id,
+    );
+
+  return getAgentResponseJob(id);
 }
 
 export function getAdminChangeRequest(changeRequestId: string) {

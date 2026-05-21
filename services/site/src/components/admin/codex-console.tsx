@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useTransition } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Bot, LoaderCircle, Plus } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -21,6 +21,7 @@ type StoredConsoleMessage = {
 }
 
 const consoleSessionStorageKey = "prism-console-session-id"
+const consoleActiveJobStorageKey = "prism-console-active-job-id"
 
 function randomMessageId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
@@ -40,45 +41,54 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
   const [messages, setMessages] = useState<ConsoleMessage[]>([])
   const [error, setError] = useState<string | null>(null)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
-  const [isPending, startTransition] = useTransition()
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const transcriptRef = useRef<HTMLDivElement | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
 
+  const isPending = isSubmitting || Boolean(activeJobId)
+
+  const loadConsoleHistory = useCallback(async (targetSessionId: string) => {
+    const response = await fetch(`/admin/responses?session_id=${encodeURIComponent(targetSessionId)}`, {
+      cache: "no-store",
+    })
+    const payload = (await response.json()) as {
+      ok?: boolean
+      messages?: StoredConsoleMessage[]
+      error?: string
+    }
+    if (!response.ok || payload.ok === false) {
+      throw new Error(payload.error || "Could not load console history")
+    }
+    const restoredMessages = Array.isArray(payload.messages)
+      ? payload.messages
+          .filter((message) => message.role === "user" || message.role === "assistant")
+          .map((message) => ({
+            id: message.id,
+            role: message.role as "user" | "assistant",
+            content: message.content,
+          }))
+      : []
+    setSessionId(targetSessionId)
+    setMessages(restoredMessages)
+  }, [])
+
   useEffect(() => {
     const storedSessionId = window.localStorage.getItem(consoleSessionStorageKey)
+    const storedJobId = window.localStorage.getItem(consoleActiveJobStorageKey)
+    if (storedJobId) {
+      setActiveJobId(storedJobId)
+    }
     if (!storedSessionId) return
 
     setIsLoadingHistory(true)
-    fetch(`/admin/responses?session_id=${encodeURIComponent(storedSessionId)}`, {
-      cache: "no-store",
-    })
-      .then(async (response) => {
-        const payload = (await response.json()) as {
-          ok?: boolean
-          messages?: StoredConsoleMessage[]
-          error?: string
-        }
-        if (!response.ok || payload.ok === false) {
-          throw new Error(payload.error || "Could not load console history")
-        }
-        const restoredMessages = Array.isArray(payload.messages)
-          ? payload.messages
-              .filter((message) => message.role === "user" || message.role === "assistant")
-              .map((message) => ({
-                id: message.id,
-                role: message.role as "user" | "assistant",
-                content: message.content,
-              }))
-          : []
-        setSessionId(storedSessionId)
-        setMessages(restoredMessages)
-      })
+    loadConsoleHistory(storedSessionId)
       .catch(() => {
         window.localStorage.removeItem(consoleSessionStorageKey)
       })
       .finally(() => setIsLoadingHistory(false))
-  }, [])
+  }, [loadConsoleHistory])
 
   useEffect(() => {
     scrollToLatestMessage(transcriptRef.current, messages.length > 1 ? "smooth" : "auto")
@@ -98,7 +108,79 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
     }
   }, [isActive, isLoadingHistory])
 
-  function handleSubmit(formData: FormData) {
+  useEffect(() => {
+    if (!activeJobId) return
+    let canceled = false
+    let timeoutId: number | null = null
+
+    async function pollJob() {
+      try {
+        const response = await fetch(`/admin/console/jobs/${encodeURIComponent(activeJobId!)}`, {
+          cache: "no-store",
+        })
+        if (!response.ok) {
+          throw new Error(await readApiError(response, "Could not load Prism Console job"))
+        }
+        const payload = (await response.json()) as {
+          ok?: boolean
+          job?: {
+            id: string
+            status: string
+            sessionId?: string | null
+            outputText?: string | null
+            errorMessage?: string | null
+          }
+        }
+        const job = payload.job
+        if (!job) {
+          throw new Error("Console job response did not include a job")
+        }
+        if (job.sessionId) {
+          setSessionId(job.sessionId)
+          window.localStorage.setItem(consoleSessionStorageKey, job.sessionId)
+        }
+        if (job.status === "succeeded") {
+          window.localStorage.removeItem(consoleActiveJobStorageKey)
+          setActiveJobId(null)
+          setError(null)
+          const nextSessionId = job.sessionId ?? sessionId
+          if (nextSessionId) {
+            try {
+              await loadConsoleHistory(nextSessionId)
+            } catch (historyError) {
+              setError(describeFetchError(historyError, "Could not refresh Prism Console history"))
+            }
+          }
+          return
+        }
+        if (job.status === "failed" || job.status === "canceled") {
+          window.localStorage.removeItem(consoleActiveJobStorageKey)
+          setActiveJobId(null)
+          setError(job.errorMessage || `Console job ${job.status}`)
+          return
+        }
+      } catch (pollError) {
+        window.localStorage.removeItem(consoleActiveJobStorageKey)
+        setActiveJobId(null)
+        setError(describeFetchError(pollError, "Could not run Prism Console"))
+        return
+      }
+
+      if (!canceled) {
+        timeoutId = window.setTimeout(pollJob, 1500)
+      }
+    }
+
+    void pollJob()
+    return () => {
+      canceled = true
+      if (timeoutId) {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }, [activeJobId, loadConsoleHistory, sessionId])
+
+  async function handleSubmit(formData: FormData) {
     const prompt = String(formData.get("prompt") ?? "").trim()
     if (!prompt) return
 
@@ -111,50 +193,42 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
     setDraft("")
     setError(null)
     setMessages((current) => [...current, userMessage])
+    setIsSubmitting(true)
 
-    startTransition(async () => {
-      try {
-        const response = await fetch("/admin/responses", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            input: [{ role: "user", content: prompt }],
-            session_id: sessionId,
-          }),
-        })
+    try {
+      const response = await fetch("/admin/console/jobs", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          input: [{ role: "user", content: prompt }],
+          session_id: sessionId,
+        }),
+      })
 
-        if (!response.ok) {
-          throw new Error(await readApiError(response, "Could not run Prism Console"))
-        }
-        const payload = (await response.json().catch(() => null)) as {
-          error?: string
-          output_text?: string
-          session_id?: string
-        } | null
-
-        if (!payload?.output_text) {
-          throw new Error("The response endpoint did not return output_text")
-        }
-
-        const nextSessionId = payload.session_id ?? sessionId
-        setSessionId(nextSessionId)
-        if (nextSessionId) {
-          window.localStorage.setItem(consoleSessionStorageKey, nextSessionId)
-        }
-        setMessages((current) => [
-          ...current,
-          {
-            id: randomMessageId("assistant"),
-            role: "assistant",
-            content: payload.output_text!,
-          },
-        ])
-      } catch (submitError) {
-        setError(describeFetchError(submitError, "Could not run Prism Console"))
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "Could not start Prism Console job"))
       }
-    })
+      const payload = (await response.json().catch(() => null)) as {
+        jobId?: string
+        session_id?: string
+      } | null
+
+      if (!payload?.jobId) {
+        throw new Error("Console job endpoint did not return jobId")
+      }
+      if (payload.session_id) {
+        setSessionId(payload.session_id)
+        window.localStorage.setItem(consoleSessionStorageKey, payload.session_id)
+      }
+      window.localStorage.setItem(consoleActiveJobStorageKey, payload.jobId)
+      setActiveJobId(payload.jobId)
+    } catch (submitError) {
+      setError(describeFetchError(submitError, "Could not run Prism Console"))
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   function startNewSession() {
@@ -162,13 +236,15 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
     setSessionId(null)
     setMessages([])
     setError(null)
+    setActiveJobId(null)
+    window.localStorage.removeItem(consoleActiveJobStorageKey)
   }
 
   return (
     <div className="flex h-[calc(100vh-248px)] min-h-0 flex-col">
       <div className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4 md:px-6">
         <div className="text-sm text-muted-foreground">
-          {isPending ? "Prism is thinking..." : "Shared Prism session"}
+          {isPending ? "Prism is working..." : "Shared Prism session"}
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -243,6 +319,9 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
             disabled={isPending}
             required
           />
+          {activeJobId ? (
+            <p className="text-sm text-muted-foreground">Prism is working in the background. You can keep this tab open while the job runs.</p>
+          ) : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
