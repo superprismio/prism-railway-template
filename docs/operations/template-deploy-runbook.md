@@ -119,7 +119,7 @@ curl -fsSL \
   "$COMMUNICATION_ADAPTER_BASE_URL/guild/channels"
 ```
 
-Use that inventory to configure the instance-specific Prism Memory `discord.category_to_bucket` mapping. The template does not ship category IDs because Discord category IDs are unique to each community.
+Use that inventory to configure the instance-specific Prism Memory `discord.category_to_bucket` mapping. Prefer `mappingCandidates[].id` or `categories[].id` as keys because those are Discord category IDs. Do not map every child channel ID; child channels inherit through their category. Use channel IDs only for truly uncategorized channel exceptions. The template does not ship category IDs because Discord category IDs are unique to each community.
 
 If the instance already collected Discord messages before the mapping was corrected, repair the existing memory files after patching config:
 

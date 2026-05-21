@@ -119,7 +119,7 @@ curl -fsSL \
   "$COMMUNICATION_ADAPTER_BASE_URL/guild/channels"
 ```
 
-Then map each relevant category ID to a local bucket name. Do not reuse category IDs from another community.
+Then map each relevant category ID to a local bucket name. Use `mappingCandidates[].id` or `categories[].id` from the adapter response as the default `discord.category_to_bucket` keys. Do not map every child channel ID; child channels inherit through their category. Use channel IDs only for truly uncategorized channels that need their own bucket. Do not reuse category IDs from another community.
 
 After changing `discord.category_to_bucket` on an instance that already collected Discord messages, repair the existing derived memory files before trusting latest memory. The ingest log and raw windows are persistent, so config changes only affect future messages unless historical raw windows are reclassified and rebuilt.
 
@@ -151,7 +151,7 @@ curl -fsSL \
   -d '{"from_date":"YYYY-MM-DD","to_date":"YYYY-MM-DD","dry_run":false,"rebuild":true}'
 ```
 
-The repair endpoint uses saved Discord metadata such as `parentChannelId` and `channelId`; it does not delete the append-only ingest/activity history. Files that contain messages mapping to multiple buckets are reported as `split_required` and skipped for manual follow-up.
+The repair endpoint uses saved Discord metadata such as `parentCategoryId`, `parentChannelId`, and `channelId`; it does not delete the append-only ingest/activity history. Files that contain messages mapping to multiple buckets are reported as `split_required` and skipped for manual follow-up.
 
 Additional collector bucket:
 - `inbox_memory` → bucket from inbox payload `bucket_hint` (default from `config.space.json.inbox.memory.default_bucket`)

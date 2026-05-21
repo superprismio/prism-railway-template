@@ -841,6 +841,11 @@ async function inspectDiscordGuildChannels(): Promise<JsonObject> {
 
   return {
     guildId: config.discordGuildId,
+    mappingCandidates: categories.map((category) => ({
+      id: category.id,
+      name: category.name,
+      childCount: Array.isArray(category.children) ? category.children.length : 0,
+    })),
     categories,
     uncategorized,
   };

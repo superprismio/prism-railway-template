@@ -233,7 +233,7 @@ curl -fsSL \
   "$COMMUNICATION_ADAPTER_BASE_URL/guild/channels"
 ```
 
-The response groups Discord categories with child text/thread channels. Use it to propose the instance-specific `discord.category_to_bucket` mapping in Prism Memory. Do not copy category IDs from another community.
+The response includes `mappingCandidates` and groups Discord categories with child text/thread channels. Use `mappingCandidates[].id` or `categories[].id` as the default keys for the instance-specific `discord.category_to_bucket` mapping in Prism Memory. Do not map every child channel ID; child channels inherit through their category. Use channel IDs only for truly uncategorized channel exceptions. Do not copy category IDs from another community.
 - `VOICE_TRANSCRIPTION_BASE_URL=https://api.venice.ai/api/v1/audio/transcriptions`
 - `VOICE_TRANSCRIPTION_API_KEY`
 - `VOICE_TRANSCRIPTION_LANGUAGE=en`

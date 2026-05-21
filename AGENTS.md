@@ -130,7 +130,7 @@ curl -fsSL \
   "$COMMUNICATION_ADAPTER_BASE_URL/guild/channels"
 ```
 
-Use the returned category IDs for that instance only. Do not reuse `discord.category_to_bucket` IDs from another community.
+Use `mappingCandidates[].id` or `categories[].id` for that instance only. These are Discord category IDs and should be the default keys for `discord.category_to_bucket`. Do not map every child channel ID; child channels inherit through their category. Use channel IDs only for truly uncategorized channel exceptions. Do not reuse IDs from another community.
 
 Send a message:
 

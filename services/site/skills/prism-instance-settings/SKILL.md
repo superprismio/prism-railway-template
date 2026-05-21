@@ -134,9 +134,14 @@ curl -fsSL \
   "$COMMUNICATION_ADAPTER_BASE_URL/guild/channels"
 ```
 
-Use the returned category IDs and channel structure to decide the
-`discord.category_to_bucket` mapping. Do not copy category IDs from another
-community; Discord IDs are instance-specific.
+Use `mappingCandidates[].id` or `categories[].id` as the default keys for
+`discord.category_to_bucket`. These are Discord category IDs. Do not map every
+child channel ID to a bucket. Child channels should inherit the bucket from
+their parent category through `parentCategoryId`. Only use a channel ID as a key
+for a channel that is truly uncategorized and needs its own bucket.
+
+Do not copy category IDs from another community; Discord IDs are
+instance-specific.
 
 Read current Prism Memory config and save it to a file before editing:
 
@@ -206,5 +211,7 @@ When reporting back, include:
 
 - the categories inspected
 - the final bucket mapping
+- confirmation that the mapping keys are category IDs, except any explicitly
+  named uncategorized channel exceptions
 - dry-run counts for reclassified, unmapped, and split-required files
 - whether rebuild ran and whether any stage failed
