@@ -764,6 +764,23 @@ function appendTrace(
   }
 }
 
+function booleanMetadata(metadata: Record<string, unknown> | undefined, key: string) {
+  return metadata?.[key] === true;
+}
+
+function emptyResponseFallback(input: CodexRuntimeInput) {
+  if (!booleanMetadata(input.metadata, 'allowEmptyResponse')) {
+    return null;
+  }
+
+  const taskKey = typeof input.metadata?.taskKey === 'string' && input.metadata.taskKey.trim()
+    ? input.metadata.taskKey.trim()
+    : null;
+  return taskKey
+    ? `Task ${taskKey} completed without returning assistant text.`
+    : 'Codex completed without returning assistant text.';
+}
+
 async function runCodexProcess(input: CodexRuntimeInput) {
   const outputFile = path.join(os.tmpdir(), `codex-runtime-${randomUUID()}.txt`);
   const isResume = Boolean(input.codexThreadId);
@@ -906,7 +923,9 @@ async function runCodexProcess(input: CodexRuntimeInput) {
           return;
         }
 
-        if (!responseText) {
+        const finalResponseText = responseText || emptyResponseFallback(input);
+
+        if (!finalResponseText) {
           appendTrace(trace, 'run.empty', 'Codex completed without returning assistant text');
           const error = new Error('CODEX_RUNTIME_EMPTY_RESPONSE') as CodexRuntimeError;
           error.codexThreadId = threadId;
@@ -915,6 +934,9 @@ async function runCodexProcess(input: CodexRuntimeInput) {
           return;
         }
 
+        if (!responseText) {
+          appendTrace(trace, 'run.empty_tolerated', 'Codex completed without assistant text; returning task fallback text');
+        }
         appendTrace(trace, 'run.completed', 'Codex completed successfully');
         const finalGitState = await finalizeGitWorkspace(input, preparedWorkspace, trace).catch((error) => {
           appendTrace(trace, 'git.finalize_failed', error instanceof Error ? error.message : 'git finalize failed');
@@ -923,7 +945,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         resolve({
           provider: 'codex-cli',
           model: config.codexModel,
-          responseText,
+          responseText: finalResponseText,
           codexThreadId: threadId,
           branchName: finalGitState.branchName,
           commitSha: finalGitState.commitSha,
