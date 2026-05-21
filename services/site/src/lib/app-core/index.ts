@@ -16,6 +16,7 @@ export {
 } from './request-artifact-storage';
 export {
   createAgentMessage,
+  createAgentResponseJob,
   createAgentSession,
   createAdminManagedUser,
   createUserInvite,
@@ -41,6 +42,7 @@ export {
   getDefaultTargetEnvironmentForApp,
   getNextQueuedChangeRequest,
   getAgentSession,
+  getAgentResponseJob,
   getActiveUserInviteByToken,
   getRequestArtifact,
   getRequestExternalRef,
@@ -79,6 +81,7 @@ export {
   claimUserInvite,
   updateWorkflowRun,
   updateAgentSession,
+  updateAgentResponseJob,
   updateChangeRequest,
   updateChangeRequestExecution,
   updateTargetApp,
@@ -102,7 +105,9 @@ export {
   type ChangeRequestRecord,
   type HookRecord,
   type RequestArtifactRecord,
+  type AgentResponseJobRecord,
   type CreateAgentSessionInput,
+  type CreateAgentResponseJobInput,
   type TaskRecord,
   type TaskRunRecord,
   type UpsertHookInput,
