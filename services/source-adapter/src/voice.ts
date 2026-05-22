@@ -692,6 +692,10 @@ export class DiscordVoiceManager {
     this.activeUserStreams.set(session.guildId, guildStreams);
     const existingStream = guildStreams.get(userId) ?? session.activeAudioStreams.get(userId);
     if (existingStream) {
+      if (reason === "speaking") {
+        const username = session.speakers.get(userId)?.username ?? session.participants.get(userId)?.username ?? userId;
+        this.recordTimingEvent(session, "speaking.start", userId, username);
+      }
       return;
     }
     const guild = await this.client.guilds.fetch(session.guildId);
