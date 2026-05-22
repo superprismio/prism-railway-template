@@ -34,16 +34,28 @@ export type VoiceChunkMetadata = {
   index: number;
   startMs?: number;
   endMs?: number;
+  startedAt?: string;
+  endedAt?: string;
   byteStart: number;
   byteEnd: number;
   fileName: string;
   contentType: string;
 };
 
+export type VoiceTimingEvent = {
+  type: "stream.start" | "speaking.start" | "audio.first_chunk" | "stream.end";
+  userId: string;
+  username: string;
+  at: string;
+};
+
 export type SpeakerMetadata = {
   userId: string;
   username: string;
   duration: number;
+  startedAt?: string;
+  firstAudioAt?: string;
+  endedAt?: string;
   audioUrl: string | null;
   chunks: VoiceChunkMetadata[];
   rawPath: string;
@@ -84,6 +96,7 @@ export type RecordingSessionMetadata = {
   guildId: string;
   speakers: SpeakerMetadata[];
   participants: ParticipantPresence[];
+  timingEvents?: VoiceTimingEvent[];
   metadata: RecordingWebhookMetadata;
   source: {
     service: "source-adapter";
@@ -186,6 +199,8 @@ type SpeakerStream = {
   rawPath: string;
   stream?: WriteStream;
   startedAt: number;
+  firstAudioAt?: number;
+  endedAt?: number;
   didSpeak: boolean;
 };
 
@@ -211,6 +226,7 @@ type RecordingSession = {
   transcriptDir: string;
   participants: Map<string, ParticipantPresence>;
   speakers: Map<string, SpeakerStream>;
+  timingEvents: VoiceTimingEvent[];
   activeAudioStreams: Map<string, ActiveAudioStream>;
   speakingHandler: (userId: string) => void;
   speakingEndHandler: (userId: string) => void;
@@ -233,6 +249,7 @@ type PersistedRecordingSession = {
     leftAt?: string;
     didSpeak?: boolean;
   }>;
+  timingEvents?: VoiceTimingEvent[];
 };
 
 type VoiceManagerOptions = {
@@ -268,6 +285,21 @@ async function fileExists(filePath: string): Promise<boolean> {
     () => true,
     () => false,
   );
+}
+
+function isoTimestamp(value: number): string {
+  return new Date(value).toISOString();
+}
+
+function voiceOffsetSeconds(at: string | undefined, sessionStartedAt: number): number {
+  if (!at) {
+    return 0;
+  }
+  const value = Date.parse(at);
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, (value - sessionStartedAt) / 1000);
 }
 
 export class DiscordVoiceManager {
@@ -346,6 +378,52 @@ export class DiscordVoiceManager {
     return participant;
   }
 
+  private recordTimingEvent(
+    session: RecordingSession,
+    type: VoiceTimingEvent["type"],
+    userId: string,
+    username: string,
+    at = Date.now(),
+  ): VoiceTimingEvent {
+    const event: VoiceTimingEvent = {
+      type,
+      userId,
+      username,
+      at: isoTimestamp(at),
+    };
+    session.timingEvents.push(event);
+    void this.persistSession(session).catch((error) => {
+      console.warn(`[discord-adapter] failed to persist voice timing event session=${session.sessionId}: ${this.describeError(error)}`);
+    });
+    return event;
+  }
+
+  private persistableSession(session: RecordingSession) {
+    return {
+      sessionId: session.sessionId,
+      guildId: session.guildId,
+      channelId: session.channelId,
+      channelName: session.channelName,
+      startedAt: isoTimestamp(session.startedAt),
+      participants: [...session.participants.values()].map((participant) => ({
+        userId: participant.userId,
+        username: participant.username,
+        joinedAt: isoTimestamp(participant.joinedAt),
+        leftAt: participant.leftAt ? isoTimestamp(participant.leftAt) : undefined,
+        didSpeak: participant.didSpeak,
+      })),
+      timingEvents: session.timingEvents,
+    };
+  }
+
+  private async persistSession(session: RecordingSession): Promise<void> {
+    await fs.writeFile(
+      path.join(session.rootDir, "session.json"),
+      `${JSON.stringify(this.persistableSession(session), null, 2)}\n`,
+      "utf8",
+    );
+  }
+
   private async ensureVoiceConnection(guild: Guild, channel: VoiceBasedChannel): Promise<VoiceConnectionState> {
     const existing = this.connections.get(guild.id);
     if (existing && existing.channelId === channel.id) {
@@ -411,7 +489,7 @@ export class DiscordVoiceManager {
         return;
       }
       console.log(`[discord-adapter] receiver speaking start session=${activeSession.sessionId} user=${userId}`);
-      void this.beginSpeakerCapture(activeSession, userId).catch((error) => {
+      void this.beginSpeakerCapture(activeSession, userId, "speaking").catch((error) => {
         console.error("[discord-adapter] receiver speaker capture failed", this.describeError(error));
       });
     };
@@ -471,6 +549,7 @@ export class DiscordVoiceManager {
       transcriptDir,
       participants: new Map(),
       speakers: new Map(),
+      timingEvents: [],
       activeAudioStreams: new Map(),
       speakingHandler: (_userId: string) => {},
       speakingEndHandler: (_userId: string) => {},
@@ -501,7 +580,7 @@ export class DiscordVoiceManager {
         `[discord-adapter] eager receiver subscribe session=${sessionId} participants=${JSON.stringify(participantIds)}`,
       );
       const subscribeResults = await Promise.allSettled(
-        participantIds.map((userId) => this.beginSpeakerCapture(session, userId)),
+        participantIds.map((userId) => this.beginSpeakerCapture(session, userId, "eager")),
       );
       subscribeResults.forEach((result, index) => {
         if (result.status === "rejected") {
@@ -512,24 +591,7 @@ export class DiscordVoiceManager {
       });
     }
 
-    await fs.writeFile(
-      path.join(rootDir, "session.json"),
-      `${JSON.stringify({
-        sessionId,
-        guildId: guild.id,
-        channelId: channel.id,
-        channelName: channel.name,
-        startedAt: new Date(session.startedAt).toISOString(),
-        participants: [...session.participants.values()].map((participant) => ({
-          userId: participant.userId,
-          username: participant.username,
-          joinedAt: new Date(participant.joinedAt).toISOString(),
-          leftAt: participant.leftAt ? new Date(participant.leftAt).toISOString() : undefined,
-          didSpeak: participant.didSpeak,
-        })),
-      }, null, 2)}\n`,
-      "utf8",
-    );
+    await this.persistSession(session);
 
     const timeoutLine = this.recordingMaxMinutes > 0
       ? `This recording will stop automatically after ${this.recordingMaxMinutes} minutes${this.recordingWarningMinutes > 0 && this.recordingWarningMinutes < this.recordingMaxMinutes ? `, with a warning at ${this.recordingWarningMinutes} minutes` : ""}.`
@@ -625,7 +687,7 @@ export class DiscordVoiceManager {
     }
   }
 
-  private async beginSpeakerCapture(session: RecordingSession, userId: string): Promise<void> {
+  private async beginSpeakerCapture(session: RecordingSession, userId: string, reason: "eager" | "speaking" = "speaking"): Promise<void> {
     const guildStreams = this.activeUserStreams.get(session.guildId) ?? new Map<string, ActiveAudioStream>();
     this.activeUserStreams.set(session.guildId, guildStreams);
     const existingStream = guildStreams.get(userId) ?? session.activeAudioStreams.get(userId);
@@ -639,6 +701,9 @@ export class DiscordVoiceManager {
       this.ensureParticipant(session, member);
     }
     const speaker = await this.ensureSpeakerStream(session, userId, username);
+    if (reason === "speaking") {
+      this.recordTimingEvent(session, "speaking.start", userId, username);
+    }
     const connectionState = this.connections.get(session.guildId);
     if (!connectionState) {
       throw new Error(`No voice connection found for guild ${session.guildId}`);
@@ -687,6 +752,8 @@ export class DiscordVoiceManager {
       opusBytes += chunk.length;
       if (!loggedFirstOpusChunk) {
         loggedFirstOpusChunk = true;
+        speaker.firstAudioAt = Date.now();
+        this.recordTimingEvent(session, "audio.first_chunk", userId, username, speaker.firstAudioAt);
         console.log(
           `[discord-adapter] received first opus chunk session=${session.sessionId} user=${userId} bytes=${chunk.length}`,
         );
@@ -700,6 +767,10 @@ export class DiscordVoiceManager {
 
     const cleanup = (reason: string) => {
       const lifetimeMs = Date.now() - activeStream.startedAt;
+      if (!speaker.endedAt) {
+        speaker.endedAt = Date.now();
+        this.recordTimingEvent(session, "stream.end", userId, username, speaker.endedAt);
+      }
       console.log(
         `[discord-adapter] cleanup speaker stream session=${session.sessionId} user=${userId} reason=${reason} lifetimeMs=${lifetimeMs} opusChunks=${opusChunkCount} opusBytes=${opusBytes} receivedOpus=${activeStream.receivedOpus ? "true" : "false"}`,
       );
@@ -744,6 +815,7 @@ export class DiscordVoiceManager {
       didSpeak: false,
     };
     session.speakers.set(userId, speaker);
+    this.recordTimingEvent(session, "stream.start", userId, username, speaker.startedAt);
     return speaker;
   }
 
@@ -825,6 +897,7 @@ export class DiscordVoiceManager {
       transcriptDir,
       participants: new Map(),
       speakers: new Map(),
+      timingEvents: candidate.timingEvents ?? [],
       activeAudioStreams: new Map(),
       speakingHandler: (_userId: string) => {},
       speakingEndHandler: (_userId: string) => {},
@@ -1058,6 +1131,9 @@ export class DiscordVoiceManager {
         userId: speaker.userId,
         username: speaker.username,
         duration: Math.max(0, endedAt - speaker.startedAt),
+        startedAt: isoTimestamp(speaker.startedAt),
+        firstAudioAt: speaker.firstAudioAt ? isoTimestamp(speaker.firstAudioAt) : undefined,
+        endedAt: isoTimestamp(speaker.endedAt ?? endedAt),
         audioUrl: chunks[0]?.audioUrl ?? null,
         chunks,
         rawPath: speaker.rawPath,
@@ -1068,6 +1144,10 @@ export class DiscordVoiceManager {
       ...participant,
       leftAt: participant.leftAt ?? endedAt,
     }));
+    for (const participant of participants) {
+      session.participants.set(participant.userId, participant);
+    }
+    await this.persistSession(session);
 
     console.log(
       `[discord-adapter] finalize session=${session.sessionId} speakersTracked=${session.speakers.size} participantSnapshot=${JSON.stringify(
@@ -1199,6 +1279,7 @@ export class DiscordVoiceManager {
       .filter((name) => name.startsWith(`${speaker.userId}-${sanitizeFileSegment(speaker.username)}-chunk_`) && name.endsWith(".flac"))
       .sort();
     const totalDuration = Math.max(0, endedAt - speaker.startedAt);
+    const audioAnchor = speaker.firstAudioAt ?? speaker.startedAt;
     const base = this.publicBaseUrl();
     const chunks: VoiceChunkMetadata[] = [];
     for (const [index, fileName] of files.entries()) {
@@ -1206,11 +1287,15 @@ export class DiscordVoiceManager {
       const fileStat = await fs.stat(filePath);
       const startMs = Math.min(totalDuration, index * this.ffmpegSegmentSeconds * 1000);
       const endMs = Math.min(totalDuration, (index + 1) * this.ffmpegSegmentSeconds * 1000);
+      const chunkStartedAt = audioAnchor + startMs;
+      const chunkEndedAt = audioAnchor + endMs;
       chunks.push({
         audioUrl: base ? `${base}/recordings/${session.sessionId}/${encodeURIComponent(fileName)}` : null,
         index,
         startMs,
         endMs,
+        startedAt: isoTimestamp(chunkStartedAt),
+        endedAt: isoTimestamp(chunkEndedAt),
         byteStart: 0,
         byteEnd: fileStat.size,
         fileName,
@@ -1268,6 +1353,7 @@ export class DiscordVoiceManager {
       guildId: session.guildId,
       speakers,
       participants,
+      timingEvents: session.timingEvents,
       metadata: {
         meeting: {
           name: session.channelName,
@@ -1309,7 +1395,9 @@ export class DiscordVoiceManager {
         for (const chunk of speaker.chunks) {
           const chunkPath = path.join(session.flacDir, chunk.fileName);
           const result = await this.transcribeChunk(chunkPath);
-          const offsetSeconds = (chunk.startMs ?? 0) / 1000;
+          const offsetSeconds = chunk.startedAt
+            ? voiceOffsetSeconds(chunk.startedAt, session.startedAt)
+            : voiceOffsetSeconds(speaker.firstAudioAt ?? speaker.startedAt, session.startedAt) + (chunk.startMs ?? 0) / 1000;
           const chunkSegments = (result.timestamps?.segment ?? [])
             .map((segment) => ({
               text: String(segment.text ?? "").trim(),
@@ -1370,6 +1458,7 @@ export class DiscordVoiceManager {
       channelId: metadata.channelId,
       startedAt: metadata.startedAt,
       endedAt: metadata.endedAt,
+      timingEvents: metadata.timingEvents ?? [],
       speakerTranscripts,
       chatMessages,
       mergedSegments,
@@ -1804,6 +1893,7 @@ export class DiscordVoiceManager {
       author: "Prism Voice Recorder",
       participants,
       participant_count: participants.length,
+      timing_events: metadata.timingEvents ?? [],
       url: metadata.source.recordingBaseUrl ? `${metadata.source.recordingBaseUrl}/recordings/${metadata.sessionId}` : undefined,
     };
 
