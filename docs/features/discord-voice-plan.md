@@ -38,6 +38,7 @@ The Discord command surface uses the `prism-` prefix:
    - stores current non-bot voice participants in session metadata
    - eagerly subscribes to current participant audio streams
    - also listens for Discord `speaking.start` events as a backup
+   - persists wall-clock speaker timing events such as stream start, speaking start, first audio chunk, and stream end
    - writes per-speaker Ogg/Opus files under `/data/recordings/<session-id>/raw`
    - persists `session.json` with guild/channel/start/participant metadata so unfinished sessions can be recovered after an adapter restart
 
@@ -48,6 +49,7 @@ The Discord command surface uses the `prism-` prefix:
    - sends FLAC chunks to the configured voice transcription provider when `VOICE_TRANSCRIPTION_API_KEY` is set
    - fetches messages posted in the Discord voice channel during the recording window
    - stitches voice transcription segments and voice-channel chat messages into one timestamp-sorted transcript
+   - offsets voice transcription segments from persisted wall-clock audio chunk times instead of only per-speaker chunk indexes
    - writes transcript JSON and markdown under `/data/recordings/<session-id>/transcript`
    - asks `codex-runtime` to synthesize a structured meeting summary when `CODEX_RUNTIME_BASE_URL` is set
    - writes summary JSON and markdown under `/data/recordings/<session-id>/transcript`
@@ -156,8 +158,8 @@ Each session uses:
 
 ```text
 /data/recordings/<session-id>/
-  session.json
-  metadata.json
+  session.json      # participants and timingEvents
+  metadata.json     # speakers, chunks, artifacts, and timingEvents
   raw/
     <user-id>-<username>-<timestamp>.ogg
   flac/

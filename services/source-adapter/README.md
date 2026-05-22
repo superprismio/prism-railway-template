@@ -174,9 +174,11 @@ Current voice command status:
 - `/prism-join` joins the caller's current voice channel
 - `/prism-record` starts a volume-backed recording session under `/data/recordings/<session-id>/raw`
 - `/prism-record` eagerly subscribes to current non-bot channel participants, then uses Discord speaking events as a backup for continued capture
+- `/prism-record` persists wall-clock voice timing events for stream start, Discord speaking start, first audio chunk, and stream end so future transcripts can be stitched against the meeting clock
 - `/prism-stoprecord` stops the session, runs `ffmpeg`, and writes FLAC chunks under `/data/recordings/<session-id>/flac`
 - `/prism-rollcall` inspects the active/current voice channel and lists non-bot participants
 - if `VOICE_TRANSCRIPTION_API_KEY` is set, `/prism-stoprecord` sends FLAC chunks to the configured Whisper-compatible transcription endpoint and writes transcript artifacts under `/data/recordings/<session-id>/transcript`
+- voice transcript offsets are derived from persisted wall-clock audio chunk times when available, then fall back to the older per-speaker chunk offsets
 - recordings warn at `VOICE_RECORDING_WARNING_MINUTES` and stop automatically at `VOICE_RECORDING_MAX_MINUTES`; set `VOICE_RECORDING_MAX_MINUTES=0` to disable the automatic stop
 - `/prism-stoprecord` also fetches messages posted in the Discord voice channel during the recording window and stitches them into the merged transcript timeline as `chat` segments
 - if the adapter restarts during recording, `/prism-stoprecord` can recover the newest unfinished session for the guild from `/data/recordings/<session-id>/session.json` and `/raw/*.ogg`
