@@ -172,6 +172,30 @@ function formatTraceSummary(trace: RuntimeTraceEntry[] | undefined) {
     .join("\n")
 }
 
+function describeRuntimeFetchFailure(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "fetch failed"
+  }
+
+  const cause = error.cause
+  if (cause && typeof cause === "object") {
+    const record = cause as Record<string, unknown>
+    const code = typeof record.code === "string" ? record.code : null
+    const causeMessage = typeof record.message === "string" ? record.message : null
+    if (code && causeMessage) {
+      return `${error.message}:${code}:${causeMessage}`
+    }
+    if (code) {
+      return `${error.message}:${code}`
+    }
+    if (causeMessage) {
+      return `${error.message}:${causeMessage}`
+    }
+  }
+
+  return error.message || "fetch failed"
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
@@ -309,7 +333,7 @@ async function requestCodexRuntimeResponse(input: {
       }),
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "fetch failed"
+    const message = describeRuntimeFetchFailure(error)
     console.warn(JSON.stringify({
       event: "codex_runtime.fetch_failed",
       url: runtimeUrl,
