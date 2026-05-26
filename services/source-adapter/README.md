@@ -77,13 +77,71 @@ Discord-specific envs you can add later:
 - `VOICE_TRANSCRIPTION_LANGUAGE=en`
 - `VOICE_TRANSCRIPTION_RESPONSE_FORMAT=json`
 - `VOICE_TRANSCRIPTION_TIMESTAMPS=true`
+- `DISCORD_RECORDING_COMPLETE_HOOK_KEY=<optional Prism hook key to trigger after recording summary/artifact finalization>`
+- `DISCORD_RECORDING_COMPLETE_HOOK_ENABLED=<optional true|false override; defaults to enabled when DISCORD_RECORDING_COMPLETE_HOOK_KEY is set>`
+- `DISCORD_RECORDING_COMPLETE_HOOK_TIMEOUT_MS=10000`
 - `N8N_WEBHOOK_URL=https://your-n8n.example/webhook/transcribe` only if the legacy webhook handoff is still needed
 
 Chat bridge envs:
 
+- `PRISM_AGENT_API_BASE_URL=https://your-site.up.railway.app`
+- `PRISM_AGENT_SERVICE_TOKEN=...`
 - `APP_API_BASE_URL=https://your-api.up.railway.app`
 - `APP_API_SERVICE_TOKEN=...`
 - `CODEX_RUNTIME_BASE_URL=https://your-codex-runtime.up.railway.app`
+
+Recording completion hooks reuse the agent API base/token when possible. Set
+`DISCORD_RECORDING_COMPLETE_HOOK_KEY` to trigger:
+
+```text
+POST ${PRISM_AGENT_API_BASE_URL:-$APP_API_BASE_URL}/agent/hooks/<hook-key>/trigger
+```
+
+with `x-service-token: ${PRISM_AGENT_SERVICE_TOKEN:-$APP_API_SERVICE_TOKEN}`.
+Use `PRISM_HOOKS_BASE_URL` or `PRISM_HOOK_SERVICE_TOKEN` only when the hook
+service is different from the normal Prism agent API. Hook delivery is
+best-effort: missing config, timeouts, or non-2xx responses are logged but do
+not fail the recording, transcript, summary, Prism Memory ingest, or Discord
+completion message.
+
+Payload shape:
+
+```json
+{
+  "source": "discord-source-adapter",
+  "event": "discord.recording.completed",
+  "occurredAt": "2026-05-26T18:30:00.000Z",
+  "discord": {
+    "guildID": "123",
+    "channelID": "456",
+    "channelName": "Voice",
+    "threadID": null,
+    "messageID": null,
+    "scheduledEventID": "789",
+    "recordingStartedAt": "2026-05-26T18:00:00.000Z",
+    "recordingEndedAt": "2026-05-26T18:30:00.000Z"
+  },
+  "artifacts": {
+    "artifactID": "prism-artifact-id",
+    "recordingURL": "https://...",
+    "transcriptURL": "https://...",
+    "summaryURL": "https://...",
+    "summaryText": "Short summary text when available"
+  },
+  "participants": [
+    {
+      "discordUserID": "111",
+      "username": "example",
+      "displayName": "Example"
+    }
+  ],
+  "metadata": {
+    "adapterInstance": "source-adapter",
+    "confidence": "direct",
+    "notes": []
+  }
+}
+```
 
 Discord chat access policy defaults to `readonly`. The preferred configuration is
 site-owned and can be changed from the admin Settings tab without rebuilding:
