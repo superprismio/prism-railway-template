@@ -15,7 +15,7 @@ import type {
   VoiceBasedChannel,
   VoiceState,
 } from "discord.js";
-import { PermissionFlagsBits } from "discord.js";
+import { GuildScheduledEventStatus, PermissionFlagsBits } from "discord.js";
 import { createWriteStream, type WriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -542,12 +542,36 @@ export class DiscordVoiceManager {
     return state;
   }
 
-  private async resolveScheduledEventId(guild: Guild, channelId: string): Promise<string | null> {
+  private async resolveScheduledEventId(guild: Guild, channelId: string, atMs = Date.now()): Promise<string | null> {
     try {
       const scheduledEvents = await guild.scheduledEvents.fetch();
+      const candidateEvents = [...scheduledEvents.values()]
+        .filter((event) => event.channelId === channelId)
+        .map((event) => {
+          const start = event.scheduledStartTimestamp ?? 0;
+          const end = event.scheduledEndTimestamp ?? start + 6 * 60 * 60 * 1000;
+          const isActive = event.status === GuildScheduledEventStatus.Active;
+          const isNearRecordingWindow = start <= atMs + 2 * 60 * 60 * 1000 && end >= atMs - 6 * 60 * 60 * 1000;
+          return { event, start, isActive, isNearRecordingWindow };
+        })
+        .filter(({ event, isActive, isNearRecordingWindow }) =>
+          isActive || (event.status === GuildScheduledEventStatus.Scheduled && isNearRecordingWindow),
+        )
+        .sort((left, right) => {
+          if (left.isActive !== right.isActive) {
+            return left.isActive ? -1 : 1;
+          }
+          return Math.abs(left.start - atMs) - Math.abs(right.start - atMs);
+        });
+      const candidate = candidateEvents[0]?.event;
+      if (candidate) {
+        return candidate.id;
+      }
       for (const event of scheduledEvents.values()) {
         if (event.channelId === channelId) {
-          return event.id;
+          console.warn(
+            `[discord-adapter] skipped scheduled event outside recording window guild=${guild.id} channel=${channelId} event=${event.id} status=${event.status}`,
+          );
         }
       }
     } catch (error) {
@@ -1279,7 +1303,11 @@ export class DiscordVoiceManager {
       )} artifacts=${JSON.stringify(metadata.artifacts ?? {})}`,
     );
     await fs.writeFile(path.join(session.rootDir, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
-    await this.triggerRecordingCompleteHook(metadata, summary);
+    try {
+      await this.triggerRecordingCompleteHook(metadata, summary);
+    } catch (error) {
+      console.warn(`[discord-adapter] recording complete hook skipped after unexpected error session=${session.sessionId}: ${this.describeError(error)}`);
+    }
     await this.sendWebhook(metadata);
 
     if (connectionState) {
@@ -1698,7 +1726,7 @@ export class DiscordVoiceManager {
         .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
         .map((value) => value.trim());
       if (embedParts.length > 0) {
-        parts.push(`[embed] ${embedParts.join(" — ")}`);
+        parts.push(`[embed] ${embedParts.join(" - ")}`);
       }
     }
     return parts.join("\n").trim();
