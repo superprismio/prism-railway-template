@@ -52,6 +52,7 @@ Send service auth as:
 - `GET /agent/change-board/requests/current`
 - `GET /agent/change-board/requests/by-number/:requestNumber/review`
 - `GET /agent/change-board/requests/by-number/:requestNumber/artifacts`
+- `POST /agent/change-board/requests/by-number/:requestNumber/workflow/continue`
 - `GET /agent/change-board/requests/:id/artifacts/:artifactId/content`
 - `GET /agent/site-content/branding`
 - `PATCH /agent/site-content/branding`
@@ -79,6 +80,19 @@ curl -fsSL \
 ```
 
 The by-number artifact route includes text, markdown, and JSON bodies by default. Use query params like `?name=draft.md`, `?artifactId=<id>`, `?includeContent=false`, or `?includeBinary=true` when needed.
+
+To approve or continue the current workflow step from Discord, task-runner, or Codex Runtime, use the by-number workflow route. Do not manually patch workflow state.
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/by-number/43/workflow/continue" \
+  -d '{"comment":"Operator approved this gate from Discord.","workflowAction":"approved","autoContinueUntilGate":true}'
+```
+
+For a human gate, `workflowAction` defaults to `approved`. The route records the gate event and uses the normal workflow runner so executions and auto-continue behavior stay in sync.
 
 For Prism Memory Discord bucket repair after `discord.category_to_bucket` changes, use Prism Memory ops auth and start with a dry-run:
 
