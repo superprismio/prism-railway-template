@@ -280,6 +280,15 @@ function parseMinuteEnv(name: string, defaultValue: number): number {
   return Math.max(0, value);
 }
 
+function parseHourEnv(name: string, defaultValue: number): number {
+  const raw = (process.env[name] ?? "").trim();
+  const value = raw ? Number.parseInt(raw, 10) : defaultValue;
+  if (!Number.isFinite(value)) {
+    return defaultValue;
+  }
+  return Math.max(0, value);
+}
+
 async function fileExists(filePath: string): Promise<boolean> {
   return fs.access(filePath).then(
     () => true,
@@ -315,6 +324,7 @@ export class DiscordVoiceManager {
   private readonly voiceChatMaxMessages = Number.parseInt(process.env.VOICE_CHAT_MAX_MESSAGES ?? "200", 10) || 200;
   private readonly recordingWarningMinutes = parseMinuteEnv("VOICE_RECORDING_WARNING_MINUTES", 50);
   private readonly recordingMaxMinutes = parseMinuteEnv("VOICE_RECORDING_MAX_MINUTES", 60);
+  private readonly recoveryMaxAgeHours = parseHourEnv("VOICE_RECOVERY_MAX_AGE_HOURS", 12);
   private readonly recordingsRoot: string;
 
   constructor(options: VoiceManagerOptions) {
@@ -509,7 +519,11 @@ export class DiscordVoiceManager {
     const { guild, channel } = await this.resolveMemberVoiceChannel(interaction);
     this.requireBotVoicePermissions(guild, channel);
     await this.ensureVoiceConnection(guild, channel);
-    return `Joined **${channel.name}**.`;
+    return [
+      `Joined **${channel.name}**.`,
+      "I am connected but not recording.",
+      "Run `/prism-record` when you want to start capturing audio.",
+    ].join("\n");
   }
 
   async startRecording(interaction: ChatInputCommandInteraction): Promise<string> {
@@ -823,9 +837,11 @@ export class DiscordVoiceManager {
     return speaker;
   }
 
-  private async recoverLatestSessionFromDisk(guildId: string): Promise<RecordingSession | null> {
+  private async recoverLatestSessionFromDisk(guildId: string, channelId: string): Promise<RecordingSession | null> {
     const entries = await fs.readdir(this.recordingsRoot, { withFileTypes: true }).catch(() => []);
     const candidates: Array<{ session: PersistedRecordingSession; rootDir: string }> = [];
+    const now = Date.now();
+    const maxAgeMs = this.recoveryMaxAgeHours * 60 * 60 * 1000;
 
     for (const entry of entries) {
       if (!entry.isDirectory()) {
@@ -843,6 +859,16 @@ export class DiscordVoiceManager {
       }
       try {
         const session = JSON.parse(raw) as PersistedRecordingSession;
+        if (session.guildId !== guildId || session.channelId !== channelId || !session.sessionId || !session.startedAt) {
+          continue;
+        }
+        const startedAt = parseIsoDate(session.startedAt).getTime();
+        if (maxAgeMs > 0 && now - startedAt > maxAgeMs) {
+          console.warn(
+            `[discord-adapter] skipped stale recording recovery session=${session.sessionId} channel=${session.channelId} ageHours=${((now - startedAt) / 3_600_000).toFixed(2)} maxAgeHours=${this.recoveryMaxAgeHours}`,
+          );
+          continue;
+        }
         if (session.guildId === guildId && session.sessionId && session.channelId && session.startedAt) {
           candidates.push({ session, rootDir });
         }
@@ -1043,15 +1069,20 @@ export class DiscordVoiceManager {
     if (!interaction.guildId) {
       throw new Error("This command must be used inside a Discord server.");
     }
+    const { channel } = await this.resolveMemberVoiceChannel(interaction);
     const activeOperation = this.recordingOperationsByGuild.get(interaction.guildId);
     if (activeOperation) {
       throw new Error(`A recording is currently ${activeOperation} for this server. Try again after that operation finishes.`);
     }
     this.recordingOperationsByGuild.set(interaction.guildId, "stopping");
     try {
-    const session = this.sessionsByGuild.get(interaction.guildId) ?? (await this.recoverLatestSessionFromDisk(interaction.guildId));
+    const activeSession = this.sessionsByGuild.get(interaction.guildId);
+    if (activeSession && activeSession.channelId !== channel.id) {
+      throw new Error(`An active recording is running in **${activeSession.channelName}**. Join that channel to stop it.`);
+    }
+    const session = activeSession ?? (await this.recoverLatestSessionFromDisk(interaction.guildId, channel.id));
     if (!session) {
-      throw new Error("No active recording session found.");
+      throw new Error(`No active recording session found for **${channel.name}**. \`/prism-join\` only connects the bot; use \`/prism-record\` to start recording.`);
     }
     console.log(
       `[discord-adapter] stop recording requested session=${session.sessionId} activeStreams=${session.activeAudioStreams.size} trackedParticipants=${session.participants.size}`,
