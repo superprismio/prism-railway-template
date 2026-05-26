@@ -15,7 +15,7 @@ import type {
   VoiceBasedChannel,
   VoiceState,
 } from "discord.js";
-import { PermissionFlagsBits } from "discord.js";
+import { GuildScheduledEventStatus, PermissionFlagsBits } from "discord.js";
 import { createWriteStream, type WriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -94,6 +94,7 @@ export type RecordingSessionMetadata = {
   endedAt: number;
   channelId: string;
   guildId: string;
+  scheduledEventId?: string | null;
   speakers: SpeakerMetadata[];
   participants: ParticipantPresence[];
   timingEvents?: VoiceTimingEvent[];
@@ -218,6 +219,7 @@ type RecordingSession = {
   guildId: string;
   channelId: string;
   channelName: string;
+  scheduledEventId?: string | null;
   announcementChannel: TextBasedChannel | null;
   startedAt: number;
   rootDir: string;
@@ -241,6 +243,7 @@ type PersistedRecordingSession = {
   guildId: string;
   channelId: string;
   channelName: string;
+  scheduledEventId?: string | null;
   startedAt: string;
   participants?: Array<{
     userId: string;
@@ -287,6 +290,29 @@ function parseHourEnv(name: string, defaultValue: number): number {
     return defaultValue;
   }
   return Math.max(0, value);
+}
+
+function parseBooleanEnv(name: string, defaultValue: boolean): boolean {
+  const raw = (process.env[name] ?? "").trim().toLowerCase();
+  if (!raw) {
+    return defaultValue;
+  }
+  if (["1", "true", "yes", "on"].includes(raw)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(raw)) {
+    return false;
+  }
+  return defaultValue;
+}
+
+function parseIntegerEnv(name: string, defaultValue: number): number {
+  const raw = (process.env[name] ?? "").trim();
+  const value = raw ? Number.parseInt(raw, 10) : defaultValue;
+  if (!Number.isFinite(value) || value <= 0) {
+    return defaultValue;
+  }
+  return value;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -414,6 +440,7 @@ export class DiscordVoiceManager {
       guildId: session.guildId,
       channelId: session.channelId,
       channelName: session.channelName,
+      scheduledEventId: session.scheduledEventId ?? null,
       startedAt: isoTimestamp(session.startedAt),
       participants: [...session.participants.values()].map((participant) => ({
         userId: participant.userId,
@@ -515,6 +542,44 @@ export class DiscordVoiceManager {
     return state;
   }
 
+  private async resolveScheduledEventId(guild: Guild, channelId: string, atMs = Date.now()): Promise<string | null> {
+    try {
+      const scheduledEvents = await guild.scheduledEvents.fetch();
+      const candidateEvents = [...scheduledEvents.values()]
+        .filter((event) => event.channelId === channelId)
+        .map((event) => {
+          const start = event.scheduledStartTimestamp ?? 0;
+          const end = event.scheduledEndTimestamp ?? start + 6 * 60 * 60 * 1000;
+          const isActive = event.status === GuildScheduledEventStatus.Active;
+          const isNearRecordingWindow = start <= atMs + 2 * 60 * 60 * 1000 && end >= atMs - 6 * 60 * 60 * 1000;
+          return { event, start, isActive, isNearRecordingWindow };
+        })
+        .filter(({ event, isActive, isNearRecordingWindow }) =>
+          isActive || (event.status === GuildScheduledEventStatus.Scheduled && isNearRecordingWindow),
+        )
+        .sort((left, right) => {
+          if (left.isActive !== right.isActive) {
+            return left.isActive ? -1 : 1;
+          }
+          return Math.abs(left.start - atMs) - Math.abs(right.start - atMs);
+        });
+      const candidate = candidateEvents[0]?.event;
+      if (candidate) {
+        return candidate.id;
+      }
+      for (const event of scheduledEvents.values()) {
+        if (event.channelId === channelId) {
+          console.warn(
+            `[discord-adapter] skipped scheduled event outside recording window guild=${guild.id} channel=${channelId} event=${event.id} status=${event.status}`,
+          );
+        }
+      }
+    } catch (error) {
+      console.warn(`[discord-adapter] scheduled event lookup failed guild=${guild.id} channel=${channelId}: ${this.describeError(error)}`);
+    }
+    return null;
+  }
+
   async join(interaction: ChatInputCommandInteraction): Promise<string> {
     const { guild, channel } = await this.resolveMemberVoiceChannel(interaction);
     this.requireBotVoicePermissions(guild, channel);
@@ -555,6 +620,7 @@ export class DiscordVoiceManager {
       guildId: guild.id,
       channelId: channel.id,
       channelName: channel.name,
+      scheduledEventId: await this.resolveScheduledEventId(guild, channel.id),
       announcementChannel: interaction.channel && interaction.channel.isSendable() ? interaction.channel : null,
       startedAt: Date.now(),
       rootDir,
@@ -919,6 +985,7 @@ export class DiscordVoiceManager {
       guildId: candidate.guildId,
       channelId: candidate.channelId,
       channelName: candidate.channelName,
+      scheduledEventId: candidate.scheduledEventId ?? null,
       announcementChannel: null,
       startedAt: parseIsoDate(candidate.startedAt).getTime(),
       rootDir,
@@ -1236,6 +1303,11 @@ export class DiscordVoiceManager {
       )} artifacts=${JSON.stringify(metadata.artifacts ?? {})}`,
     );
     await fs.writeFile(path.join(session.rootDir, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+    try {
+      await this.triggerRecordingCompleteHook(metadata, summary);
+    } catch (error) {
+      console.warn(`[discord-adapter] recording complete hook skipped after unexpected error session=${session.sessionId}: ${this.describeError(error)}`);
+    }
     await this.sendWebhook(metadata);
 
     if (connectionState) {
@@ -1386,6 +1458,7 @@ export class DiscordVoiceManager {
       endedAt,
       channelId: session.channelId,
       guildId: session.guildId,
+      scheduledEventId: session.scheduledEventId ?? null,
       speakers,
       participants,
       timingEvents: session.timingEvents,
@@ -1653,7 +1726,7 @@ export class DiscordVoiceManager {
         .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
         .map((value) => value.trim());
       if (embedParts.length > 0) {
-        parts.push(`[embed] ${embedParts.join(" — ")}`);
+        parts.push(`[embed] ${embedParts.join(" - ")}`);
       }
     }
     return parts.join("\n").trim();
@@ -2016,6 +2089,128 @@ export class DiscordVoiceManager {
     if (!response.ok) {
       throw new Error(`N8N webhook failed: ${response.status} ${(await response.text()).slice(0, 300)}`);
     }
+  }
+
+  private prismHooksBaseUrl(): string {
+    return (
+      process.env.PRISM_HOOKS_BASE_URL ??
+      process.env.PRISM_AGENT_API_BASE_URL ??
+      process.env.APP_API_BASE_URL ??
+      ""
+    ).trim().replace(/\/+$/, "");
+  }
+
+  private prismHookServiceToken(): string {
+    return (
+      process.env.PRISM_HOOK_SERVICE_TOKEN ??
+      process.env.PRISM_AGENT_SERVICE_TOKEN ??
+      process.env.APP_API_SERVICE_TOKEN ??
+      process.env.INTERNAL_SERVICE_TOKEN ??
+      process.env.SERVICE_SHARED_TOKEN ??
+      ""
+    ).trim();
+  }
+
+  private recordingCompleteHookKey(): string {
+    return (process.env.DISCORD_RECORDING_COMPLETE_HOOK_KEY ?? "").trim();
+  }
+
+  private recordingCompleteHookEnabled(): boolean {
+    const hookKey = this.recordingCompleteHookKey();
+    return parseBooleanEnv("DISCORD_RECORDING_COMPLETE_HOOK_ENABLED", Boolean(hookKey));
+  }
+
+  private recordingCompleteHookTimeoutMs(): number {
+    return parseIntegerEnv("DISCORD_RECORDING_COMPLETE_HOOK_TIMEOUT_MS", 10_000);
+  }
+
+  private recordingCompleteHookPayload(metadata: RecordingSessionMetadata, summary: SessionSummary | null): Record<string, unknown> {
+    const transcriptArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemoryTranscriptPath);
+    const summaryArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemorySummaryPath);
+    const recordingUrl = metadata.source.recordingBaseUrl ? `${metadata.source.recordingBaseUrl}/recordings/${metadata.sessionId}` : null;
+    return {
+      source: "discord-source-adapter",
+      event: "discord.recording.completed",
+      occurredAt: new Date(metadata.endedAt).toISOString(),
+      discord: {
+        guildID: metadata.guildId,
+        channelID: metadata.channelId,
+        channelName: metadata.metadata.meeting.name ?? null,
+        threadID: null,
+        messageID: null,
+        scheduledEventID: metadata.scheduledEventId ?? null,
+        recordingStartedAt: new Date(metadata.startedAt).toISOString(),
+        recordingEndedAt: new Date(metadata.endedAt).toISOString(),
+      },
+      artifacts: {
+        artifactID: summaryArtifact?.id ?? transcriptArtifact?.id ?? null,
+        recordingURL: recordingUrl,
+        transcriptURL: transcriptArtifact?.url ?? null,
+        summaryURL: summaryArtifact?.url ?? null,
+        summaryText: summary?.tldr || summary?.summary?.slice(0, 2_000) || null,
+      },
+      participants: metadata.participants.map((participant) => ({
+        discordUserID: participant.userId,
+        username: participant.username,
+        displayName: participant.username,
+      })),
+      metadata: {
+        adapterInstance: process.env.RAILWAY_SERVICE_NAME || "source-adapter",
+        confidence: "direct",
+        notes: [],
+      },
+    };
+  }
+
+  private async triggerPrismHook(hookKey: string, payload: Record<string, unknown>, sessionId: string): Promise<void> {
+    const baseUrl = this.prismHooksBaseUrl();
+    const token = this.prismHookServiceToken();
+    if (!baseUrl || !token) {
+      console.warn(
+        `[discord-adapter] recording complete hook skipped session=${sessionId}: missing ${[
+          baseUrl ? null : "PRISM_HOOKS_BASE_URL or PRISM_AGENT_API_BASE_URL or APP_API_BASE_URL",
+          token ? null : "PRISM_HOOK_SERVICE_TOKEN or PRISM_AGENT_SERVICE_TOKEN or APP_API_SERVICE_TOKEN",
+        ].filter(Boolean).join(", ")}`,
+      );
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.recordingCompleteHookTimeoutMs());
+    try {
+      const response = await fetch(`${baseUrl}/agent/hooks/${encodeURIComponent(hookKey)}/trigger`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-service-token": token,
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        console.warn(
+          `[discord-adapter] recording complete hook failed session=${sessionId} hook=${hookKey} status=${response.status} body=${(await response.text()).slice(0, 300)}`,
+        );
+        return;
+      }
+      console.log(`[discord-adapter] recording complete hook triggered session=${sessionId} hook=${hookKey}`);
+    } catch (error) {
+      console.warn(`[discord-adapter] recording complete hook failed session=${sessionId} hook=${hookKey}: ${this.describeError(error)}`);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async triggerRecordingCompleteHook(metadata: RecordingSessionMetadata, summary: SessionSummary | null): Promise<void> {
+    if (!this.recordingCompleteHookEnabled()) {
+      return;
+    }
+    const hookKey = this.recordingCompleteHookKey();
+    if (!hookKey) {
+      console.warn(`[discord-adapter] recording complete hook skipped session=${metadata.sessionId}: missing DISCORD_RECORDING_COMPLETE_HOOK_KEY`);
+      return;
+    }
+    await this.triggerPrismHook(hookKey, this.recordingCompleteHookPayload(metadata, summary), metadata.sessionId);
   }
 
   async resolveRecordingDownload(sessionId: string, fileName: string): Promise<{ filePath: string; contentType: string } | null> {
