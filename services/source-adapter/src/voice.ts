@@ -1173,6 +1173,9 @@ export class DiscordVoiceManager {
         : metadata.artifacts?.summaryMarkdownPath
           ? `Summary written locally: \`${metadata.artifacts.summaryMarkdownPath}\``
           : "Summary not generated.",
+      this.recordingCompleteHookEnabled() && this.recordingCompleteHookKey()
+        ? `Prism recording hook configured: \`${this.recordingCompleteHookKey()}\`.`
+        : "No Prism recording hook configured.",
       process.env.N8N_WEBHOOK_URL ? "Legacy webhook handoff attempted." : "No legacy webhook handoff configured.",
     ].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n");
     const publicMessage = summaryArtifact

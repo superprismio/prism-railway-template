@@ -72,6 +72,12 @@ curl -fsSL \
   -d '{"source":"manual-test"}'
 ```
 
+The service-token trigger route returns after Prism creates the request and
+stores `hook-payload.json`. When `autoRun.enabled` is true, workflow start is
+queued in the site process and the response may be HTTP 202 with
+`autoStartQueued: true`. Check the created request if you need to inspect the
+workflow execution.
+
 Manage existing hooks:
 
 ```http
