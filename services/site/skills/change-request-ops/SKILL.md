@@ -25,6 +25,7 @@ Core endpoints:
 - `GET /agent/change-board/requests/current`
 - `GET /agent/change-board/requests/by-number/:requestNumber/review`
 - `GET /agent/change-board/requests/by-number/:requestNumber/artifacts`
+- `POST /agent/change-board/requests/by-number/:requestNumber/workflow/continue`
 - `GET /agent/change-board/requests/:id`
 - `PATCH /agent/change-board/requests/:id`
 - `GET /agent/change-board/requests/:id/external-refs`
@@ -79,6 +80,23 @@ The by-number artifact route includes text, markdown, and JSON bodies by default
 - `?maxBytes=500000`
 
 If a user asks whether artifacts were created for a request number, this endpoint is the first API to call. Do not claim the board is admin-password gated until the `/agent/.../by-number/...` routes have been tried with service-token auth.
+
+Continue or approve a workflow by request number:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/by-number/$REQUEST_NUMBER/workflow/continue" \
+  -d '{
+    "comment": "'"$OPERATOR_COMMENT"'",
+    "workflowAction": "approved",
+    "autoContinueUntilGate": true
+  }'
+```
+
+Use this route when a user approves a gate or asks to move a request along from Discord or another non-browser surface. It uses the normal workflow runner; do not manually patch `currentWorkflowStepKey` to bypass gates. `workflowAction` defaults to `approved`. If the next step is an agent step and `autoContinueUntilGate` is true, the workflow continues until it reaches a gate, checkpoint, or terminal step.
 
 Create request pattern:
 
