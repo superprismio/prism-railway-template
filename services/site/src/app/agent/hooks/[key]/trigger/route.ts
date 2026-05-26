@@ -19,8 +19,9 @@ export async function POST(request: Request, context: RouteContext) {
     const result = await triggerHook(decodeURIComponent(key), payload ?? {}, {
       baseUrl: new URL(request.url).origin,
       source: "service-hook",
+      waitForAutoStart: false,
     })
-    return NextResponse.json({ ok: true, ...result })
+    return NextResponse.json({ ok: true, ...result }, { status: result.autoStartQueued ? 202 : 200 })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not trigger hook"
     const status = message === "HOOK_NOT_FOUND" ? 404 : message === "HOOK_DISABLED" ? 409 : 400

@@ -19,6 +19,7 @@ type HookTriggerResult = {
   hook: HookRecord
   changeRequest: NonNullable<ReturnType<typeof createChangeRequest>>
   autoStart: Awaited<ReturnType<typeof autoStartWorkflowRequest>> | null
+  autoStartQueued?: boolean
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -115,7 +116,7 @@ async function writeHookPayloadArtifact(hook: HookRecord, requestId: string, pay
 export async function triggerHook(
   hookKey: string,
   payload: Record<string, unknown>,
-  options: { baseUrl?: string | null; source?: string } = {},
+  options: { baseUrl?: string | null; source?: string; waitForAutoStart?: boolean } = {},
 ): Promise<HookTriggerResult> {
   const hook = getHookByKey(hookKey)
   if (!hook) {
@@ -192,9 +193,9 @@ export async function triggerHook(
     }))
   }
 
-  if (autoRunEnabled) {
+  const runAutoStart = async () => {
     try {
-      autoStart = await autoStartWorkflowRequest(changeRequest, { baseUrl: options.baseUrl, requestedSkills })
+      return await autoStartWorkflowRequest(changeRequest, { baseUrl: options.baseUrl, requestedSkills })
     } catch (error) {
       console.warn(JSON.stringify({
         event: "hook.autostart_failed",
@@ -202,7 +203,18 @@ export async function triggerHook(
         requestId: changeRequest.id,
         error: error instanceof Error ? error.message : "Unknown workflow autostart error",
       }))
+      return null
     }
+  }
+
+  let autoStartQueued = false
+  if (autoRunEnabled && options.waitForAutoStart !== false) {
+    autoStart = await runAutoStart()
+  } else if (autoRunEnabled) {
+    autoStartQueued = true
+    setTimeout(() => {
+      void runAutoStart()
+    }, 0)
   }
   markHookTriggered(hook.key)
 
@@ -210,5 +222,6 @@ export async function triggerHook(
     hook: getHookByKey(hook.key) ?? hook,
     changeRequest,
     autoStart,
+    autoStartQueued,
   }
 }
