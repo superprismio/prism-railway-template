@@ -43,6 +43,12 @@ Tasks:
 - `GET /agent/tasks/runs`
 - `POST /agent/tasks/runs`
 - `PATCH /agent/tasks/runs/:id`
+- `GET /agent/task-scripts`
+- `POST /agent/task-scripts`
+- `GET /agent/task-scripts/:key`
+- `PATCH /agent/task-scripts/:key`
+- `DELETE /agent/task-scripts/:key`
+- `GET /agent/task-scripts/:key/content`
 
 Skills:
 

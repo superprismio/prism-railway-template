@@ -15,6 +15,7 @@ import { closeCompletedWorkflowRequestsMigration } from './015_close_completed_w
 import { dropChangeRequestStatusMigration } from './016_drop_change_request_status';
 import { changeRequestPrReviewCheckpointMigration } from './017_change_request_pr_review_checkpoint';
 import { agentResponseJobsMigration } from './018_agent_response_jobs';
+import { taskScriptsMigration } from './019_task_scripts';
 
 export interface Migration {
   name: string;
@@ -39,4 +40,5 @@ export const migrations: Migration[] = [
   dropChangeRequestStatusMigration,
   changeRequestPrReviewCheckpointMigration,
   agentResponseJobsMigration,
+  taskScriptsMigration,
 ];

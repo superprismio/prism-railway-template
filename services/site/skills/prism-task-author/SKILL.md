@@ -15,7 +15,7 @@ Task authoring rules:
 6. Store schedule in `scheduleCron` using standard five-field cron syntax.
 7. Default new tasks to `enabled=false` unless the user explicitly asks to enable it after review.
 8. Do not store arbitrary JavaScript, Python, or shell code in the task row.
-9. If deterministic repeatable code is needed, reference a registered script with `inputConfig.scriptKey` and structured `inputConfig.params`.
+9. If deterministic repeatable code is needed, create or verify a site-owned task script through `/agent/task-scripts` first, then reference it with `inputConfig.scriptKey` and structured `inputConfig.params`.
 10. Include required destination/config assumptions in `inputConfig` or `outputConfig`.
 11. If the user asks to send output to a destination such as Discord `#updates`, resolve the destination during task creation when possible. Use `availableOutputDestinations` from session metadata first. Store resolved destinations in `outputConfig.outputDestinations`; do not leave channel matching for scheduled run time if the channel can be resolved now.
 12. A resolved output destination must include `adapter`, `type`, `id`, and `label`. If you only know the label, the destination is unresolved.
@@ -127,7 +127,20 @@ Script runner task shape:
 }
 ```
 
-For script-runner tasks, the script itself must be registered on the task-runner service through `TASK_RUNNER_SCRIPT_REGISTRY_JSON`. The task row only references `scriptKey` and passes structured params. Scripts should write JSON to stdout and may include `shouldNotify:false` to suppress configured output delivery for healthy/no-op runs.
+For script-runner tasks, the script itself must be a site-owned task script available through `/agent/task-scripts/:key/content`. Do not rely on local Codex Runtime files, repo-only files, or task-runner env registries for scheduled execution. The task row only references `scriptKey` and passes structured params. Scripts should write JSON to stdout and may include `shouldNotify:false` to suppress configured output delivery for healthy/no-op runs.
+
+Create or update a task script before creating the scheduled task:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/task-scripts" \
+  -d "$TASK_SCRIPT_JSON"
+```
+
+Use `runtime="node-esm"` for script-runner scripts. A script receives JSON on stdin with `task`, `scriptKey`, `params`, `inputConfig`, `outputConfig`, `agentConfig`, and `triggeredAt`.
 
 When creating a task through the Prism API, use the site internal task endpoint if credentials are available:
 
@@ -151,4 +164,4 @@ Return a concise review summary with:
 - whether it is enabled
 - required env/config
 - resolved output destinations, if any
-- what the scheduled prompt will do
+- what the scheduled prompt, workflow, or script will do

@@ -13,6 +13,7 @@ Design notes and system direction:
 - [Codex-First Architecture](architecture/codex-first-architecture.md)
 - [Custom Source Strategy](architecture/custom-source-strategy.md)
 - [Site API Consolidation Plan](architecture/site-api-consolidation-plan.md)
+- [Site-Owned Task Scripts](architecture/site-owned-task-scripts.md)
 - [Tasks Workflow Plan](architecture/tasks-workflow-plan.md)
 - [Workflows](architecture/workflows.md)
 

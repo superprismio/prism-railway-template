@@ -34,6 +34,12 @@ Send service auth as:
 - `POST /agent/tasks`
 - `GET /agent/tasks/runs`
 - `POST /agent/tasks/runs`
+- `GET /agent/task-scripts`
+- `POST /agent/task-scripts`
+- `GET /agent/task-scripts/:key`
+- `PATCH /agent/task-scripts/:key`
+- `DELETE /agent/task-scripts/:key`
+- `GET /agent/task-scripts/:key/content`
 - `GET /agent/skills`
 - `POST /agent/skills`
 - `GET /agent/workflows`

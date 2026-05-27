@@ -597,6 +597,20 @@ export interface TaskRecord {
   updatedAt: string;
 }
 
+export interface TaskScriptRecord {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  runtime: string;
+  enabled: boolean;
+  storagePath: string;
+  checksum: string;
+  timeoutMs: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface HookRecord {
   id: string;
   key: string;
@@ -742,6 +756,17 @@ export interface UpsertTaskInput {
   instructionConfig?: Record<string, unknown>;
   outputConfig?: Record<string, unknown>;
   agentConfig?: Record<string, unknown>;
+}
+
+export interface UpsertTaskScriptInput {
+  key: string;
+  name: string;
+  description?: string | null;
+  runtime?: string;
+  enabled?: boolean;
+  storagePath: string;
+  checksum: string;
+  timeoutMs?: number | null;
 }
 
 export interface UpsertHookInput {
@@ -909,6 +934,20 @@ interface TaskRow {
   updated_at: string;
 }
 
+interface TaskScriptRow {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  runtime: string;
+  enabled: number;
+  storage_path: string;
+  checksum: string;
+  timeout_ms: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 interface WorkflowRow {
   id: string;
   key: string;
@@ -1028,6 +1067,22 @@ function mapTaskRow(row: TaskRow): TaskRecord {
     instructionConfig: parseJsonValue<Record<string, unknown>>(row.instruction_config_json, {}),
     outputConfig: parseJsonValue<Record<string, unknown>>(row.output_config_json, {}),
     agentConfig: parseJsonValue<Record<string, unknown>>(row.agent_config_json, {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapTaskScriptRow(row: TaskScriptRow): TaskScriptRecord {
+  return {
+    id: row.id,
+    key: row.key,
+    name: row.name,
+    description: row.description,
+    runtime: row.runtime,
+    enabled: row.enabled === 1,
+    storagePath: row.storage_path,
+    checksum: row.checksum,
+    timeoutMs: row.timeout_ms,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -5303,6 +5358,81 @@ export function deleteCustomTaskByKey(key: string): TaskRecord | null {
   return task;
 }
 
+export function upsertTaskScript(input: UpsertTaskScriptInput): TaskScriptRecord {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const key = normalizeText(input.key);
+  const name = normalizeText(input.name);
+  const runtime = normalizeText(input.runtime) || 'node-esm';
+  const storagePath = normalizeText(input.storagePath);
+  const checksum = normalizeText(input.checksum);
+
+  if (!key || !name) {
+    throw new Error('TASK_SCRIPT_KEY_AND_NAME_REQUIRED');
+  }
+  if (!storagePath || !checksum) {
+    throw new Error('TASK_SCRIPT_STORAGE_AND_CHECKSUM_REQUIRED');
+  }
+
+  const existing = db.prepare('SELECT id, created_at FROM task_scripts WHERE key = ?').get(key) as
+    | { id: string; created_at: string }
+    | undefined;
+  const id = existing?.id ?? randomUUID();
+  const createdAt = existing?.created_at ?? now;
+  const timeoutMs = typeof input.timeoutMs === 'number' && Number.isFinite(input.timeoutMs)
+    ? Math.max(1_000, Math.min(3_600_000, Math.trunc(input.timeoutMs)))
+    : null;
+
+  db.prepare(
+    `INSERT INTO task_scripts (
+       id, key, name, description, runtime, enabled, storage_path, checksum, timeout_ms, created_at, updated_at
+     ) VALUES (
+       @id, @key, @name, @description, @runtime, @enabled, @storagePath, @checksum, @timeoutMs, @createdAt, @updatedAt
+     )
+     ON CONFLICT(key) DO UPDATE SET
+       name = excluded.name,
+       description = excluded.description,
+       runtime = excluded.runtime,
+       enabled = excluded.enabled,
+       storage_path = excluded.storage_path,
+       checksum = excluded.checksum,
+       timeout_ms = excluded.timeout_ms,
+       updated_at = excluded.updated_at`,
+  ).run({
+    id,
+    key,
+    name,
+    description: normalizeText(input.description) || null,
+    runtime,
+    enabled: input.enabled ? 1 : 0,
+    storagePath,
+    checksum,
+    timeoutMs,
+    createdAt,
+    updatedAt: now,
+  });
+
+  const script = getTaskScriptByKey(key);
+  if (!script) {
+    throw new Error('TASK_SCRIPT_UPSERT_FAILED');
+  }
+  return script;
+}
+
+export function getTaskScriptByKey(key: string): TaskScriptRecord | null {
+  const row = getDb().prepare('SELECT * FROM task_scripts WHERE key = ?').get(key) as TaskScriptRow | undefined;
+  return row ? mapTaskScriptRow(row) : null;
+}
+
+export function deleteTaskScriptByKey(key: string): TaskScriptRecord | null {
+  const script = getTaskScriptByKey(key);
+  if (!script) {
+    return null;
+  }
+  getDb().prepare('DELETE FROM task_scripts WHERE id = ?').run(script.id);
+  return script;
+}
+
 export function upsertHook(input: UpsertHookInput): HookRecord {
   const db = getDb();
   const now = new Date().toISOString();
@@ -5418,6 +5548,17 @@ export function deleteCustomHookByKey(key: string): HookRecord | null {
 export function listTasks(): TaskRecord[] {
   const rows = getDb().prepare('SELECT * FROM tasks ORDER BY key ASC').all() as TaskRow[];
   return rows.map(mapTaskRow);
+}
+
+export function listTaskScripts(): TaskScriptRecord[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, key, name, description, runtime, enabled, storage_path, checksum, timeout_ms, created_at, updated_at
+       FROM task_scripts
+       ORDER BY key ASC`,
+    )
+    .all() as TaskScriptRow[];
+  return rows.map(mapTaskScriptRow);
 }
 
 export function createTaskRun(input: CreateTaskRunInput): TaskRunRecord {

@@ -40,6 +40,7 @@ type TaskRunResult = {
   status: number;
   url: string;
   body: string;
+  metadata?: Record<string, unknown>;
   delivery?: OutputDeliveryResult[];
 };
 
@@ -59,13 +60,6 @@ type OutputDeliveryResult = {
   url?: string;
   body?: string;
   error?: string;
-};
-
-type ScriptRegistryEntry = {
-  command: string;
-  args: string[];
-  cwd: string | null;
-  timeoutMs: number | null;
 };
 
 type AppTaskRun = {
@@ -89,6 +83,20 @@ type WorkflowRunStepResult = {
   url: string;
   body: string;
   payload: Record<string, unknown>;
+};
+
+type SiteTaskScript = {
+  key: string;
+  runtime: string;
+  enabled: boolean;
+  checksum: string;
+  timeoutMs: number | null;
+  updatedAt: string | null;
+};
+
+type SiteTaskScriptContent = {
+  script: SiteTaskScript;
+  content: string;
 };
 
 type TaskState = {
@@ -351,52 +359,6 @@ function intFromConfig(config: Record<string, unknown>, key: string, fallback: n
 function recordFromConfig(config: Record<string, unknown>, key: string): Record<string, unknown> {
   const value = config[key];
   return isRecord(value) ? value : {};
-}
-
-function parseStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean);
-}
-
-function parseScriptRegistry(): Record<string, ScriptRegistryEntry> {
-  const raw = (process.env.TASK_RUNNER_SCRIPT_REGISTRY_JSON ?? "").trim();
-  if (!raw) {
-    return {};
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    console.warn(JSON.stringify({ event: "task.script_registry_invalid_json", error: describeError(error) }));
-    return {};
-  }
-
-  if (!isRecord(parsed)) {
-    return {};
-  }
-
-  const registry: Record<string, ScriptRegistryEntry> = {};
-  for (const [key, value] of Object.entries(parsed)) {
-    if (!isRecord(value)) {
-      continue;
-    }
-    const command = typeof value.command === "string" ? value.command.trim() : "";
-    if (!key.trim() || !command) {
-      continue;
-    }
-    registry[key.trim()] = {
-      command,
-      args: parseStringArray(value.args),
-      cwd: typeof value.cwd === "string" && value.cwd.trim() ? value.cwd.trim() : null,
-      timeoutMs: typeof value.timeoutMs === "number" && Number.isFinite(value.timeoutMs)
-        ? Math.max(1_000, Math.min(3_600_000, Math.trunc(value.timeoutMs)))
-        : null,
-    };
-  }
-  return registry;
 }
 
 async function registerTaskWithSite(task: BuiltInTask): Promise<void> {
@@ -710,17 +672,50 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
   };
 }
 
-async function runRegisteredScript(input: {
+function normalizeTaskScript(value: unknown): SiteTaskScript | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+  return {
+    key: typeof value.key === "string" ? value.key : "",
+    runtime: typeof value.runtime === "string" ? value.runtime : "",
+    enabled: value.enabled === true,
+    checksum: typeof value.checksum === "string" ? value.checksum : "",
+    timeoutMs: typeof value.timeoutMs === "number" && Number.isFinite(value.timeoutMs) ? Math.trunc(value.timeoutMs) : null,
+    updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : null,
+  };
+}
+
+async function fetchTaskScriptContent(scriptKey: string): Promise<SiteTaskScriptContent> {
+  const payload = await appApiRequest(`/agent/task-scripts/${encodeURIComponent(scriptKey)}/content`, {
+    method: "GET",
+  });
+  if (!payload) {
+    throw new Error("APP_API_BASE_URL is required for script-runner tasks");
+  }
+
+  const script = normalizeTaskScript(payload.script);
+  const content = typeof payload.content === "string" ? payload.content : "";
+  if (!script || !script.key || !content.trim()) {
+    throw new Error(`SCRIPT_RUNNER_SCRIPT_INVALID:${scriptKey}`);
+  }
+  if (!script.enabled) {
+    throw new Error(`SCRIPT_RUNNER_SCRIPT_DISABLED:${scriptKey}`);
+  }
+  if (script.runtime !== "node-esm") {
+    throw new Error(`SCRIPT_RUNNER_RUNTIME_UNSUPPORTED:${scriptKey}:${script.runtime}`);
+  }
+
+  return { script, content };
+}
+
+async function runSiteTaskScript(input: {
   siteTask: AppTask;
   scriptKey: string;
   params: Record<string, unknown>;
   timeoutMs: number | null;
 }): Promise<TaskRunResult> {
-  const registry = parseScriptRegistry();
-  const script = registry[input.scriptKey];
-  if (!script) {
-    throw new Error(`SCRIPT_RUNNER_SCRIPT_NOT_REGISTERED:${input.scriptKey}`);
-  }
+  const { script, content } = await fetchTaskScriptContent(input.scriptKey);
   const timeoutMs = input.timeoutMs ?? script.timeoutMs ?? scriptRunnerTimeoutMs();
   const outputMaxBytes = scriptRunnerOutputMaxBytes();
   const killGraceMs = scriptRunnerKillGraceMs();
@@ -741,10 +736,8 @@ async function runRegisteredScript(input: {
 
   const startedAt = Date.now();
   return await new Promise<TaskRunResult>((resolve, reject) => {
-    const child = spawn(script.command, script.args, {
-      cwd: script.cwd ?? undefined,
+    const child = spawn(process.execPath, ["--input-type=module", "--eval", content], {
       env: {
-        ...process.env,
         PRISM_TASK_KEY: input.siteTask.key,
         PRISM_TASK_SCRIPT_KEY: input.scriptKey,
         PRISM_TASK_PARAMS_JSON: JSON.stringify(input.params),
@@ -847,6 +840,16 @@ async function runRegisteredScript(input: {
         status: 200,
         url: `script://${input.scriptKey}`,
         body,
+        metadata: {
+          scriptKey: script.key,
+          scriptRuntime: script.runtime,
+          scriptChecksum: script.checksum,
+          scriptUpdatedAt: script.updatedAt,
+          durationMs: Date.now() - startedAt,
+          stderr: stderrText || null,
+          stdoutTruncated,
+          stderrTruncated,
+        },
       });
     });
 
@@ -874,7 +877,7 @@ function buildScriptRunnerTask(siteTask: AppTask): RunnableTask | null {
     defaultCron: cron,
     enabled: siteTask.enabled,
     cron,
-    run: async () => runRegisteredScript({ siteTask, scriptKey, params, timeoutMs }),
+    run: async () => runSiteTaskScript({ siteTask, scriptKey, params, timeoutMs }),
     outputConfig: siteTask.outputConfig,
   };
 }
@@ -1351,6 +1354,7 @@ async function runTask(task: RunnableTask, source: "schedule" | "manual"): Promi
         status: result.status,
         url: result.url,
         body: result.body,
+        metadata: result.metadata ?? {},
         delivery,
       },
     });

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { deleteCustomTaskByKey, getTaskByKey, listTasks, upsertTask } from "@/lib/app-core"
+import { deleteCustomTaskByKey, getTaskByKey, getTaskScriptByKey, listTasks, upsertTask } from "@/lib/app-core"
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
 
 function parseBoolean(value: unknown, fallback = false) {
@@ -54,16 +54,33 @@ export async function POST(request: Request) {
     }
   }
 
+  const enabled = parseBoolean(body.enabled)
+  const taskType = parseString(body.taskType ?? body.task_type) || "builtin"
+  const inputConfig = parseConfig(body.inputConfig ?? body.input_config)
+  if (taskType === "script-runner") {
+    const scriptKey = parseString(inputConfig.scriptKey ?? inputConfig.script_key)
+    if (!scriptKey) {
+      return NextResponse.json({ ok: false, error: "script-runner tasks require inputConfig.scriptKey" }, { status: 400 })
+    }
+    const script = getTaskScriptByKey(scriptKey)
+    if (!script) {
+      return NextResponse.json({ ok: false, error: `Task script not found: ${scriptKey}` }, { status: 400 })
+    }
+    if (enabled && !script.enabled) {
+      return NextResponse.json({ ok: false, error: `Task script is disabled: ${scriptKey}` }, { status: 400 })
+    }
+  }
+
   const task = upsertTask({
     key,
     name,
     description: parseNullableString(body.description) ?? null,
-    enabled: parseBoolean(body.enabled),
+    enabled,
     triggerType: parseString(body.triggerType ?? body.trigger_type) || "schedule",
     scheduleCron: parseNullableString(body.scheduleCron ?? body.schedule_cron) ?? null,
     timezone: parseString(body.timezone) || "UTC",
-    taskType: parseString(body.taskType ?? body.task_type) || "builtin",
-    inputConfig: parseConfig(body.inputConfig ?? body.input_config),
+    taskType,
+    inputConfig,
     instructionConfig: parseConfig(body.instructionConfig ?? body.instruction_config),
     outputConfig: parseConfig(body.outputConfig ?? body.output_config),
     agentConfig: parseConfig(body.agentConfig ?? body.agent_config),
