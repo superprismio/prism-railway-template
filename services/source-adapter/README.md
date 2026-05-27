@@ -96,6 +96,12 @@ a Telegram group appears in `GET /destinations` after the bot receives an update
 from that group. Private DMs are ignored by default and are not listed unless
 `TELEGRAM_DM_ENABLED=true`.
 
+The same poller can bridge Telegram group chat into Codex Runtime. In groups and
+channels the bot only responds to `/prism ...`, `/superprism ...`, or messages
+that mention the bot username. Access is still controlled by the site-owned
+source adapter policy; Telegram defaults to `off`, so an operator must allow a
+chat or user before the bot will answer.
+
 Destination examples:
 
 ```json
@@ -206,10 +212,10 @@ site-owned and can be changed from the admin Settings tab without rebuilding:
 - `PATCH /agent/source-adapter-policy`
 
 The source adapter refreshes this policy from the site service and falls back to
-env configuration if the site route is unavailable. Use `targets` for platform
-conversation surfaces, `groups` for platform permission groups, and `users` for
-platform users. For Discord, targets are channel/thread IDs and groups are role
-IDs:
+env/default configuration if the site route is unavailable. Use `targets` for
+platform conversation surfaces, `groups` for platform permission groups, and
+`users` for platform users. For Discord, targets are channel/thread IDs and
+groups are role IDs:
 
 ```json
 {
@@ -226,6 +232,29 @@ IDs:
       },
       "users": {
         "456789012345678901": { "mode": "full" }
+      }
+    }
+  }
+}
+```
+
+Telegram uses the same modes. Its default mode is `off`; targets are Telegram
+chat/group/channel IDs and users are Telegram user IDs. Telegram does not have a
+role/group equivalent in this adapter yet:
+
+```json
+{
+  "platforms": {
+    "telegram": {
+      "defaultMode": "off",
+      "defaultRateLimit": { "windowSeconds": 60, "maxRequests": 6 },
+      "targets": {
+        "-1001234567890": { "mode": "readonly" },
+        "-1002345678901": { "mode": "run-approved" }
+      },
+      "groups": {},
+      "users": {
+        "12345678": { "mode": "full" }
       }
     }
   }
@@ -253,21 +282,21 @@ IDs:
 
 Modes:
 
-- `off`: refuse Discord prompts in that scope
+- `off`: ignore prompts in that platform scope
 - `readonly`: answer/read context only
 - `run-approved`: run existing approved tasks/workflows, but do not author new custom assets
 - `full`: trusted behavior, still subject to Prism/runtime safeguards
 
-Discord replies are sanitized before posting publicly. The sanitizer redacts common
-internal Railway URLs, service hosts, token-looking values, private keys, and local
-filesystem paths.
+Discord and Telegram replies are sanitized before posting publicly. The sanitizer
+redacts common internal Railway URLs, service hosts, token-looking values, private
+keys, and local filesystem paths.
 
 Notes:
 
 - keep source-specific auth and traversal logic here, not inside `prism-memory`
 - keep shared model/runtime behavior in `codex-runtime`, not in this adapter
 - deploy multiple copies of this same directory if you want one adapter service per source
-- the current implementation is Discord-only and uses `discord.js` plus the Discord HTTP API; Slack and Telegram can follow the same normalized ingest contract later
+- the current implementation uses `discord.js` plus the Discord HTTP API for Discord and Telegram Bot API polling for Telegram
 - the stored checkpoint is a sync cursor, not a per-channel high-water mark; the overlap window reduces the chance of missing late-arriving reads across runs
 - the adapter does not crawl pasted links; it only preserves the embed text Discord already provides (`title`, `description`, `url`)
 
