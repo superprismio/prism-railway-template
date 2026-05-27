@@ -465,6 +465,43 @@ const accessModeOptions: Array<{ value: SourceAdapterAccessMode; label: string; 
   { value: "full", label: "Full", description: "Allow authoring and write actions through runtime policy." },
 ];
 
+const sourceAdapterPlatformProfiles: Record<string, {
+  label: string;
+  description: string;
+  targetHelp: string;
+  groupHelp: string;
+  userHelp: string;
+  promptHelp: string;
+}> = {
+  discord: {
+    label: "Discord",
+    description: "Controls who can use Prism through Discord mentions, slash-command chat, and channel/thread prompts.",
+    targetHelp: "Discord channel or thread IDs. Use a channel for broad access, or a thread for narrower access.",
+    groupHelp: "Discord role IDs. Role rules can grant moderators or trusted members higher access.",
+    userHelp: "Discord user IDs. User rules override the default for specific operators.",
+    promptHelp: "Discord responds when mentioned, used through configured slash commands, or invoked by workflow/task delivery.",
+  },
+  telegram: {
+    label: "Telegram",
+    description: "Controls who can use Prism through Telegram groups and channels discovered by the bot.",
+    targetHelp: "Telegram chat, group, supergroup, or channel IDs. Groups usually look like negative IDs such as -1001234567890.",
+    groupHelp: "Not used by Telegram yet. Keep this empty unless a future adapter adds group metadata.",
+    userHelp: "Telegram user IDs. Use these for trusted operators when the group default is more limited.",
+    promptHelp: "Telegram group chat responds to /prism, /superprism, or bot mentions. DMs are disabled by adapter config unless explicitly enabled.",
+  },
+};
+
+function sourceAdapterPlatformProfile(platform: string) {
+  return sourceAdapterPlatformProfiles[platform] ?? {
+    label: platform,
+    description: "Controls source-adapter chat access for this platform.",
+    targetHelp: "Conversation surface IDs for this platform.",
+    groupHelp: "Platform group or role IDs when supported.",
+    userHelp: "Platform user IDs.",
+    promptHelp: "Prompt routing depends on the adapter implementation for this platform.",
+  };
+}
+
 function formatPolicyMap(value: Record<string, SourceAdapterPolicyRule>) {
   return JSON.stringify(value, null, 2);
 }
@@ -488,6 +525,7 @@ function SourceAdapterPolicySettings() {
 
   const platformPolicy = policy?.platforms[selectedPlatform];
   const platformOptions = Object.keys(policy?.platforms ?? {}).sort();
+  const platformProfile = sourceAdapterPlatformProfile(selectedPlatform);
 
   useEffect(() => {
     let cancelled = false;
@@ -617,11 +655,12 @@ function SourceAdapterPolicySettings() {
                   <SelectContent>
                     {platformOptions.map((platform) => (
                       <SelectItem key={platform} value={platform}>
-                        {platform}
+                        {sourceAdapterPlatformProfile(platform).label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">{platformProfile.description}</p>
               </div>
               <div className="space-y-2">
                 <Label>Default mode</Label>
@@ -686,6 +725,35 @@ function SourceAdapterPolicySettings() {
                 />
               </div>
             </div>
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
+                <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Default
+                </div>
+                <div className="mt-1 text-sm font-medium">{accessModeOptions.find((option) => option.value === platformPolicy.defaultMode)?.label}</div>
+              </div>
+              <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
+                <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Target rules
+                </div>
+                <div className="mt-1 text-sm font-medium">{Object.keys(platformPolicy.targets).length}</div>
+              </div>
+              <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
+                <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Group rules
+                </div>
+                <div className="mt-1 text-sm font-medium">{Object.keys(platformPolicy.groups).length}</div>
+              </div>
+              <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
+                <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  User rules
+                </div>
+                <div className="mt-1 text-sm font-medium">{Object.keys(platformPolicy.users).length}</div>
+              </div>
+            </div>
+            <div className="rounded-none border border-border/60 bg-background/40 px-4 py-3 text-sm text-muted-foreground">
+              {platformProfile.promptHelp}
+            </div>
             <div className="grid gap-3 md:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="source-target-rules">Targets</Label>
@@ -695,7 +763,7 @@ function SourceAdapterPolicySettings() {
                   value={targetsJson}
                   onChange={(event) => setTargetsJson(event.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">Discord channels or threads today; Slack channels or Telegram chats later.</p>
+                <p className="text-xs text-muted-foreground">{platformProfile.targetHelp}</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="source-group-rules">Groups</Label>
@@ -705,7 +773,7 @@ function SourceAdapterPolicySettings() {
                   value={groupsJson}
                   onChange={(event) => setGroupsJson(event.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">Discord roles today; platform groups later.</p>
+                <p className="text-xs text-muted-foreground">{platformProfile.groupHelp}</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="source-user-rules">Users</Label>
@@ -715,7 +783,7 @@ function SourceAdapterPolicySettings() {
                   value={usersJson}
                   onChange={(event) => setUsersJson(event.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">Platform user IDs with optional mode, capabilities, or rate limits.</p>
+                <p className="text-xs text-muted-foreground">{platformProfile.userHelp}</p>
               </div>
             </div>
             <div className="flex justify-end">
