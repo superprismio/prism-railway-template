@@ -33,7 +33,6 @@ Manual runs require `X-Task-Runner-Token` when `TASK_RUNNER_TOKEN` is configured
 - `TASK_RUNNER_SCRIPT_TIMEOUT_MS=120000`
 - `TASK_RUNNER_SCRIPT_OUTPUT_MAX_BYTES=256000`
 - `TASK_RUNNER_SCRIPT_KILL_GRACE_MS=5000`
-- `TASK_RUNNER_SCRIPT_REGISTRY_JSON={}`
 
 When `APP_API_BASE_URL` is set, the runner idempotently registers built-in task defaults, reads effective enabled state and cron schedules from `site`, and writes task run history through internal APIs.
 
@@ -71,7 +70,7 @@ The runner calls:
 
 Deterministic scheduled tasks use `taskType=script-runner`. Use this for watchdogs, pollers, API checks, checkpoint updates, and other jobs that should not spend LLM tokens on every run.
 
-Task rows reference a registered script by key. They do not store inline code.
+Task rows reference a site-owned task script by key. They do not store inline code.
 
 Supported config:
 
@@ -100,19 +99,20 @@ Supported config:
 }
 ```
 
-Register script commands on the task-runner service:
+Create scripts through the site service:
 
 ```json
 {
-  "http-health-watchdog": {
-    "command": "node",
-    "args": ["/data/task-runner/scripts/http-health-watchdog.mjs"],
-    "timeoutMs": 60000
-  }
+  "key": "http-health-watchdog",
+  "name": "HTTP health watchdog",
+  "runtime": "node-esm",
+  "enabled": true,
+  "timeoutMs": 60000,
+  "content": "let raw = ''; for await (const chunk of process.stdin) raw += chunk; const input = JSON.parse(raw); console.log(JSON.stringify({ ok: true, summary: `Checked ${input.params.url}` }));"
 }
 ```
 
-The runner passes a JSON payload on stdin and also sets:
+The runner fetches `/agent/task-scripts/:key/content`, executes `node-esm` script content ephemerally without a shell, passes a JSON payload on stdin, and also sets:
 
 - `PRISM_TASK_KEY`
 - `PRISM_TASK_SCRIPT_KEY`

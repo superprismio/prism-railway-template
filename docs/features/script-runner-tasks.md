@@ -12,7 +12,7 @@ Use cases:
 
 ## Model
 
-Task rows use `taskType="script-runner"` and reference a registered script by key:
+Task rows use `taskType="script-runner"` and reference a site-owned task script by key:
 
 ```json
 {
@@ -37,23 +37,24 @@ Task rows use `taskType="script-runner"` and reference a registered script by ke
 }
 ```
 
-Do not store inline JavaScript, shell, or Python in task rows. The DB stores orchestration config; executable code lives in a registered script.
+Do not store inline JavaScript, shell, or Python in task rows. The task row stores orchestration config; executable code lives in a site-owned task script managed through `/agent/task-scripts`.
 
-## Registry
+## Task Script
 
-The task-runner service reads `TASK_RUNNER_SCRIPT_REGISTRY_JSON`:
+Create the script through the site service before creating or enabling the task:
 
 ```json
 {
-  "http-health-watchdog": {
-    "command": "node",
-    "args": ["/data/task-runner/scripts/http-health-watchdog.mjs"],
-    "timeoutMs": 60000
-  }
+  "key": "http-health-watchdog",
+  "name": "HTTP health watchdog",
+  "runtime": "node-esm",
+  "enabled": true,
+  "timeoutMs": 60000,
+  "content": "let raw = ''; for await (const chunk of process.stdin) raw += chunk; const input = JSON.parse(raw); console.log(JSON.stringify({ ok: true, summary: `Checked ${input.params.url}` }));"
 }
 ```
 
-The runner spawns the command without a shell and sends task context as JSON on stdin.
+The site stores script metadata in the DB and script content in site-managed storage. The runner fetches `/agent/task-scripts/:key/content`, executes the script ephemerally without a shell, and sends task context as JSON on stdin.
 
 ## Script Output
 
