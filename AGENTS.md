@@ -67,7 +67,7 @@ Send service auth as:
 
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
 
-For source adapter access rules, use `/agent/source-adapter-policy`. Policies are platform-scoped. Use `platforms.discord.targets` for Discord channels or threads, `platforms.discord.groups` for Discord role IDs, and `platforms.discord.users` for Discord user IDs.
+For source adapter access rules, use `/agent/source-adapter-policy`. Policies are platform-scoped. Use `platforms.discord.targets` for Discord channels or threads, `platforms.discord.groups` for Discord role IDs, and `platforms.discord.users` for Discord user IDs. Use `platforms.telegram.targets` for Telegram chat/group/channel IDs and `platforms.telegram.users` for Telegram user IDs. Telegram DMs are disabled by default unless explicitly enabled in adapter env/config.
 
 For questions like "what happened to request #10?" or "what artifacts did request #10 create?", do not use `/admin/board`. Use:
 
@@ -160,8 +160,13 @@ curl -fsSL \
   -H "content-type: application/json" \
   -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
   "$COMMUNICATION_ADAPTER_BASE_URL/messages" \
-  -d '{"destinationId":"<channel-id>","content":"Test message"}'
+  -d '{"destinationId":"discord:<channel-id>","content":"Test message"}'
 ```
+
+For Telegram, use `destinationId:"telegram:<chat-id>"` or send
+`{"adapter":"telegram","destinationId":"<chat-id>","content":"..."}`. Telegram
+groups/channels appear in `/destinations` after the bot sees an update from that
+chat.
 
 Do not use the site service token against adapter `/messages`.
 

@@ -505,14 +505,14 @@ function taskResultShouldNotify(result: TaskRunResult): boolean {
 }
 
 function adapterBaseUrl(adapter: string): string {
-  if (adapter === "discord") {
+  if (adapter === "discord" || adapter === "telegram") {
     return trimBaseUrl(process.env.COMMUNICATION_ADAPTER_BASE_URL);
   }
   return "";
 }
 
 function adapterHeaders(adapter: string): Record<string, string> {
-  if (adapter === "discord") {
+  if (adapter === "discord" || adapter === "telegram") {
     const token = (process.env.COMMUNICATION_ADAPTER_TOKEN ?? "").trim();
     return token ? { "X-Adapter-Token": token } : {};
   }
@@ -608,6 +608,7 @@ async function deliverTaskOutput(task: RunnableTask, result: TaskRunResult): Pro
     }
     try {
       const delivery = await postJson(baseUrl, "/messages", adapterHeaders(destination.adapter), {
+        adapter: destination.adapter,
         destinationId,
         content,
       });

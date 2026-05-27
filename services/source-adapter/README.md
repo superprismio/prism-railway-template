@@ -27,8 +27,8 @@ Current behavior:
 - sync checkpoints are persisted under `SOURCE_ADAPTER_DATA_ROOT`
 - `POST /sync?dry_run=true` collects and summarizes without posting or advancing checkpoints
 - `POST /sync?reset_checkpoint=true` ignores the saved cursor and re-runs the full configured window
-- `GET /destinations` lists Discord text channels as output destinations
-- `POST /messages` sends text to a resolved Discord channel id; requires `X-Adapter-Token` when `SOURCE_ADAPTER_TOKEN` is configured
+- `GET /destinations` lists Discord text channels and known Telegram chats as output destinations
+- `POST /messages` sends text to a resolved Discord channel id or Telegram chat id; requires `X-Adapter-Token` when `SOURCE_ADAPTER_TOKEN` is configured
 - `POST /recordings/:sessionId/recover` finalizes a known unfinished recording session from the volume; requires `X-Adapter-Token`
 - this service is now being consolidated onto a TypeScript/`discord.js` runtime so Discord-facing code can absorb voice and meeting commands later without a Python split
 
@@ -81,6 +81,62 @@ Discord-specific envs you can add later:
 - `DISCORD_RECORDING_COMPLETE_HOOK_ENABLED=<optional true|false override; defaults to enabled when DISCORD_RECORDING_COMPLETE_HOOK_KEY is set>`
 - `DISCORD_RECORDING_COMPLETE_HOOK_TIMEOUT_MS=10000`
 - `N8N_WEBHOOK_URL=https://your-n8n.example/webhook/transcribe` only if the legacy webhook handoff is still needed
+
+Telegram-specific envs:
+
+- `TELEGRAM_BOT_TOKEN=<optional Telegram bot token>`
+- `TELEGRAM_DISCOVERY_ENABLED=true`
+- `TELEGRAM_DM_ENABLED=false`
+- `TELEGRAM_POLL_INTERVAL_SECONDS=10`
+
+Telegram uses the Bot API directly. When `TELEGRAM_BOT_TOKEN` is set, the
+adapter polls `getUpdates` to discover groups/channels where the bot is present.
+Telegram does not provide a global "list every group this bot has joined" API, so
+a Telegram group appears in `GET /destinations` after the bot receives an update
+from that group. Private DMs are ignored by default and are not listed unless
+`TELEGRAM_DM_ENABLED=true`.
+
+Destination examples:
+
+```json
+{
+  "id": "discord:1374448934436733089",
+  "adapter": "discord",
+  "platform": "discord",
+  "destinationId": "1374448934436733089",
+  "type": "discord-channel",
+  "label": "#so-dev"
+}
+```
+
+```json
+{
+  "id": "telegram:-1001234567890",
+  "adapter": "telegram",
+  "platform": "telegram",
+  "destinationId": "-1001234567890",
+  "type": "telegram-chat",
+  "label": "Telegram / RaidGuild Updates"
+}
+```
+
+`POST /messages` accepts either a platform-qualified destination id or an
+explicit adapter:
+
+```json
+{
+  "destinationId": "telegram:-1001234567890",
+  "content": "Hello from Prism"
+}
+```
+
+```json
+{
+  "adapter": "telegram",
+  "destinationId": "-1001234567890",
+  "content": "Hello from Prism"
+}
+```
 
 Chat bridge envs:
 

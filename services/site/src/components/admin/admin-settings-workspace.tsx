@@ -482,10 +482,12 @@ function SourceAdapterPolicySettings() {
   const [targetsJson, setTargetsJson] = useState("{}");
   const [groupsJson, setGroupsJson] = useState("{}");
   const [usersJson, setUsersJson] = useState("{}");
+  const [selectedPlatform, setSelectedPlatform] = useState("discord");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const discordPolicy = policy?.platforms.discord;
+  const platformPolicy = policy?.platforms[selectedPlatform];
+  const platformOptions = Object.keys(policy?.platforms ?? {}).sort();
 
   useEffect(() => {
     let cancelled = false;
@@ -502,10 +504,12 @@ function SourceAdapterPolicySettings() {
         }
         if (cancelled) return;
         setPolicy(payload.policy);
-        const discord = payload.policy.platforms.discord;
-        setTargetsJson(formatPolicyMap(discord?.targets ?? {}));
-        setGroupsJson(formatPolicyMap(discord?.groups ?? {}));
-        setUsersJson(formatPolicyMap(discord?.users ?? {}));
+        const platform = payload.policy.platforms.discord ? "discord" : Object.keys(payload.policy.platforms)[0] ?? "discord";
+        setSelectedPlatform(platform);
+        const currentPlatform = payload.policy.platforms[platform];
+        setTargetsJson(formatPolicyMap(currentPlatform?.targets ?? {}));
+        setGroupsJson(formatPolicyMap(currentPlatform?.groups ?? {}));
+        setUsersJson(formatPolicyMap(currentPlatform?.users ?? {}));
         setError(null);
       } catch (loadError) {
         if (!cancelled) {
@@ -519,23 +523,23 @@ function SourceAdapterPolicySettings() {
     };
   }, []);
 
-  function updateDiscordPolicy(updater: (current: SourceAdapterPlatformPolicy) => SourceAdapterPlatformPolicy) {
+  function updatePlatformPolicy(updater: (current: SourceAdapterPlatformPolicy) => SourceAdapterPlatformPolicy) {
     setPolicy((current) => {
-      if (!current?.platforms.discord) {
+      if (!current?.platforms[selectedPlatform]) {
         return current;
       }
       return {
         ...current,
         platforms: {
           ...current.platforms,
-          discord: updater(current.platforms.discord),
+          [selectedPlatform]: updater(current.platforms[selectedPlatform]),
         },
       };
     });
   }
 
   function savePolicy() {
-    if (!policy?.platforms.discord) return;
+    if (!policy?.platforms[selectedPlatform]) return;
     setError(null);
     startTransition(async () => {
       try {
@@ -543,8 +547,8 @@ function SourceAdapterPolicySettings() {
           ...policy,
           platforms: {
             ...policy.platforms,
-            discord: {
-              ...policy.platforms.discord,
+            [selectedPlatform]: {
+              ...policy.platforms[selectedPlatform],
               targets: parsePolicyMap(targetsJson, "Targets"),
               groups: parsePolicyMap(groupsJson, "Groups"),
               users: parsePolicyMap(usersJson, "Users"),
@@ -565,10 +569,10 @@ function SourceAdapterPolicySettings() {
           throw new Error(payload.error || "Could not save source adapter policy");
         }
         setPolicy(payload.policy);
-        const discord = payload.policy.platforms.discord;
-        setTargetsJson(formatPolicyMap(discord?.targets ?? {}));
-        setGroupsJson(formatPolicyMap(discord?.groups ?? {}));
-        setUsersJson(formatPolicyMap(discord?.users ?? {}));
+        const savedPlatform = payload.policy.platforms[selectedPlatform];
+        setTargetsJson(formatPolicyMap(savedPlatform?.targets ?? {}));
+        setGroupsJson(formatPolicyMap(savedPlatform?.groups ?? {}));
+        setUsersJson(formatPolicyMap(savedPlatform?.users ?? {}));
       } catch (saveError) {
         setError(saveError instanceof Error ? saveError.message : "Could not save source adapter policy");
       }
@@ -592,15 +596,39 @@ function SourceAdapterPolicySettings() {
             {error}
           </div>
         ) : null}
-        {discordPolicy ? (
+        {platformPolicy ? (
           <>
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="space-y-2">
+                <Label>Platform</Label>
+                <Select
+                  value={selectedPlatform}
+                  onValueChange={(value) => {
+                    setSelectedPlatform(value);
+                    const nextPlatform = policy?.platforms[value];
+                    setTargetsJson(formatPolicyMap(nextPlatform?.targets ?? {}));
+                    setGroupsJson(formatPolicyMap(nextPlatform?.groups ?? {}));
+                    setUsersJson(formatPolicyMap(nextPlatform?.users ?? {}));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {platformOptions.map((platform) => (
+                      <SelectItem key={platform} value={platform}>
+                        {platform}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-2">
                 <Label>Default mode</Label>
                 <Select
-                  value={discordPolicy.defaultMode}
+                  value={platformPolicy.defaultMode}
                   onValueChange={(value) =>
-                    updateDiscordPolicy((current) => ({
+                    updatePlatformPolicy((current) => ({
                       ...current,
                       defaultMode: value as SourceAdapterAccessMode,
                     }))
@@ -618,7 +646,7 @@ function SourceAdapterPolicySettings() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {accessModeOptions.find((option) => option.value === discordPolicy.defaultMode)?.description}
+                  {accessModeOptions.find((option) => option.value === platformPolicy.defaultMode)?.description}
                 </p>
               </div>
               <div className="space-y-2">
@@ -627,9 +655,9 @@ function SourceAdapterPolicySettings() {
                   id="source-rate-window"
                   type="number"
                   min={1}
-                  value={discordPolicy.defaultRateLimit.windowSeconds}
+                  value={platformPolicy.defaultRateLimit.windowSeconds}
                   onChange={(event) =>
-                    updateDiscordPolicy((current) => ({
+                    updatePlatformPolicy((current) => ({
                       ...current,
                       defaultRateLimit: {
                         ...current.defaultRateLimit,
@@ -645,9 +673,9 @@ function SourceAdapterPolicySettings() {
                   id="source-rate-max"
                   type="number"
                   min={1}
-                  value={discordPolicy.defaultRateLimit.maxRequests}
+                  value={platformPolicy.defaultRateLimit.maxRequests}
                   onChange={(event) =>
-                    updateDiscordPolicy((current) => ({
+                    updatePlatformPolicy((current) => ({
                       ...current,
                       defaultRateLimit: {
                         ...current.defaultRateLimit,

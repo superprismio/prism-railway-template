@@ -23,6 +23,7 @@ import { DiscordVoiceManager } from "./voice.js";
 import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
+const TELEGRAM_API_BASE = "https://api.telegram.org";
 const DISCORD_TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
 const DISCORD_PARENT_CHANNEL_TYPES = new Set([0, 5, 15, 16]);
 const BRIDGE_THREAD_PREFIX = "prism ";
@@ -56,10 +57,21 @@ type AttachmentText = {
 type AdapterDestination = {
   adapter: string;
   id: string;
+  destinationId?: string;
+  platform?: string;
   type: string;
   name: string | null;
   label: string;
   parentId?: string | null;
+};
+
+type KnownTelegramChat = {
+  id: string;
+  type: string;
+  title: string | null;
+  username: string | null;
+  firstSeenAt: string;
+  lastSeenAt: string;
 };
 
 type DiscordAccessMode = "off" | "readonly" | "run-approved" | "full";
@@ -229,6 +241,14 @@ function checkpointPath(): string {
   return path.join(dataRoot(), "checkpoints.json");
 }
 
+function telegramChatsPath(): string {
+  return path.join(dataRoot(), "telegram-chats.json");
+}
+
+function telegramOffsetPath(): string {
+  return path.join(dataRoot(), "telegram-offset.json");
+}
+
 function sourceAdapterPublicBaseUrl(): string | null {
   const explicit = (process.env.SOURCE_ADAPTER_PUBLIC_BASE_URL ?? "").trim().replace(/\/+$/, "");
   if (explicit) {
@@ -262,6 +282,55 @@ async function saveCheckpoints(payload: Record<string, JsonValue>): Promise<void
   await fs.writeFile(checkpointPath(), `${JSON.stringify(payload, null, 2)}\n`, "utf8");
 }
 
+async function loadKnownTelegramChats(): Promise<Record<string, KnownTelegramChat>> {
+  try {
+    const content = await fs.readFile(telegramChatsPath(), "utf8");
+    const parsed = JSON.parse(content) as unknown;
+    const record = parseStringRecord(parsed);
+    return Object.fromEntries(
+      Object.entries(record)
+        .filter((entry): entry is [string, Record<string, unknown>] => !!entry[1] && typeof entry[1] === "object" && !Array.isArray(entry[1]))
+        .map(([id, chat]) => [id, {
+          id,
+          type: typeof chat.type === "string" ? chat.type : "unknown",
+          title: typeof chat.title === "string" && chat.title.trim() ? chat.title.trim() : null,
+          username: typeof chat.username === "string" && chat.username.trim() ? chat.username.trim() : null,
+          firstSeenAt: typeof chat.firstSeenAt === "string" ? chat.firstSeenAt : nowUtcIso(),
+          lastSeenAt: typeof chat.lastSeenAt === "string" ? chat.lastSeenAt : nowUtcIso(),
+        }]),
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return {};
+    }
+    throw error;
+  }
+}
+
+async function saveKnownTelegramChats(chats: Record<string, KnownTelegramChat>): Promise<void> {
+  await fs.mkdir(dataRoot(), { recursive: true });
+  await fs.writeFile(telegramChatsPath(), `${JSON.stringify(chats, null, 2)}\n`, "utf8");
+}
+
+async function readTelegramOffset(): Promise<number | null> {
+  try {
+    const content = await fs.readFile(telegramOffsetPath(), "utf8");
+    const parsed = JSON.parse(content) as unknown;
+    const offset = parseStringRecord(parsed).offset;
+    return typeof offset === "number" && Number.isSafeInteger(offset) ? offset : null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function saveTelegramOffset(offset: number): Promise<void> {
+  await fs.mkdir(dataRoot(), { recursive: true });
+  await fs.writeFile(telegramOffsetPath(), `${JSON.stringify({ offset }, null, 2)}\n`, "utf8");
+}
+
 function checkpointOverlapMinutes(): number {
   return parseIntEnv("SOURCE_CHECKPOINT_OVERLAP_MINUTES", 5, 0, 24 * 60);
 }
@@ -288,6 +357,9 @@ function adapterConfig() {
     discordCommandGuildId: ((process.env.DISCORD_COMMAND_GUILD_ID ?? "").trim() || (process.env.DISCORD_GUILD_ID ?? "").trim()),
     discordApplicationId: (process.env.DISCORD_APPLICATION_ID ?? "").trim(),
     codexRuntimeRequestTimeoutSeconds: parseIntEnv("CODEX_RUNTIME_REQUEST_TIMEOUT_SECONDS", 660, 30, 3600),
+    telegramDiscoveryEnabled: parseBoolEnv("TELEGRAM_DISCOVERY_ENABLED", Boolean((process.env.TELEGRAM_BOT_TOKEN ?? "").trim())),
+    telegramDmEnabled: parseBoolEnv("TELEGRAM_DM_ENABLED", false),
+    telegramPollIntervalSeconds: parseIntEnv("TELEGRAM_POLL_INTERVAL_SECONDS", 10, 2, 300),
     checkpointOverlapMinutes: checkpointOverlapMinutes(),
   };
 }
@@ -761,6 +833,37 @@ async function discordApiRequest<T extends JsonValue>(
   return (await response.json()) as T;
 }
 
+async function telegramApiRequest<T extends JsonValue>(
+  method: string,
+  body?: Record<string, unknown>,
+): Promise<T> {
+  const token = (process.env.TELEGRAM_BOT_TOKEN ?? "").trim();
+  if (!token) {
+    throw new Error("TELEGRAM_BOT_TOKEN is required for Telegram adapter operations");
+  }
+  const response = await fetch(`${TELEGRAM_API_BASE}/bot${token}/${method}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": "prism-source-adapter/0.1",
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+  const text = await response.text();
+  let payload: JsonObject | null = null;
+  try {
+    payload = text ? JSON.parse(text) as JsonObject : null;
+  } catch {
+    payload = null;
+  }
+  const ok = payload && typeof payload.ok === "boolean" ? payload.ok : response.ok;
+  if (!response.ok || !ok) {
+    const description = typeof payload?.description === "string" ? payload.description : text.slice(0, 200);
+    throw new Error(`Telegram API failed: ${response.status} ${method} ${description}`);
+  }
+  return (payload?.result ?? payload) as T;
+}
+
 async function listDiscordDestinations(): Promise<AdapterDestination[]> {
   const config = adapterConfig();
   if (!config.discordGuildId) {
@@ -778,7 +881,9 @@ async function listDiscordDestinations(): Promise<AdapterDestination[]> {
       const name = typeof channel.name === "string" && channel.name.trim() ? channel.name.trim() : null;
       return {
         adapter: "discord",
-        id: String(channel.id),
+        platform: "discord",
+        id: `discord:${String(channel.id)}`,
+        destinationId: String(channel.id),
         type: "discord-channel",
         name,
         label: name ? `#${name}` : String(channel.id),
@@ -786,6 +891,44 @@ async function listDiscordDestinations(): Promise<AdapterDestination[]> {
       };
     })
     .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+async function listTelegramDestinations(): Promise<AdapterDestination[]> {
+  if (!(process.env.TELEGRAM_BOT_TOKEN ?? "").trim()) {
+    return [];
+  }
+  const chats = await loadKnownTelegramChats();
+  return Object.values(chats)
+    .filter((chat) => chat.type !== "private")
+    .map((chat) => ({
+      adapter: "telegram",
+      platform: "telegram",
+      id: `telegram:${chat.id}`,
+      destinationId: chat.id,
+      type: chat.type === "channel" ? "telegram-channel" : "telegram-chat",
+      name: chat.title ?? chat.username ?? chat.id,
+      label: chat.title
+        ? `Telegram / ${chat.title}`
+        : chat.username
+          ? `Telegram / @${chat.username}`
+          : `Telegram / ${chat.id}`,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+async function listAdapterDestinations(): Promise<AdapterDestination[]> {
+  const destinations: AdapterDestination[] = [];
+  try {
+    destinations.push(...await listDiscordDestinations());
+  } catch (error) {
+    console.warn(`[source-adapter] Discord destination discovery failed: ${describeError(error)}`);
+  }
+  try {
+    destinations.push(...await listTelegramDestinations());
+  } catch (error) {
+    console.warn(`[source-adapter] Telegram destination discovery failed: ${describeError(error)}`);
+  }
+  return destinations;
 }
 
 async function inspectDiscordGuildChannels(): Promise<JsonObject> {
@@ -880,6 +1023,194 @@ async function sendDiscordMessage(destinationId: string, content: string): Promi
     destinationId: normalizedDestinationId,
     messageCount: sent.length,
     messages: sent,
+  };
+}
+
+function resolveMessageDestination(body: JsonObject): { adapter: string; destinationId: string } {
+  const rawAdapter = typeof body.adapter === "string"
+    ? body.adapter
+    : typeof body.platform === "string"
+      ? body.platform
+      : "";
+  const rawDestinationId = typeof body.destinationId === "string"
+    ? body.destinationId
+    : typeof body.destination_id === "string"
+      ? body.destination_id
+      : "";
+  const trimmedDestinationId = rawDestinationId.trim();
+  if (trimmedDestinationId.includes(":")) {
+    const [prefix, ...rest] = trimmedDestinationId.split(":");
+    const value = rest.join(":").trim();
+    if ((prefix === "discord" || prefix === "telegram") && value) {
+      return { adapter: prefix, destinationId: value };
+    }
+  }
+  return {
+    adapter: rawAdapter.trim() || "discord",
+    destinationId: trimmedDestinationId,
+  };
+}
+
+function splitTelegramMessage(content: string): string[] {
+  const maxLength = 4096;
+  const chunks: string[] = [];
+  let remaining = content;
+  while (remaining.length > maxLength) {
+    chunks.push(remaining.slice(0, maxLength));
+    remaining = remaining.slice(maxLength);
+  }
+  if (remaining) {
+    chunks.push(remaining);
+  }
+  return chunks;
+}
+
+async function sendTelegramMessage(destinationId: string, content: string): Promise<JsonObject> {
+  const normalizedDestinationId = destinationId.trim();
+  const normalizedContent = content.trim();
+  if (!normalizedDestinationId) {
+    throw new Error("destinationId is required");
+  }
+  if (!normalizedContent) {
+    throw new Error("content is required");
+  }
+  const sent: JsonObject[] = [];
+  for (const part of splitTelegramMessage(normalizedContent)) {
+    const message = await telegramApiRequest<JsonObject>("sendMessage", {
+      chat_id: normalizedDestinationId,
+      text: part,
+      disable_web_page_preview: false,
+    });
+    sent.push({
+      id: typeof message.message_id === "number" ? String(message.message_id) : null,
+      chatId: normalizedDestinationId,
+    });
+  }
+  return {
+    adapter: "telegram",
+    destinationId: normalizedDestinationId,
+    messageCount: sent.length,
+    messages: sent,
+  };
+}
+
+async function sendAdapterMessage(adapter: string, destinationId: string, content: string): Promise<JsonObject> {
+  if (adapter === "discord") {
+    return sendDiscordMessage(destinationId, content);
+  }
+  if (adapter === "telegram") {
+    return sendTelegramMessage(destinationId, content);
+  }
+  throw new Error(`Unsupported adapter: ${adapter}`);
+}
+
+function telegramChatFromUpdate(update: JsonObject): JsonObject | null {
+  const candidateKeys = ["message", "channel_post", "edited_message", "edited_channel_post", "my_chat_member"];
+  for (const key of candidateKeys) {
+    const value = update[key];
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      continue;
+    }
+    const record = value as JsonObject;
+    const chat = record.chat;
+    if (chat && typeof chat === "object" && !Array.isArray(chat)) {
+      return chat as JsonObject;
+    }
+  }
+  return null;
+}
+
+async function rememberTelegramChat(chat: JsonObject): Promise<boolean> {
+  const idValue = chat.id;
+  if (typeof idValue !== "number" && typeof idValue !== "string") {
+    return false;
+  }
+  const id = String(idValue);
+  const type = typeof chat.type === "string" ? chat.type : "unknown";
+  if (type === "private" && !adapterConfig().telegramDmEnabled) {
+    return false;
+  }
+  const title =
+    typeof chat.title === "string" && chat.title.trim()
+      ? chat.title.trim()
+      : [chat.first_name, chat.last_name]
+        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .join(" ")
+        .trim() || null;
+  const username = typeof chat.username === "string" && chat.username.trim() ? chat.username.trim() : null;
+  const now = nowUtcIso();
+  const chats = await loadKnownTelegramChats();
+  chats[id] = {
+    id,
+    type,
+    title,
+    username,
+    firstSeenAt: chats[id]?.firstSeenAt ?? now,
+    lastSeenAt: now,
+  };
+  await saveKnownTelegramChats(chats);
+  return true;
+}
+
+async function pollTelegramDiscoveryOnce(): Promise<number> {
+  const offset = await readTelegramOffset();
+  const result = await telegramApiRequest<JsonValue[]>("getUpdates", {
+    ...(offset !== null ? { offset } : {}),
+    timeout: 0,
+    allowed_updates: ["message", "channel_post", "edited_message", "edited_channel_post", "my_chat_member"],
+  });
+  if (!Array.isArray(result)) {
+    return 0;
+  }
+  let nextOffset = offset;
+  let seenChats = 0;
+  for (const update of result) {
+    if (!update || typeof update !== "object" || Array.isArray(update)) {
+      continue;
+    }
+    const record = update as JsonObject;
+    const updateId = typeof record.update_id === "number" ? record.update_id : null;
+    if (updateId !== null) {
+      nextOffset = Math.max(nextOffset ?? 0, updateId + 1);
+    }
+    const chat = telegramChatFromUpdate(record);
+    if (chat && await rememberTelegramChat(chat)) {
+      seenChats += 1;
+    }
+  }
+  if (nextOffset !== null && nextOffset !== offset) {
+    await saveTelegramOffset(nextOffset);
+  }
+  return seenChats;
+}
+
+function startTelegramDiscoveryPolling(): (() => void) | null {
+  const config = adapterConfig();
+  if (!config.telegramDiscoveryEnabled || !(process.env.TELEGRAM_BOT_TOKEN ?? "").trim()) {
+    return null;
+  }
+
+  let stopped = false;
+  let running = false;
+  const poll = async () => {
+    if (stopped || running) return;
+    running = true;
+    try {
+      const seenChats = await pollTelegramDiscoveryOnce();
+      if (seenChats > 0) {
+        console.log(`[source-adapter] Telegram discovery saw ${seenChats} chat update(s)`);
+      }
+    } catch (error) {
+      console.warn(`[source-adapter] Telegram discovery failed: ${describeError(error)}`);
+    } finally {
+      running = false;
+    }
+  };
+  void poll();
+  const timer = setInterval(() => void poll(), config.telegramPollIntervalSeconds * 1000);
+  return () => {
+    stopped = true;
+    clearInterval(timer);
   };
 }
 
@@ -1478,12 +1809,12 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
                 ? "This Discord session may run existing approved tasks or workflows, but must not author new skills/tasks/workflows or perform broad administrative changes."
                 : "This Discord session is trusted for full agent behavior, subject to normal Prism safeguards.",
           adapterCapabilities: {
-            adapter: "discord",
+            adapter: "communication",
             capabilities: canSendAdapterMessages ? ["list-destinations", "send-message"] : [],
-            destinationTypes: canSendAdapterMessages ? ["discord-channel"] : [],
+            destinationTypes: canSendAdapterMessages ? ["discord-channel", "telegram-chat", "telegram-channel"] : [],
           },
           availableOutputDestinations: canSendAdapterMessages
-            ? await listDiscordDestinations().catch((error) => {
+            ? await listAdapterDestinations().catch((error) => {
                 console.warn("[discord-adapter] destination discovery failed", describeError(error));
                 return [];
               })
@@ -2009,6 +2340,7 @@ function requireAdapterToken(request: Request): void {
 async function main(): Promise<void> {
   await fs.mkdir(dataRoot(), { recursive: true });
   await startDiscordBridge();
+  const stopTelegramDiscovery = startTelegramDiscoveryPolling();
 
   const app = express();
   app.use(express.json({ limit: "2mb" }));
@@ -2020,9 +2352,13 @@ async function main(): Promise<void> {
   app.get("/capabilities", (_request: Request, response: Response) => {
     response.json({
       ok: true,
-      adapter: "discord",
+      adapter: "communication",
+      adapters: [
+        "discord",
+        (process.env.TELEGRAM_BOT_TOKEN ?? "").trim() ? "telegram" : null,
+      ].filter(Boolean),
       capabilities: ["list-destinations", "send-message"],
-      destinationTypes: ["discord-channel"],
+      destinationTypes: ["discord-channel", "telegram-chat", "telegram-channel"],
       routes: {
         destinations: "/destinations",
         guildChannels: "/guild/channels",
@@ -2036,8 +2372,8 @@ async function main(): Promise<void> {
       requireAdapterToken(request);
       response.json({
         ok: true,
-        adapter: "discord",
-        destinations: await listDiscordDestinations(),
+        adapter: "communication",
+        destinations: await listAdapterDestinations(),
       });
     } catch (error) {
       const message = describeError(error);
@@ -2063,15 +2399,11 @@ async function main(): Promise<void> {
     try {
       requireAdapterToken(request);
       const body = request.body && typeof request.body === "object" ? request.body as JsonObject : {};
-      const destinationId = typeof body.destinationId === "string"
-        ? body.destinationId
-        : typeof body.destination_id === "string"
-          ? body.destination_id
-          : "";
+      const { adapter, destinationId } = resolveMessageDestination(body);
       const content = typeof body.content === "string" ? body.content : "";
       response.json({
         ok: true,
-        result: await sendDiscordMessage(destinationId, content),
+        result: await sendAdapterMessage(adapter, destinationId, content),
       });
     } catch (error) {
       const message = describeError(error);
@@ -2135,6 +2467,7 @@ async function main(): Promise<void> {
   });
 
   const shutdown = async () => {
+    stopTelegramDiscovery?.();
     if (bridgeClient) {
       await bridgeClient.destroy();
       bridgeClient = null;
