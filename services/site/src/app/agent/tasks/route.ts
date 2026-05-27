@@ -57,6 +57,7 @@ export async function POST(request: Request) {
   const enabled = parseBoolean(body.enabled)
   const taskType = parseString(body.taskType ?? body.task_type) || "builtin"
   const inputConfig = parseConfig(body.inputConfig ?? body.input_config)
+  let normalizedInputConfig = inputConfig
   if (taskType === "script-runner") {
     const scriptKey = parseString(inputConfig.scriptKey ?? inputConfig.script_key)
     if (!scriptKey) {
@@ -69,6 +70,7 @@ export async function POST(request: Request) {
     if (enabled && !script.enabled) {
       return NextResponse.json({ ok: false, error: `Task script is disabled: ${scriptKey}` }, { status: 400 })
     }
+    normalizedInputConfig = { ...inputConfig, scriptKey }
   }
 
   const task = upsertTask({
@@ -80,7 +82,7 @@ export async function POST(request: Request) {
     scheduleCron: parseNullableString(body.scheduleCron ?? body.schedule_cron) ?? null,
     timezone: parseString(body.timezone) || "UTC",
     taskType,
-    inputConfig,
+    inputConfig: normalizedInputConfig,
     instructionConfig: parseConfig(body.instructionConfig ?? body.instruction_config),
     outputConfig: parseConfig(body.outputConfig ?? body.output_config),
     agentConfig: parseConfig(body.agentConfig ?? body.agent_config),

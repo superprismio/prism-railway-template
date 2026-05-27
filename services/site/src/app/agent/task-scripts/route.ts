@@ -19,11 +19,13 @@ function parseBoolean(value: unknown, fallback = false) {
   return fallback
 }
 
-function parseTimeoutMs(value: unknown) {
+function parseTimeoutMs(value: unknown, fallback: number | null) {
+  if (value === undefined) return fallback
+  if (value === null || value === "") return null
   const parsed = typeof value === "number" ? value : typeof value === "string" ? Number.parseInt(value, 10) : null
   return typeof parsed === "number" && Number.isFinite(parsed)
     ? Math.max(1_000, Math.min(3_600_000, Math.trunc(parsed)))
-    : null
+    : fallback
 }
 
 function checksumForContent(content: string) {
@@ -79,10 +81,10 @@ export async function POST(request: Request) {
       name,
       description: parseNullableString(body.description) ?? null,
       runtime,
-      enabled: parseBoolean(body.enabled),
+      enabled: parseBoolean(body.enabled, existing?.enabled ?? false),
       storagePath,
       checksum,
-      timeoutMs: parseTimeoutMs(body.timeoutMs ?? body.timeout_ms),
+      timeoutMs: parseTimeoutMs(body.timeoutMs ?? body.timeout_ms, existing?.timeoutMs ?? null),
     })
     if (existing && existing.storagePath !== storagePath) {
       await deleteTaskScriptFile(existing.storagePath).catch(() => undefined)

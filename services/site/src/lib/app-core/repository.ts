@@ -5374,14 +5374,17 @@ export function upsertTaskScript(input: UpsertTaskScriptInput): TaskScriptRecord
     throw new Error('TASK_SCRIPT_STORAGE_AND_CHECKSUM_REQUIRED');
   }
 
-  const existing = db.prepare('SELECT id, created_at FROM task_scripts WHERE key = ?').get(key) as
-    | { id: string; created_at: string }
+  const existing = db.prepare('SELECT id, enabled, timeout_ms, created_at FROM task_scripts WHERE key = ?').get(key) as
+    | { id: string; enabled: number; timeout_ms: number | null; created_at: string }
     | undefined;
   const id = existing?.id ?? randomUUID();
   const createdAt = existing?.created_at ?? now;
-  const timeoutMs = typeof input.timeoutMs === 'number' && Number.isFinite(input.timeoutMs)
-    ? Math.max(1_000, Math.min(3_600_000, Math.trunc(input.timeoutMs)))
-    : null;
+  const timeoutMs = input.timeoutMs === undefined
+    ? existing?.timeout_ms ?? null
+    : typeof input.timeoutMs === 'number' && Number.isFinite(input.timeoutMs)
+      ? Math.max(1_000, Math.min(3_600_000, Math.trunc(input.timeoutMs)))
+      : null;
+  const enabled = input.enabled === undefined ? existing?.enabled ?? 0 : input.enabled ? 1 : 0;
 
   db.prepare(
     `INSERT INTO task_scripts (
@@ -5404,7 +5407,7 @@ export function upsertTaskScript(input: UpsertTaskScriptInput): TaskScriptRecord
     name,
     description: normalizeText(input.description) || null,
     runtime,
-    enabled: input.enabled ? 1 : 0,
+    enabled,
     storagePath,
     checksum,
     timeoutMs,

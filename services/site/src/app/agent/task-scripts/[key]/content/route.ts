@@ -17,9 +17,6 @@ export async function GET(_request: Request, context: RouteContext) {
   if (!script) {
     return NextResponse.json({ ok: false, error: "Task script not found" }, { status: 404 })
   }
-  if (!script.enabled) {
-    return NextResponse.json({ ok: false, error: "Task script is disabled" }, { status: 409 })
-  }
 
   try {
     const content = await readTaskScriptFile(script)

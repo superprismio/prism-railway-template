@@ -1,6 +1,9 @@
 import express, { type Request, type Response } from "express";
 import { CronExpressionParser } from "cron-parser";
 import { spawn } from "node:child_process";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -696,7 +699,7 @@ async function fetchTaskScriptContent(scriptKey: string): Promise<SiteTaskScript
 
   const script = normalizeTaskScript(payload.script);
   const content = typeof payload.content === "string" ? payload.content : "";
-  if (!script || !script.key || !content.trim()) {
+  if (!script || !script.key) {
     throw new Error(`SCRIPT_RUNNER_SCRIPT_INVALID:${scriptKey}`);
   }
   if (!script.enabled) {
@@ -704,6 +707,9 @@ async function fetchTaskScriptContent(scriptKey: string): Promise<SiteTaskScript
   }
   if (script.runtime !== "node-esm") {
     throw new Error(`SCRIPT_RUNNER_RUNTIME_UNSUPPORTED:${scriptKey}:${script.runtime}`);
+  }
+  if (!content.trim()) {
+    throw new Error(`SCRIPT_RUNNER_SCRIPT_INVALID:${scriptKey}`);
   }
 
   return { script, content };
@@ -735,8 +741,16 @@ async function runSiteTaskScript(input: {
   };
 
   const startedAt = Date.now();
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "prism-task-script-"));
+  const scriptPath = path.join(tempDir, "script.mjs");
+  await fs.writeFile(scriptPath, content, "utf8");
+
   return await new Promise<TaskRunResult>((resolve, reject) => {
-    const child = spawn(process.execPath, ["--input-type=module", "--eval", content], {
+    function cleanupTemp() {
+      void fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+    }
+
+    const child = spawn(process.execPath, [scriptPath], {
       env: {
         PRISM_TASK_KEY: input.siteTask.key,
         PRISM_TASK_SCRIPT_KEY: input.scriptKey,
@@ -795,6 +809,7 @@ async function runSiteTaskScript(input: {
           child.kill("SIGKILL");
         }
       }, killGraceMs);
+      cleanupTemp();
       reject(new Error(`SCRIPT_RUNNER_TIMEOUT:${input.scriptKey}:${timeoutMs}`));
     }, timeoutMs);
 
@@ -816,12 +831,14 @@ async function runSiteTaskScript(input: {
       if (settled) return;
       settled = true;
       cleanupTimers();
+      cleanupTemp();
       reject(error);
     });
     child.on("close", (code) => {
       if (settled) return;
       settled = true;
       cleanupTimers();
+      cleanupTemp();
       const stderrText = `${stderr.trim()}${stderrTruncated ? "\n[stderr truncated]" : ""}`;
       if (code !== 0) {
         reject(new Error(`SCRIPT_RUNNER_FAILED:${input.scriptKey}:${code}:${stderrText.slice(0, 500)}`));
@@ -858,7 +875,7 @@ async function runSiteTaskScript(input: {
 }
 
 function buildScriptRunnerTask(siteTask: AppTask): RunnableTask | null {
-  const scriptKey = stringFromConfig(siteTask.inputConfig, "scriptKey");
+  const scriptKey = stringFromConfig(siteTask.inputConfig, "scriptKey") || stringFromConfig(siteTask.inputConfig, "script_key");
   if (!scriptKey) {
     console.warn(JSON.stringify({ event: "task.script_runner_missing_script", task: siteTask.key }));
     return null;

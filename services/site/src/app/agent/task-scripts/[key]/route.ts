@@ -37,7 +37,8 @@ function checksumForContent(content: string) {
 }
 
 function taskReferencesScript(task: { inputConfig: Record<string, unknown> }, key: string) {
-  return typeof task.inputConfig.scriptKey === "string" && task.inputConfig.scriptKey.trim() === key
+  const scriptKey = task.inputConfig.scriptKey ?? task.inputConfig.script_key
+  return typeof scriptKey === "string" && scriptKey.trim() === key
 }
 
 export async function GET(_request: Request, context: RouteContext) {
