@@ -97,10 +97,10 @@ from that group. Private DMs are ignored by default and are not listed unless
 `TELEGRAM_DM_ENABLED=true`.
 
 The same poller can bridge Telegram group chat into Codex Runtime. In groups and
-channels the bot only responds to `/prism ...`, `/superprism ...`, or messages
-that mention the bot username. Access is still controlled by the site-owned
-source adapter policy; Telegram defaults to `off`, so an operator must allow a
-chat or user before the bot will answer.
+channels the bot responds to `/prism`, `/prism ...`, `/superprism`,
+`/superprism ...`, or messages that mention the bot username. Access is still
+controlled by the site-owned source adapter policy; Telegram defaults to `off`,
+so an operator must allow a chat or user before the bot will answer.
 
 Destination examples:
 

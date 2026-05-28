@@ -1289,7 +1289,7 @@ function cleanTelegramPrompt(input: {
 
   const commandMatch = text.match(/^\/(prism|superprism)(?:@\w+)?(?:\s+|$)([\s\S]*)$/i);
   if (commandMatch) {
-    return (commandMatch[2] ?? "").trim();
+    return (commandMatch[2] ?? "").trim() || "Briefly introduce what Prism can do from this Telegram chat and mention that users can add a prompt after /prism.";
   }
 
   if (input.botUsername) {
