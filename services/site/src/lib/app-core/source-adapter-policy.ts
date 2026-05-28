@@ -41,6 +41,16 @@ export const defaultSourceAdapterPolicy: SourceAdapterPolicySettings = {
       groups: {},
       users: {},
     },
+    telegram: {
+      defaultMode: 'off',
+      defaultRateLimit: {
+        windowSeconds: 60,
+        maxRequests: 6,
+      },
+      targets: {},
+      groups: {},
+      users: {},
+    },
   },
 };
 

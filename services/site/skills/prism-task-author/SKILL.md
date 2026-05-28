@@ -17,7 +17,7 @@ Task authoring rules:
 8. Do not store arbitrary JavaScript, Python, or shell code in the task row.
 9. If deterministic repeatable code is needed, create or verify a site-owned task script through `/agent/task-scripts` first, then reference it with `inputConfig.scriptKey` and structured `inputConfig.params`.
 10. Include required destination/config assumptions in `inputConfig` or `outputConfig`.
-11. If the user asks to send output to a destination such as Discord `#updates`, resolve the destination during task creation when possible. Use `availableOutputDestinations` from session metadata first. Store resolved destinations in `outputConfig.outputDestinations`; do not leave channel matching for scheduled run time if the channel can be resolved now.
+11. If the user asks to send output to a destination such as Discord `#updates` or a Telegram group, resolve the destination during task creation when possible. Use `availableOutputDestinations` from session metadata first. Store resolved destinations in `outputConfig.outputDestinations`; do not leave channel matching for scheduled run time if the channel can be resolved now.
 12. A resolved output destination must include `adapter`, `type`, `id`, and `label`. If you only know the label, the destination is unresolved.
 13. If a requested destination cannot be resolved, create the task disabled and state that delivery is unresolved.
 14. When a task creates a request from an outside system, attach that source as a request external ref when the API is available. Examples: GitHub issue collector tasks attach the source issue, Discord support triage tasks attach the source message or thread, and publishing tasks attach the final CMS post.
@@ -49,8 +49,14 @@ Recommended task row shape:
       {
         "adapter": "discord",
         "type": "discord-channel",
-        "id": "1234567890",
+        "id": "discord:1234567890",
         "label": "#updates"
+      },
+      {
+        "adapter": "telegram",
+        "type": "telegram-chat",
+        "id": "telegram:-1001234567890",
+        "label": "Telegram / RaidGuild Updates"
       }
     ]
   }
@@ -119,7 +125,7 @@ Script runner task shape:
       {
         "adapter": "discord",
         "type": "discord-channel",
-        "id": "1234567890",
+        "id": "discord:1234567890",
         "label": "#ops"
       }
     ]

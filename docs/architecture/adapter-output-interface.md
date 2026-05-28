@@ -28,9 +28,10 @@ Returns adapter capabilities and supported destination types.
 ```json
 {
   "ok": true,
-  "adapter": "discord",
+  "adapter": "communication",
+  "adapters": ["discord", "telegram"],
   "capabilities": ["list-destinations", "send-message"],
-  "destinationTypes": ["discord-channel"],
+  "destinationTypes": ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"],
   "routes": {
     "destinations": "/destinations",
     "messages": "/messages"
@@ -53,18 +54,42 @@ curl -fsSL \
 ```json
 {
   "ok": true,
-  "adapter": "discord",
+  "adapter": "communication",
   "destinations": [
     {
       "adapter": "discord",
-      "id": "1234567890",
+      "platform": "discord",
+      "id": "discord:1234567890",
+      "destinationId": "1234567890",
       "type": "discord-channel",
       "name": "updates",
       "label": "#updates"
+    },
+    {
+      "adapter": "discord",
+      "platform": "discord",
+      "id": "discord:2345678901",
+      "destinationId": "2345678901",
+      "type": "discord-forum",
+      "name": "announcements",
+      "label": "Forum / announcements"
+    },
+    {
+      "adapter": "telegram",
+      "platform": "telegram",
+      "id": "telegram:-1001234567890",
+      "destinationId": "-1001234567890",
+      "type": "telegram-chat",
+      "name": "RaidGuild Updates",
+      "label": "Telegram / RaidGuild Updates"
     }
   ]
 }
 ```
+
+Telegram destinations are discovered from Bot API updates. A group/channel is
+listed after the bot has been added and has seen at least one update from that
+chat. Private DMs are disabled by default.
 
 ### `POST /messages`
 
@@ -78,12 +103,38 @@ curl -fsSL \
   -H "content-type: application/json" \
   -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
   "$COMMUNICATION_ADAPTER_BASE_URL/messages" \
-  -d '{"destinationId":"1234567890","content":"Test message"}'
+  -d '{"destinationId":"discord:1234567890","content":"Test message"}'
 ```
 
 ```json
 {
-  "destinationId": "1234567890",
+  "destinationId": "telegram:-1001234567890",
+  "content": "Daily brief..."
+}
+```
+
+For compatibility, Discord callers may still send a bare Discord channel id.
+Multi-platform callers should prefer platform-qualified ids or send an explicit
+`adapter` field:
+
+```json
+{
+  "adapter": "telegram",
+  "destinationId": "-1001234567890",
+  "content": "Daily brief..."
+}
+```
+
+Discord forum destinations create a new forum post/thread. Include `type:
+"discord-forum"` and a `title` or `postTitle`; if omitted, the adapter uses a
+generic title.
+
+```json
+{
+  "adapter": "discord",
+  "type": "discord-forum",
+  "destinationId": "2345678901",
+  "title": "Weekly community brief",
   "content": "Daily brief..."
 }
 ```
@@ -113,8 +164,21 @@ Chat-assisted task creation should resolve human labels like `#updates` once, th
     {
       "adapter": "discord",
       "type": "discord-channel",
-      "id": "1234567890",
+      "id": "discord:1234567890",
       "label": "#updates"
+    },
+    {
+      "adapter": "discord",
+      "type": "discord-forum",
+      "id": "discord:2345678901",
+      "label": "Forum / announcements",
+      "title": "Weekly community brief"
+    },
+    {
+      "adapter": "telegram",
+      "type": "telegram-chat",
+      "id": "telegram:-1001234567890",
+      "label": "Telegram / RaidGuild Updates"
     }
   ]
 }

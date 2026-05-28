@@ -52,6 +52,7 @@ type OutputDestination = {
   type: string;
   id: string | null;
   label?: string | null;
+  title?: string | null;
 };
 
 type OutputDeliveryResult = {
@@ -470,6 +471,11 @@ function outputDestinationsFromConfig(config: Record<string, unknown>): OutputDe
       type: typeof item.type === "string" ? item.type.trim() : "",
       id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : null,
       label: typeof item.label === "string" ? item.label : null,
+      title: typeof item.title === "string" && item.title.trim()
+        ? item.title.trim()
+        : typeof item.postTitle === "string" && item.postTitle.trim()
+          ? item.postTitle.trim()
+          : null,
     }))
     .filter((item) => item.adapter && item.type && (item.id || item.label));
 }
@@ -505,14 +511,14 @@ function taskResultShouldNotify(result: TaskRunResult): boolean {
 }
 
 function adapterBaseUrl(adapter: string): string {
-  if (adapter === "discord") {
+  if (adapter === "discord" || adapter === "telegram") {
     return trimBaseUrl(process.env.COMMUNICATION_ADAPTER_BASE_URL);
   }
   return "";
 }
 
 function adapterHeaders(adapter: string): Record<string, string> {
-  if (adapter === "discord") {
+  if (adapter === "discord" || adapter === "telegram") {
     const token = (process.env.COMMUNICATION_ADAPTER_TOKEN ?? "").trim();
     return token ? { "X-Adapter-Token": token } : {};
   }
@@ -608,7 +614,10 @@ async function deliverTaskOutput(task: RunnableTask, result: TaskRunResult): Pro
     }
     try {
       const delivery = await postJson(baseUrl, "/messages", adapterHeaders(destination.adapter), {
+        adapter: destination.adapter,
         destinationId,
+        type: destination.type,
+        ...(destination.title ? { title: destination.title } : {}),
         content,
       });
       deliveries.push({

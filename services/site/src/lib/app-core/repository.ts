@@ -4009,6 +4009,84 @@ export function findAgentSessionByDiscordContext(input: {
   return row ? parseAgentSessionRow(row) : null;
 }
 
+export function findAgentSessionBySourceContext(input: {
+  source: string;
+  contextKey: string;
+}) {
+  const source = normalizeText(input.source);
+  const contextKey = normalizeText(input.contextKey);
+  if (!source || !contextKey) {
+    return null;
+  }
+  const rows = getDb()
+    .prepare(
+      `SELECT
+         id,
+         source,
+         status,
+         title,
+         discord_guild_id,
+         discord_channel_id,
+         discord_thread_id,
+         linked_change_request_id,
+         linked_target_environment_id,
+         meta_json,
+         created_by_user_id,
+         last_message_at,
+         created_at,
+         updated_at
+       FROM agent_sessions
+       WHERE source = ?
+       ORDER BY updated_at DESC, created_at DESC`,
+    )
+    .all(source) as Parameters<typeof parseAgentSessionRow>[0][];
+
+  for (const row of rows) {
+    const session = parseAgentSessionRow(row);
+    if (session.meta.contextKey === contextKey) {
+      return session;
+    }
+  }
+
+  return null;
+}
+
+export function upsertAgentSessionFromSource(input: UpsertAgentSessionInput & { contextKey: string }) {
+  const existing = findAgentSessionBySourceContext({
+    source: input.source,
+    contextKey: input.contextKey,
+  });
+  if (existing) {
+    return updateAgentSession(existing.id, {
+      status: input.status,
+      title: input.title,
+      linkedChangeRequestId: input.linkedChangeRequestId,
+      linkedTargetEnvironmentId: input.linkedTargetEnvironmentId,
+      meta: {
+        ...existing.meta,
+        ...(input.meta ?? {}),
+        contextKey: input.contextKey,
+      },
+      createdByUserId: input.createdByUserId,
+      lastMessageAt: input.lastMessageAt,
+    });
+  }
+
+  return createAgentSession({
+    source: input.source,
+    status: input.status,
+    title: input.title,
+    linkedChangeRequestId: input.linkedChangeRequestId,
+    linkedTargetEnvironmentId: input.linkedTargetEnvironmentId,
+    meta: {
+      ...(input.meta ?? {}),
+      contextKey: input.contextKey,
+    },
+    createdByUserId: input.createdByUserId,
+    lastMessageAt: input.lastMessageAt,
+  });
+}
+
 export function upsertAgentSessionFromDiscord(input: UpsertAgentSessionInput) {
   const existing = findAgentSessionByDiscordContext({
     discordThreadId: input.discordThreadId,
