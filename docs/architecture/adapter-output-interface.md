@@ -31,7 +31,7 @@ Returns adapter capabilities and supported destination types.
   "adapter": "communication",
   "adapters": ["discord", "telegram"],
   "capabilities": ["list-destinations", "send-message"],
-  "destinationTypes": ["discord-channel", "telegram-chat", "telegram-channel"],
+  "destinationTypes": ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"],
   "routes": {
     "destinations": "/destinations",
     "messages": "/messages"
@@ -64,6 +64,15 @@ curl -fsSL \
       "type": "discord-channel",
       "name": "updates",
       "label": "#updates"
+    },
+    {
+      "adapter": "discord",
+      "platform": "discord",
+      "id": "discord:2345678901",
+      "destinationId": "2345678901",
+      "type": "discord-forum",
+      "name": "announcements",
+      "label": "Forum / announcements"
     },
     {
       "adapter": "telegram",
@@ -116,6 +125,20 @@ Multi-platform callers should prefer platform-qualified ids or send an explicit
 }
 ```
 
+Discord forum destinations create a new forum post/thread. Include `type:
+"discord-forum"` and a `title` or `postTitle`; if omitted, the adapter uses a
+generic title.
+
+```json
+{
+  "adapter": "discord",
+  "type": "discord-forum",
+  "destinationId": "2345678901",
+  "title": "Weekly community brief",
+  "content": "Daily brief..."
+}
+```
+
 Response:
 
 ```json
@@ -143,6 +166,13 @@ Chat-assisted task creation should resolve human labels like `#updates` once, th
       "type": "discord-channel",
       "id": "discord:1234567890",
       "label": "#updates"
+    },
+    {
+      "adapter": "discord",
+      "type": "discord-forum",
+      "id": "discord:2345678901",
+      "label": "Forum / announcements",
+      "title": "Weekly community brief"
     },
     {
       "adapter": "telegram",

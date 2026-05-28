@@ -119,6 +119,17 @@ Destination examples:
 
 ```json
 {
+  "id": "discord:1037470101718450288",
+  "adapter": "discord",
+  "platform": "discord",
+  "destinationId": "1037470101718450288",
+  "type": "discord-forum",
+  "label": "Forum / project-updates"
+}
+```
+
+```json
+{
   "id": "telegram:-1001234567890",
   "adapter": "telegram",
   "platform": "telegram",
@@ -142,6 +153,19 @@ explicit adapter:
 {
   "adapter": "telegram",
   "destinationId": "-1001234567890",
+  "content": "Hello from Prism"
+}
+```
+
+For Discord forum destinations, include `type:"discord-forum"` and a `title` or
+`postTitle` to create a new forum post/thread:
+
+```json
+{
+  "adapter": "discord",
+  "type": "discord-forum",
+  "destinationId": "1037470101718450288",
+  "title": "Weekly project update",
   "content": "Hello from Prism"
 }
 ```

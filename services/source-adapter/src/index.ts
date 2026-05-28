@@ -25,6 +25,7 @@ import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 const DISCORD_TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
+const DISCORD_FORUM_CHANNEL_TYPES = new Set([15, 16]);
 const DISCORD_PARENT_CHANNEL_TYPES = new Set([0, 5, 15, 16]);
 const BRIDGE_THREAD_PREFIX = "prism ";
 const TEXT_ATTACHMENT_EXTENSIONS = new Set([".md", ".markdown", ".mdx", ".txt", ".text", ".log", ".json", ".yml", ".yaml"]);
@@ -972,7 +973,7 @@ async function listDiscordDestinations(): Promise<AdapterDestination[]> {
   }
   return channelsPayload
     .filter((item): item is JsonObject => !!item && typeof item === "object" && !Array.isArray(item))
-    .filter((channel) => DISCORD_TEXT_CHANNEL_TYPES.has(Number(channel.type)))
+    .filter((channel) => DISCORD_TEXT_CHANNEL_TYPES.has(Number(channel.type)) || DISCORD_FORUM_CHANNEL_TYPES.has(Number(channel.type)))
     .filter((channel) => typeof channel.id === "string")
     .map((channel) => {
       const name = typeof channel.name === "string" && channel.name.trim() ? channel.name.trim() : null;
@@ -981,9 +982,9 @@ async function listDiscordDestinations(): Promise<AdapterDestination[]> {
         platform: "discord",
         id: `discord:${String(channel.id)}`,
         destinationId: String(channel.id),
-        type: "discord-channel",
+        type: DISCORD_FORUM_CHANNEL_TYPES.has(Number(channel.type)) ? "discord-forum" : "discord-channel",
         name,
-        label: name ? `#${name}` : String(channel.id),
+        label: name ? `${DISCORD_FORUM_CHANNEL_TYPES.has(Number(channel.type)) ? "Forum / " : "#"}${name}` : String(channel.id),
         parentId: typeof channel.parent_id === "string" ? channel.parent_id : null,
       };
     })
@@ -1091,7 +1092,12 @@ async function inspectDiscordGuildChannels(): Promise<JsonObject> {
   };
 }
 
-async function sendDiscordMessage(destinationId: string, content: string): Promise<JsonObject> {
+function normalizeDiscordForumPostTitle(value: unknown): string {
+  const title = typeof value === "string" && value.trim() ? value.trim() : "Prism update";
+  return title.slice(0, 100);
+}
+
+async function sendDiscordMessage(destinationId: string, content: string, options: { type?: string; title?: string | null } = {}): Promise<JsonObject> {
   const normalizedDestinationId = destinationId.trim();
   const normalizedContent = content.trim();
   if (!normalizedDestinationId) {
@@ -1099,6 +1105,31 @@ async function sendDiscordMessage(destinationId: string, content: string): Promi
   }
   if (!normalizedContent) {
     throw new Error("content is required");
+  }
+  if (options.type === "discord-forum") {
+    const message = await discordApiRequest<JsonObject>(
+      `/channels/${encodeURIComponent(normalizedDestinationId)}/threads`,
+      undefined,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          name: normalizeDiscordForumPostTitle(options.title),
+          message: { content: normalizedContent },
+        }),
+      },
+    );
+    return {
+      adapter: "discord",
+      destinationId: normalizedDestinationId,
+      type: "discord-forum",
+      threadId: typeof message.id === "string" ? message.id : null,
+      threadName: typeof message.name === "string" ? message.name : options.title ?? null,
+      messageCount: 1,
+      messages: [{
+        id: typeof message.id === "string" ? message.id : null,
+        channelId: normalizedDestinationId,
+      }],
+    };
   }
   const sent: JsonObject[] = [];
   for (const part of splitDiscordMessage(normalizedContent)) {
@@ -1123,7 +1154,7 @@ async function sendDiscordMessage(destinationId: string, content: string): Promi
   };
 }
 
-function resolveMessageDestination(body: JsonObject): { adapter: string; destinationId: string } {
+function resolveMessageDestination(body: JsonObject): { adapter: string; destinationId: string; type: string | null; title: string | null } {
   const rawAdapter = typeof body.adapter === "string"
     ? body.adapter
     : typeof body.platform === "string"
@@ -1139,12 +1170,19 @@ function resolveMessageDestination(body: JsonObject): { adapter: string; destina
     const [prefix, ...rest] = trimmedDestinationId.split(":");
     const value = rest.join(":").trim();
     if ((prefix === "discord" || prefix === "telegram") && value) {
-      return { adapter: prefix, destinationId: value };
+      return {
+        adapter: prefix,
+        destinationId: value,
+        type: typeof body.type === "string" ? body.type.trim() || null : null,
+        title: typeof body.title === "string" ? body.title.trim() || null : typeof body.postTitle === "string" ? body.postTitle.trim() || null : null,
+      };
     }
   }
   return {
     adapter: rawAdapter.trim() || "discord",
     destinationId: trimmedDestinationId,
+    type: typeof body.type === "string" ? body.type.trim() || null : null,
+    title: typeof body.title === "string" ? body.title.trim() || null : typeof body.postTitle === "string" ? body.postTitle.trim() || null : null,
   };
 }
 
@@ -1196,9 +1234,9 @@ async function sendTelegramMessage(
   };
 }
 
-async function sendAdapterMessage(adapter: string, destinationId: string, content: string): Promise<JsonObject> {
+async function sendAdapterMessage(adapter: string, destinationId: string, content: string, options: { type?: string | null; title?: string | null } = {}): Promise<JsonObject> {
   if (adapter === "discord") {
-    return sendDiscordMessage(destinationId, content);
+    return sendDiscordMessage(destinationId, content, { type: options.type ?? undefined, title: options.title ?? null });
   }
   if (adapter === "telegram") {
     return sendTelegramMessage(destinationId, content);
@@ -1483,7 +1521,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
         adapterCapabilities: {
           adapter: "communication",
           capabilities: canSendAdapterMessages ? ["list-destinations", "send-message"] : [],
-          destinationTypes: canSendAdapterMessages ? ["discord-channel", "telegram-chat", "telegram-channel"] : [],
+          destinationTypes: canSendAdapterMessages ? ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"] : [],
         },
         availableOutputDestinations: canSendAdapterMessages
           ? await listAdapterDestinations().catch((error) => {
@@ -2308,7 +2346,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
           adapterCapabilities: {
             adapter: "communication",
             capabilities: canSendAdapterMessages ? ["list-destinations", "send-message"] : [],
-            destinationTypes: canSendAdapterMessages ? ["discord-channel", "telegram-chat", "telegram-channel"] : [],
+            destinationTypes: canSendAdapterMessages ? ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"] : [],
           },
           availableOutputDestinations: canSendAdapterMessages
             ? await listAdapterDestinations().catch((error) => {
@@ -2855,7 +2893,7 @@ async function main(): Promise<void> {
         (process.env.TELEGRAM_BOT_TOKEN ?? "").trim() ? "telegram" : null,
       ].filter(Boolean),
       capabilities: ["list-destinations", "send-message"],
-      destinationTypes: ["discord-channel", "telegram-chat", "telegram-channel"],
+      destinationTypes: ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"],
       routes: {
         destinations: "/destinations",
         guildChannels: "/guild/channels",
@@ -2896,11 +2934,11 @@ async function main(): Promise<void> {
     try {
       requireAdapterToken(request);
       const body = request.body && typeof request.body === "object" ? request.body as JsonObject : {};
-      const { adapter, destinationId } = resolveMessageDestination(body);
+      const { adapter, destinationId, type, title } = resolveMessageDestination(body);
       const content = typeof body.content === "string" ? body.content : "";
       response.json({
         ok: true,
-        result: await sendAdapterMessage(adapter, destinationId, content),
+        result: await sendAdapterMessage(adapter, destinationId, content, { type, title }),
       });
     } catch (error) {
       const message = describeError(error);
