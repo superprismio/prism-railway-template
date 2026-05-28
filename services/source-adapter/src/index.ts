@@ -1344,6 +1344,7 @@ type TelegramPromptTransport = {
   userSourceMessageId: string | null;
   createdAt: string;
   sendTyping?: () => Promise<void>;
+  sendThinkingMessage?: () => Promise<() => Promise<void>>;
   sendAssistantMessage: (content: string) => Promise<{ sourceMessageId: string | null }>;
 };
 
@@ -1447,6 +1448,12 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
 
   const stopTyping = startTypingHeartbeat(transport.sendTyping);
+  const clearThinking = transport.sendThinkingMessage
+    ? await transport.sendThinkingMessage().catch((error) => {
+        console.warn("[source-adapter] Telegram thinking indicator failed", describeError(error));
+        return async () => undefined;
+      })
+    : async () => undefined;
   try {
     const result = await codexRuntimeRequest({
       prompt,
@@ -1524,6 +1531,9 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       createdAt: nowUtcIso(),
     });
   } finally {
+    await clearThinking().catch((error) => {
+      console.warn("[source-adapter] Telegram thinking indicator cleanup failed", describeError(error));
+    });
     stopTyping();
   }
 }
@@ -1585,6 +1595,23 @@ async function handleTelegramChatUpdate(update: JsonObject): Promise<boolean> {
           chat_id: chatId,
           action: "typing",
         });
+      },
+      sendThinkingMessage: async () => {
+        const sent = await telegramApiRequest<JsonObject>("sendMessage", {
+          chat_id: chatId,
+          text: "🧠 Thinking...",
+          ...(messageId ? { reply_to_message_id: Number(messageId) } : {}),
+        });
+        const sentMessageId = typeof sent.message_id === "number" ? sent.message_id : null;
+        return async () => {
+          if (sentMessageId === null) {
+            return;
+          }
+          await telegramApiRequest<JsonObject>("deleteMessage", {
+            chat_id: chatId,
+            message_id: sentMessageId,
+          });
+        };
       },
       sendAssistantMessage: async (content) => {
         const sent = await sendTelegramMessage(chatId, content, { replyToMessageId: messageId });

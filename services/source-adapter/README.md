@@ -100,7 +100,9 @@ The same poller can bridge Telegram group chat into Codex Runtime. In groups and
 channels the bot responds to `/prism`, `/prism ...`, `/superprism`,
 `/superprism ...`, or messages that mention the bot username. Access is still
 controlled by the site-owned source adapter policy; Telegram defaults to `off`,
-so an operator must allow a chat or user before the bot will answer.
+so an operator must allow a chat or user before the bot will answer. Telegram
+shows a temporary `🧠 Thinking...` reply during model-backed runs and removes it
+when the final response is posted.
 
 Destination examples:
 
