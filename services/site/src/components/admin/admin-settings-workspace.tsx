@@ -249,20 +249,23 @@ function EnvironmentInstructions() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <KeyRound className="h-4 w-4" />
-            Discord Optional
+            Communication Adapter
           </CardTitle>
           <CardDescription>
-            Set these in Railway only when enabling Discord chat or sync.
+            Add provider credentials on the adapter service, then allow channels in Source Adapter Access below.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {serviceLabel("discord-adapter")}
+          {serviceLabel("communication adapter")}
           {copyBlock([
+            'TELEGRAM_BOT_TOKEN=""',
             'DISCORD_BOT_TOKEN=""',
             'DISCORD_GUILD_ID=""',
             'DISCORD_APPLICATION_ID=""',
-            'PRISM_TRIGGER_DISABLED="true"',
           ])}
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            Telegram only needs a bot token for first setup. Discord needs the bot token and guild ID for chat, sync, slash commands, and voice.
+          </p>
         </CardContent>
       </Card>
 
@@ -277,10 +280,10 @@ function EnvironmentInstructions() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {serviceLabel("prism-memory")}
+          {serviceLabel("communication adapter and prism-memory")}
           <div className="space-y-2 text-xs leading-relaxed text-muted-foreground">
             <p>
-              Use the adapter inventory endpoint to inspect Discord categories,
+              Use the communication adapter inventory endpoint to inspect Discord categories,
               then map category IDs to Prism Memory buckets.
             </p>
             <p>
@@ -304,7 +307,7 @@ function EnvironmentInstructions() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {serviceLabel("discord-adapter")}
+          {serviceLabel("communication adapter")}
           {copyBlock([
             'VOICE_DAVE_ENCRYPTION="true"',
             'VOICE_RECORDING_WARNING_MINUTES="50"',
