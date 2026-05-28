@@ -31,6 +31,10 @@ const TEXT_ATTACHMENT_EXTENSIONS = new Set([".md", ".markdown", ".mdx", ".txt", 
 const DISCORD_ATTACHMENT_HOST_SUFFIXES = ["discordapp.com", "discordapp.net", "discord.com", "discordcdn.com"];
 const CHANGE_REQUEST_ASYNC_PATTERN =
   /\b(start|continue|run|resume|deploy)\b.*\b(change request|cr\s*#?\d+|latest change request|request\s*#?\d+)\b/i;
+const WRITE_INTENT_PATTERN =
+  /\b(create|add|update|edit|change|delete|remove|run|start|continue|resume|trigger|send|post|publish|deploy|merge|approve|reject|close|reopen|save|set|configure|install|write)\b/i;
+const WRITE_TARGET_PATTERN =
+  /\b(task|workflow|skill|hook|request|change request|cr\s*#?\d+|artifact|comment|message|discord|telegram|channel|repo|repository|branch|pull request|pr\s*#?\d+|issue|settings?|branding|policy|env|environment|file|code)\b/i;
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -1371,6 +1375,10 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
   if (accessPolicy.mode === "off") {
     return;
   }
+  if (accessPolicy.mode === "readonly" && promptLikelyRequiresWriteAccess(prompt)) {
+    await sendSanitizedTelegramAssistantMessage(transport, readonlyWriteAccessMessage());
+    return;
+  }
 
   const userLimit = checkDiscordRateLimit(
     `telegram:user:${transport.authorId}:${accessPolicy.mode}`,
@@ -1971,6 +1979,15 @@ function buildAsyncChangeRequestAck(prompt: string): string {
   return `Started: ${normalized}\n\nI’ll continue this change-request run in the background and post the result in this thread.`;
 }
 
+function promptLikelyRequiresWriteAccess(prompt: string): boolean {
+  const normalized = prompt.trim();
+  return WRITE_INTENT_PATTERN.test(normalized) && WRITE_TARGET_PATTERN.test(normalized);
+}
+
+function readonlyWriteAccessMessage(): string {
+  return "This chat is set to read-only, and that request needs more permissions.";
+}
+
 function isBridgeThread(channel: TextBasedChannel): channel is AnyThreadChannel {
   return "isThread" in channel && typeof channel.isThread === "function" && channel.isThread() && channel.name.toLowerCase().startsWith(BRIDGE_THREAD_PREFIX);
 }
@@ -2184,6 +2201,10 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
       transport,
       "Prism is not enabled for this Discord channel.",
     );
+    return;
+  }
+  if (accessPolicy.mode === "readonly" && promptLikelyRequiresWriteAccess(prompt)) {
+    await sendSanitizedAssistantMessage(transport, readonlyWriteAccessMessage());
     return;
   }
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");

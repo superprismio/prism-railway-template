@@ -293,6 +293,11 @@ Discord and Telegram replies are sanitized before posting publicly. The sanitize
 redacts common internal Railway URLs, service hosts, token-looking values, private
 keys, and local filesystem paths.
 
+Readonly Discord and Telegram surfaces also apply a lightweight write-intent
+preflight before Codex Runtime is called. Obvious create/update/send/run requests
+get a short policy reply instead of model-generated instructions for working
+around the access level.
+
 Notes:
 
 - keep source-specific auth and traversal logic here, not inside `prism-memory`
