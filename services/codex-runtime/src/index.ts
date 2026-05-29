@@ -149,7 +149,12 @@ async function runResponseJob(jobId: string) {
   job.startedAt = new Date().toISOString();
 
   try {
-    const result = await generateCodexCliReply(job.input);
+    const result = await generateCodexCliReply({
+      ...job.input,
+      onTrace: (trace) => {
+        job.trace = [...trace];
+      },
+    });
     job.response = responsePayloadFromResult(result, job.input.sessionId);
     job.threadId = result.codexThreadId;
     job.trace = result.trace;

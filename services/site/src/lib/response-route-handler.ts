@@ -218,6 +218,27 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function runtimeRequestTimeoutMs() {
+  const parsed = Number.parseInt(process.env.CODEX_RUNTIME_TIMEOUT_MS ?? "", 10)
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.max(parsed + 60_000, 60_000)
+  }
+  return 900_000
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
@@ -354,15 +375,18 @@ async function requestCodexRuntimeResponse(input: {
   const runtimeJobsUrl = `${config.codexRuntimeBaseUrl}/v1/responses/jobs`
   const runtimeUrl = `${config.codexRuntimeBaseUrl}/v1/responses`
   let jobId: string | null = null
+  const startedAt = Date.now()
+  const timeoutMs = runtimeRequestTimeoutMs()
+  const remainingTimeoutMs = () => Math.max(1, timeoutMs - (Date.now() - startedAt))
 
   try {
-    const submitResponse = await fetch(runtimeJobsUrl, {
+    const submitResponse = await fetchWithTimeout(runtimeJobsUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(runtimeInput),
-    })
+    }, Math.min(30_000, timeoutMs))
 
     if (submitResponse.status !== 404) {
       const submitPayload = (await submitResponse.json().catch(() => null)) as RuntimeJobPayload | null
@@ -379,8 +403,15 @@ async function requestCodexRuntimeResponse(input: {
 
       const pollUrl = `${runtimeJobsUrl}/${encodeURIComponent(jobId)}`
       for (;;) {
+        if (Date.now() - startedAt >= timeoutMs) {
+          throw new Error(`CODEX_RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`)
+        }
         await sleep(2000)
-        const pollResponse = await fetch(pollUrl, { cache: "no-store" })
+        const pollResponse = await fetchWithTimeout(
+          pollUrl,
+          { cache: "no-store" },
+          Math.min(30_000, remainingTimeoutMs()),
+        )
         const pollPayload = (await pollResponse.json().catch(() => null)) as RuntimeJobPayload | null
 
         if (!pollResponse.ok) {
@@ -445,13 +476,13 @@ async function requestCodexRuntimeResponse(input: {
 
   let response: Response
   try {
-    response = await fetch(runtimeUrl, {
+    response = await fetchWithTimeout(runtimeUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(runtimeInput),
-    })
+    }, Math.max(1, remainingTimeoutMs()))
   } catch (error) {
     const message = describeRuntimeFetchFailure(error)
     console.warn(JSON.stringify({

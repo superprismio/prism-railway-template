@@ -292,6 +292,7 @@ async function postCodexRuntimeJson(
   const start = Date.now();
   const remainingTimeoutMs = () => Math.max(1, timeoutMs - (Date.now() - start));
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  let runtimeJobAccepted = false;
 
   try {
     const createResult = await postJson(
@@ -306,6 +307,7 @@ async function postCodexRuntimeJson(
     if (!jobId) {
       throw new Error("CODEX_RUNTIME_JOB_CREATE_INVALID_RESPONSE");
     }
+    runtimeJobAccepted = true;
 
     for (;;) {
       if (Date.now() - start >= timeoutMs) {
@@ -340,6 +342,9 @@ async function postCodexRuntimeJson(
       throw new Error(`CODEX_RUNTIME_REQUEST_FAILED:${String(payload.error ?? job.error ?? "Unknown codex runtime error")}`);
     }
   } catch (error) {
+    if (runtimeJobAccepted) {
+      throw error;
+    }
     const message = error instanceof Error ? error.message : "";
     if (!message.includes("HTTP 404") && !message.includes("CODEX_RUNTIME_JOB_CREATE_INVALID_RESPONSE")) {
       throw error;

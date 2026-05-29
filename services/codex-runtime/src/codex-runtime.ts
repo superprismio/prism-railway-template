@@ -54,6 +54,7 @@ export type CodexRuntimeInput = {
   sessionId: string;
   codexThreadId?: string | null;
   metadata?: Record<string, unknown>;
+  onTrace?: (trace: CodexRuntimeResult['trace']) => void;
 };
 
 export type CodexRuntimeResult = {
@@ -752,6 +753,7 @@ function appendTrace(
   trace: CodexRuntimeResult['trace'],
   kind: string,
   message: string,
+  onTrace?: (trace: CodexRuntimeResult['trace']) => void,
 ) {
   trace.push({
     at: new Date().toISOString(),
@@ -762,6 +764,7 @@ function appendTrace(
   if (trace.length > 40) {
     trace.splice(0, trace.length - 40);
   }
+  onTrace?.([...trace]);
 }
 
 function booleanMetadata(metadata: Record<string, unknown> | undefined, key: string) {
@@ -786,6 +789,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   const isResume = Boolean(input.codexThreadId);
   const trace: CodexRuntimeResult['trace'] = [];
   const preparedWorkspace = await prepareExecutionWorkspace(input, trace);
+  input.onTrace?.([...trace]);
   const executionWorkspaceRoot = preparedWorkspace.workspacePath;
   const prompt = await buildPrompt(input, isResume);
   const args = isResume
@@ -838,7 +842,9 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     let runtimeErrorMessage = '';
     let settled = false;
 
-    appendTrace(trace, 'run.started', isResume ? 'Resuming Codex thread' : 'Starting Codex thread');
+    const recordTrace = (kind: string, message: string) => appendTrace(trace, kind, message, input.onTrace);
+
+    recordTrace('run.started', isResume ? 'Resuming Codex thread' : 'Starting Codex thread');
 
     const timeout = setTimeout(() => {
       if (settled) return;
@@ -847,7 +853,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       const error = new Error('CODEX_RUNTIME_TIMEOUT') as CodexRuntimeError;
       error.codexThreadId = threadId;
       error.trace = trace;
-      appendTrace(trace, 'run.timeout', 'Codex runtime timed out before completion');
+      recordTrace('run.timeout', 'Codex runtime timed out before completion');
       reject(error);
     }, config.codexRuntimeTimeoutMs);
 
@@ -861,23 +867,23 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         if (!event) continue;
         if (event.type === 'thread.started' && event.thread_id) {
           threadId = event.thread_id;
-          appendTrace(trace, 'thread.started', `Thread ${event.thread_id} started`);
+          recordTrace('thread.started', `Thread ${event.thread_id} started`);
         }
         if (event.type === 'item.completed' && event.item?.type === 'agent_message' && event.item.text?.trim()) {
           lastAgentText = event.item.text.trim();
-          appendTrace(trace, 'agent_message.completed', 'Assistant message completed');
+          recordTrace('agent_message.completed', 'Assistant message completed');
         }
         if (event.type === 'item.started' && event.item?.type) {
-          appendTrace(trace, 'item.started', `${event.item.type} started`);
+          recordTrace('item.started', `${event.item.type} started`);
         }
         if (event.type === 'item.completed' && event.item?.type && event.item.type !== 'agent_message') {
-          appendTrace(trace, 'item.completed', `${event.item.type} completed`);
+          recordTrace('item.completed', `${event.item.type} completed`);
         }
         const eventErrorMessage = codexEventErrorMessage(event);
         if (eventErrorMessage) {
           runtimeErrorMessage = eventErrorMessage;
           const message = eventErrorMessage || 'Codex emitted an error event';
-          appendTrace(trace, 'runtime.error', message);
+          recordTrace('runtime.error', message);
         }
       }
     });
@@ -889,7 +895,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         .map((line) => line.trim())
         .filter(Boolean);
       for (const line of lines.slice(-5)) {
-        appendTrace(trace, 'stderr', line);
+        recordTrace('stderr', line);
       }
     });
 
@@ -914,7 +920,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         const responseText = outputText.trim() || lastAgentText.trim();
 
         if (code !== 0) {
-          appendTrace(trace, 'run.failed', `Codex exited with code ${code}`);
+          recordTrace('run.failed', `Codex exited with code ${code}`);
           const failureDetails = runtimeErrorMessage || meaningfulStderr(stderr) || `Codex exited with code ${code}`;
           const error = new Error(`CODEX_RUNTIME_FAILED:${code}:${failureDetails.slice(0, 500)}`) as CodexRuntimeError;
           error.codexThreadId = threadId;
@@ -926,7 +932,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         const finalResponseText = responseText || emptyResponseFallback(input);
 
         if (!finalResponseText) {
-          appendTrace(trace, 'run.empty', 'Codex completed without returning assistant text');
+          recordTrace('run.empty', 'Codex completed without returning assistant text');
           const error = new Error('CODEX_RUNTIME_EMPTY_RESPONSE') as CodexRuntimeError;
           error.codexThreadId = threadId;
           error.trace = trace;
@@ -935,11 +941,11 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         }
 
         if (!responseText) {
-          appendTrace(trace, 'run.empty_tolerated', 'Codex completed without assistant text; returning task fallback text');
+          recordTrace('run.empty_tolerated', 'Codex completed without assistant text; returning task fallback text');
         }
-        appendTrace(trace, 'run.completed', 'Codex completed successfully');
+        recordTrace('run.completed', 'Codex completed successfully');
         const finalGitState = await finalizeGitWorkspace(input, preparedWorkspace, trace).catch((error) => {
-          appendTrace(trace, 'git.finalize_failed', error instanceof Error ? error.message : 'git finalize failed');
+          recordTrace('git.finalize_failed', error instanceof Error ? error.message : 'git finalize failed');
           throw error;
         });
         resolve({
