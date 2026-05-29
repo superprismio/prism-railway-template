@@ -31,6 +31,7 @@ Prism Workspace Instance
   owns custom skills, workflows, tasks, hooks, and source policies
   may own a Discord or Telegram bot identity for that vertical
   reads from Prism Memory Core
+  may keep its own closed local memory for sensitive work
   does not run default memory collectors unless explicitly enabled
 ```
 
@@ -79,6 +80,65 @@ Use for durable context:
 - long-term knowledge
 
 Do not use memory as the primary orchestration bus. Polling memory for events creates ambiguity and duplicate work.
+
+### Confidential Local Memory
+
+Use for sensitive workspace-specific context that should not automatically enter the shared community memory:
+
+- invoicing
+- budgets
+- client concerns
+- internal operations
+- private planning notes
+- role-specific working memory
+
+This pattern is valid and should be explicit: a workspace instance can run its own Prism Memory service with a closed API and a narrower trust boundary. The Memory Core does not need direct access to the raw local memory.
+
+When something should become shared community knowledge, promote it deliberately rather than syncing all memory by default.
+
+Promotion examples:
+
+- private budget notes -> public budget announcement
+- client delivery concern -> sanitized risk note
+- internal invoice state -> high-level treasury update
+- private project planning -> approved community update
+
+Promotion should be treated as a workflow, not a background sync:
+
+1. Agent drafts a promotion candidate from local memory.
+2. Sanitizer removes secrets, private names, credentials, client-only details, and sensitive amounts when needed.
+3. Human or policy gate approves the promoted version.
+4. Approved payload is written to Memory Core as a summary, artifact, or knowledge event.
+5. Raw source artifacts remain local unless explicitly shared.
+
+Payload sketch:
+
+```json
+{
+  "sourceInstance": "finance-prism",
+  "event": "memory.promoted",
+  "visibility": "public",
+  "summary": "April budget update approved for community sharing.",
+  "promotedAt": "2026-05-29T18:00:00.000Z",
+  "sourceRefs": [
+    {
+      "type": "local-artifact",
+      "id": "budget-review-2026-04",
+      "redacted": true
+    }
+  ],
+  "redactionNotes": [
+    "Removed client-specific concerns.",
+    "Collapsed invoice line items into public totals."
+  ],
+  "artifacts": [
+    {
+      "name": "public-budget-update.md",
+      "contentType": "text/markdown"
+    }
+  ]
+}
+```
 
 ### Hooks
 
@@ -149,6 +209,14 @@ Do not rely on bot-to-bot chat as a reliable system bus. It risks loops, missed 
 - optional destination workflow key
 - replay/retry story for hook payload artifacts
 
+### Promotion Workflow Convention
+
+- standard workflow for turning private local memory into approved public memory
+- artifact convention for `promotion-candidate.md`, `redaction-report.md`, and `promoted-summary.md`
+- clear distinction between source refs that are private and promoted artifacts that are public
+- optional output to Discord, Telegram, GitHub, or another public surface after approval
+- optional Memory Core write hook with a narrow token that can only create promoted memory/knowledge events
+
 ### Instance Identity
 
 - stable instance slug/name
@@ -170,6 +238,8 @@ Do not rely on bot-to-bot chat as a reliable system bus. It risks loops, missed 
 - later slices may need per-instance tokens, per-hook tokens, or signed payloads
 - output adapter sends should remain explicit and policy-gated
 - avoid giving every workspace instance write access to every other instance
+- avoid giving Memory Core blanket read access to private workspace memories
+- prefer narrow promote-only credentials for writing sanitized updates to Memory Core
 
 ### Source Adapter Duplication Controls
 
@@ -202,6 +272,15 @@ Do not rely on bot-to-bot chat as a reliable system bus. It risks loops, missed 
 5. Add a standard handoff hook payload convention.
 6. Add a small “trigger another Prism instance hook” skill or workflow guidance.
 
+## Suggested Promotion Slice
+
+1. Add a built-in “promote local memory” workflow template.
+2. Add a Memory Core hook for approved promoted summaries.
+3. Add sanitizer guidance for secrets, credentials, client names, private financial details, and internal concerns.
+4. Store a redaction report as a local request artifact.
+5. Write only the approved summary/artifact to Memory Core.
+6. Show promoted Memory Core refs on the source request after successful promotion.
+
 ## Open Questions
 
 - Should workspace instances be allowed to write knowledge events back to Memory Core?
@@ -210,3 +289,7 @@ Do not rely on bot-to-bot chat as a reliable system bus. It risks loops, missed 
 - Should a workspace instance copy handoff artifacts locally or only reference source artifacts?
 - Should source adapter policies be exportable/importable between instances?
 - Should the template include an explicit “workspace-only” Railway template variant?
+- Should promoted memory use the same Memory Core write API as collectors, or a separate promote-only hook?
+- Should private source refs be visible to Memory Core as opaque provenance, or omitted entirely?
+- Should promotion approval require a human gate by default?
+- Should promoted artifacts support later takedown or correction if private information slips through?
