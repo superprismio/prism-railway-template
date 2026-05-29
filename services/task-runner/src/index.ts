@@ -284,6 +284,71 @@ async function postJson(
   };
 }
 
+async function postCodexRuntimeJson(
+  baseUrl: string,
+  body: Record<string, unknown>,
+  timeoutMs = longRunningHttpTimeoutMs(),
+): Promise<TaskRunResult> {
+  const start = Date.now();
+  const remainingTimeoutMs = () => Math.max(1, timeoutMs - (Date.now() - start));
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  try {
+    const createResult = await postJson(
+      baseUrl,
+      "/v1/responses/jobs",
+      {},
+      body,
+      Math.min(30_000, timeoutMs),
+    );
+    const createPayload = createResult.body ? JSON.parse(createResult.body) as Record<string, unknown> : {};
+    const jobId = typeof createPayload.jobId === "string" ? createPayload.jobId : "";
+    if (!jobId) {
+      throw new Error("CODEX_RUNTIME_JOB_CREATE_INVALID_RESPONSE");
+    }
+
+    for (;;) {
+      if (Date.now() - start >= timeoutMs) {
+        throw new Error(`CODEX_RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`);
+      }
+      await sleep(2_000);
+      const pollUrl = `${baseUrl}/v1/responses/jobs/${encodeURIComponent(jobId)}`;
+      const response = await fetchWithTimeout(pollUrl, { method: "GET" }, Math.min(30_000, remainingTimeoutMs()));
+      const text = await response.text();
+      const payload = text ? JSON.parse(text) as Record<string, unknown> : {};
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} from ${pollUrl}: ${text.slice(0, 500)}`);
+      }
+      const job = isRecord(payload.job) ? payload.job : {};
+      const status = typeof job.status === "string" ? job.status : "";
+      if (status === "queued" || status === "running") {
+        continue;
+      }
+      if (status === "succeeded") {
+        const runtimeResponse = isRecord(payload.response)
+          ? payload.response
+          : isRecord(job.response)
+            ? job.response
+            : {};
+        return {
+          ok: true,
+          status: response.status,
+          url: pollUrl,
+          body: JSON.stringify(runtimeResponse),
+        };
+      }
+      throw new Error(`CODEX_RUNTIME_REQUEST_FAILED:${String(payload.error ?? job.error ?? "Unknown codex runtime error")}`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!message.includes("HTTP 404") && !message.includes("CODEX_RUNTIME_JOB_CREATE_INVALID_RESPONSE")) {
+      throw error;
+    }
+  }
+
+  return postJson(baseUrl, "/v1/responses", {}, body, Math.max(1, remainingTimeoutMs()));
+}
+
 async function appApiRequest(path: string, init: RequestInit): Promise<Record<string, unknown> | null> {
   const baseUrl = appApiBaseUrl();
   if (!baseUrl) {
@@ -661,7 +726,7 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
     cron,
     run: async () => {
       const baseUrl = requireBaseUrl("CODEX_RUNTIME_BASE_URL", codexRuntimeBaseUrl());
-      const response = await postJson(baseUrl, "/v1/responses", {}, {
+      const response = await postCodexRuntimeJson(baseUrl, {
         prompt,
         sessionId: `scheduled-task:${siteTask.key}:${Date.now()}`,
         codexThreadId: null,

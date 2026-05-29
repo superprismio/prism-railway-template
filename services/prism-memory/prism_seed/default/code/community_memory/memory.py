@@ -60,6 +60,16 @@ def _shorten(text: str, limit: int) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
+def _str_list(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _normalize_tags(value: Any) -> List[str]:
+    return sorted(set(_str_list(value)))
+
+
 def _load_digest_bundle(paths: List[Path]) -> Dict[str, Dict[str, List[str]]]:
     bundle: Dict[str, Dict[str, List[str]]] = {}
     for path in paths:
@@ -95,6 +105,7 @@ def _coerce_entry(raw: Any) -> Dict[str, Any] | None:
         entry["source_digest_path"] = str(raw.get("source_digest_path", ""))
         entry["stale"] = bool(raw.get("stale", False))
         entry["evidence_quotes"] = list(raw.get("evidence_quotes") or [])
+        entry["tags"] = _normalize_tags(raw.get("tags"))
         return entry
     if isinstance(raw, str):
         text = _clean(raw)
@@ -107,6 +118,7 @@ def _coerce_entry(raw: Any) -> Dict[str, Any] | None:
             "source_digest_path": "",
             "stale": False,
             "evidence_quotes": [],
+            "tags": [],
         }
     return None
 
@@ -164,6 +176,9 @@ def _pick_best(first: Dict[str, Any], second: Dict[str, Any]) -> Dict[str, Any]:
             combined_quotes.append(quote)
     if combined_quotes:
         combined["evidence_quotes"] = combined_quotes[:QUOTE_MAX_PER_ITEM]
+    combined["tags"] = sorted(
+        set(_str_list(combined.get("tags")) + _str_list(loser.get("tags")))
+    )
     return combined
 
 
@@ -231,14 +246,58 @@ def _make_entry(
     today: date,
     source_digest_path: str,
     evidence_quotes: List[Dict[str, str]] | None = None,
+    source_item: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    return {
+    source_item = source_item or {}
+    entry = {
         "text": _headline(raw_entry),
         "bucket": bucket,
         "last_seen": today.isoformat(),
         "stale": False,
         "source_digest_path": source_digest_path,
         "evidence_quotes": (evidence_quotes or _extract_quote_evidence(raw_entry))[:2],
+        "tags": _normalize_tags(source_item.get("tags")),
+    }
+    for source_key, entry_key in (
+        ("reason", "source_reason"),
+        ("score", "source_score"),
+        ("channel", "source_channel"),
+        ("channel_id", "source_channel_id"),
+        ("thread_id", "source_thread_id"),
+        ("thread_name", "source_thread_name"),
+        ("author", "source_author"),
+        ("created_at", "source_created_at"),
+        ("jump_url", "source_url"),
+    ):
+        value = source_item.get(source_key)
+        if value not in (None, "", []):
+            entry[entry_key] = value
+    return entry
+
+
+def _tag_summary(sections: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
+    by_section: Dict[str, Dict[str, int]] = {}
+    totals: Dict[str, int] = {}
+    seen_items: set[str] = set()
+    for section, items in sections.items():
+        section_counts: Dict[str, int] = {}
+        for item in items:
+            item_key = "|".join(
+                [
+                    str(item.get("bucket") or ""),
+                    str(item.get("source_digest_path") or ""),
+                    str(item.get("text") or ""),
+                ]
+            )
+            for tag in _str_list(item.get("tags")):
+                section_counts[tag] = section_counts.get(tag, 0) + 1
+                if item_key not in seen_items:
+                    totals[tag] = totals.get(tag, 0) + 1
+            seen_items.add(item_key)
+        by_section[section] = dict(sorted(section_counts.items()))
+    return {
+        "totals": dict(sorted(totals.items())),
+        "by_section": by_section,
     }
 
 
@@ -508,6 +567,7 @@ class RollingMemoryBuilder:
                         target_date,
                         digest_path,
                         evidence_quotes=item.get("evidence_quotes", []),
+                        source_item=item,
                     )
                     for item in highlights_structured
                     if item.get("summary")
@@ -527,6 +587,7 @@ class RollingMemoryBuilder:
                         target_date,
                         digest_path,
                         evidence_quotes=item.get("evidence_quotes", []),
+                        source_item=item,
                     )
                     for item in actions_structured
                     if item.get("summary")
@@ -546,6 +607,7 @@ class RollingMemoryBuilder:
                         target_date,
                         digest_path,
                         evidence_quotes=item.get("evidence_quotes", []),
+                        source_item=item,
                     )
                     for item in decisions_structured
                     if item.get("summary")
@@ -577,11 +639,13 @@ class RollingMemoryBuilder:
             )
             today_sections[key] = _truncate(deduped, limit)
 
+        tag_summary = _tag_summary(today_sections)
         narrative = _build_narrative(today_sections, knowledge_events)
         payload = {
             "date": target_date.isoformat(),
             "source_digest_paths": source_digest_paths,
             "knowledge_events": knowledge_events,
+            "tag_summary": tag_summary,
             "sections": today_sections,
             "narrative": narrative,
         }
@@ -614,8 +678,12 @@ class RollingMemoryBuilder:
             else:
                 for item in items:
                     stale_note = "stale, " if item.get("stale") else ""
+                    tag_note = ""
+                    tags = _str_list(item.get("tags"))
+                    if tags:
+                        tag_note = f", tags: {', '.join(tags)}"
                     md_lines.append(
-                        f"- {item['text']} _(source: {item['bucket']}, last_seen: {item['last_seen']}, {stale_note}digest: {item.get('source_digest_path', '')})_"
+                        f"- {item['text']} _(source: {item['bucket']}, last_seen: {item['last_seen']}, {stale_note}digest: {item.get('source_digest_path', '')}{tag_note})_"
                     )
                     for quote in item.get("evidence_quotes", [])[:1]:
                         line = (
