@@ -20,6 +20,12 @@ type StoredConsoleMessage = {
   content: string
 }
 
+type ConsoleTraceEntry = {
+  at?: string
+  kind?: string
+  message?: string
+}
+
 const consoleSessionStorageKey = "prism-console-session-id"
 const consoleActiveJobStorageKey = "prism-console-active-job-id"
 
@@ -42,6 +48,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
   const [error, setError] = useState<string | null>(null)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const [activeJobTrace, setActiveJobTrace] = useState<ConsoleTraceEntry[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const transcriptRef = useRef<HTMLDivElement | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
@@ -129,6 +136,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
             sessionId?: string | null
             outputText?: string | null
             errorMessage?: string | null
+            trace?: ConsoleTraceEntry[]
           }
         }
         const job = payload.job
@@ -139,9 +147,11 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
           setSessionId(job.sessionId)
           window.localStorage.setItem(consoleSessionStorageKey, job.sessionId)
         }
+        setActiveJobTrace(Array.isArray(job.trace) ? job.trace.slice(-8) : [])
         if (job.status === "succeeded") {
           window.localStorage.removeItem(consoleActiveJobStorageKey)
           setActiveJobId(null)
+          setActiveJobTrace([])
           setError(null)
           const nextSessionId = job.sessionId ?? sessionId
           if (nextSessionId) {
@@ -156,6 +166,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
         if (job.status === "failed" || job.status === "canceled") {
           window.localStorage.removeItem(consoleActiveJobStorageKey)
           setActiveJobId(null)
+          setActiveJobTrace([])
           setError(job.errorMessage || `Console job ${job.status}`)
           return
         }
@@ -218,6 +229,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
       if (!payload?.jobId) {
         throw new Error("Console job endpoint did not return jobId")
       }
+      setActiveJobTrace([])
       if (payload.session_id) {
         setSessionId(payload.session_id)
         window.localStorage.setItem(consoleSessionStorageKey, payload.session_id)
@@ -237,8 +249,13 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
     setMessages([])
     setError(null)
     setActiveJobId(null)
+    setActiveJobTrace([])
     window.localStorage.removeItem(consoleActiveJobStorageKey)
   }
+
+  const visibleTrace = activeJobTrace
+    .filter((entry) => entry.message?.trim())
+    .slice(-5)
 
   return (
     <div className="flex h-[calc(100vh-248px)] min-h-0 flex-col">
@@ -320,7 +337,26 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
             required
           />
           {activeJobId ? (
-            <p className="text-sm text-muted-foreground">Prism is working in the background. You can keep this tab open while the job runs.</p>
+            <div className="border border-border/70 bg-muted/20 p-3 text-sm">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+                <span>Prism is working in the background.</span>
+              </div>
+              {visibleTrace.length ? (
+                <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                  {visibleTrace.map((entry, index) => (
+                    <div key={`${entry.at ?? "trace"}-${index}`} className="grid grid-cols-[8rem_minmax(0,1fr)] gap-2">
+                      <span className="truncate uppercase tracking-[0.14em]">{entry.kind ?? "runtime"}</span>
+                      <span className="min-w-0 truncate">{entry.message}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Waiting for runtime progress...
+                </p>
+              )}
+            </div>
           ) : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="flex items-center justify-between gap-3">

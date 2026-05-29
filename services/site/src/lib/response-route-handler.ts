@@ -20,6 +20,7 @@ import {
   listRequestExternalRefs,
   loadConfig,
   updateAgentSession,
+  updateAgentResponseJob,
   updateChangeRequest,
   updateChangeRequestExecution,
   updateWorkflowRun,
@@ -93,6 +94,23 @@ type RuntimeResponsePayload = {
   branchUrl?: string | null
   baseBranch?: string | null
   baseCommitSha?: string | null
+  trace?: Array<{ at?: string; kind?: string; message?: string }>
+}
+
+type RuntimeJobPayload = {
+  ok?: boolean
+  jobId?: string
+  job?: {
+    id?: string
+    status?: string
+    response?: RuntimeResponsePayload | null
+    error?: string | null
+    threadId?: string | null
+    trace?: Array<{ at?: string; kind?: string; message?: string }>
+  }
+  response?: RuntimeResponsePayload | null
+  error?: string | null
+  thread_id?: string | null
   trace?: Array<{ at?: string; kind?: string; message?: string }>
 }
 
@@ -194,6 +212,31 @@ function describeRuntimeFetchFailure(error: unknown) {
   }
 
   return error.message || "fetch failed"
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function runtimeRequestTimeoutMs() {
+  const parsed = Number.parseInt(process.env.CODEX_RUNTIME_TIMEOUT_MS ?? "", 10)
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.max(parsed + 60_000, 60_000)
+  }
+  return 900_000
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -310,28 +353,136 @@ async function requestCodexRuntimeResponse(input: {
   codexThreadId?: string | null
   recentHistory: Array<{ role: string; content: string }>
   metadata: Record<string, unknown>
+  onProgress?: (progress: {
+    status: string
+    runtimeJobId: string
+    threadId: string | null
+    trace: RuntimeTraceEntry[]
+  }) => void
 }) {
   const config = loadConfig()
   if (!config.codexRuntimeBaseUrl) {
     throw new Error("CODEX_RUNTIME_BASE_URL_MISSING")
   }
 
+  const runtimeInput = {
+    prompt: input.prompt,
+    sessionId: input.sessionId,
+    codexThreadId: input.codexThreadId ?? null,
+    recentHistory: input.recentHistory,
+    metadata: input.metadata,
+  }
+  const runtimeJobsUrl = `${config.codexRuntimeBaseUrl}/v1/responses/jobs`
   const runtimeUrl = `${config.codexRuntimeBaseUrl}/v1/responses`
-  let response: Response
+  let jobId: string | null = null
+  const startedAt = Date.now()
+  const timeoutMs = runtimeRequestTimeoutMs()
+  const remainingTimeoutMs = () => Math.max(1, timeoutMs - (Date.now() - startedAt))
+
   try {
-    response = await fetch(runtimeUrl, {
+    const submitResponse = await fetchWithTimeout(runtimeJobsUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        prompt: input.prompt,
-        sessionId: input.sessionId,
-        codexThreadId: input.codexThreadId ?? null,
-        recentHistory: input.recentHistory,
-        metadata: input.metadata,
-      }),
-    })
+      body: JSON.stringify(runtimeInput),
+    }, Math.min(30_000, timeoutMs))
+
+    if (submitResponse.status !== 404) {
+      const submitPayload = (await submitResponse.json().catch(() => null)) as RuntimeJobPayload | null
+      if (!submitResponse.ok) {
+        throw new Error(
+          `CODEX_RUNTIME_JOB_CREATE_FAILED:${submitResponse.status}:${submitPayload?.error || "Unknown codex runtime error"}`,
+        )
+      }
+
+      jobId = typeof submitPayload?.jobId === "string" ? submitPayload.jobId : null
+      if (!jobId) {
+        throw new Error("CODEX_RUNTIME_JOB_CREATE_INVALID_RESPONSE")
+      }
+
+      const pollUrl = `${runtimeJobsUrl}/${encodeURIComponent(jobId)}`
+      for (;;) {
+        if (Date.now() - startedAt >= timeoutMs) {
+          throw new Error(`CODEX_RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`)
+        }
+        await sleep(2000)
+        const pollResponse = await fetchWithTimeout(
+          pollUrl,
+          { cache: "no-store" },
+          Math.min(30_000, remainingTimeoutMs()),
+        )
+        const pollPayload = (await pollResponse.json().catch(() => null)) as RuntimeJobPayload | null
+
+        if (!pollResponse.ok) {
+          throw new Error(
+            `CODEX_RUNTIME_JOB_POLL_FAILED:${pollResponse.status}:${pollPayload?.error || "Unknown codex runtime error"}`,
+          )
+        }
+
+        const status = typeof pollPayload?.job?.status === "string" ? pollPayload.job.status : ""
+        const trace = Array.isArray(pollPayload?.trace)
+          ? pollPayload.trace
+              .map((entry) => ({
+                at: typeof entry?.at === "string" ? entry.at : new Date().toISOString(),
+                kind: typeof entry?.kind === "string" ? entry.kind : "runtime",
+                message: typeof entry?.message === "string" ? entry.message : "",
+              }))
+              .filter((entry) => entry.message.trim())
+          : []
+        input.onProgress?.({
+          status,
+          runtimeJobId: jobId,
+          threadId:
+            pollPayload?.thread_id ??
+            pollPayload?.job?.threadId ??
+            null,
+          trace,
+        })
+        if (status === "queued" || status === "running") {
+          continue
+        }
+
+        if (status === "succeeded") {
+          const payload = pollPayload?.response ?? pollPayload?.job?.response ?? null
+          if (!payload) {
+            throw new Error("CODEX_RUNTIME_JOB_INVALID_RESPONSE")
+          }
+          return payload
+        }
+
+        const error = new Error(
+          `CODEX_RUNTIME_REQUEST_FAILED:500:${pollPayload?.error || pollPayload?.job?.error || "Unknown codex runtime error"}`,
+        ) as RuntimeError
+        error.codexThreadId =
+          pollPayload?.thread_id ??
+          pollPayload?.job?.threadId ??
+          null
+        error.trace = trace
+        throw error
+      }
+    }
+  } catch (error) {
+    if (jobId) {
+      throw error
+    }
+    const message = describeRuntimeFetchFailure(error)
+    console.warn(JSON.stringify({
+      event: "codex_runtime.job_path_unavailable",
+      url: runtimeJobsUrl,
+      error: message,
+    }))
+  }
+
+  let response: Response
+  try {
+    response = await fetchWithTimeout(runtimeUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(runtimeInput),
+    }, Math.max(1, remainingTimeoutMs()))
   } catch (error) {
     const message = describeRuntimeFetchFailure(error)
     console.warn(JSON.stringify({
@@ -694,6 +845,26 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   const workflowAction = parseNullableString(body.workflow_action ?? body.workflowAction) ?? null
   const autoContinueUntilGate =
     body.auto_continue_until_gate === true || body.autoContinueUntilGate === true
+  const responseJobId = parseNullableString(body.response_job_id ?? body.responseJobId) ?? null
+  const recordRuntimeProgress = responseJobId
+    ? (progress: {
+        status: string
+        runtimeJobId: string
+        threadId: string | null
+        trace: RuntimeTraceEntry[]
+      }) => {
+        updateAgentResponseJob(responseJobId, {
+          status: "running",
+          response: {
+            runtimeJobId: progress.runtimeJobId,
+            runtimeJobStatus: progress.status,
+            runtimeThreadId: progress.threadId,
+            lastProgressAt: new Date().toISOString(),
+          },
+          trace: progress.trace,
+        })
+      }
+    : undefined
   const maxAutoContinueSteps = 8
   const linkedWorkflow = linkedChangeRequest ? getWorkflowByKey(linkedChangeRequest.workflowKey) : null
   const linkedWorkflowSteps = workflowSteps(linkedWorkflow?.definition)
@@ -822,6 +993,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         workflow_action: workflowAction || "approved",
         workflow_step_key: runnableStepKey,
       },
+      onProgress: recordRuntimeProgress,
     })
   }
 
@@ -1105,6 +1277,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                 "Auto-continue is enabled; the site will run the next agent step until the workflow reaches a gate, checkpoint, or terminal step.",
               ].filter(Boolean).join("\n\n"),
             },
+            onProgress: recordRuntimeProgress,
           })
 
           const continuationText = (continuationResponse.responseText || continuationResponse.output_text || "").trim()

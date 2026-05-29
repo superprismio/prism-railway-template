@@ -54,7 +54,10 @@ async function runConsoleJob(jobId: string, requestUrl: string) {
       new Request(new URL("/admin/responses", requestUrl), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(job.input),
+        body: JSON.stringify({
+          ...job.input,
+          response_job_id: jobId,
+        }),
       }),
       async () => ({ ok: true as const }),
     )

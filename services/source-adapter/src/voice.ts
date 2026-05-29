@@ -1823,23 +1823,109 @@ export class DiscordVoiceManager {
   }
 
   private async codexRuntimeRequest(prompt: string, sessionId: string): Promise<string> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.codexRuntimeTimeoutMs());
+    const timeoutMs = this.codexRuntimeTimeoutMs();
+    const runtimeBase = this.codexRuntimeBaseUrl();
+    const runtimeInput = {
+      prompt,
+      sessionId: `voice-summary-${sessionId}`,
+      codexThreadId: null,
+      recentHistory: [],
+      metadata: {
+        purpose: "voice_meeting_summary",
+        source: "discord-voice",
+        recordingSessionId: sessionId,
+      },
+    };
+    const startedAt = Date.now();
+    let runtimeJobStarted = false;
+    const remainingTimeoutMs = () => Math.max(1, timeoutMs - (Date.now() - startedAt));
+    const pollRuntimeJob = async (jobId: string): Promise<string> => {
+      for (;;) {
+        if (Date.now() - startedAt >= timeoutMs) {
+          throw new Error(`CODEX_RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), Math.min(30_000, remainingTimeoutMs()));
+        try {
+          const response = await fetch(`${runtimeBase}/v1/responses/jobs/${encodeURIComponent(jobId)}`, {
+            signal: controller.signal,
+          });
+          const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+          if (!response.ok) {
+            throw new Error(`CODEX_RUNTIME_JOB_POLL_FAILED:${response.status}:${String(payload?.error ?? "").slice(0, 300)}`);
+          }
+          const job = payload?.job && typeof payload.job === "object" && !Array.isArray(payload.job)
+            ? payload.job as Record<string, unknown>
+            : {};
+          const status = typeof job.status === "string" ? job.status : "";
+          if (status === "queued" || status === "running") {
+            continue;
+          }
+          if (status === "succeeded") {
+            const runtimeResponse =
+              payload?.response && typeof payload.response === "object" && !Array.isArray(payload.response)
+                ? payload.response as Record<string, unknown>
+                : job.response && typeof job.response === "object" && !Array.isArray(job.response)
+                  ? job.response as Record<string, unknown>
+                  : null;
+            const responseText =
+              typeof runtimeResponse?.responseText === "string"
+                ? runtimeResponse.responseText
+                : typeof runtimeResponse?.output_text === "string"
+                  ? runtimeResponse.output_text
+                  : "";
+            if (!responseText.trim()) {
+              throw new Error("CODEX_RUNTIME_EMPTY_RESPONSE");
+            }
+            return responseText.trim();
+          }
+          throw new Error(`CODEX_RUNTIME_REQUEST_FAILED:500:${String(payload?.error ?? job.error ?? "Unknown codex runtime error").slice(0, 300)}`);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+    };
+
     try {
-      const response = await fetch(`${this.codexRuntimeBaseUrl()}/v1/responses`, {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), Math.min(30_000, timeoutMs));
+      try {
+        const response = await fetch(`${runtimeBase}/v1/responses/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(runtimeInput),
+          signal: controller.signal,
+        });
+        if (response.status !== 404) {
+          const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+          if (!response.ok) {
+            throw new Error(`CODEX_RUNTIME_JOB_CREATE_FAILED:${response.status}:${String(payload?.error ?? "").slice(0, 300)}`);
+          }
+          const jobId = typeof payload?.jobId === "string" ? payload.jobId : "";
+          if (!jobId) {
+            throw new Error("CODEX_RUNTIME_JOB_CREATE_INVALID_RESPONSE");
+          }
+          runtimeJobStarted = true;
+          return await pollRuntimeJob(jobId);
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (error) {
+      if (runtimeJobStarted) {
+        throw error;
+      }
+      console.warn(`[discord-adapter] codex runtime job path unavailable: ${this.describeError(error)}`);
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), remainingTimeoutMs());
+    try {
+      const response = await fetch(`${runtimeBase}/v1/responses`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt,
-          sessionId: `voice-summary-${sessionId}`,
-          codexThreadId: null,
-          recentHistory: [],
-          metadata: {
-            purpose: "voice_meeting_summary",
-            source: "discord-voice",
-            recordingSessionId: sessionId,
-          },
-        }),
+        body: JSON.stringify(runtimeInput),
         signal: controller.signal,
       });
       if (!response.ok) {
