@@ -36,6 +36,9 @@ const WRITE_INTENT_PATTERN =
   /\b(create|add|update|edit|change|delete|remove|run|start|continue|resume|trigger|send|post|publish|deploy|merge|approve|reject|close|reopen|save|set|configure|install|write)\b/i;
 const WRITE_TARGET_PATTERN =
   /\b(task|workflow|skill|hook|request|change request|cr\s*#?\d+|artifact|comment|message|discord|telegram|channel|repo|repository|branch|pull request|pr\s*#?\d+|issue|settings?|branding|policy|env|environment|file|code)\b/i;
+const PROMOTE_DOC_MESSAGE_LIMIT = 80;
+const PROMOTE_DOC_TRANSCRIPT_MAX_CHARS = 20_000;
+const PROMOTE_DOC_CAPABILITY = "memory.promote_doc";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -396,6 +399,9 @@ function capabilitiesForMode(mode: DiscordAccessMode): string[] {
         "workflows.run_existing",
         "requests.create",
         "adapter.send_message",
+        "memory.write",
+        "knowledge.write",
+        PROMOTE_DOC_CAPABILITY,
         "skills.author",
         "tasks.author",
         "workflows.author",
@@ -747,6 +753,26 @@ function appApiServiceToken(): string {
     throw new Error("APP_API_SERVICE_TOKEN or INTERNAL_SERVICE_TOKEN is required");
   }
   return token;
+}
+
+function prismApiBaseUrl(): string {
+  const baseUrl = (process.env.PRISM_API_BASE ?? "").trim().replace(/\/+$/, "");
+  if (!baseUrl) {
+    throw new Error("PRISM_API_BASE is required");
+  }
+  return baseUrl;
+}
+
+function prismArtifactBaseUrl(): string {
+  return (process.env.PRISM_ARTIFACT_PUBLIC_BASE_URL ?? "").trim().replace(/\/+$/, "") || prismApiBaseUrl();
+}
+
+function prismApiKey(): string {
+  const apiKey = (process.env.PRISM_API_KEY ?? "").trim();
+  if (!apiKey) {
+    throw new Error("PRISM_API_KEY is required");
+  }
+  return apiKey;
 }
 
 function codexRuntimeBaseUrl(): string {
@@ -2600,6 +2626,416 @@ async function handleDiscordChatMessage(message: Message): Promise<void> {
   });
 }
 
+type PromotionMessage = {
+  id: string;
+  authorName: string;
+  authorId: string;
+  content: string;
+  createdAt: string;
+  url: string;
+  bot: boolean;
+};
+
+function slugifyDocTitle(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || `discord-doc-${new Date().toISOString().slice(0, 10)}`;
+}
+
+function memoryInboxArtifactUrl(pathname: string): string | null {
+  const filename = path.basename(pathname.trim());
+  const artifactId = filename.replace(/\.json$/i, "");
+  if (!artifactId || artifactId === filename) {
+    return null;
+  }
+  return `${prismArtifactBaseUrl()}/artifacts/${encodeURIComponent(artifactId)}`;
+}
+
+function discordMessageUrl(guildId: string, channelId: string, messageId: string): string {
+  return `https://discord.com/channels/${guildId}/${channelId}/${messageId}`;
+}
+
+function truncateText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  return `${value.slice(0, maxChars - 20).trimEnd()}\n...[truncated]`;
+}
+
+async function collectPromotionMessages(interaction: ChatInputCommandInteraction): Promise<PromotionMessage[]> {
+  const channel = interaction.channel;
+  if (!channel || !interaction.guildId || !("messages" in channel)) {
+    throw new Error("This command must be used in a readable Discord text channel or thread.");
+  }
+  const cutoffTimestamp = interaction.createdTimestamp;
+  const fetched = await channel.messages.fetch({ limit: PROMOTE_DOC_MESSAGE_LIMIT });
+  return [...fetched.values()]
+    .filter((message) => message.content.trim() && message.createdTimestamp <= cutoffTimestamp)
+    .sort((left, right) => left.createdTimestamp - right.createdTimestamp)
+    .map((message) => ({
+      id: message.id,
+      authorName: message.member?.displayName ?? message.author.displayName ?? message.author.username,
+      authorId: message.author.id,
+      content: message.content.trim(),
+      createdAt: message.createdAt.toISOString(),
+      url: discordMessageUrl(interaction.guildId!, message.channel.id, message.id),
+      bot: message.author.bot,
+    }));
+}
+
+function promotionTranscript(messages: PromotionMessage[]): string {
+  return truncateText(
+    messages
+      .map((message) => `[${message.createdAt}] ${message.authorName}${message.bot ? " (bot)" : ""}: ${message.content}`)
+      .join("\n\n"),
+    PROMOTE_DOC_TRANSCRIPT_MAX_CHARS,
+  );
+}
+
+function fallbackPromotedMarkdown(title: string, messages: PromotionMessage[], summary: string): string {
+  const transcript = promotionTranscript(messages);
+  return [
+    `# ${title}`,
+    "",
+    "## Summary",
+    "",
+    summary || "Promoted from a Discord discussion.",
+    "",
+    "## Draft",
+    "",
+    "This document was promoted from Discord. Review and edit the draft before treating it as canonical.",
+    "",
+    "## Source Conversation",
+    "",
+    "```text",
+    transcript,
+    "```",
+  ].join("\n");
+}
+
+function cleanMarkdownResponse(value: string): string {
+  const trimmed = value.trim();
+  const fence = trimmed.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```$/i);
+  return (fence ? fence[1] : trimmed).trim();
+}
+
+async function draftPromotedMarkdown(input: {
+  title: string;
+  messages: PromotionMessage[];
+  guildId: string;
+  channelId: string;
+  threadId: string | null;
+}): Promise<string> {
+  const transcript = promotionTranscript(input.messages);
+  const prompt = [
+    "Create a clean Markdown document from this Discord discussion.",
+    "",
+    `Title: ${input.title}`,
+    "",
+    "Requirements:",
+    "- Return Markdown only, with no surrounding code fence.",
+    "- Preserve concrete decisions, procedures, scripts, and open questions from the discussion.",
+    "- Do not invent details not present in the transcript.",
+    "- If the discussion is about a script, produce a usable script/template section.",
+    "- Include a short Source Notes section at the end mentioning that it was promoted from Discord.",
+    "",
+    "Discord transcript:",
+    transcript,
+  ].join("\n");
+
+  try {
+    const result = await codexRuntimeRequest({
+      prompt,
+      sessionId: `discord-promote-doc:${input.threadId ?? input.channelId}`,
+      codexThreadId: null,
+      recentHistory: [],
+      metadata: {
+        source: "discord-promote-doc",
+        guildId: input.guildId,
+        channelId: input.channelId,
+        threadId: input.threadId,
+        messageCount: input.messages.length,
+      },
+    });
+    return cleanMarkdownResponse(result.responseText);
+  } catch (error) {
+    console.warn("[discord-adapter] promote-doc markdown draft fallback", describeError(error));
+    return fallbackPromotedMarkdown(input.title, input.messages, "Promoted from a Discord discussion.");
+  }
+}
+
+function sanitizePromotedDocument(content: string, context: { guildId: string | null; channelId: string; threadId: string | null }) {
+  const sanitized = sanitizePublicOutput(content);
+  if (sanitized.redactions.length) {
+    console.warn("[discord-adapter] sanitized promoted Discord document", {
+      guildId: context.guildId,
+      channelId: context.channelId,
+      threadId: context.threadId,
+      redactions: sanitized.redactions,
+    });
+  }
+  return sanitized.text.trim();
+}
+
+async function writePromotedKnowledgeDoc(input: {
+  title: string;
+  content: string;
+  interaction: ChatInputCommandInteraction;
+  messages: PromotionMessage[];
+  channelId: string;
+  threadId: string | null;
+}): Promise<{ path: string; metadataPath: string | null; slug: string }> {
+  const now = new Date().toISOString();
+  const slug = slugifyDocTitle(input.title);
+  const filename = `${slug}.md`;
+  const sourceUrls = input.messages.slice(-5).map((message) => message.url);
+  const metadata = {
+    title: input.title,
+    slug,
+    kind: "guide",
+    summary: `Discord-promoted draft from ${input.messages.length} message(s).`,
+    tags: ["memory", "workflow"],
+    owners: [interactionDisplayName(input.interaction)],
+    status: "draft",
+    audience: "internal",
+    stability: "evolving",
+    updated: now,
+    entities: [],
+    related_docs: [],
+    triaged_at: now,
+    source_system: "discord",
+    source_type: "promoted_doc",
+    source_id: input.threadId ?? input.channelId,
+    external_refs: [
+      {
+        system: "discord",
+        type: input.threadId ? "thread" : "channel",
+        id: input.threadId ?? input.channelId,
+        url: sourceUrls[sourceUrls.length - 1] ?? null,
+        relationship: "source",
+      },
+      ...sourceUrls.map((url, index) => ({
+        system: "discord",
+        type: "message",
+        id: input.messages[Math.max(0, input.messages.length - sourceUrls.length + index)]?.id ?? null,
+        url,
+        relationship: "evidence",
+      })),
+    ],
+  };
+
+  const response = await fetch(`${prismApiBaseUrl()}/knowledge/inbox`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Prism-Api-Key": prismApiKey(),
+    },
+    body: JSON.stringify({
+      filename,
+      content: input.content,
+      metadata,
+    }),
+  });
+  const payload = (await response.json().catch(() => null)) as JsonObject | null;
+  if (!response.ok) {
+    throw new Error(`PRISM_KNOWLEDGE_INBOX_FAILED:${response.status}:${String(payload?.error ?? "").slice(0, 300)}`);
+  }
+  const pathValue = typeof payload?.path === "string" ? payload.path.trim() : "";
+  if (!pathValue) {
+    throw new Error("PRISM_KNOWLEDGE_INBOX_FAILED:missing_path");
+  }
+  const metadataPath = typeof payload?.metadata_path === "string" ? payload.metadata_path : null;
+  return {
+    path: pathValue,
+    metadataPath,
+    slug,
+  };
+}
+
+async function writePromotedMemoryArtifact(input: {
+  title: string;
+  content: string;
+  interaction: ChatInputCommandInteraction;
+  messages: PromotionMessage[];
+  channelId: string;
+  threadId: string | null;
+}): Promise<{ path: string; artifactUrl: string | null }> {
+  const now = new Date().toISOString();
+  const response = await fetch(`${prismApiBaseUrl()}/memory/inbox`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Prism-Api-Key": prismApiKey(),
+    },
+    body: JSON.stringify({
+      source: "discord",
+      ts: now,
+      type: "promoted_doc",
+      content: input.content,
+      author: interactionDisplayName(input.interaction),
+      url: input.messages[input.messages.length - 1]?.url ?? null,
+      participants: [...new Set(input.messages.map((message) => message.authorName))],
+      participant_count: new Set(input.messages.map((message) => message.authorId)).size,
+      metadata: {
+        title: input.title,
+        slug: slugifyDocTitle(input.title),
+        source_system: "discord",
+        source_type: "promoted_doc",
+        source_id: input.threadId ?? input.channelId,
+        discord_channel_id: input.channelId,
+        discord_thread_id: input.threadId,
+        promoted_by: interactionDisplayName(input.interaction),
+        promoted_at: now,
+        message_count: input.messages.length,
+        external_refs: input.messages.slice(-5).map((message) => ({
+          system: "discord",
+          type: "message",
+          id: message.id,
+          url: message.url,
+          relationship: "evidence",
+        })),
+      },
+    }),
+  });
+  const payload = (await response.json().catch(() => null)) as JsonObject | null;
+  if (!response.ok) {
+    throw new Error(`PRISM_MEMORY_INBOX_FAILED:${response.status}:${String(payload?.error ?? "").slice(0, 300)}`);
+  }
+  const pathValue = typeof payload?.path === "string" ? payload.path.trim() : "";
+  if (!pathValue) {
+    throw new Error("PRISM_MEMORY_INBOX_FAILED:missing_path");
+  }
+  return {
+    path: pathValue,
+    artifactUrl: memoryInboxArtifactUrl(pathValue),
+  };
+}
+
+function interactionDisplayName(interaction: ChatInputCommandInteraction): string {
+  return interaction.member && "displayName" in interaction.member
+    ? String(interaction.member.displayName)
+    : interaction.user.displayName || interaction.user.username;
+}
+
+function canPromoteDiscordDoc(sourcePolicy: ResolvedDiscordAccessPolicy): boolean {
+  return sourcePolicy.mode === "full" || sourcePolicy.capabilities.includes(PROMOTE_DOC_CAPABILITY);
+}
+
+async function handlePromoteDocCommand(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!interaction.channel || !interaction.channel.isTextBased()) {
+    await interaction.reply({ content: "This command must be used in a text channel or thread.", ephemeral: true });
+    return;
+  }
+  const channel = interaction.channel;
+  const threadId = channel.isThread() ? channel.id : null;
+  const channelId = channel.isThread() ? channel.parentId : channel.id;
+  if (!channelId) {
+    await interaction.reply({ content: "I could not resolve the channel for this command.", ephemeral: true });
+    return;
+  }
+  const sourcePolicy = await resolveDiscordAccessPolicy({
+    channelId,
+    threadId,
+    authorId: interaction.user.id,
+    roleIds: roleIdsFromInteraction(interaction),
+  });
+  if (!canPromoteDiscordDoc(sourcePolicy)) {
+    await interaction.reply({ content: "This Discord target is not approved for Prism document promotion.", ephemeral: true });
+    return;
+  }
+
+  const title = interaction.options.getString("title", true).trim();
+  if (!title) {
+    await interaction.reply({ content: "Provide a non-empty document title.", ephemeral: true });
+    return;
+  }
+  const userLimit = checkDiscordRateLimit(
+    `discord:promote-doc:user:${interaction.user.id}:${sourcePolicy.mode}`,
+    sourcePolicy.rateLimit,
+  );
+  const channelLimit = checkDiscordRateLimit(
+    `discord:promote-doc:channel:${threadId ?? channelId}:${sourcePolicy.mode}`,
+    {
+      windowSeconds: sourcePolicy.rateLimit.windowSeconds,
+      maxRequests: Math.max(1, sourcePolicy.rateLimit.maxRequests * 2),
+    },
+  );
+  const blockedLimit = !userLimit.ok ? userLimit : !channelLimit.ok ? channelLimit : null;
+  if (blockedLimit) {
+    await interaction.reply({
+      content: `Prism document promotion is rate limited here. Try again in about ${blockedLimit.retryAfterSeconds} seconds.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const lane = interaction.options.getString("lane") === "knowledge" ? "knowledge" : "memory";
+  await interaction.deferReply();
+  try {
+    await interaction.editReply({ content: `Promoting **${title}** from recent Discord context to ${lane}...` });
+
+    const messages = await collectPromotionMessages(interaction);
+    if (!messages.length) {
+      await interaction.editReply({ content: "I could not find recent message content to promote." });
+      return;
+    }
+    const draftedContent = await draftPromotedMarkdown({
+      title,
+      messages,
+      guildId: interaction.guildId!,
+      channelId,
+      threadId,
+    });
+    const content = sanitizePromotedDocument(draftedContent, { guildId: interaction.guildId, channelId, threadId });
+    if (!content) {
+      await interaction.editReply({ content: "The promoted document was empty after sanitization." });
+      return;
+    }
+    if (lane === "knowledge") {
+      const result = await writePromotedKnowledgeDoc({
+        title,
+        content,
+        interaction,
+        messages,
+        channelId,
+        threadId,
+      });
+
+      await interaction.editReply({
+        content: [
+          `Promoted **${title}** to Prism Knowledge inbox.`,
+          `Slug: \`${result.slug}\``,
+          `Knowledge inbox path: \`${result.path}\``,
+          result.metadataPath ? `Metadata path: \`${result.metadataPath}\`` : null,
+          "A knowledge view link will be available after review/indexing promotes this inbox entry.",
+        ].filter(Boolean).join("\n"),
+      });
+      return;
+    }
+
+    const result = await writePromotedMemoryArtifact({
+      title,
+      content,
+      interaction,
+      messages,
+      channelId,
+      threadId,
+    });
+    await interaction.editReply({
+      content: [
+        `Promoted **${title}** to Prism Memory.`,
+        result.artifactUrl ? `Shareable artifact: ${result.artifactUrl}` : `Memory inbox path: \`${result.path}\``,
+        "Use `lane:knowledge` next time only for reusable or evergreen content.",
+      ].join("\n"),
+    });
+  } catch (error) {
+    await interaction.editReply({ content: `Could not promote document: ${describeError(error)}` });
+  }
+}
+
 function discordCommandDefinitions() {
   return [
     new SlashCommandBuilder().setName("prism-ping").setDescription("Simple adapter health check."),
@@ -2613,6 +3049,20 @@ function discordCommandDefinitions() {
       .setName("prism-continue-cr")
       .setDescription("Continue work on a specific change request.")
       .addIntegerOption((option) => option.setName("id").setDescription("Change request id.").setRequired(true)),
+    new SlashCommandBuilder()
+      .setName("prism-promote-doc")
+      .setDescription("Promote recent Discord context into a Prism Memory document.")
+      .addStringOption((option) => option.setName("title").setDescription("Document title.").setRequired(true))
+      .addStringOption((option) =>
+        option
+          .setName("lane")
+          .setDescription("Where to promote this document.")
+          .setRequired(false)
+          .addChoices(
+            { name: "memory", value: "memory" },
+            { name: "knowledge", value: "knowledge" },
+          ),
+      ),
     new SlashCommandBuilder().setName("prism-join").setDescription("Join your current voice channel."),
     new SlashCommandBuilder().setName("prism-record").setDescription("Start recording the current meeting."),
     new SlashCommandBuilder().setName("prism-stoprecord").setDescription("Stop recording the current meeting."),
@@ -2742,6 +3192,9 @@ async function handleDiscordInteraction(interaction: Interaction): Promise<void>
       return;
     case "prism-continue-cr":
       await handleSlashPrompt(interaction, `continue work on CR #${interaction.options.getInteger("id", true)}`);
+      return;
+    case "prism-promote-doc":
+      await handlePromoteDocCommand(interaction);
       return;
     case "prism-join":
       await handleVoiceCommand(interaction, "join");

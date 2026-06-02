@@ -338,10 +338,17 @@ Current slash commands:
 - `/prism-chat prompt:<text>`
 - `/prism-start-cr`
 - `/prism-continue-cr id:<number>`
+- `/prism-promote-doc title:<text> lane:<memory|knowledge>`
 - `/prism-join`
 - `/prism-record`
 - `/prism-stoprecord`
 - `/prism-rollcall`
+
+`/prism-promote-doc` writes new Prism assets, so it requires Discord access mode
+`full` or the explicit `memory.promote_doc` capability. It defaults to the memory
+lane and returns a shareable artifact link there; `lane:knowledge` writes to the
+knowledge inbox and returns the inbox paths until review/indexing promotes the
+entry.
 
 Current voice command status:
 
