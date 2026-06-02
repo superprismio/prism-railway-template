@@ -43,6 +43,7 @@ NARRATIVE_MAX_CHARS = 1200
 QUOTE_MAX_CHARS = 240
 QUOTE_MAX_PER_ITEM = 2
 KNOWLEDGE_EVENTS_MAX = 10
+CURRENT_THROUGHLINES_MAX = 12
 
 QUOTE_RE = re.compile(
     r"^\-\s*\[(?P<ts>[^\]]+)\]\s*(?P<author>[^:]+):\s*(?P<body>.*?)(?:\s+\((?P<jump>https?://[^\s)]+)\))?$"
@@ -330,8 +331,11 @@ def _classify_highlight(entry: str) -> Tuple[bool, bool, bool]:
 def _build_narrative(
     sections: Dict[str, List[Dict[str, Any]]],
     knowledge_events: List[Dict[str, Any]] | None = None,
+    current_throughlines: List[Dict[str, Any]] | None = None,
 ) -> str:
     parts: List[str] = []
+    if current_throughlines:
+        parts.append(f"Open throughlines: {len(current_throughlines)}.")
     if knowledge_events:
         parts.append(f"Knowledge updates: {len(knowledge_events)}.")
     if sections["open_threads"]:
@@ -438,6 +442,46 @@ def _load_knowledge_events(
     return sorted(deduped.values(), key=lambda item: str(item.get("changed_at") or ""), reverse=True)[:limit]
 
 
+def _load_current_throughlines(
+    base_path: Path,
+    *,
+    limit: int = CURRENT_THROUGHLINES_MAX,
+) -> List[Dict[str, Any]]:
+    payload = read_json(base_path / "state" / "current" / "throughlines.json", default={})
+    raw_items = payload.get("throughlines", []) if isinstance(payload, dict) else []
+    throughlines: List[Dict[str, Any]] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("status") or "active") != "active":
+            continue
+        key = _clean(str(item.get("throughline_key") or ""))
+        title = _shorten(str(item.get("title") or key), 140)
+        if not key or not title:
+            continue
+        throughlines.append(
+            {
+                "throughline_key": key,
+                "title": title,
+                "summary": _shorten(str(item.get("summary") or ""), 360),
+                "status": str(item.get("status") or "active"),
+                "objective_keys": _str_list(item.get("objective_keys")),
+                "signal_ids": _str_list(item.get("signal_ids")),
+                "last_signal_at": item.get("last_signal_at"),
+                "enrichment_status": item.get("enrichment_status"),
+            }
+        )
+    throughlines.sort(
+        key=lambda item: (
+            len(item.get("objective_keys") or []),
+            str(item.get("last_signal_at") or ""),
+            str(item.get("title") or ""),
+        ),
+        reverse=True,
+    )
+    return throughlines[:limit]
+
+
 def _coerce_positive_int(value: Any, *, minimum: int = 1) -> int | None:
     try:
         num = int(value)
@@ -506,6 +550,8 @@ class RollingMemoryBuilder:
         latest_md = memory_dir / "latest.md"
         knowledge_events = _load_knowledge_events(self.base_path, self.config, target_date)
         knowledge_activity_path = _resolve_knowledge_activity_path(self.base_path, self.config)
+        throughlines_path = self.base_path / "state" / "current" / "throughlines.json"
+        current_throughlines = _load_current_throughlines(self.base_path)
 
         digest_paths = sorted(
             self.base_path.glob(f"buckets/*/digests/{target_date.isoformat()}.json")
@@ -529,10 +575,12 @@ class RollingMemoryBuilder:
         freshness_paths = list(digest_paths)
         if knowledge_activity_path.exists():
             freshness_paths.append(knowledge_activity_path)
+        if throughlines_path.exists():
+            freshness_paths.append(throughlines_path)
         if not force and _digest_paths_are_fresh(freshness_paths, [md_path, memory_path]):
             print("[memory] existing memory files are newer than source digests; skipping")
             return None
-        if not digest_paths and not knowledge_events:
+        if not digest_paths and not knowledge_events and not current_throughlines:
             print("[memory] no digests available; skipping memory build")
             return None
 
@@ -640,11 +688,12 @@ class RollingMemoryBuilder:
             today_sections[key] = _truncate(deduped, limit)
 
         tag_summary = _tag_summary(today_sections)
-        narrative = _build_narrative(today_sections, knowledge_events)
+        narrative = _build_narrative(today_sections, knowledge_events, current_throughlines)
         payload = {
             "date": target_date.isoformat(),
             "source_digest_paths": source_digest_paths,
             "knowledge_events": knowledge_events,
+            "current_throughlines": current_throughlines,
             "tag_summary": tag_summary,
             "sections": today_sections,
             "narrative": narrative,
@@ -656,6 +705,21 @@ class RollingMemoryBuilder:
         md_lines.append("## Source Digests")
         for path in source_digest_paths:
             md_lines.append(f"- {path}")
+        md_lines.append("")
+
+        md_lines.append("## Current Throughlines")
+        if not current_throughlines:
+            md_lines.append("- (none)")
+        else:
+            for throughline in current_throughlines:
+                objective_note = ""
+                objective_keys = _str_list(throughline.get("objective_keys"))
+                if objective_keys:
+                    objective_note = f", objectives: {', '.join(objective_keys[:5])}"
+                summary = f": {throughline['summary']}" if throughline.get("summary") else ""
+                md_lines.append(
+                    f"- {throughline['title']} _(key: {throughline['throughline_key']}, last_signal_at: {throughline.get('last_signal_at') or 'unknown'}{objective_note})_{summary}"
+                )
         md_lines.append("")
 
         md_lines.append("## Knowledge Updates")

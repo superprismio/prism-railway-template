@@ -179,13 +179,13 @@ def run_digests(pipeline: dict, target_date: date, force: bool = False) -> None:
 
 
 def run_memory(pipeline: dict, target_date: date, force: bool = False) -> None:
+    run_state(pipeline, target_date, force=force)
     _log(f"running rolling memory for {target_date} (force={force})")
     output = pipeline["memory"].run(target_date, force=force)
     if output:
         _log(f"memory updated: {output}")
     else:
         _log("memory step skipped (already up to date or no digests)")
-    run_state(pipeline, target_date, force=force)
 
 
 def run_state(pipeline: dict, target_date: date, force: bool = False) -> None:

@@ -538,6 +538,7 @@ export function MemoryExplorerWorkspace({
   const [signalsLoading, setSignalsLoading] = useState(false);
   const [throughlines, setThroughlines] = useState<PrismStateThroughline[]>([]);
   const [throughlineLoading, setThroughlineLoading] = useState(false);
+  const [selectedThroughlineKey, setSelectedThroughlineKey] = useState<string | null>(null);
 
   const selectedArtifactsForChat = useMemo(
     () => selectedArtifactIds
@@ -556,6 +557,11 @@ export function MemoryExplorerWorkspace({
     [objectives, selectedObjectiveKey],
   );
 
+  const selectedThroughline = useMemo(
+    () => throughlines.find((item) => item.throughline_key === selectedThroughlineKey) ?? null,
+    [selectedThroughlineKey, throughlines],
+  );
+
   const objectiveSignals = useMemo(() => {
     if (!selectedObjective) return signals;
     const signalIds = new Set(selectedObjective.signal_ids ?? []);
@@ -564,8 +570,14 @@ export function MemoryExplorerWorkspace({
 
   const visibleObjectives = useMemo(() => {
     const search = objectiveSearch.trim().toLowerCase();
-    if (!search) return objectives;
+    const throughlineObjectiveKeys = selectedThroughline
+      ? new Set(selectedThroughline.objective_keys ?? [])
+      : null;
     return objectives.filter((objective) => {
+      if (throughlineObjectiveKeys && !throughlineObjectiveKeys.has(objective.objective_key)) {
+        return false;
+      }
+      if (!search) return true;
       const haystack = [
         objective.objective_key,
         objective.title,
@@ -580,7 +592,7 @@ export function MemoryExplorerWorkspace({
         .toLowerCase();
       return haystack.includes(search);
     });
-  }, [objectiveSearch, objectives]);
+  }, [objectiveSearch, objectives, selectedThroughline]);
 
   const sourceOptions = useMemo(
     () =>
@@ -742,7 +754,13 @@ export function MemoryExplorerWorkspace({
       const payload = await fetchJson<ThroughlinesPayload>(
         "/admin/memory/api/state/throughlines?status=active&limit=100",
       );
-      setThroughlines(payload.throughlines ?? []);
+      const nextThroughlines = payload.throughlines ?? [];
+      setThroughlines(nextThroughlines);
+      setSelectedThroughlineKey((current) =>
+        current && nextThroughlines.some((throughline) => throughline.throughline_key === current)
+          ? current
+          : null,
+      );
     } catch (error) {
       setObjectiveError(
         error instanceof Error ? error.message : "Could not load throughlines",
@@ -1389,11 +1407,91 @@ export function MemoryExplorerWorkspace({
                 </div>
               </div>
 
+              <div className="border-b border-border/60 px-5 py-4 md:px-6">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      Throughlines
+                    </p>
+                    {selectedThroughline ? (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Filtering objectives by {selectedThroughline.title}
+                      </p>
+                    ) : null}
+                  </div>
+                  <Button
+                    type="button"
+                    variant={selectedThroughlineKey ? "outline" : "secondary"}
+                    size="sm"
+                    onClick={() => setSelectedThroughlineKey(null)}
+                  >
+                    All
+                  </Button>
+                </div>
+                {throughlineLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading throughlines...
+                  </div>
+                ) : throughlines.length ? (
+                  <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                    {throughlines.slice(0, 12).map((throughline) => {
+                      const selected = throughline.throughline_key === selectedThroughlineKey;
+                      return (
+                        <button
+                          key={throughline.throughline_key}
+                          type="button"
+                          className="border border-border bg-background/70 p-3 text-left transition-colors hover:bg-muted/50 data-[state=selected]:border-primary data-[state=selected]:bg-muted"
+                          data-state={selected ? "selected" : undefined}
+                          onClick={() => {
+                            setSelectedThroughlineKey(throughline.throughline_key);
+                            const firstObjectiveKey = throughline.objective_keys?.[0] ?? null;
+                            if (firstObjectiveKey) {
+                              setSelectedObjectiveKey(firstObjectiveKey);
+                            }
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <Route className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                <p className="truncate text-sm font-medium">{throughline.title}</p>
+                              </div>
+                              <p className="mt-1 truncate text-xs text-muted-foreground">
+                                {throughline.throughline_key}
+                              </p>
+                            </div>
+                            <Badge variant="outline">
+                              {throughline.objective_keys?.length ?? 0}
+                            </Badge>
+                          </div>
+                          {throughline.summary ? (
+                            <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                              {throughline.summary}
+                            </p>
+                          ) : null}
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Last signal {formatDate(throughline.last_signal_at)}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <EmptyState
+                    title="No active throughlines"
+                    body="Run generated state with enrichment or add explicit throughline keys to source metadata."
+                  />
+                )}
+              </div>
+
               {visibleObjectives.length ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Objective</TableHead>
+                      <TableHead>
+                        {selectedThroughline ? "Objective In Throughline" : "Objective"}
+                      </TableHead>
                       <TableHead className="w-28">Status</TableHead>
                       <TableHead className="w-28 text-right">Activity</TableHead>
                       <TableHead className="w-28 text-right">Attention</TableHead>
