@@ -149,8 +149,9 @@
         "explicit_throughline_keys": true
       },
       "enrichment": {
-        "enabled": false,
-        "changed_only": true
+        "enabled": true,
+        "changed_only": true,
+        "max_objectives_per_run": 5
       }
     },
     "projects": {

@@ -284,13 +284,15 @@ from raw records and metadata:
 - repository paths and commit refs
 - knowledge document slugs
 - meeting session ids
+- meeting summary action items
 - Portal source ids
 - Discord channel/thread/message ids
 - explicit tags
 - explicit objective keys
 
 The extractor should prefer structured metadata over text parsing. Text parsing
-is still useful for references like `request #26`, PR URLs, and artifact links.
+is still useful for references like `request #26`, PR URLs, artifact links, and
+the `## Action Items` section of older meeting summaries.
 
 ## Objective Building
 
@@ -301,12 +303,21 @@ registry of allowed objective keys. A key may come from an explicit source hint,
 such as `metadata.objective_keys`, or from a deterministic anchor such as a
 request number, PR reference, task key, external ref, or knowledge doc slug.
 
-This means early objective keys may be literal, such as `request-26` or
-`knowledge-sources-portal-docs-runtime-reliability`. That is acceptable for the
-first slice because it keeps identity deterministic and avoids requiring daily
-curation. A later slice may add objective metadata upserts, aliases, merge
-suggestions, or Portal-owned throughline links to make emergent objectives more
-human-readable without moving living state into `space.json`.
+This means early objective keys may be literal, such as `request-26`. That is
+acceptable for the first slice because it keeps identity deterministic and
+avoids requiring daily curation. Not every anchor should become an objective:
+bare PR references, URLs, doc-level knowledge anchors, and meeting action items
+are evidence signals unless an explicit objective key or existing objective
+match connects them to work. A later slice may add objective metadata upserts,
+aliases, merge suggestions, or Portal-owned throughline links to make emergent
+objectives more human-readable without moving living state into `space.json`.
+
+Throughlines are also emergent/read-only in the first implementation. Agents and
+operators can influence them by sending explicit `throughline_keys` in source
+metadata, but there is not yet a Prism skill/API path for editing throughline
+titles, aliases, pinned objective membership, or editorial summaries. That
+should be a later operator workflow, likely paired with objective metadata
+upserts or Portal-owned thread/throughline records.
 
 High-confidence objective membership:
 
@@ -353,7 +364,12 @@ Avoid opaque model-only scores. If a score exists, it should include reasons.
 
 ## Codex Runtime Enrichment
 
-Codex Runtime enrichment is optional but important for usefulness.
+Codex Runtime enrichment is optional but important for usefulness. The first
+implementation reuses the existing `agentic_ingest` provider and env toggle. If
+`AGENTIC_INGEST_ENABLED=true` and the configured OpenAI-compatible provider is
+reachable, changed objectives can be enriched after deterministic objective
+building. If the toggle is off or the provider is unavailable, deterministic
+state still writes normally.
 
 The rule is:
 
@@ -595,6 +611,13 @@ Backfill should read available durable sources:
 
 The first implementation can start with raw bucket records and knowledge
 activity, then add richer sources as the state builder expands.
+
+Meeting summary action items should be emitted as `meeting_action_item` signals.
+New source-adapter summaries should preserve structured `metadata.action_items`
+in the Memory inbox payload. Backfill should also parse the rendered
+`## Action Items` markdown section so older summaries can still contribute
+signals. Action items raise objective attention when attached to an explicit
+objective, but should not create standalone objectives by themselves.
 
 Knowledge source sync events should become generated signals as well as rolling
 memory `knowledge_events`. A GitHub source sync that adds, changes, or removes a
