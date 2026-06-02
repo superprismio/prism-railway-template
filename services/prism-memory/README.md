@@ -113,10 +113,10 @@ Prism Memory exposes generated state for source-agnostic coordination:
 - `GET /state/objectives`
 - `GET /state/throughlines`
 
-The first objective-state slice is deterministic. It extracts signals from raw
-records, inbox metadata, and knowledge source activity, builds
-active/watching/inactive objectives, and creates throughlines from explicit
-hints.
+The first objective-state slice extracts signals from raw records, inbox
+metadata, and knowledge source activity, builds active/watching/inactive
+objectives, and creates throughlines from explicit hints or optional objective
+enrichment suggestions.
 
 Objective enrichment reuses the existing optional agentic ingest provider. When
 `AGENTIC_INGEST_ENABLED=true` and the configured provider is reachable, changed

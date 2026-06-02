@@ -314,10 +314,13 @@ objectives more human-readable without moving living state into `space.json`.
 
 Throughlines are also emergent/read-only in the first implementation. Agents and
 operators can influence them by sending explicit `throughline_keys` in source
-metadata, but there is not yet a Prism skill/API path for editing throughline
-titles, aliases, pinned objective membership, or editorial summaries. That
-should be a later operator workflow, likely paired with objective metadata
-upserts or Portal-owned thread/throughline records.
+metadata. Optional objective enrichment can also suggest
+`suggested_throughline_keys`; those suggestions should create throughline
+records and attach the enriched objective and its signals. There is not yet a
+Prism skill/API path for editing throughline titles, aliases, pinned objective
+membership, or editorial summaries. That should be a later operator workflow,
+likely paired with objective metadata upserts or Portal-owned thread/throughline
+records.
 
 High-confidence objective membership:
 

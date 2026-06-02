@@ -1122,16 +1122,22 @@ class ObjectiveStateBuilder:
             for anchor in objective.get("anchors", [])
             if isinstance(anchor, str)
         }
+        objectives_by_key = {
+            str(objective.get("objective_key") or ""): objective
+            for objective in objectives
+            if str(objective.get("objective_key") or "")
+        }
         throughlines_by_key: Dict[str, Dict[str, Any]] = {}
-        for signal in signals:
-            key = _slugify(str(signal.get("throughline_key") or ""))
-            if not key:
-                continue
-            throughline = throughlines_by_key.get(key)
+
+        def ensure_throughline(key: str) -> Dict[str, Any] | None:
+            normalized_key = _slugify(key)
+            if not normalized_key:
+                return None
+            throughline = throughlines_by_key.get(normalized_key)
             if throughline is None:
                 throughline = {
-                    "throughline_key": key,
-                    "title": _title_from_key(key),
+                    "throughline_key": normalized_key,
+                    "title": _title_from_key(normalized_key),
                     "summary": "",
                     "status": "active",
                     "objective_keys": [],
@@ -1139,12 +1145,47 @@ class ObjectiveStateBuilder:
                     "last_signal_at": None,
                     "enrichment_status": "disabled",
                 }
-                throughlines_by_key[key] = throughline
+                throughlines_by_key[normalized_key] = throughline
+            return throughline
+
+        for signal in signals:
+            key = _slugify(str(signal.get("throughline_key") or ""))
+            if not key:
+                continue
+            throughline = ensure_throughline(key)
+            if throughline is None:
+                continue
             self._append_unique(throughline["signal_ids"], str(signal.get("signal_id") or ""))
-            objective = objectives_by_anchor.get(str(signal.get("anchor") or ""))
+            signal_objective_key = _slugify(str(signal.get("objective_key") or ""))
+            objective = objectives_by_key.get(signal_objective_key) if signal_objective_key else None
+            if objective is None:
+                objective = objectives_by_anchor.get(str(signal.get("anchor") or ""))
             if objective:
                 self._append_unique(throughline["objective_keys"], str(objective.get("objective_key") or ""))
             throughline["last_signal_at"] = _max_iso(throughline.get("last_signal_at"), signal.get("occurred_at"))
+
+        for objective in objectives:
+            enrichment = objective.get("enrichment") if isinstance(objective.get("enrichment"), dict) else {}
+            suggested_keys = [
+                _slugify(str(item))
+                for item in enrichment.get("suggested_throughline_keys", [])
+                if _slugify(str(item))
+            ] if isinstance(enrichment.get("suggested_throughline_keys"), list) else []
+            for key in suggested_keys:
+                throughline = ensure_throughline(key)
+                if throughline is None:
+                    continue
+                throughline["enrichment_status"] = "fresh"
+                objective_key = str(objective.get("objective_key") or "")
+                self._append_unique(throughline["objective_keys"], objective_key)
+                for signal_id in objective.get("signal_ids", []):
+                    self._append_unique(throughline["signal_ids"], str(signal_id or ""))
+                throughline["last_signal_at"] = _max_iso(
+                    throughline.get("last_signal_at"),
+                    objective.get("last_signal_at"),
+                )
+                if not throughline.get("summary") and enrichment.get("summary"):
+                    throughline["summary"] = str(enrichment.get("summary") or "")
 
         return sorted(throughlines_by_key.values(), key=lambda item: str(item.get("throughline_key") or ""))
 
