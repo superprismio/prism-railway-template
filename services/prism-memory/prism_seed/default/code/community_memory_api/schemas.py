@@ -200,6 +200,44 @@ class StateProjectUpsertResponse(BaseModel):
     project: Dict[str, Any]
 
 
+class StateThroughlinePatchRequest(BaseModel):
+    throughline_key: Optional[str] = Field(
+        default=None,
+        description="Optional new key for rename operations. Slug-safe values are normalized.",
+    )
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    status: Optional[str] = Field(default=None, description="active, watching, inactive, or archived")
+    kind: Optional[str] = None
+    aliases: Optional[list[str]] = None
+    tags: Optional[list[str]] = None
+    owners: Optional[list[str]] = None
+    objective_keys: Optional[list[str]] = None
+    external_refs: Optional[list[Dict[str, Any]]] = None
+    pinned: Optional[bool] = None
+    archived: Optional[bool] = None
+    hidden: Optional[bool] = None
+    notes: Optional[str] = None
+
+
+class StateThroughlineMergeRequest(BaseModel):
+    target_key: str = Field(..., description="Throughline key that should receive the source throughline")
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    aliases: Optional[list[str]] = None
+    reason: Optional[str] = None
+
+
+class StateThroughlineMutationResponse(BaseModel):
+    path: str
+    curation_path: str
+    latest_path: str
+    throughline_key: str
+    updated_at: str
+    throughline: Optional[Dict[str, Any]] = None
+    curation: Dict[str, Any]
+
+
 class ParticipantActivityEntry(BaseModel):
     participant: str
     message_count: int

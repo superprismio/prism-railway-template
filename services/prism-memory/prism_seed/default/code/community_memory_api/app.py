@@ -774,6 +774,102 @@ def create_app(settings: Settings) -> FastAPI:
             limit=limit,
         )
 
+    @app.patch(
+        "/state/throughlines/{throughline_key}",
+        response_model=schemas.StateThroughlineMutationResponse,
+        dependencies=[ops_auth_dependency],
+        tags=["state"],
+    )
+    async def state_throughline_patch(
+        request: Request,
+        throughline_key: str,
+        payload: schemas.StateThroughlinePatchRequest,
+    ):
+        before = storage.state_throughlines(throughline_key=throughline_key, limit=1)
+        try:
+            result = storage.patch_state_throughline(throughline_key, payload.model_dump(exclude_unset=True))
+        except StorageError as exc:
+            return _error_response(exc.code, exc.message, 400 if exc.code != "not_found" else 404)
+        after = storage.state_throughlines(throughline_key=result["throughline_key"], limit=1)
+        _append_audit_entry(
+            {
+                "ts": _now_iso(),
+                "action": "state.throughline.patch",
+                "actor": _audit_actor(request),
+                "reason": _audit_reason(request),
+                "status": "ok",
+                "changed_keys": _flatten_changed_keys(before, after),
+                "before": _redact_value(before),
+                "after": _redact_value(after),
+                "details": {"throughline_key": throughline_key, "result_key": result["throughline_key"]},
+            }
+        )
+        return schemas.StateThroughlineMutationResponse(**result)
+
+    @app.post(
+        "/state/throughlines/{throughline_key}/merge",
+        response_model=schemas.StateThroughlineMutationResponse,
+        dependencies=[ops_auth_dependency],
+        tags=["state"],
+    )
+    async def state_throughline_merge(
+        request: Request,
+        throughline_key: str,
+        payload: schemas.StateThroughlineMergeRequest,
+    ):
+        before = storage.state_throughlines(limit=5000)
+        try:
+            result = storage.merge_state_throughline(throughline_key, payload.model_dump(exclude_unset=True))
+        except StorageError as exc:
+            return _error_response(exc.code, exc.message, 400 if exc.code != "not_found" else 404)
+        after = storage.state_throughlines(limit=5000)
+        _append_audit_entry(
+            {
+                "ts": _now_iso(),
+                "action": "state.throughline.merge",
+                "actor": _audit_actor(request),
+                "reason": _audit_reason(request),
+                "status": "ok",
+                "changed_keys": _flatten_changed_keys(before, after),
+                "before": None,
+                "after": None,
+                "details": {
+                    "source_key": throughline_key,
+                    "target_key": result["throughline_key"],
+                    "changed_keys": _flatten_changed_keys(before, after),
+                },
+            }
+        )
+        return schemas.StateThroughlineMutationResponse(**result)
+
+    @app.delete(
+        "/state/throughlines/{throughline_key}",
+        response_model=schemas.StateThroughlineMutationResponse,
+        dependencies=[ops_auth_dependency],
+        tags=["state"],
+    )
+    async def state_throughline_delete(request: Request, throughline_key: str):
+        before = storage.state_throughlines(throughline_key=throughline_key, limit=1)
+        try:
+            result = storage.delete_state_throughline(throughline_key)
+        except StorageError as exc:
+            return _error_response(exc.code, exc.message, 400 if exc.code != "not_found" else 404)
+        after = storage.state_throughlines(throughline_key=throughline_key, limit=1)
+        _append_audit_entry(
+            {
+                "ts": _now_iso(),
+                "action": "state.throughline.delete",
+                "actor": _audit_actor(request),
+                "reason": _audit_reason(request),
+                "status": "ok",
+                "changed_keys": _flatten_changed_keys(before, after),
+                "before": _redact_value(before),
+                "after": _redact_value(after),
+                "details": {"throughline_key": throughline_key},
+            }
+        )
+        return schemas.StateThroughlineMutationResponse(**result)
+
     @app.put(
         "/state/projects/{project_key}",
         response_model=schemas.StateProjectUpsertResponse,

@@ -312,15 +312,15 @@ match connects them to work. A later slice may add objective metadata upserts,
 aliases, merge suggestions, or Portal-owned throughline links to make emergent
 objectives more human-readable without moving living state into `space.json`.
 
-Throughlines are also emergent/read-only in the first implementation. Agents and
-operators can influence them by sending explicit `throughline_keys` in source
-metadata. Optional objective enrichment can also suggest
+Throughlines are also emergent, but they have a direct curation layer. Agents and
+operators can influence initial grouping by sending explicit `throughline_keys`
+in source metadata. Optional objective enrichment can also suggest
 `suggested_throughline_keys`; those suggestions should create throughline
-records and attach the enriched objective and its signals. There is not yet a
-Prism skill/API path for editing throughline titles, aliases, pinned objective
-membership, or editorial summaries. That should be a later operator workflow,
-likely paired with objective metadata upserts or Portal-owned thread/throughline
-records.
+records and attach the enriched objective and its signals. After generation, an
+ops-authenticated curation API can edit titles, summaries, kind, aliases,
+owners, tags, objective membership, pinned/archive status, and hidden/deleted
+state. It can also merge duplicate throughlines. These curation edits are stored
+outside generated state and reapplied during later ingestion and backfill runs.
 
 Throughline lifecycle should be deterministic. A throughline is `active` when it
 has an active attached objective or recent signal, `watching` when its latest

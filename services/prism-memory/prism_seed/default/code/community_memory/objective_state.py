@@ -1213,10 +1213,13 @@ class ObjectiveStateBuilder:
                 watching_days=watching_days,
             )
 
+        self._apply_throughline_curation(throughlines_by_key)
+
         status_rank = {"active": 3, "watching": 2, "inactive": 1, "archived": 0}
         return sorted(
             throughlines_by_key.values(),
             key=lambda item: (
+                bool(item.get("pinned")),
                 status_rank.get(str(item.get("status") or "inactive"), 0),
                 float(item.get("activity_score") or 0.0),
                 float(item.get("attention_score") or 0.0),
@@ -1291,6 +1294,109 @@ class ObjectiveStateBuilder:
         throughline["activity_score"] = round(activity_score, 2)
         throughline["attention_score"] = round(attention_score, 2)
         throughline["score_reasons"] = reasons
+
+    def _apply_throughline_curation(self, throughlines_by_key: Dict[str, Dict[str, Any]]) -> None:
+        curation_path = self.base_path / "state" / "curation" / "throughlines.json"
+        curation = read_json(curation_path, default={})
+        if not isinstance(curation, dict):
+            return
+
+        overrides = curation.get("throughlines") if isinstance(curation.get("throughlines"), dict) else {}
+        merges = curation.get("merges") if isinstance(curation.get("merges"), dict) else {}
+        for source_key, target_key in list(merges.items()):
+            source = _slugify(str(source_key or ""))
+            target = _slugify(str(target_key or ""))
+            if not source or not target or source == target:
+                continue
+            source_item = throughlines_by_key.pop(source, None)
+            if source_item is None:
+                continue
+            target_item = throughlines_by_key.get(target)
+            if target_item is None:
+                target_item = self._blank_throughline(target)
+                throughlines_by_key[target] = target_item
+            self._merge_throughline_items(target_item, source_item)
+            self._append_unique(target_item.setdefault("aliases", []), source)
+            if source_item.get("title"):
+                self._append_unique(target_item.setdefault("aliases", []), str(source_item.get("title") or ""))
+
+        for raw_key, raw_override in overrides.items():
+            key = _slugify(str(raw_key or ""))
+            if not key or not isinstance(raw_override, dict):
+                continue
+            merge_into = _slugify(str(raw_override.get("merge_into") or ""))
+            if merge_into and merge_into != key:
+                throughlines_by_key.pop(key, None)
+                continue
+            if bool(raw_override.get("hidden")):
+                throughlines_by_key.pop(key, None)
+                continue
+            throughline = throughlines_by_key.get(key)
+            if throughline is None:
+                throughline = self._blank_throughline(key)
+                throughlines_by_key[key] = throughline
+            throughline["throughline_key"] = key
+            self._apply_throughline_override(throughline, raw_override)
+
+    def _apply_throughline_override(self, throughline: Dict[str, Any], override: Dict[str, Any]) -> None:
+        for field in ("title", "summary", "kind", "notes"):
+            if field in override and override[field] is not None:
+                throughline[field] = str(override[field]).strip()
+        if "status" in override and override["status"] is not None:
+            status = str(override["status"]).strip().lower()
+            if status in {"active", "watching", "inactive", "archived"}:
+                throughline["status"] = status
+        if "aliases" in override and override["aliases"] is not None:
+            throughline["aliases"] = _as_list(override["aliases"])
+        if "tags" in override and override["tags"] is not None:
+            throughline["tags"] = _as_list(override["tags"])
+        if "owners" in override and override["owners"] is not None:
+            throughline["owners"] = _as_list(override["owners"])
+        if "objective_keys" in override and override["objective_keys"] is not None:
+            throughline["objective_keys"] = _as_list(override["objective_keys"])
+        if "external_refs" in override and isinstance(override["external_refs"], list):
+            throughline["external_refs"] = [
+                item for item in override["external_refs"] if isinstance(item, dict)
+            ]
+        if "pinned" in override and override["pinned"] is not None:
+            throughline["pinned"] = bool(override["pinned"])
+        if "archived" in override and override["archived"] is not None:
+            throughline["archived"] = bool(override["archived"])
+            if bool(override["archived"]):
+                throughline["status"] = "archived"
+        throughline["curation_applied"] = True
+
+    def _blank_throughline(self, throughline_key: str) -> Dict[str, Any]:
+        return {
+            "throughline_key": throughline_key,
+            "title": _title_from_key(throughline_key),
+            "summary": "",
+            "status": "inactive",
+            "objective_keys": [],
+            "signal_ids": [],
+            "last_signal_at": None,
+            "enrichment_status": "manual",
+            "activity_score": 0.0,
+            "attention_score": 0.0,
+            "score_reasons": ["manual curation"],
+        }
+
+    def _merge_throughline_items(self, target: Dict[str, Any], source: Dict[str, Any]) -> None:
+        if not target.get("summary") and source.get("summary"):
+            target["summary"] = source.get("summary")
+        for field in ("objective_keys", "signal_ids", "aliases", "tags", "owners"):
+            for item in _as_list(source.get(field)):
+                self._append_unique(target.setdefault(field, []), item)
+        target["last_signal_at"] = _max_iso(target.get("last_signal_at"), source.get("last_signal_at"))
+        target["activity_score"] = max(float(target.get("activity_score") or 0.0), float(source.get("activity_score") or 0.0))
+        target["attention_score"] = max(float(target.get("attention_score") or 0.0), float(source.get("attention_score") or 0.0))
+        reasons = _as_list(target.get("score_reasons"))
+        for reason in _as_list(source.get("score_reasons")):
+            if reason not in reasons:
+                reasons.append(reason)
+        if reasons:
+            target["score_reasons"] = reasons
+        target["curation_applied"] = True
 
     def _scores_for_objective(
         self,
