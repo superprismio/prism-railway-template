@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 import hashlib
@@ -540,6 +541,9 @@ def create_app(settings: Settings) -> FastAPI:
                 },
             )
         return response
+
+    async def _run_ops_command_async(operation: str, args: list[str]) -> schemas.OpsResponse:
+        return await asyncio.to_thread(_run_ops_command, operation, args)
 
     def _error_response(code: str, message: str, status: int, headers: Optional[dict] = None) -> JSONResponse:
         return JSONResponse(
@@ -1249,7 +1253,7 @@ def create_app(settings: Settings) -> FastAPI:
             args.append("--force")
         if backfill_hours is not None:
             args.extend(["--backfill-hours", str(backfill_hours)])
-        _run_ops_command("memory.collect", args)
+        await _run_ops_command_async("memory.collect", args)
 
         last_result: schemas.OpsResponse | None = None
         for stage in ("digest", "memory", "seeds"):
@@ -1266,7 +1270,7 @@ def create_app(settings: Settings) -> FastAPI:
             ]
             if force:
                 stage_args.append("--force")
-            last_result = _run_ops_command(f"memory.{stage}", stage_args)
+            last_result = await _run_ops_command_async(f"memory.{stage}", stage_args)
 
         if last_result is not None:
             _append_audit_entry(
@@ -1318,7 +1322,7 @@ def create_app(settings: Settings) -> FastAPI:
         ]
         if force:
             args.append("--force")
-        result = _run_ops_command("state.run", args)
+        result = await _run_ops_command_async("state.run", args)
         _append_audit_entry(
             {
                 "ts": _now_iso(),
@@ -1370,7 +1374,7 @@ def create_app(settings: Settings) -> FastAPI:
         ]
         if force:
             args.append("--force")
-        result = _run_ops_command("state.backfill", args)
+        result = await _run_ops_command_async("state.backfill", args)
         _append_audit_entry(
             {
                 "ts": _now_iso(),
@@ -1421,7 +1425,7 @@ def create_app(settings: Settings) -> FastAPI:
         ]
         if force:
             collect_args.append("--force")
-        collect_result = _run_ops_command("memory.collect", collect_args)
+        collect_result = await _run_ops_command_async("memory.collect", collect_args)
 
         results: list[schemas.OpsResponse] = []
         current = start_date
@@ -1441,7 +1445,7 @@ def create_app(settings: Settings) -> FastAPI:
                 ]
                 if force:
                     stage_args.append("--force")
-                results.append(_run_ops_command(f"memory.{stage}", stage_args))
+                results.append(await _run_ops_command_async(f"memory.{stage}", stage_args))
             current += timedelta(days=1)
 
         ok = collect_result.exit_code == 0 and all(result.exit_code == 0 for result in results)
@@ -1610,7 +1614,7 @@ def create_app(settings: Settings) -> FastAPI:
                         date_str,
                         "--force",
                     ]
-                    rebuild_results.append(_run_ops_command(f"memory.{stage}", stage_args))
+                    rebuild_results.append(await _run_ops_command_async(f"memory.{stage}", stage_args))
 
         ok = not rebuild_results or all(result.exit_code == 0 for result in rebuild_results)
         _append_audit_entry(
@@ -1663,7 +1667,7 @@ def create_app(settings: Settings) -> FastAPI:
         tags=["ops"],
     )
     async def ops_knowledge_promote():
-        return _run_ops_command(
+        return await _run_ops_command_async(
             "knowledge.promote",
             [
                 "-m",
@@ -1683,7 +1687,7 @@ def create_app(settings: Settings) -> FastAPI:
         tags=["ops"],
     )
     async def ops_knowledge_validate():
-        return _run_ops_command(
+        return await _run_ops_command_async(
             "knowledge.validate",
             [
                 "-m",
@@ -1703,7 +1707,7 @@ def create_app(settings: Settings) -> FastAPI:
         tags=["ops"],
     )
     async def ops_knowledge_index():
-        return _run_ops_command(
+        return await _run_ops_command_async(
             "knowledge.index",
             [
                 "-m",
@@ -1723,7 +1727,7 @@ def create_app(settings: Settings) -> FastAPI:
         tags=["ops"],
     )
     async def ops_knowledge_run(request: Request):
-        promote_result = _run_ops_command(
+        promote_result = await _run_ops_command_async(
             "knowledge.promote",
             [
                 "-m",
@@ -1735,7 +1739,7 @@ def create_app(settings: Settings) -> FastAPI:
                 settings.space,
             ],
         )
-        validate_result = _run_ops_command(
+        validate_result = await _run_ops_command_async(
             "knowledge.validate",
             [
                 "-m",
@@ -1747,7 +1751,7 @@ def create_app(settings: Settings) -> FastAPI:
                 settings.space,
             ],
         )
-        index_result = _run_ops_command(
+        index_result = await _run_ops_command_async(
             "knowledge.index",
             [
                 "-m",
