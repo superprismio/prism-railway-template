@@ -23,6 +23,10 @@ X-Prism-Api-Key: <ops-key>
   `POST /ops/memory/run`
 - Memory backfill:
   `POST /ops/memory/backfill?days=30&force=true`
+- State rebuild:
+  `POST /ops/state/run?date=YYYY-MM-DD&force=true`
+- State backfill:
+  `POST /ops/state/backfill?days=60&force=true`
 - Knowledge promote only:
   `POST /ops/knowledge/promote`
 - Knowledge validate only:
@@ -36,6 +40,8 @@ X-Prism-Api-Key: <ops-key>
 
 - Use `memory.run` for normal collection, digest, memory, and seed processing.
 - Use `memory.backfill` only when explicitly asked to recompute historical windows.
+- Use `state.run` to rebuild generated project/objective/signal/throughline state for one day without running digest, memory, or seeds.
+- Use `state.backfill` to rebuild generated state over recent history without deleting raw records.
 - Use `knowledge.run` after writing new knowledge inbox docs that should become searchable now.
 - Prefer the narrowest endpoint that solves the task.
 

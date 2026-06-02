@@ -724,6 +724,52 @@ def create_app(settings: Settings) -> FastAPI:
     async def state_projects():
         return storage.state_projects()
 
+    @app.get("/state/signals", dependencies=[read_auth_dependency], tags=["state"])
+    async def state_signals(
+        anchor: Optional[str] = Query(None),
+        kind: Optional[str] = Query(None),
+        source: Optional[str] = Query(None),
+        objective_key: Optional[str] = Query(None),
+        throughline_key: Optional[str] = Query(None),
+        limit: int = Query(250, ge=1, le=5000),
+    ):
+        return storage.state_signals(
+            anchor=anchor,
+            kind=kind,
+            source=source,
+            objective_key=objective_key,
+            throughline_key=throughline_key,
+            limit=limit,
+        )
+
+    @app.get("/state/objectives", dependencies=[read_auth_dependency], tags=["state"])
+    async def state_objectives(
+        status: Optional[str] = Query(None),
+        source: Optional[str] = Query(None),
+        external_system: Optional[str] = Query(None, alias="externalSystem"),
+        objective_key: Optional[str] = Query(None),
+        limit: int = Query(250, ge=1, le=5000),
+    ):
+        return storage.state_objectives(
+            status=status,
+            source=source,
+            external_system=external_system,
+            objective_key=objective_key,
+            limit=limit,
+        )
+
+    @app.get("/state/throughlines", dependencies=[read_auth_dependency], tags=["state"])
+    async def state_throughlines(
+        status: Optional[str] = Query(None),
+        throughline_key: Optional[str] = Query(None),
+        limit: int = Query(250, ge=1, le=5000),
+    ):
+        return storage.state_throughlines(
+            status=status,
+            throughline_key=throughline_key,
+            limit=limit,
+        )
+
     @app.put(
         "/state/projects/{project_key}",
         response_model=schemas.StateProjectUpsertResponse,
@@ -1169,6 +1215,8 @@ def create_app(settings: Settings) -> FastAPI:
             payload["participants"] = [item.strip() for item in entry.participants if item and item.strip()]
         if entry.participant_count is not None:
             payload["participant_count"] = entry.participant_count
+        if entry.metadata:
+            payload["metadata"] = entry.metadata
         path = storage.write_memory_inbox_entry(payload)
         return schemas.MemoryInboxResponse(path=path)
 
@@ -1241,6 +1289,109 @@ def create_app(settings: Settings) -> FastAPI:
                 }
             )
         return last_result
+
+    @app.post(
+        "/ops/state/run",
+        response_model=schemas.OpsResponse,
+        dependencies=[ops_auth_dependency],
+        tags=["ops"],
+    )
+    async def ops_state_run(
+        request: Request,
+        date: Optional[str] = Query(None, description="Optional YYYY-MM-DD target date for generated state"),
+        force: bool = Query(False),
+    ):
+        target_date = date
+        if target_date is None:
+            target_date = datetime.now(ZoneInfo(active_timezone)).date().isoformat()
+
+        args = [
+            "-m",
+            "community_memory.pipeline",
+            "state",
+            "--base",
+            ops_base_arg,
+            "--space",
+            settings.space,
+            "--date",
+            target_date,
+        ]
+        if force:
+            args.append("--force")
+        result = _run_ops_command("state.run", args)
+        _append_audit_entry(
+            {
+                "ts": _now_iso(),
+                "action": "ops.state.run",
+                "actor": _audit_actor(request),
+                "reason": _audit_reason(request),
+                "status": "ok" if result.exit_code == 0 else "error",
+                "changed_keys": [],
+                "before": None,
+                "after": None,
+                "details": {
+                    "date": target_date,
+                    "force": force,
+                    "operation": result.operation,
+                    "exit_code": result.exit_code,
+                },
+            }
+        )
+        return result
+
+    @app.post(
+        "/ops/state/backfill",
+        response_model=schemas.OpsResponse,
+        dependencies=[ops_auth_dependency],
+        tags=["ops"],
+    )
+    async def ops_state_backfill(
+        request: Request,
+        days: int = Query(30, ge=1, le=180, description="Number of days of generated state to rebuild"),
+        force: bool = Query(True),
+    ):
+        local_today = datetime.now(ZoneInfo(active_timezone)).date()
+        start_date = local_today - timedelta(days=days - 1)
+        end_date = local_today
+        args = [
+            "-m",
+            "community_memory.pipeline",
+            "state",
+            "--base",
+            ops_base_arg,
+            "--space",
+            settings.space,
+            "--date",
+            end_date.isoformat(),
+            "--from-date",
+            start_date.isoformat(),
+            "--to-date",
+            end_date.isoformat(),
+        ]
+        if force:
+            args.append("--force")
+        result = _run_ops_command("state.backfill", args)
+        _append_audit_entry(
+            {
+                "ts": _now_iso(),
+                "action": "ops.state.backfill",
+                "actor": _audit_actor(request),
+                "reason": _audit_reason(request),
+                "status": "ok" if result.exit_code == 0 else "error",
+                "changed_keys": [],
+                "before": None,
+                "after": None,
+                "details": {
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                    "days": days,
+                    "force": force,
+                    "operation": result.operation,
+                    "exit_code": result.exit_code,
+                },
+            }
+        )
+        return result
 
     @app.post(
         "/ops/memory/backfill",

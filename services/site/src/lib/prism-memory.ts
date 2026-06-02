@@ -65,6 +65,54 @@ export type PrismKnowledgeSource = {
   }
 }
 
+export type PrismStateSignal = {
+  signal_id: string
+  kind: string
+  anchor: string
+  source: string
+  source_type?: string | null
+  source_record_id?: string | null
+  occurred_at: string
+  confidence_score?: number | null
+  confidence_reasons?: string[]
+  objective_key?: string | null
+  throughline_key?: string | null
+  evidence?: Record<string, unknown>
+  external_ref?: Record<string, unknown>
+}
+
+export type PrismStateObjective = {
+  objective_key: string
+  title: string
+  status: string
+  anchors: string[]
+  signal_ids: string[]
+  sources: string[]
+  aliases?: string[]
+  owners?: string[]
+  external_refs?: Array<Record<string, unknown>>
+  archived?: boolean
+  summary?: string
+  last_signal_at?: string | null
+  last_enriched_at?: string | null
+  enrichment_status?: string | null
+  activity_score?: number | null
+  attention_score?: number | null
+  confidence_score?: number | null
+  score_reasons?: string[]
+}
+
+export type PrismStateThroughline = {
+  throughline_key: string
+  title: string
+  summary?: string
+  status: string
+  objective_keys: string[]
+  signal_ids: string[]
+  last_signal_at?: string | null
+  enrichment_status?: string | null
+}
+
 function prismMemoryBaseUrl() {
   return (
     process.env.PRISM_MEMORY_BASE_URL ||

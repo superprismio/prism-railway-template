@@ -41,6 +41,12 @@ Use a read-scoped key only.
   `GET /memory/participants?start=...&end=...&bucket=...`
 - Latest project state:
   `GET /state/latest`
+- Objective state:
+  `GET /state/objectives?status=active&source=portal&externalSystem=portal&objective_key=...`
+- Extracted signals:
+  `GET /state/signals?anchor=request:26&kind=change_request_ref&objective_key=...`
+- Throughline state:
+  `GET /state/throughlines?status=active&throughline_key=...`
 - Knowledge manifest:
   `GET /knowledge/indexes/manifest`
 - Knowledge sources:
@@ -85,9 +91,13 @@ Use a read-scoped key only.
 - For participation:
   - use `/memory/participants`
   - report the exact `start` and `end` used
-- For project state:
+- For generated state:
   - use `/state/latest`
-  - do not infer active project state from memory alone
+  - use `/state/objectives` for source-agnostic active work
+  - use `/state/signals` for evidence and anchors such as request, PR, task, workflow, artifact, external ref, or URL signals
+  - use `/state/throughlines` for higher-level narrative grouping
+  - treat `/state/projects` as legacy compatibility state for channel-derived projects
+  - do not infer active objective state from memory alone
 - For artifacts:
   - if the user provides a Prism artifact link, use the final path segment as the artifact ID
   - use `/artifacts/{artifact-id}` when the user wants a human-viewable link to share in Discord or chat

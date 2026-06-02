@@ -102,3 +102,45 @@ Current behavior:
 - scope `bot_only` targets Discord thread/bot-context inbox items based on structural metadata
 - scope `scoped` limits enrichment to configured sources and/or buckets
 - records classified with `memory_include_default=false` remain stored in raw transcripts but are excluded from default digest generation
+
+## Generated State
+
+Prism Memory exposes generated state for source-agnostic coordination:
+
+- `GET /state/latest`
+- `GET /state/projects`
+- `GET /state/signals`
+- `GET /state/objectives`
+- `GET /state/throughlines`
+
+The first objective-state slice is deterministic. It extracts signals from raw
+records, inbox metadata, and knowledge source activity, builds
+active/watching/inactive objectives, and creates throughlines from explicit
+hints. Codex Runtime enrichment is not required for these state files.
+
+Operators can rebuild generated state for a date without running the full memory
+pipeline:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
+  "$PRISM_MEMORY_BASE_URL/ops/state/run?date=YYYY-MM-DD&force=true"
+```
+
+Backfill generated state across recent history:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
+  "$PRISM_MEMORY_BASE_URL/ops/state/backfill?days=60&force=true"
+```
+
+State reads support filters such as:
+
+```text
+/state/objectives?status=active&externalSystem=portal
+/state/signals?anchor=request:26
+/state/throughlines?status=active
+```

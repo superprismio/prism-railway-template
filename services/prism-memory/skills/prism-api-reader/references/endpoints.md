@@ -24,6 +24,34 @@ curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
   "$PRISM_API_BASE/state/latest"
 ```
 
+Generated objective state:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/state/objectives?status=active&limit=25"
+```
+
+Filter objectives by Portal/external refs:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/state/objectives?externalSystem=portal&limit=25"
+```
+
+Find signals for a request anchor:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/state/signals?anchor=request:26&limit=50"
+```
+
+Read active throughlines:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/state/throughlines?status=active&limit=25"
+```
+
 ```bash
 curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
   "$PRISM_API_BASE/knowledge/search?q=discord&limit=10"

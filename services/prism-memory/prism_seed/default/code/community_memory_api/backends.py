@@ -11,6 +11,29 @@ class StorageBackend(Protocol):
     def memory_by_date(self, date_str: str) -> Any: ...
     def state_latest(self) -> Any: ...
     def state_projects(self) -> Any: ...
+    def state_signals(
+        self,
+        anchor: Optional[str] = None,
+        kind: Optional[str] = None,
+        source: Optional[str] = None,
+        objective_key: Optional[str] = None,
+        throughline_key: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Any: ...
+    def state_objectives(
+        self,
+        status: Optional[str] = None,
+        source: Optional[str] = None,
+        external_system: Optional[str] = None,
+        objective_key: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Any: ...
+    def state_throughlines(
+        self,
+        status: Optional[str] = None,
+        throughline_key: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Any: ...
     def upsert_state_project(self, project_key: str, payload: Dict[str, Any]) -> Dict[str, Any]: ...
     def digests_by_date(self, date_str: str) -> Dict[str, Any]: ...
     def digest_for_bucket(self, bucket: str, date_str: str) -> Any: ...

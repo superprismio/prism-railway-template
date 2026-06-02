@@ -74,6 +74,13 @@ curl -fsSL \
   -d "$SOURCE_ADAPTER_POLICY_JSON"
 ```
 
+The policy PATCH route merges at the platform level, but a supplied
+`targets`, `groups`, or `users` object replaces that entire object for the
+platform. Do not send a patch with only the one target being changed unless you
+intend to remove every other target. Always read the current policy first,
+preserve existing sibling entries, then write the complete updated map for the
+platform section you are changing.
+
 Use platform-scoped policy. For Discord, `targets` are channel or thread IDs,
 `groups` are role IDs, and `users` are Discord user IDs.
 
@@ -97,6 +104,35 @@ Use platform-scoped policy. For Discord, `targets` are channel or thread IDs,
   }
 }
 ```
+
+Example: add a Discord run-approved channel or thread while preserving existing
+targets:
+
+```bash
+current="$(curl -fsSL \
+  -H "x-service-token: ${PRISM_AGENT_SERVICE_TOKEN:-$APP_API_SERVICE_TOKEN}" \
+  "${PRISM_AGENT_API_BASE_URL:-$APP_API_BASE_URL}/agent/source-adapter-policy")"
+
+policy="$(printf '%s' "$current" | jq \
+  --arg target_id "<discord-channel-or-thread-id>" \
+  '.policy.platforms.discord.targets[$target_id] = {"mode":"run-approved"} | .policy')"
+
+curl -fsSL \
+  -X PATCH \
+  -H "content-type: application/json" \
+  -H "x-service-token: ${PRISM_AGENT_SERVICE_TOKEN:-$APP_API_SERVICE_TOKEN}" \
+  "${PRISM_AGENT_API_BASE_URL:-$APP_API_BASE_URL}/agent/source-adapter-policy" \
+  -d "{\"policy\":$policy}"
+```
+
+After updating, fetch the policy again and confirm every previously configured
+Discord `targets`, `groups`, and `users` entry that should remain is still
+present. If a target was accidentally dropped, immediately reapply the full
+intended map.
+
+When a user asks whether a Discord URL is configured, extract the final path
+segment from `https://discord.com/channels/<guild>/<channel-or-thread>` and
+check that ID against `platforms.discord.targets`.
 
 Supported modes:
 

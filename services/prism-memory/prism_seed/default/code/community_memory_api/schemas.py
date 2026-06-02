@@ -146,6 +146,7 @@ class MemoryInboxRequest(BaseModel):
     url: Optional[str] = None
     participants: Optional[list[str]] = None
     participant_count: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class MemoryInboxResponse(BaseModel):
