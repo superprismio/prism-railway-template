@@ -89,6 +89,78 @@ def _normalize_url(value: str) -> str:
     return value.strip().rstrip(".,;")
 
 
+def _first_metadata_value(metadata: Dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in metadata:
+            return metadata.get(key)
+    return None
+
+
+def _coerce_metadata_items(value: Any) -> List[Any]:
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+def _normalize_action_item(item: Any) -> Dict[str, Any] | None:
+    if isinstance(item, dict):
+        name = _clean(str(item.get("name") or item.get("title") or ""))
+        description = _clean(str(item.get("description") or item.get("text") or ""))
+        assigned_to = _clean(str(item.get("assignedTo") or item.get("assigned_to") or item.get("owner") or ""))
+        due_date = _clean(str(item.get("dueDate") or item.get("due_date") or ""))
+        text = _clean(": ".join(part for part in (name, description) if part))
+        if not text:
+            return None
+        normalized: Dict[str, Any] = {"text": text[:500]}
+        if name:
+            normalized["name"] = name[:160]
+        if description:
+            normalized["description"] = description[:360]
+        if assigned_to:
+            normalized["assigned_to"] = assigned_to[:120]
+        if due_date:
+            normalized["due_date"] = due_date[:40]
+        return normalized
+
+    text = _clean(str(item))
+    if not text or text.lower() == "none captured.":
+        return None
+    return {"text": text[:500]}
+
+
+def _extract_markdown_list_section(content: str, heading: str) -> List[str]:
+    pattern = re.compile(
+        rf"(?ims)^##\s+{re.escape(heading)}\s*$\n(?P<body>.*?)(?=^##\s+|\Z)"
+    )
+    match = pattern.search(content)
+    items: List[str] = []
+    if match:
+        for line in match.group("body").splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("- "):
+                continue
+            text = _clean(stripped[2:])
+            if text and text.lower() != "none captured.":
+                items.append(text)
+        return items
+
+    compact = _clean(content)
+    compact_match = re.search(
+        rf"(?i)##\s+{re.escape(heading)}\s+(?P<body>.*?)(?=\s+##\s+|\Z)",
+        compact,
+    )
+    if not compact_match:
+        return []
+    body = compact_match.group("body").strip()
+    if not body.startswith("- "):
+        return []
+    for text in re.split(r"\s+-\s+", body[2:]):
+        normalized = _clean(text)
+        if normalized and normalized.lower() != "none captured.":
+            items.append(normalized)
+    return items
+
+
 def _title_from_key(key: str) -> str:
     return " ".join(part.capitalize() for part in key.replace("_", "-").split("-") if part) or key
 
@@ -593,6 +665,38 @@ class ObjectiveStateBuilder:
                     reasons=["explicit throughline key metadata"],
                 )
 
+        action_items_metadata = _first_metadata_value(metadata, "action_items", "actionItems")
+        action_items = [
+            item
+            for item in (
+                _normalize_action_item(raw_item)
+                for raw_item in _coerce_metadata_items(action_items_metadata)
+            )
+            if item is not None
+        ]
+        action_item_reason = "structured meeting action item metadata"
+        if not action_items and (
+            source_type == "meeting_summary" or "## Action Items" in content
+        ):
+            action_items = [
+                item
+                for item in (
+                    _normalize_action_item(raw_item)
+                    for raw_item in _extract_markdown_list_section(content, "Action Items")
+                )
+                if item is not None
+            ]
+            action_item_reason = "meeting summary action item section"
+        for idx, item in enumerate(action_items):
+            text = str(item.get("text") or "")
+            add_signal(
+                kind="meeting_action_item" if source_type == "meeting_summary" else "action_item",
+                anchor=f"action-item:{_stable_hash(source_record_id, str(idx), text)}",
+                confidence_score=0.95 if action_items_metadata is not None else 0.85,
+                reasons=[action_item_reason],
+                extra={"action_item": item},
+            )
+
         for key in ("related_request_number", "request_number", "change_request_number"):
             value = metadata.get(key)
             if value not in (None, ""):
@@ -1051,11 +1155,15 @@ class ObjectiveStateBuilder:
         kind = str(signal.get("kind") or "")
         if kind == "explicit_throughline_key":
             return None
+        if kind in ("meeting_action_item", "action_item"):
+            return None
         if anchor.startswith("url:"):
             return None
         if anchor.startswith("pr:"):
             return None
         if anchor.startswith("knowledge:"):
+            return None
+        if anchor.startswith("action-item:"):
             return None
         return _slugify(anchor.replace(":", "-"))
 
@@ -1139,6 +1247,13 @@ class ObjectiveStateBuilder:
         if "explicit_objective_key" in kinds:
             attention_score += 0.1
             reasons.append("has explicit objective key")
+        action_item_count = sum(
+            1 for signal in objective_signals
+            if str(signal.get("kind") or "") in ("meeting_action_item", "action_item")
+        )
+        if action_item_count:
+            attention_score += 0.25
+            reasons.append(f"{action_item_count} action item signal(s)")
         attention_score = min(1.0, attention_score + (0.1 * len(recent_signals)))
         return status, round(activity_score, 2), round(attention_score, 2), reasons
 

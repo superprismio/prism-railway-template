@@ -2121,6 +2121,20 @@ export class DiscordVoiceManager {
         ...basePayload,
         type: "meeting_summary",
         ts: new Date(metadata.endedAt).toISOString(),
+        metadata: {
+          source_system: "discord-voice",
+          source_type: "meeting_summary",
+          source_id: metadata.sessionId,
+          session_id: metadata.sessionId,
+          channel_id: metadata.channelId,
+          channel_name: metadata.metadata.meeting.location || metadata.channelId,
+          meeting_name: metadata.metadata.meeting.name || "Discord meeting",
+          started_at: new Date(metadata.startedAt).toISOString(),
+          ended_at: new Date(metadata.endedAt).toISOString(),
+          action_items: summary.actionItems,
+          notable_quotes: summary.notableQuotes,
+          tags: summary.tags,
+        },
         content: this.renderSummaryMarkdown(metadata, summary),
       });
     }
