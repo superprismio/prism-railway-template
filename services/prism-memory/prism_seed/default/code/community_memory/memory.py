@@ -453,7 +453,7 @@ def _load_current_throughlines(
     for item in raw_items:
         if not isinstance(item, dict):
             continue
-        if str(item.get("status") or "active") != "active":
+        if str(item.get("status") or "active") not in ("active", "watching"):
             continue
         key = _clean(str(item.get("throughline_key") or ""))
         title = _shorten(str(item.get("title") or key), 140)
@@ -469,10 +469,14 @@ def _load_current_throughlines(
                 "signal_ids": _str_list(item.get("signal_ids")),
                 "last_signal_at": item.get("last_signal_at"),
                 "enrichment_status": item.get("enrichment_status"),
+                "activity_score": item.get("activity_score"),
+                "attention_score": item.get("attention_score"),
+                "score_reasons": _str_list(item.get("score_reasons")),
             }
         )
     throughlines.sort(
         key=lambda item: (
+            1 if str(item.get("status") or "") == "active" else 0,
             len(item.get("objective_keys") or []),
             str(item.get("last_signal_at") or ""),
             str(item.get("title") or ""),
@@ -718,7 +722,7 @@ class RollingMemoryBuilder:
                     objective_note = f", objectives: {', '.join(objective_keys[:5])}"
                 summary = f": {throughline['summary']}" if throughline.get("summary") else ""
                 md_lines.append(
-                    f"- {throughline['title']} _(key: {throughline['throughline_key']}, last_signal_at: {throughline.get('last_signal_at') or 'unknown'}{objective_note})_{summary}"
+                    f"- {throughline['title']} _(status: {throughline.get('status') or 'unknown'}, key: {throughline['throughline_key']}, last_signal_at: {throughline.get('last_signal_at') or 'unknown'}{objective_note})_{summary}"
                 )
         md_lines.append("")
 

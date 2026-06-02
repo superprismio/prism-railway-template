@@ -752,9 +752,11 @@ export function MemoryExplorerWorkspace({
     setThroughlineLoading(true);
     try {
       const payload = await fetchJson<ThroughlinesPayload>(
-        "/admin/memory/api/state/throughlines?status=active&limit=100",
+        "/admin/memory/api/state/throughlines?limit=100",
       );
-      const nextThroughlines = payload.throughlines ?? [];
+      const nextThroughlines = (payload.throughlines ?? []).filter(
+        (throughline) => throughline.status !== "inactive" && throughline.status !== "archived",
+      );
       setThroughlines(nextThroughlines);
       setSelectedThroughlineKey((current) =>
         current && nextThroughlines.some((throughline) => throughline.throughline_key === current)
@@ -1395,7 +1397,7 @@ export function MemoryExplorerWorkspace({
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Active Throughlines
+                    Open Throughlines
                   </p>
                   <p className="mt-1 text-2xl font-semibold">{throughlines.length}</p>
                 </div>
@@ -1463,6 +1465,9 @@ export function MemoryExplorerWorkspace({
                             </div>
                             <Badge variant="outline">
                               {throughline.objective_keys?.length ?? 0}
+                            </Badge>
+                            <Badge variant={statusVariant(throughline.status)}>
+                              {throughline.status}
                             </Badge>
                           </div>
                           {throughline.summary ? (
