@@ -1,6 +1,7 @@
 import {
   buildRequestArtifactStoragePath,
   createChangeRequest,
+  createHookRun,
   createRequestArtifact,
   createWorkflowEvent,
   getDefaultTargetEnvironmentForApp,
@@ -9,6 +10,7 @@ import {
   getWorkflowByKey,
   getWorkflowRunForRequest,
   markHookTriggered,
+  updateHookRun,
   writeRequestArtifactFile,
   type HookRecord,
 } from "@/lib/app-core"
@@ -118,19 +120,59 @@ export async function triggerHook(
   payload: Record<string, unknown>,
   options: { baseUrl?: string | null; source?: string; waitForAutoStart?: boolean } = {},
 ): Promise<HookTriggerResult> {
+  const source = options.source ?? `hook:${hookKey}`
+  let hookRunId: string | null = null
   const hook = getHookByKey(hookKey)
   if (!hook) {
+    const run = createHookRun({
+      hookKey,
+      source,
+      payload,
+    })
+    updateHookRun(run.id, {
+      status: "failed",
+      errorMessage: "HOOK_NOT_FOUND",
+      result: { error: "HOOK_NOT_FOUND" },
+      finishedAt: new Date().toISOString(),
+    })
     throw new Error("HOOK_NOT_FOUND")
   }
+  const hookRun = createHookRun({
+    hookId: hook.id,
+    hookKey: hook.key,
+    hookName: hook.name,
+    workflowKey: hook.workflowKey,
+    source,
+    payload,
+  })
+  hookRunId = hookRun.id
   if (!hook.enabled) {
+    updateHookRun(hookRunId, {
+      status: "failed",
+      errorMessage: "HOOK_DISABLED",
+      result: { error: "HOOK_DISABLED" },
+      finishedAt: new Date().toISOString(),
+    })
     throw new Error("HOOK_DISABLED")
   }
 
   const workflow = getWorkflowByKey(hook.workflowKey)
   if (!workflow) {
+    updateHookRun(hookRunId, {
+      status: "failed",
+      errorMessage: "WORKFLOW_NOT_FOUND",
+      result: { error: "WORKFLOW_NOT_FOUND" },
+      finishedAt: new Date().toISOString(),
+    })
     throw new Error("WORKFLOW_NOT_FOUND")
   }
   if (!workflow.enabled) {
+    updateHookRun(hookRunId, {
+      status: "failed",
+      errorMessage: "WORKFLOW_DISABLED",
+      result: { error: "WORKFLOW_DISABLED" },
+      finishedAt: new Date().toISOString(),
+    })
     throw new Error("WORKFLOW_DISABLED")
   }
 
@@ -138,6 +180,12 @@ export async function triggerHook(
   const targetAppId = stringValue(requestTemplate.targetAppId ?? payload.targetAppId)
   const targetApp = targetAppId ? getTargetApp(targetAppId) : null
   if (targetAppId && (!targetApp || !targetApp.agentEnabled)) {
+    updateHookRun(hookRunId, {
+      status: "failed",
+      errorMessage: "TARGET_APP_INACTIVE",
+      result: { error: "TARGET_APP_INACTIVE", targetAppId },
+      finishedAt: new Date().toISOString(),
+    })
     throw new Error("TARGET_APP_INACTIVE")
   }
   const targetEnvironmentId =
@@ -157,7 +205,7 @@ export async function triggerHook(
     workflowKey: hook.workflowKey,
     requestType: stringValue(requestTemplate.requestType ?? payload.requestType, "content"),
     priority: stringValue(requestTemplate.priority ?? payload.priority, "normal"),
-    source: options.source ?? `hook:${hook.key}`,
+    source,
     requestedByUserId: null,
     targetAppId: targetAppId || null,
     targetEnvironmentId: targetEnvironmentId || null,
@@ -176,6 +224,12 @@ export async function triggerHook(
   })
 
   if (!changeRequest) {
+    updateHookRun(hookRunId, {
+      status: "failed",
+      errorMessage: "HOOK_REQUEST_CREATE_FAILED",
+      result: { error: "HOOK_REQUEST_CREATE_FAILED" },
+      finishedAt: new Date().toISOString(),
+    })
     throw new Error("HOOK_REQUEST_CREATE_FAILED")
   }
 
@@ -217,6 +271,22 @@ export async function triggerHook(
     }, 0)
   }
   markHookTriggered(hook.key)
+  updateHookRun(hookRunId, {
+    status: "succeeded",
+    requestId: changeRequest.id,
+    requestNumber: changeRequest.requestNumber,
+    requestTitle: changeRequest.title,
+    autoStartQueued,
+    autoStartStarted: Boolean(autoStart?.started),
+    result: {
+      requestId: changeRequest.id,
+      requestNumber: changeRequest.requestNumber,
+      autoStartQueued,
+      autoStartStarted: Boolean(autoStart?.started),
+      autoStartReason: autoStart?.reason ?? null,
+    },
+    finishedAt: new Date().toISOString(),
+  })
 
   return {
     hook: getHookByKey(hook.key) ?? hook,

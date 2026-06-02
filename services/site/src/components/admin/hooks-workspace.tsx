@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { ChevronDown, Copy, Play, RefreshCw, Trash2, Webhook } from "lucide-react";
+import { ChevronDown, Copy, ExternalLink, Play, RefreshCw, Trash2, Webhook } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,11 +12,17 @@ import {
 } from "@/components/ui/collapsible";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { HookRecord } from "@/lib/app-core";
+import type { HookRecord, HookRunRecord } from "@/lib/app-core";
 
 type HooksPayload = {
   ok: boolean;
   hooks?: HookRecord[];
+  error?: string;
+};
+
+type HookRunsPayload = {
+  ok: boolean;
+  runs?: HookRunRecord[];
   error?: string;
 };
 
@@ -51,6 +57,7 @@ function endpointForHook(key: string) {
 
 export function HooksWorkspace() {
   const [hooks, setHooks] = useState<HookRecord[]>([]);
+  const [runs, setRuns] = useState<HookRunRecord[]>([]);
   const [payloads, setPayloads] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,12 +67,20 @@ export function HooksWorkspace() {
     startTransition(async () => {
       setError(null);
       try {
-        const response = await fetch("/admin/hooks", { cache: "no-store" });
-        const payload = (await response.json().catch(() => ({}))) as HooksPayload;
-        if (!response.ok || !payload.ok) {
-          throw new Error(payload.error || "Could not load hooks");
+        const [hooksResponse, runsResponse] = await Promise.all([
+          fetch("/admin/hooks", { cache: "no-store" }),
+          fetch("/admin/hooks/runs?limit=50", { cache: "no-store" }),
+        ]);
+        const hooksPayload = (await hooksResponse.json().catch(() => ({}))) as HooksPayload;
+        const runsPayload = (await runsResponse.json().catch(() => ({}))) as HookRunsPayload;
+        if (!hooksResponse.ok || !hooksPayload.ok) {
+          throw new Error(hooksPayload.error || "Could not load hooks");
         }
-        setHooks(payload.hooks ?? []);
+        if (!runsResponse.ok || !runsPayload.ok) {
+          throw new Error(runsPayload.error || "Could not load hook runs");
+        }
+        setHooks(hooksPayload.hooks ?? []);
+        setRuns(runsPayload.runs ?? []);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Could not load hooks");
       }
@@ -78,6 +93,15 @@ export function HooksWorkspace() {
 
   const customHooks = useMemo(() => hooks.filter((hook) => !hook.systemDefault), [hooks]);
   const systemHooks = useMemo(() => hooks.filter((hook) => hook.systemDefault), [hooks]);
+  const runsByHook = useMemo(() => {
+    const grouped = new Map<string, HookRunRecord[]>();
+    for (const run of runs) {
+      const hookRuns = grouped.get(run.hookKey) ?? [];
+      hookRuns.push(run);
+      grouped.set(run.hookKey, hookRuns);
+    }
+    return grouped;
+  }, [runs]);
 
   function updateHook(hook: HookRecord, update: Partial<HookRecord>) {
     startTransition(async () => {
@@ -157,7 +181,46 @@ export function HooksWorkspace() {
     setMessage(`Copied ${endpointForHook(hook.key)}`);
   }
 
+  function runSummary(run: HookRunRecord) {
+    if (run.status === "succeeded" && run.requestNumber) {
+      return `${run.hookName ?? run.hookKey} triggered request #${run.requestNumber}`;
+    }
+    if (run.status === "failed") {
+      return `${run.hookName ?? run.hookKey} failed`;
+    }
+    return `${run.hookName ?? run.hookKey} is running`;
+  }
+
+  function renderRun(run: HookRunRecord, compact = false) {
+    return (
+      <div key={run.id} className="flex flex-col gap-2 border border-border bg-background/70 p-3 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={run.status === "succeeded" ? "secondary" : run.status === "failed" ? "destructive" : "outline"}>
+              {run.status}
+            </Badge>
+            <p className="text-sm font-medium">{runSummary(run)}</p>
+          </div>
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            {formatTimestamp(run.startedAt)}
+            {run.requestTitle ? ` - ${run.requestTitle}` : ""}
+            {run.errorMessage ? ` - ${run.errorMessage}` : ""}
+          </p>
+        </div>
+        {run.requestNumber ? (
+          <Button asChild type="button" variant="outline" size={compact ? "sm" : "default"}>
+            <a href={`/admin?tab=requests&request=${run.requestNumber}`}>
+              <ExternalLink className="mr-2 h-4 w-4" />
+              Request #{run.requestNumber}
+            </a>
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderHook(hook: HookRecord) {
+    const hookRuns = runsByHook.get(hook.key) ?? [];
     return (
       <div key={hook.id} className="border border-border bg-card/70 p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -205,6 +268,23 @@ export function HooksWorkspace() {
             Test trigger
           </Button>
         </div>
+        <div className="mt-4 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Recent Runs
+            </p>
+            <Badge variant="outline">{hookRuns.length}</Badge>
+          </div>
+          {hookRuns.length ? (
+            <div className="space-y-2">
+              {hookRuns.slice(0, 3).map((run) => renderRun(run, true))}
+            </div>
+          ) : (
+            <p className="border border-border bg-background/70 p-3 text-sm text-muted-foreground">
+              No runs recorded yet.
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -226,6 +306,27 @@ export function HooksWorkspace() {
 
       {error ? <div className="border border-destructive bg-destructive/10 p-3 text-sm text-destructive">{error}</div> : null}
       {message ? <div className="border border-border bg-background p-3 text-sm">{message}</div> : null}
+
+      <div className="border border-border bg-card/70 p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold">Recent Hook Runs</h3>
+            <p className="text-sm text-muted-foreground">
+              Latest hook activity and the request created by each trigger.
+            </p>
+          </div>
+          <Badge variant="outline">{runs.length}</Badge>
+        </div>
+        {runs.length ? (
+          <div className="space-y-2">
+            {runs.slice(0, 8).map((run) => renderRun(run))}
+          </div>
+        ) : (
+          <p className="border border-border bg-background/70 p-3 text-sm text-muted-foreground">
+            No hook runs recorded yet.
+          </p>
+        )}
+      </div>
 
       <Collapsible defaultOpen>
         <CollapsibleTrigger asChild>

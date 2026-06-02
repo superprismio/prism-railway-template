@@ -16,6 +16,7 @@ import { dropChangeRequestStatusMigration } from './016_drop_change_request_stat
 import { changeRequestPrReviewCheckpointMigration } from './017_change_request_pr_review_checkpoint';
 import { agentResponseJobsMigration } from './018_agent_response_jobs';
 import { taskScriptsMigration } from './019_task_scripts';
+import { hookRunsMigration } from './020_hook_runs';
 
 export interface Migration {
   name: string;
@@ -41,4 +42,5 @@ export const migrations: Migration[] = [
   changeRequestPrReviewCheckpointMigration,
   agentResponseJobsMigration,
   taskScriptsMigration,
+  hookRunsMigration,
 ];
