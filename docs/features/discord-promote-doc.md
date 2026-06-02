@@ -22,9 +22,15 @@ Use a dedicated Discord slash command:
 /prism-promote-doc title:"Fireside Host Script"
 ```
 
-The command should run in the current Discord channel or thread. The title is
-optional in later slices, but the first slice can require it to avoid accidental
-generic document names.
+The command should run in the current Discord channel or thread. It defaults to
+the memory lane because most promoted Discord context is a session artifact,
+follow-up artifact, or useful snapshot rather than evergreen knowledge.
+
+Use the knowledge lane only for reusable or evergreen content:
+
+```text
+/prism-promote-doc title:"Fireside Host Script" lane:knowledge
+```
 
 Avoid nested slash command shapes such as `/prism promote-doc ...`; previous
 parameter parsing was less reliable, and the source adapter already uses
@@ -38,19 +44,23 @@ top-level commands such as `/prism-chat`, `/prism-record`, and
 - Ask Codex Runtime to turn that context into clean Markdown when available.
 - Fall back to a deterministic transcript-style Markdown document if Codex
   Runtime is unavailable.
-- Write the result to Prism Memory `POST /knowledge/inbox`.
+- Write the result to Prism Memory `POST /memory/inbox` by default.
+- Write to `POST /knowledge/inbox` only when `lane:knowledge` is selected.
 - Include metadata with Discord source refs, source channel/thread ids, source
   message ids, author, owners, tags, and triage fields.
 - Reply in Discord with the generated knowledge slug and human-readable Prism
   Memory link.
 
-The first slice writes to the knowledge inbox rather than directly to canonical
-knowledge docs. This keeps review/promotion policy in Prism Memory and avoids a
-Discord command silently publishing canonical content.
+The first slice writes memory artifacts by default. Knowledge inbox is reserved
+for reusable docs, templates, guides, policies, or other content expected to
+remain useful beyond the current session/thread.
 
 ## Metadata
 
-The generated knowledge inbox entry should include:
+The generated memory artifact should include source metadata and a shareable
+Prism artifact link.
+
+When using `lane:knowledge`, the generated knowledge inbox entry should include:
 
 - `title`
 - `slug`

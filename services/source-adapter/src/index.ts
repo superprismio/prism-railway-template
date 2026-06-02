@@ -2650,6 +2650,15 @@ function knowledgeInboxArtifactUrl(pathname: string): string | null {
   return `${prismArtifactBaseUrl()}/artifacts/${encodeURIComponent(artifactId)}`;
 }
 
+function memoryInboxArtifactUrl(pathname: string): string | null {
+  const filename = path.basename(pathname.trim());
+  const artifactId = filename.replace(/\.json$/i, "");
+  if (!artifactId || artifactId === filename) {
+    return null;
+  }
+  return `${prismArtifactBaseUrl()}/artifacts/${encodeURIComponent(artifactId)}`;
+}
+
 function discordMessageUrl(guildId: string, channelId: string, messageId: string): string {
   return `https://discord.com/channels/${guildId}/${channelId}/${messageId}`;
 }
@@ -2836,6 +2845,62 @@ async function writePromotedKnowledgeDoc(input: {
   };
 }
 
+async function writePromotedMemoryArtifact(input: {
+  title: string;
+  content: string;
+  interaction: ChatInputCommandInteraction;
+  messages: PromotionMessage[];
+  channelId: string;
+  threadId: string | null;
+}): Promise<{ path: string; artifactUrl: string | null }> {
+  const now = new Date().toISOString();
+  const response = await fetch(`${prismApiBaseUrl()}/memory/inbox`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Prism-Api-Key": prismApiKey(),
+    },
+    body: JSON.stringify({
+      source: "discord",
+      ts: now,
+      type: "promoted_doc",
+      content: input.content,
+      author: interactionDisplayName(input.interaction),
+      url: input.messages[input.messages.length - 1]?.url ?? null,
+      participants: [...new Set(input.messages.map((message) => message.authorName))],
+      participant_count: new Set(input.messages.map((message) => message.authorId)).size,
+      metadata: {
+        title: input.title,
+        slug: slugifyDocTitle(input.title),
+        source_system: "discord",
+        source_type: "promoted_doc",
+        source_id: input.threadId ?? input.channelId,
+        discord_channel_id: input.channelId,
+        discord_thread_id: input.threadId,
+        promoted_by: interactionDisplayName(input.interaction),
+        promoted_at: now,
+        message_count: input.messages.length,
+        external_refs: input.messages.slice(-5).map((message) => ({
+          system: "discord",
+          type: "message",
+          id: message.id,
+          url: message.url,
+          relationship: "evidence",
+        })),
+      },
+    }),
+  });
+  const payload = (await response.json().catch(() => null)) as JsonObject | null;
+  if (!response.ok) {
+    throw new Error(`PRISM_MEMORY_INBOX_FAILED:${response.status}:${String(payload?.error ?? "").slice(0, 300)}`);
+  }
+  const pathValue = typeof payload?.path === "string" ? payload.path : "";
+  return {
+    path: pathValue,
+    artifactUrl: memoryInboxArtifactUrl(pathValue),
+  };
+}
+
 function interactionDisplayName(interaction: ChatInputCommandInteraction): string {
   return interaction.member && "displayName" in interaction.member
     ? String(interaction.member.displayName)
@@ -2866,9 +2931,10 @@ async function handlePromoteDocCommand(interaction: ChatInputCommandInteraction)
   }
 
   const title = interaction.options.getString("title", true).trim();
+  const lane = interaction.options.getString("lane") === "knowledge" ? "knowledge" : "memory";
   await interaction.deferReply();
   try {
-    await interaction.editReply({ content: `Promoting **${title}** from recent Discord context...` });
+    await interaction.editReply({ content: `Promoting **${title}** from recent Discord context to ${lane}...` });
 
     const messages = await collectPromotionMessages(interaction);
     if (!messages.length) {
@@ -2882,7 +2948,28 @@ async function handlePromoteDocCommand(interaction: ChatInputCommandInteraction)
       channelId,
       threadId,
     });
-    const result = await writePromotedKnowledgeDoc({
+    if (lane === "knowledge") {
+      const result = await writePromotedKnowledgeDoc({
+        title,
+        content,
+        interaction,
+        messages,
+        channelId,
+        threadId,
+      });
+
+      await interaction.editReply({
+        content: [
+          `Promoted **${title}** to Prism Knowledge inbox.`,
+          `Slug: \`${result.slug}\``,
+          result.artifactUrl ? `Shareable artifact: ${result.artifactUrl}` : null,
+          `Knowledge view after promotion: ${result.knowledgeUrl}`,
+        ].filter(Boolean).join("\n"),
+      });
+      return;
+    }
+
+    const result = await writePromotedMemoryArtifact({
       title,
       content,
       interaction,
@@ -2890,14 +2977,12 @@ async function handlePromoteDocCommand(interaction: ChatInputCommandInteraction)
       channelId,
       threadId,
     });
-
     await interaction.editReply({
       content: [
-        `Promoted **${title}** to Prism Knowledge inbox.`,
-        `Slug: \`${result.slug}\``,
-        result.artifactUrl ? `Shareable artifact: ${result.artifactUrl}` : null,
-        `Knowledge view after promotion: ${result.knowledgeUrl}`,
-      ].filter(Boolean).join("\n"),
+        `Promoted **${title}** to Prism Memory.`,
+        result.artifactUrl ? `Shareable artifact: ${result.artifactUrl}` : `Memory inbox path: \`${result.path}\``,
+        "Use `lane:knowledge` next time only for reusable or evergreen content.",
+      ].join("\n"),
     });
   } catch (error) {
     await interaction.editReply({ content: `Could not promote document: ${describeError(error)}` });
@@ -2920,7 +3005,17 @@ function discordCommandDefinitions() {
     new SlashCommandBuilder()
       .setName("prism-promote-doc")
       .setDescription("Promote recent Discord context into a Prism Memory document.")
-      .addStringOption((option) => option.setName("title").setDescription("Document title.").setRequired(true)),
+      .addStringOption((option) => option.setName("title").setDescription("Document title.").setRequired(true))
+      .addStringOption((option) =>
+        option
+          .setName("lane")
+          .setDescription("Where to promote this document.")
+          .setRequired(false)
+          .addChoices(
+            { name: "memory", value: "memory" },
+            { name: "knowledge", value: "knowledge" },
+          ),
+      ),
     new SlashCommandBuilder().setName("prism-join").setDescription("Join your current voice channel."),
     new SlashCommandBuilder().setName("prism-record").setDescription("Start recording the current meeting."),
     new SlashCommandBuilder().setName("prism-stoprecord").setDescription("Stop recording the current meeting."),

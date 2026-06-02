@@ -338,7 +338,7 @@ Current slash commands:
 - `/prism-chat prompt:<text>`
 - `/prism-start-cr`
 - `/prism-continue-cr id:<number>`
-- `/prism-promote-doc title:<text>`
+- `/prism-promote-doc title:<text> lane:<memory|knowledge>`
 - `/prism-join`
 - `/prism-record`
 - `/prism-stoprecord`
