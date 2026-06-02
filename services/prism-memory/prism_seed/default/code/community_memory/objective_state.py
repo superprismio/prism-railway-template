@@ -350,7 +350,13 @@ class ObjectiveStateBuilder:
             },
         )
 
-        throughlines = self._build_throughlines(signals=signals, objectives=objectives)
+        throughlines = self._build_throughlines(
+            signals=signals,
+            objectives=objectives,
+            target_date=end_date,
+            active_days=active_days,
+            watching_days=watching_days,
+        )
         write_json(
             throughlines_path,
             {
@@ -1115,7 +1121,15 @@ class ObjectiveStateBuilder:
             return None
         return _slugify(anchor.replace(":", "-"))
 
-    def _build_throughlines(self, *, signals: List[Dict[str, Any]], objectives: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _build_throughlines(
+        self,
+        *,
+        signals: List[Dict[str, Any]],
+        objectives: List[Dict[str, Any]],
+        target_date: date,
+        active_days: int,
+        watching_days: int,
+    ) -> List[Dict[str, Any]]:
         objectives_by_anchor = {
             anchor: objective
             for objective in objectives
@@ -1139,11 +1153,14 @@ class ObjectiveStateBuilder:
                     "throughline_key": normalized_key,
                     "title": _title_from_key(normalized_key),
                     "summary": "",
-                    "status": "active",
+                    "status": "inactive",
                     "objective_keys": [],
                     "signal_ids": [],
                     "last_signal_at": None,
                     "enrichment_status": "disabled",
+                    "activity_score": 0.0,
+                    "attention_score": 0.0,
+                    "score_reasons": [],
                 }
                 throughlines_by_key[normalized_key] = throughline
             return throughline
@@ -1187,7 +1204,93 @@ class ObjectiveStateBuilder:
                 if not throughline.get("summary") and enrichment.get("summary"):
                     throughline["summary"] = str(enrichment.get("summary") or "")
 
-        return sorted(throughlines_by_key.values(), key=lambda item: str(item.get("throughline_key") or ""))
+        for throughline in throughlines_by_key.values():
+            self._score_throughline(
+                throughline=throughline,
+                objectives_by_key=objectives_by_key,
+                target_date=target_date,
+                active_days=active_days,
+                watching_days=watching_days,
+            )
+
+        status_rank = {"active": 3, "watching": 2, "inactive": 1, "archived": 0}
+        return sorted(
+            throughlines_by_key.values(),
+            key=lambda item: (
+                status_rank.get(str(item.get("status") or "inactive"), 0),
+                float(item.get("activity_score") or 0.0),
+                float(item.get("attention_score") or 0.0),
+                str(item.get("last_signal_at") or ""),
+                str(item.get("throughline_key") or ""),
+            ),
+            reverse=True,
+        )
+
+    def _score_throughline(
+        self,
+        *,
+        throughline: Dict[str, Any],
+        objectives_by_key: Dict[str, Dict[str, Any]],
+        target_date: date,
+        active_days: int,
+        watching_days: int,
+    ) -> None:
+        objective_keys = [
+            str(item)
+            for item in throughline.get("objective_keys", [])
+            if str(item)
+        ]
+        attached_objectives = [
+            objectives_by_key[key]
+            for key in objective_keys
+            if key in objectives_by_key
+        ]
+        statuses = {str(objective.get("status") or "inactive") for objective in attached_objectives}
+        active_objectives = sum(1 for objective in attached_objectives if str(objective.get("status") or "") == "active")
+        watching_objectives = sum(1 for objective in attached_objectives if str(objective.get("status") or "") == "watching")
+        max_attention = max(
+            [float(objective.get("attention_score") or 0.0) for objective in attached_objectives] or [0.0]
+        )
+        last_signal = _from_iso_optional(str(throughline.get("last_signal_at") or ""))
+        age_days = None
+        if last_signal is not None:
+            age_days = (_date_floor(target_date) - last_signal.replace(hour=0, minute=0, second=0, microsecond=0)).days
+
+        reasons: List[str] = []
+        if active_objectives:
+            status = "active"
+            activity_score = min(1.0, 0.55 + (0.08 * active_objectives))
+            reasons.append(f"{active_objectives} active objective(s)")
+        elif age_days is not None and age_days <= active_days:
+            status = "active"
+            activity_score = 0.55
+            reasons.append(f"signal in the last {active_days} day(s)")
+        elif watching_objectives:
+            status = "watching"
+            activity_score = 0.45
+            reasons.append(f"{watching_objectives} watching objective(s)")
+        elif age_days is not None and age_days <= watching_days:
+            status = "watching"
+            activity_score = 0.35
+            reasons.append(f"last signal {age_days} day(s) ago")
+        else:
+            status = "inactive"
+            activity_score = 0.1 if throughline.get("signal_ids") else 0.0
+            reasons.append("no recent active signals or objectives")
+
+        if "archived" in statuses and len(statuses) == 1:
+            status = "archived"
+            activity_score = 0.0
+            reasons = ["all attached objectives are archived"]
+
+        attention_score = min(
+            1.0,
+            max_attention + (0.05 * active_objectives) + (0.02 * watching_objectives),
+        )
+        throughline["status"] = status
+        throughline["activity_score"] = round(activity_score, 2)
+        throughline["attention_score"] = round(attention_score, 2)
+        throughline["score_reasons"] = reasons
 
     def _scores_for_objective(
         self,

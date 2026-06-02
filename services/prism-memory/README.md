@@ -117,6 +117,9 @@ The first objective-state slice extracts signals from raw records, inbox
 metadata, and knowledge source activity, builds active/watching/inactive
 objectives, and creates throughlines from explicit hints or optional objective
 enrichment suggestions.
+Throughlines use the same active/watching windows as objectives, so stale
+narratives decay out of open throughline views instead of staying active
+forever.
 
 Objective enrichment reuses the existing optional agentic ingest provider. When
 `AGENTIC_INGEST_ENABLED=true` and the configured provider is reachable, changed

@@ -322,6 +322,12 @@ membership, or editorial summaries. That should be a later operator workflow,
 likely paired with objective metadata upserts or Portal-owned thread/throughline
 records.
 
+Throughline lifecycle should be deterministic. A throughline is `active` when it
+has an active attached objective or recent signal, `watching` when its latest
+signal/objective is still inside the watching window, and `inactive` when it has
+aged out. `archived` should remain an explicit operator state, not an automatic
+decay outcome in the first implementation.
+
 High-confidence objective membership:
 
 - explicit `objective_keys` metadata
