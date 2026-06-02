@@ -116,7 +116,14 @@ Prism Memory exposes generated state for source-agnostic coordination:
 The first objective-state slice is deterministic. It extracts signals from raw
 records, inbox metadata, and knowledge source activity, builds
 active/watching/inactive objectives, and creates throughlines from explicit
-hints. Codex Runtime enrichment is not required for these state files.
+hints.
+
+Objective enrichment reuses the existing optional agentic ingest provider. When
+`AGENTIC_INGEST_ENABLED=true` and the configured OpenAI-compatible provider is
+reachable, changed objectives may receive a model-generated title, summary,
+status explanation, action items, decisions, open questions, and throughline
+suggestions. No additional env is required. When the toggle is off or the
+provider is unavailable, deterministic state still writes normally.
 
 Operators can rebuild generated state for a date without running the full memory
 pipeline:

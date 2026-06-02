@@ -301,12 +301,21 @@ registry of allowed objective keys. A key may come from an explicit source hint,
 such as `metadata.objective_keys`, or from a deterministic anchor such as a
 request number, PR reference, task key, external ref, or knowledge doc slug.
 
-This means early objective keys may be literal, such as `request-26` or
-`knowledge-sources-portal-docs-runtime-reliability`. That is acceptable for the
-first slice because it keeps identity deterministic and avoids requiring daily
-curation. A later slice may add objective metadata upserts, aliases, merge
+This means early objective keys may be literal, such as `request-26`. That is
+acceptable for the first slice because it keeps identity deterministic and
+avoids requiring daily curation. Not every anchor should become an objective:
+bare PR references, URLs, and doc-level knowledge anchors are evidence signals
+unless an explicit objective key or existing objective match connects them to
+work. A later slice may add objective metadata upserts, aliases, merge
 suggestions, or Portal-owned throughline links to make emergent objectives more
 human-readable without moving living state into `space.json`.
+
+Throughlines are also emergent/read-only in the first implementation. Agents and
+operators can influence them by sending explicit `throughline_keys` in source
+metadata, but there is not yet a Prism skill/API path for editing throughline
+titles, aliases, pinned objective membership, or editorial summaries. That
+should be a later operator workflow, likely paired with objective metadata
+upserts or Portal-owned thread/throughline records.
 
 High-confidence objective membership:
 
@@ -353,7 +362,12 @@ Avoid opaque model-only scores. If a score exists, it should include reasons.
 
 ## Codex Runtime Enrichment
 
-Codex Runtime enrichment is optional but important for usefulness.
+Codex Runtime enrichment is optional but important for usefulness. The first
+implementation reuses the existing `agentic_ingest` provider and env toggle. If
+`AGENTIC_INGEST_ENABLED=true` and the configured OpenAI-compatible provider is
+reachable, changed objectives can be enriched after deterministic objective
+building. If the toggle is off or the provider is unavailable, deterministic
+state still writes normally.
 
 The rule is:
 
