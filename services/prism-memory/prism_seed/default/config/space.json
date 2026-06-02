@@ -132,6 +132,27 @@
     }
   },
   "state": {
+    "objectives": {
+      "enabled": true,
+      "activity_windows": {
+        "active_days": 7,
+        "watching_days": 30
+      },
+      "signals": {
+        "request_refs": true,
+        "artifact_refs": true,
+        "task_refs": true,
+        "workflow_refs": true,
+        "pr_refs": true,
+        "url_refs": true,
+        "explicit_objective_keys": true,
+        "explicit_throughline_keys": true
+      },
+      "enrichment": {
+        "enabled": false,
+        "changed_only": true
+      }
+    },
     "projects": {
       "enabled": true,
       "activity_windows": {

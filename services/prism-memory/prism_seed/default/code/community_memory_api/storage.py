@@ -57,6 +57,87 @@ class FilesystemStorageBackend:
     def state_projects(self) -> Any:
         return self._load_json(self.root / "state" / "current" / "projects.json")
 
+    def state_signals(
+        self,
+        anchor: Optional[str] = None,
+        kind: Optional[str] = None,
+        source: Optional[str] = None,
+        objective_key: Optional[str] = None,
+        throughline_key: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Any:
+        payload = self._load_json(self.root / "state" / "current" / "signals.json")
+        signals = [item for item in payload.get("signals", []) if isinstance(item, dict)]
+        if anchor:
+            signals = [item for item in signals if str(item.get("anchor") or "") == anchor]
+        if kind:
+            signals = [item for item in signals if str(item.get("kind") or "") == kind]
+        if source:
+            signals = [item for item in signals if str(item.get("source") or "") == source]
+        if objective_key:
+            signals = [item for item in signals if str(item.get("objective_key") or "") == objective_key]
+        if throughline_key:
+            signals = [item for item in signals if str(item.get("throughline_key") or "") == throughline_key]
+        if limit is not None:
+            signals = signals[-limit:]
+        result = dict(payload)
+        result["signals"] = signals
+        result["total"] = len(signals)
+        return result
+
+    def state_objectives(
+        self,
+        status: Optional[str] = None,
+        source: Optional[str] = None,
+        external_system: Optional[str] = None,
+        objective_key: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Any:
+        payload = self._load_json(self.root / "state" / "current" / "objectives.json")
+        objectives = [item for item in payload.get("objectives", []) if isinstance(item, dict)]
+        if status:
+            objectives = [item for item in objectives if str(item.get("status") or "") == status]
+        if source:
+            objectives = [
+                item for item in objectives
+                if source in [str(value) for value in item.get("sources", [])]
+            ]
+        if external_system:
+            objectives = [
+                item for item in objectives
+                if any(
+                    isinstance(ref, dict) and str(ref.get("system") or "") == external_system
+                    for ref in item.get("external_refs", [])
+                )
+            ]
+        if objective_key:
+            objectives = [item for item in objectives if str(item.get("objective_key") or "") == objective_key]
+        if limit is not None:
+            objectives = objectives[:limit]
+        result = dict(payload)
+        result["objectives"] = objectives
+        result["total"] = len(objectives)
+        return result
+
+    def state_throughlines(
+        self,
+        status: Optional[str] = None,
+        throughline_key: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Any:
+        payload = self._load_json(self.root / "state" / "current" / "throughlines.json")
+        throughlines = [item for item in payload.get("throughlines", []) if isinstance(item, dict)]
+        if status:
+            throughlines = [item for item in throughlines if str(item.get("status") or "") == status]
+        if throughline_key:
+            throughlines = [item for item in throughlines if str(item.get("throughline_key") or "") == throughline_key]
+        if limit is not None:
+            throughlines = throughlines[:limit]
+        result = dict(payload)
+        result["throughlines"] = throughlines
+        result["total"] = len(throughlines)
+        return result
+
     def upsert_state_project(self, project_key: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         normalized_key = self._safe_slug(project_key)
         if not normalized_key:
