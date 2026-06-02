@@ -119,11 +119,13 @@ active/watching/inactive objectives, and creates throughlines from explicit
 hints.
 
 Objective enrichment reuses the existing optional agentic ingest provider. When
-`AGENTIC_INGEST_ENABLED=true` and the configured OpenAI-compatible provider is
-reachable, changed objectives may receive a model-generated title, summary,
-status explanation, action items, decisions, open questions, and throughline
-suggestions. No additional env is required. When the toggle is off or the
-provider is unavailable, deterministic state still writes normally.
+`AGENTIC_INGEST_ENABLED=true` and the configured provider is reachable, changed
+objectives may receive a model-generated title, summary, status explanation,
+action items, decisions, open questions, and throughline suggestions. The
+provider client supports OpenAI-compatible `/v1/chat/completions` endpoints and
+falls back to Codex Runtime `/v1/responses/jobs` when chat completions returns
+404. No additional env is required. When the toggle is off or the provider is
+unavailable, deterministic state still writes normally.
 
 Operators can rebuild generated state for a date without running the full memory
 pipeline:

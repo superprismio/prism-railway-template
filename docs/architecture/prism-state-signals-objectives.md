@@ -366,9 +366,11 @@ Avoid opaque model-only scores. If a score exists, it should include reasons.
 
 Codex Runtime enrichment is optional but important for usefulness. The first
 implementation reuses the existing `agentic_ingest` provider and env toggle. If
-`AGENTIC_INGEST_ENABLED=true` and the configured OpenAI-compatible provider is
-reachable, changed objectives can be enriched after deterministic objective
-building. If the toggle is off or the provider is unavailable, deterministic
+`AGENTIC_INGEST_ENABLED=true` and the configured provider is reachable, changed
+objectives can be enriched after deterministic objective building. The provider
+client should support OpenAI-compatible `/v1/chat/completions` endpoints and
+fall back to Codex Runtime `/v1/responses/jobs` when chat completions is not
+available. If the toggle is off or the provider is unavailable, deterministic
 state still writes normally.
 
 The rule is:
