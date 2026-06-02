@@ -11,8 +11,8 @@ thread where the agent and humans work out the actual draft. When the draft is
 good enough, the operator should be able to promote the current Discord context
 into Prism Memory and copy a stable link into another system such as Portal.
 
-Portal attachment is a separate operation. This feature creates the Prism
-artifact and returns the link; Portal can attach that link later.
+This feature creates the Prism artifact and returns the link. Any external
+system can attach or reference that link in its own workflow.
 
 ## Command Shape
 
@@ -72,7 +72,7 @@ The generated knowledge inbox entry should include:
 
 ## Deferred
 
-- Portal session attachment.
+- External-system attachment flows.
 - Message range selection.
 - Reply-to-message promotion.
 - Operator review UI for pending promoted docs.

@@ -63,9 +63,11 @@ Use metadata like:
 
 ## Rules
 
-- Do not attach the document to Portal as part of this workflow; Portal
-  attachment is a separate operation.
-- Do not write directly to canonical knowledge docs from Discord.
-- Keep promoted docs in `status: "draft"` unless the operator explicitly asks
-  for a stricter reviewed/published flow.
-- Preserve Discord source references so later reviewers can inspect provenance.
+- Use Prism Memory `knowledge/inbox` for promoted Discord docs. The inbox keeps
+  the write path explicit and gives Prism Memory a stable artifact to link.
+- Use an allowed knowledge status. Default to `draft` for a newly promoted
+  document because it came from chat and may still need operator editing.
+- Preserve Discord source references so future readers can inspect provenance.
+- Do not assume anything about external systems. If another system needs this
+  document, return the Prism link so that system can attach or reference it in
+  its own workflow.
