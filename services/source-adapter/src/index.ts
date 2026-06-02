@@ -38,6 +38,7 @@ const WRITE_TARGET_PATTERN =
   /\b(task|workflow|skill|hook|request|change request|cr\s*#?\d+|artifact|comment|message|discord|telegram|channel|repo|repository|branch|pull request|pr\s*#?\d+|issue|settings?|branding|policy|env|environment|file|code)\b/i;
 const PROMOTE_DOC_MESSAGE_LIMIT = 80;
 const PROMOTE_DOC_TRANSCRIPT_MAX_CHARS = 20_000;
+const PROMOTE_DOC_CAPABILITY = "memory.promote_doc";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -398,6 +399,9 @@ function capabilitiesForMode(mode: DiscordAccessMode): string[] {
         "workflows.run_existing",
         "requests.create",
         "adapter.send_message",
+        "memory.write",
+        "knowledge.write",
+        PROMOTE_DOC_CAPABILITY,
         "skills.author",
         "tasks.author",
         "workflows.author",
@@ -2641,15 +2645,6 @@ function slugifyDocTitle(value: string): string {
     .slice(0, 80) || `discord-doc-${new Date().toISOString().slice(0, 10)}`;
 }
 
-function knowledgeInboxArtifactUrl(pathname: string): string | null {
-  const pathValue = pathname.trim();
-  if (!pathValue) {
-    return null;
-  }
-  const artifactId = `knowledge-inbox--incoming--${pathValue.replace(/\//g, "~")}`;
-  return `${prismArtifactBaseUrl()}/artifacts/${encodeURIComponent(artifactId)}`;
-}
-
 function memoryInboxArtifactUrl(pathname: string): string | null {
   const filename = path.basename(pathname.trim());
   const artifactId = filename.replace(/\.json$/i, "");
@@ -2675,9 +2670,10 @@ async function collectPromotionMessages(interaction: ChatInputCommandInteraction
   if (!channel || !interaction.guildId || !("messages" in channel)) {
     throw new Error("This command must be used in a readable Discord text channel or thread.");
   }
+  const cutoffTimestamp = interaction.createdTimestamp;
   const fetched = await channel.messages.fetch({ limit: PROMOTE_DOC_MESSAGE_LIMIT });
   return [...fetched.values()]
-    .filter((message) => message.content.trim() && message.id !== interaction.id)
+    .filter((message) => message.content.trim() && message.createdTimestamp <= cutoffTimestamp)
     .sort((left, right) => left.createdTimestamp - right.createdTimestamp)
     .map((message) => ({
       id: message.id,
@@ -2771,6 +2767,19 @@ async function draftPromotedMarkdown(input: {
   }
 }
 
+function sanitizePromotedDocument(content: string, context: { guildId: string | null; channelId: string; threadId: string | null }) {
+  const sanitized = sanitizePublicOutput(content);
+  if (sanitized.redactions.length) {
+    console.warn("[discord-adapter] sanitized promoted Discord document", {
+      guildId: context.guildId,
+      channelId: context.channelId,
+      threadId: context.threadId,
+      redactions: sanitized.redactions,
+    });
+  }
+  return sanitized.text.trim();
+}
+
 async function writePromotedKnowledgeDoc(input: {
   title: string;
   content: string;
@@ -2778,7 +2787,7 @@ async function writePromotedKnowledgeDoc(input: {
   messages: PromotionMessage[];
   channelId: string;
   threadId: string | null;
-}): Promise<{ path: string; metadataPath: string | null; slug: string; artifactUrl: string | null; knowledgeUrl: string }> {
+}): Promise<{ path: string; metadataPath: string | null; slug: string }> {
   const now = new Date().toISOString();
   const slug = slugifyDocTitle(input.title);
   const filename = `${slug}.md`;
@@ -2834,14 +2843,15 @@ async function writePromotedKnowledgeDoc(input: {
   if (!response.ok) {
     throw new Error(`PRISM_KNOWLEDGE_INBOX_FAILED:${response.status}:${String(payload?.error ?? "").slice(0, 300)}`);
   }
-  const pathValue = typeof payload?.path === "string" ? payload.path : "";
+  const pathValue = typeof payload?.path === "string" ? payload.path.trim() : "";
+  if (!pathValue) {
+    throw new Error("PRISM_KNOWLEDGE_INBOX_FAILED:missing_path");
+  }
   const metadataPath = typeof payload?.metadata_path === "string" ? payload.metadata_path : null;
   return {
     path: pathValue,
     metadataPath,
     slug,
-    artifactUrl: knowledgeInboxArtifactUrl(pathValue),
-    knowledgeUrl: `${prismArtifactBaseUrl()}/knowledge/view/${encodeURIComponent(slug)}`,
   };
 }
 
@@ -2894,7 +2904,10 @@ async function writePromotedMemoryArtifact(input: {
   if (!response.ok) {
     throw new Error(`PRISM_MEMORY_INBOX_FAILED:${response.status}:${String(payload?.error ?? "").slice(0, 300)}`);
   }
-  const pathValue = typeof payload?.path === "string" ? payload.path : "";
+  const pathValue = typeof payload?.path === "string" ? payload.path.trim() : "";
+  if (!pathValue) {
+    throw new Error("PRISM_MEMORY_INBOX_FAILED:missing_path");
+  }
   return {
     path: pathValue,
     artifactUrl: memoryInboxArtifactUrl(pathValue),
@@ -2905,6 +2918,10 @@ function interactionDisplayName(interaction: ChatInputCommandInteraction): strin
   return interaction.member && "displayName" in interaction.member
     ? String(interaction.member.displayName)
     : interaction.user.displayName || interaction.user.username;
+}
+
+function canPromoteDiscordDoc(sourcePolicy: ResolvedDiscordAccessPolicy): boolean {
+  return sourcePolicy.mode === "full" || sourcePolicy.capabilities.includes(PROMOTE_DOC_CAPABILITY);
 }
 
 async function handlePromoteDocCommand(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -2925,12 +2942,36 @@ async function handlePromoteDocCommand(interaction: ChatInputCommandInteraction)
     authorId: interaction.user.id,
     roleIds: roleIdsFromInteraction(interaction),
   });
-  if (sourcePolicy.mode !== "run-approved" && sourcePolicy.mode !== "full") {
+  if (!canPromoteDiscordDoc(sourcePolicy)) {
     await interaction.reply({ content: "This Discord target is not approved for Prism document promotion.", ephemeral: true });
     return;
   }
 
   const title = interaction.options.getString("title", true).trim();
+  if (!title) {
+    await interaction.reply({ content: "Provide a non-empty document title.", ephemeral: true });
+    return;
+  }
+  const userLimit = checkDiscordRateLimit(
+    `discord:promote-doc:user:${interaction.user.id}:${sourcePolicy.mode}`,
+    sourcePolicy.rateLimit,
+  );
+  const channelLimit = checkDiscordRateLimit(
+    `discord:promote-doc:channel:${threadId ?? channelId}:${sourcePolicy.mode}`,
+    {
+      windowSeconds: sourcePolicy.rateLimit.windowSeconds,
+      maxRequests: Math.max(1, sourcePolicy.rateLimit.maxRequests * 2),
+    },
+  );
+  const blockedLimit = !userLimit.ok ? userLimit : !channelLimit.ok ? channelLimit : null;
+  if (blockedLimit) {
+    await interaction.reply({
+      content: `Prism document promotion is rate limited here. Try again in about ${blockedLimit.retryAfterSeconds} seconds.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
   const lane = interaction.options.getString("lane") === "knowledge" ? "knowledge" : "memory";
   await interaction.deferReply();
   try {
@@ -2941,13 +2982,18 @@ async function handlePromoteDocCommand(interaction: ChatInputCommandInteraction)
       await interaction.editReply({ content: "I could not find recent message content to promote." });
       return;
     }
-    const content = await draftPromotedMarkdown({
+    const draftedContent = await draftPromotedMarkdown({
       title,
       messages,
       guildId: interaction.guildId!,
       channelId,
       threadId,
     });
+    const content = sanitizePromotedDocument(draftedContent, { guildId: interaction.guildId, channelId, threadId });
+    if (!content) {
+      await interaction.editReply({ content: "The promoted document was empty after sanitization." });
+      return;
+    }
     if (lane === "knowledge") {
       const result = await writePromotedKnowledgeDoc({
         title,
@@ -2962,8 +3008,9 @@ async function handlePromoteDocCommand(interaction: ChatInputCommandInteraction)
         content: [
           `Promoted **${title}** to Prism Knowledge inbox.`,
           `Slug: \`${result.slug}\``,
-          result.artifactUrl ? `Shareable artifact: ${result.artifactUrl}` : null,
-          `Knowledge view after promotion: ${result.knowledgeUrl}`,
+          `Knowledge inbox path: \`${result.path}\``,
+          result.metadataPath ? `Metadata path: \`${result.metadataPath}\`` : null,
+          "A knowledge view link will be available after review/indexing promotes this inbox entry.",
         ].filter(Boolean).join("\n"),
       });
       return;

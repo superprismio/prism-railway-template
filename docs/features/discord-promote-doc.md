@@ -44,12 +44,20 @@ top-level commands such as `/prism-chat`, `/prism-record`, and
 - Ask Codex Runtime to turn that context into clean Markdown when available.
 - Fall back to a deterministic transcript-style Markdown document if Codex
   Runtime is unavailable.
+- Require Discord access mode `full` or the explicit `memory.promote_doc`
+  capability because the command authors new Prism assets.
+- Apply the configured Discord rate limit before writing to Prism.
+- Sanitize public-output secrets from the generated document before writing it
+  to a shareable Prism surface.
 - Write the result to Prism Memory `POST /memory/inbox` by default.
 - Write to `POST /knowledge/inbox` only when `lane:knowledge` is selected.
 - Include metadata with Discord source refs, source channel/thread ids, source
   message ids, author, owners, tags, and triage fields.
-- Reply in Discord with the generated knowledge slug and human-readable Prism
-  Memory link.
+- Reply in Discord with a shareable Prism Memory artifact link for the default
+  memory lane.
+- Reply with the knowledge inbox path and slug for `lane:knowledge`; a
+  human-readable knowledge view link is only available after review/indexing
+  promotes the inbox entry.
 
 The first slice writes memory artifacts by default. Knowledge inbox is reserved
 for reusable docs, templates, guides, policies, or other content expected to

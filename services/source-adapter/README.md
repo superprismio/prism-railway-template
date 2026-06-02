@@ -344,6 +344,12 @@ Current slash commands:
 - `/prism-stoprecord`
 - `/prism-rollcall`
 
+`/prism-promote-doc` writes new Prism assets, so it requires Discord access mode
+`full` or the explicit `memory.promote_doc` capability. It defaults to the memory
+lane and returns a shareable artifact link there; `lane:knowledge` writes to the
+knowledge inbox and returns the inbox paths until review/indexing promotes the
+entry.
+
 Current voice command status:
 
 - `/prism-join` joins the caller's current voice channel
