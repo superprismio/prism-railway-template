@@ -607,6 +607,10 @@ knowledge-source:<source-id>
 
 This lets source-backed knowledge changes participate in objectives and future
 knowledge graph views without copying the whole document body into memory.
+Doc-level `knowledge:<slug>` anchors should not create standalone objectives
+unless an explicit objective key is present. Otherwise large source syncs can
+flood the objective list with one objective per document. Source-level anchors
+such as `knowledge-source:<source-id>` may still become emergent objectives.
 
 ### Idempotency
 

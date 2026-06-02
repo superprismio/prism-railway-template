@@ -743,6 +743,8 @@ class ObjectiveStateBuilder:
             return None
         if anchor.startswith("url:"):
             return None
+        if anchor.startswith("knowledge:"):
+            return None
         return _slugify(anchor.replace(":", "-"))
 
     def _build_throughlines(self, *, signals: List[Dict[str, Any]], objectives: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

@@ -68,6 +68,24 @@ class FilesystemStorageBackend:
     ) -> Any:
         payload = self._load_json(self.root / "state" / "current" / "signals.json")
         signals = [item for item in payload.get("signals", []) if isinstance(item, dict)]
+        objective_signal_ids: set[str] = set()
+        if objective_key:
+            try:
+                objectives_payload = self._load_json(self.root / "state" / "current" / "objectives.json")
+            except StorageError:
+                objectives_payload = {}
+            objectives = objectives_payload.get("objectives", []) if isinstance(objectives_payload, dict) else []
+            for objective in objectives:
+                if not isinstance(objective, dict):
+                    continue
+                if str(objective.get("objective_key") or "") != objective_key:
+                    continue
+                objective_signal_ids = {
+                    str(signal_id)
+                    for signal_id in objective.get("signal_ids", [])
+                    if str(signal_id).strip()
+                }
+                break
         if anchor:
             signals = [item for item in signals if str(item.get("anchor") or "") == anchor]
         if kind:
@@ -75,7 +93,11 @@ class FilesystemStorageBackend:
         if source:
             signals = [item for item in signals if str(item.get("source") or "") == source]
         if objective_key:
-            signals = [item for item in signals if str(item.get("objective_key") or "") == objective_key]
+            signals = [
+                item for item in signals
+                if str(item.get("objective_key") or "") == objective_key
+                or str(item.get("signal_id") or "") in objective_signal_ids
+            ]
         if throughline_key:
             signals = [item for item in signals if str(item.get("throughline_key") or "") == throughline_key]
         if limit is not None:
