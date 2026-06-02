@@ -627,6 +627,28 @@ export interface HookRecord {
   updatedAt: string;
 }
 
+export interface HookRunRecord {
+  id: string;
+  hookId: string | null;
+  hookKey: string;
+  hookName: string | null;
+  workflowKey: string | null;
+  status: string;
+  source: string;
+  requestId: string | null;
+  requestNumber: number | null;
+  requestTitle: string | null;
+  autoStartQueued: boolean;
+  autoStartStarted: boolean;
+  errorMessage: string | null;
+  payload: Record<string, unknown>;
+  result: Record<string, unknown>;
+  startedAt: string;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface WorkflowRecord {
   id: string;
   key: string;
@@ -779,6 +801,28 @@ export interface UpsertHookInput {
   requestTemplate?: Record<string, unknown>;
   autoRun?: Record<string, unknown>;
   systemDefault?: boolean;
+}
+
+export interface CreateHookRunInput {
+  hookId?: string | null;
+  hookKey: string;
+  hookName?: string | null;
+  workflowKey?: string | null;
+  source?: string | null;
+  payload?: Record<string, unknown>;
+  startedAt?: string | null;
+}
+
+export interface UpdateHookRunInput {
+  status?: string;
+  requestId?: string | null;
+  requestNumber?: number | null;
+  requestTitle?: string | null;
+  autoStartQueued?: boolean;
+  autoStartStarted?: boolean;
+  errorMessage?: string | null;
+  result?: Record<string, unknown>;
+  finishedAt?: string | null;
 }
 
 export interface CreateTaskRunInput {
@@ -1052,6 +1096,28 @@ interface HookRow {
   updated_at: string;
 }
 
+interface HookRunRow {
+  id: string;
+  hook_id: string | null;
+  hook_key: string;
+  hook_name: string | null;
+  workflow_key: string | null;
+  status: string;
+  source: string;
+  request_id: string | null;
+  request_number: number | null;
+  request_title: string | null;
+  auto_start_queued: number;
+  auto_start_started: number;
+  error_message: string | null;
+  payload_json: string;
+  result_json: string;
+  started_at: string;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 function mapTaskRow(row: TaskRow): TaskRecord {
   return {
     id: row.id,
@@ -1101,6 +1167,30 @@ function mapHookRow(row: HookRow): HookRecord {
     autoRun: parseJsonValue<Record<string, unknown>>(row.auto_run_json, {}),
     systemDefault: row.system_default === 1,
     lastTriggeredAt: row.last_triggered_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapHookRunRow(row: HookRunRow): HookRunRecord {
+  return {
+    id: row.id,
+    hookId: row.hook_id,
+    hookKey: row.hook_key,
+    hookName: row.hook_name,
+    workflowKey: row.workflow_key,
+    status: row.status,
+    source: row.source,
+    requestId: row.request_id,
+    requestNumber: row.request_number,
+    requestTitle: row.request_title,
+    autoStartQueued: row.auto_start_queued === 1,
+    autoStartStarted: row.auto_start_started === 1,
+    errorMessage: row.error_message,
+    payload: parseJsonValue<Record<string, unknown>>(row.payload_json, {}),
+    result: parseJsonValue<Record<string, unknown>>(row.result_json, {}),
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -5612,6 +5702,100 @@ export function listHooks(): HookRecord[] {
 export function markHookTriggered(key: string, triggeredAt = new Date().toISOString()): HookRecord | null {
   getDb().prepare('UPDATE hooks SET last_triggered_at = ?, updated_at = ? WHERE key = ?').run(triggeredAt, triggeredAt, key);
   return getHookByKey(key);
+}
+
+export function createHookRun(input: CreateHookRunInput): HookRunRecord {
+  const now = new Date().toISOString();
+  const startedAt = normalizeText(input.startedAt) || now;
+  const id = randomUUID();
+  const hookKey = normalizeText(input.hookKey);
+  if (!hookKey) {
+    throw new Error('HOOK_RUN_KEY_REQUIRED');
+  }
+  getDb().prepare(
+    `INSERT INTO hook_runs (
+       id, hook_id, hook_key, hook_name, workflow_key, status, source, payload_json,
+       result_json, started_at, created_at, updated_at
+     ) VALUES (
+       @id, @hookId, @hookKey, @hookName, @workflowKey, 'running', @source, @payloadJson,
+       '{}', @startedAt, @createdAt, @updatedAt
+     )`,
+  ).run({
+    id,
+    hookId: normalizeText(input.hookId) || null,
+    hookKey,
+    hookName: normalizeText(input.hookName) || null,
+    workflowKey: normalizeText(input.workflowKey) || null,
+    source: normalizeText(input.source) || 'hook',
+    payloadJson: JSON.stringify(input.payload ?? {}),
+    startedAt,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const run = getHookRun(id);
+  if (!run) {
+    throw new Error('HOOK_RUN_CREATE_FAILED');
+  }
+  return run;
+}
+
+export function getHookRun(id: string): HookRunRecord | null {
+  const row = getDb().prepare('SELECT * FROM hook_runs WHERE id = ?').get(id) as HookRunRow | undefined;
+  return row ? mapHookRunRow(row) : null;
+}
+
+export function updateHookRun(id: string, input: UpdateHookRunInput): HookRunRecord | null {
+  const current = getHookRun(id);
+  if (!current) {
+    return null;
+  }
+  const now = new Date().toISOString();
+  const status = normalizeText(input.status) || current.status;
+  const finishedAt =
+    input.finishedAt === undefined
+      ? current.finishedAt
+      : normalizeText(input.finishedAt) || (status === 'running' ? null : now);
+  getDb().prepare(
+    `UPDATE hook_runs
+     SET status = @status,
+         request_id = @requestId,
+         request_number = @requestNumber,
+         request_title = @requestTitle,
+         auto_start_queued = @autoStartQueued,
+         auto_start_started = @autoStartStarted,
+         error_message = @errorMessage,
+         result_json = @resultJson,
+         finished_at = @finishedAt,
+         updated_at = @updatedAt
+     WHERE id = @id`,
+  ).run({
+    id,
+    status,
+    requestId: input.requestId === undefined ? current.requestId : normalizeText(input.requestId) || null,
+    requestNumber: input.requestNumber === undefined ? current.requestNumber : input.requestNumber,
+    requestTitle: input.requestTitle === undefined ? current.requestTitle : normalizeText(input.requestTitle) || null,
+    autoStartQueued:
+      input.autoStartQueued === undefined ? (current.autoStartQueued ? 1 : 0) : input.autoStartQueued ? 1 : 0,
+    autoStartStarted:
+      input.autoStartStarted === undefined ? (current.autoStartStarted ? 1 : 0) : input.autoStartStarted ? 1 : 0,
+    errorMessage: input.errorMessage === undefined ? current.errorMessage : normalizeText(input.errorMessage) || null,
+    resultJson: input.result === undefined ? JSON.stringify(current.result) : JSON.stringify(input.result),
+    finishedAt,
+    updatedAt: now,
+  });
+  return getHookRun(id);
+}
+
+export function listHookRuns(input: { hookKey?: string | null; limit?: number } = {}): HookRunRecord[] {
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 50), 200));
+  const hookKey = normalizeText(input.hookKey);
+  const db = getDb();
+  const rows = hookKey
+    ? db
+        .prepare('SELECT * FROM hook_runs WHERE hook_key = ? ORDER BY created_at DESC LIMIT ?')
+        .all(hookKey, limit)
+    : db.prepare('SELECT * FROM hook_runs ORDER BY created_at DESC LIMIT ?').all(limit);
+  return (rows as HookRunRow[]).map(mapHookRunRow);
 }
 
 export function deleteCustomHookByKey(key: string): HookRecord | null {
