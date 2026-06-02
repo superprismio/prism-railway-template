@@ -121,6 +121,32 @@ Throughlines use the same active/watching windows as objectives, so stale
 narratives decay out of open throughline views instead of staying active
 forever.
 
+Throughline curation is durable. Ops-authenticated agents can edit, merge, or
+hide throughlines through direct state routes; those changes are stored in
+`state/curation/throughlines.json` and reapplied during later state runs and
+backfills:
+
+```bash
+curl -fsSL \
+  -X PATCH \
+  -H "content-type: application/json" \
+  -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
+  "$PRISM_MEMORY_BASE_URL/state/throughlines/website-analytics-cleanup" \
+  -d '{"title":"Remove Fathom Analytics","kind":"project","pinned":true}'
+
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
+  "$PRISM_MEMORY_BASE_URL/state/throughlines/raidguild-website-maintenance/merge" \
+  -d '{"target_key":"website-analytics-cleanup","reason":"Duplicate throughline"}'
+
+curl -fsSL \
+  -X DELETE \
+  -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
+  "$PRISM_MEMORY_BASE_URL/state/throughlines/noisy-generated-key"
+```
+
 Objective enrichment reuses the existing optional agentic ingest provider. When
 `AGENTIC_INGEST_ENABLED=true` and the configured provider is reachable, changed
 objectives may receive a model-generated title, summary, status explanation,
