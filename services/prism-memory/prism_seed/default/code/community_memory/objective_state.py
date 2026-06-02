@@ -7,11 +7,10 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 from .activity import ActivityLogger
 from .config_loader import SpaceConfig
+from .provider_client import call_json_provider
 from .utils import ensure_dir, read_json, to_iso, write_json
 
 
@@ -204,28 +203,6 @@ def _normalize_knowledge_event(raw: Dict[str, Any], fallback_ts: str) -> Dict[st
         "url": str(raw.get("url") or (f"/knowledge/view/{doc_slug}" if doc_slug else "")).strip(),
         "changed_at": changed_at,
     }
-
-
-def _extract_provider_message_content(payload: Dict[str, Any]) -> str:
-    choices = payload.get("choices")
-    if not isinstance(choices, list) or not choices:
-        raise RuntimeError("provider_missing_choices")
-    message = choices[0].get("message")
-    if not isinstance(message, dict):
-        raise RuntimeError("provider_missing_message")
-    content = message.get("content")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: List[str] = []
-        for item in content:
-            if isinstance(item, dict) and item.get("type") == "text":
-                text = item.get("text")
-                if isinstance(text, str):
-                    parts.append(text)
-        if parts:
-            return "\n".join(parts)
-    raise RuntimeError("provider_missing_content")
 
 
 def _normalize_enrichment(raw: Dict[str, Any]) -> Dict[str, Any]:
@@ -1066,11 +1043,6 @@ class ObjectiveStateBuilder:
         objective: Dict[str, Any],
         signals: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        provider = self.config.agentic_ingest.provider
-        base = provider.base_url.rstrip("/")
-        if not base.endswith("/v1"):
-            base = f"{base}/v1"
-        url = f"{base}/chat/completions"
         signal_payload = []
         for signal in signals[:40]:
             evidence = signal.get("evidence") if isinstance(signal.get("evidence"), dict) else {}
@@ -1099,41 +1071,17 @@ class ObjectiveStateBuilder:
             "signals": signal_payload,
         }
         policy_prompt = self._objective_policy_prompt()
-        body = {
-            "model": provider.model,
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        OBJECTIVE_ENRICHMENT_SYSTEM_PROMPT
-                        if not policy_prompt
-                        else f"{OBJECTIVE_ENRICHMENT_SYSTEM_PROMPT}\n\nCommunity policy:\n{policy_prompt}"
-                    ),
-                },
-                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=True)},
-            ],
-        }
-        headers = {"Content-Type": "application/json"}
-        if provider.api_key:
-            headers["Authorization"] = f"Bearer {provider.api_key}"
-        request = Request(
-            url,
-            method="POST",
-            headers=headers,
-            data=json.dumps(body, ensure_ascii=True).encode("utf-8"),
+        parsed = call_json_provider(
+            self.config.agentic_ingest.provider,
+            system_prompt=(
+                OBJECTIVE_ENRICHMENT_SYSTEM_PROMPT
+                if not policy_prompt
+                else f"{OBJECTIVE_ENRICHMENT_SYSTEM_PROMPT}\n\nCommunity policy:\n{policy_prompt}"
+            ),
+            user_payload=user_payload,
+            session_id=f"objective-enrichment-{objective.get('objective_key') or 'unknown'}",
+            purpose="prism_memory_objective_enrichment",
         )
-        try:
-            with urlopen(request, timeout=provider.timeout_seconds) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except HTTPError as exc:  # pragma: no cover - runtime provider path
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"provider_http_error:{exc.code}:{detail}") from exc
-        except URLError as exc:  # pragma: no cover - runtime provider path
-            raise RuntimeError(f"provider_unreachable:{exc.reason}") from exc
-        content = _extract_provider_message_content(payload)
-        parsed = json.loads(content)
         return _normalize_enrichment(parsed)
 
     def _objective_policy_prompt(self) -> str:
