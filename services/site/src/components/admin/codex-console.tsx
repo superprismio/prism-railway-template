@@ -163,6 +163,9 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
             trace?: ConsoleTraceEntry[]
           }
         }
+        if (canceled) {
+          return
+        }
         const job = payload.job
         if (!job) {
           throw new Error("Console job response did not include a job")
@@ -184,7 +187,13 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
           if (nextSessionId) {
             try {
               await loadConsoleHistory(nextSessionId)
+              if (canceled) {
+                return
+              }
             } catch (historyError) {
+              if (canceled) {
+                return
+              }
               setError(describeFetchError(historyError, "Could not refresh Prism Console history"))
             }
           }
@@ -199,7 +208,10 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
           return
         }
       } catch (pollError) {
-        if (isTransientConsolePollError(pollError) && !canceled) {
+        if (canceled) {
+          return
+        }
+        if (isTransientConsolePollError(pollError)) {
           transientFailureCount += 1
           const retryDelayMs = Math.min(15_000, 1500 + transientFailureCount * 1000)
           setPollNotice(
