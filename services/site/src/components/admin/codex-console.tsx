@@ -26,8 +26,13 @@ type ConsoleTraceEntry = {
   message?: string
 }
 
+type ConsolePollError = Error & {
+  transient?: boolean
+}
+
 const consoleSessionStorageKey = "prism-console-session-id"
 const consoleActiveJobStorageKey = "prism-console-active-job-id"
+const transientPollStatuses = new Set([408, 429, 502, 503, 504])
 
 function randomMessageId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
@@ -41,6 +46,20 @@ function scrollToLatestMessage(element: HTMLDivElement | null, behavior: ScrollB
   })
 }
 
+function createTransientConsolePollError(message: string) {
+  const error = new Error(message) as ConsolePollError
+  error.transient = true
+  return error
+}
+
+function isTransientConsolePollError(error: unknown) {
+  return (
+    error instanceof TypeError && /fetch/i.test(error.message)
+  ) || (
+    error instanceof Error && Boolean((error as ConsolePollError).transient)
+  )
+}
+
 export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
   const [draft, setDraft] = useState("")
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -49,6 +68,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [activeJobTrace, setActiveJobTrace] = useState<ConsoleTraceEntry[]>([])
+  const [pollNotice, setPollNotice] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const transcriptRef = useRef<HTMLDivElement | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
@@ -119,6 +139,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
     if (!activeJobId) return
     let canceled = false
     let timeoutId: number | null = null
+    let transientFailureCount = 0
 
     async function pollJob() {
       try {
@@ -126,6 +147,9 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
           cache: "no-store",
         })
         if (!response.ok) {
+          if (transientPollStatuses.has(response.status)) {
+            throw createTransientConsolePollError(`Console job poll returned HTTP ${response.status}`)
+          }
           throw new Error(await readApiError(response, "Could not load Prism Console job"))
         }
         const payload = (await response.json()) as {
@@ -139,10 +163,15 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
             trace?: ConsoleTraceEntry[]
           }
         }
+        if (canceled) {
+          return
+        }
         const job = payload.job
         if (!job) {
           throw new Error("Console job response did not include a job")
         }
+        transientFailureCount = 0
+        setPollNotice(null)
         if (job.sessionId) {
           setSessionId(job.sessionId)
           window.localStorage.setItem(consoleSessionStorageKey, job.sessionId)
@@ -152,12 +181,19 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
           window.localStorage.removeItem(consoleActiveJobStorageKey)
           setActiveJobId(null)
           setActiveJobTrace([])
+          setPollNotice(null)
           setError(null)
           const nextSessionId = job.sessionId ?? sessionId
           if (nextSessionId) {
             try {
               await loadConsoleHistory(nextSessionId)
+              if (canceled) {
+                return
+              }
             } catch (historyError) {
+              if (canceled) {
+                return
+              }
               setError(describeFetchError(historyError, "Could not refresh Prism Console history"))
             }
           }
@@ -167,12 +203,28 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
           window.localStorage.removeItem(consoleActiveJobStorageKey)
           setActiveJobId(null)
           setActiveJobTrace([])
+          setPollNotice(null)
           setError(job.errorMessage || `Console job ${job.status}`)
           return
         }
       } catch (pollError) {
+        if (canceled) {
+          return
+        }
+        if (isTransientConsolePollError(pollError)) {
+          transientFailureCount += 1
+          const retryDelayMs = Math.min(15_000, 1500 + transientFailureCount * 1000)
+          setPollNotice(
+            transientFailureCount === 1
+              ? "Console connection was interrupted. Prism may still be working; retrying status..."
+              : `Console connection is still retrying status. Next check in ${Math.ceil(retryDelayMs / 1000)} seconds.`,
+          )
+          timeoutId = window.setTimeout(pollJob, retryDelayMs)
+          return
+        }
         window.localStorage.removeItem(consoleActiveJobStorageKey)
         setActiveJobId(null)
+        setPollNotice(null)
         setError(describeFetchError(pollError, "Could not run Prism Console"))
         return
       }
@@ -203,6 +255,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
 
     setDraft("")
     setError(null)
+    setPollNotice(null)
     setMessages((current) => [...current, userMessage])
     setIsSubmitting(true)
 
@@ -250,6 +303,7 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
     setError(null)
     setActiveJobId(null)
     setActiveJobTrace([])
+    setPollNotice(null)
     window.localStorage.removeItem(consoleActiveJobStorageKey)
   }
 
@@ -356,6 +410,11 @@ export function CodexConsole({ isActive = true }: { isActive?: boolean }) {
                   Waiting for runtime progress...
                 </p>
               )}
+              {pollNotice ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {pollNotice}
+                </p>
+              ) : null}
             </div>
           ) : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
