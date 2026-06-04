@@ -15,6 +15,7 @@ import {
   getTargetApp,
   getTargetEnvironment,
   getWorkflowByKey,
+  getWorkflowRunForRequest,
   listAgentMessages,
   listChangeRequestExecutions,
   listRequestExternalRefs,
@@ -177,6 +178,11 @@ function hasActiveExecution(changeRequestId: string, excludeExecutionId?: string
 
     return ["planned", "running"].includes(execution.status)
   })
+}
+
+function workflowRunStillOnStep(requestId: string, workflowRunId: string, stepKey: string) {
+  const run = getWorkflowRunForRequest(requestId)
+  return Boolean(run && run.id === workflowRunId && run.status === "active" && run.currentStepKey === stepKey)
 }
 
 function formatTraceSummary(trace: RuntimeTraceEntry[] | undefined) {
@@ -593,6 +599,21 @@ function completeWorkflowAgentStep(input: {
 
   const currentStep = findStepByKey(input.linkedWorkflowSteps, input.stepKey)
   const shouldStayOnStep = isCheckpointWorkflowStep(currentStep)
+  if (!workflowRunStillOnStep(input.requestId, input.workflowRunId, input.stepKey)) {
+    createWorkflowEvent({
+      workflowRunId: input.workflowRunId,
+      requestId: input.requestId,
+      stepKey: input.stepKey,
+      eventType: "agent.completion_ignored",
+      actorType: "system",
+      note: "Ignored a late runtime completion because the workflow moved to another step.",
+      payload: {
+        executionId: input.executionId,
+        expectedStepKey: input.stepKey,
+      },
+    })
+    return false
+  }
 
   createWorkflowEvent({
     workflowRunId: input.workflowRunId,
@@ -879,6 +900,17 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       ? findStepByKey(linkedWorkflowSteps, linkedWorkflowRun.currentStepKey) ??
         findStepByKey(linkedWorkflowSteps, typeof linkedWorkflow?.definition?.entrypoint === "string" ? linkedWorkflow.definition.entrypoint : null)
       : null
+  if (currentWorkflowStep && workflowAction && stepType(currentWorkflowStep) !== "gate") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "WORKFLOW_ACTION_REQUIRES_GATE",
+        currentWorkflowStepKey: stepKey(currentWorkflowStep),
+        currentWorkflowStepType: stepType(currentWorkflowStep),
+      },
+      { status: 409 },
+    )
+  }
   if (currentWorkflowStep && stepType(currentWorkflowStep) === "gate" && !workflowAction) {
     return NextResponse.json(
       { ok: false, error: "WORKFLOW_ACTION_REQUIRED" },
