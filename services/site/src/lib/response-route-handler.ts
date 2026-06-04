@@ -879,6 +879,17 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       ? findStepByKey(linkedWorkflowSteps, linkedWorkflowRun.currentStepKey) ??
         findStepByKey(linkedWorkflowSteps, typeof linkedWorkflow?.definition?.entrypoint === "string" ? linkedWorkflow.definition.entrypoint : null)
       : null
+  if (currentWorkflowStep && workflowAction && stepType(currentWorkflowStep) !== "gate") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "WORKFLOW_ACTION_REQUIRES_GATE",
+        currentWorkflowStepKey: stepKey(currentWorkflowStep),
+        currentWorkflowStepType: stepType(currentWorkflowStep),
+      },
+      { status: 409 },
+    )
+  }
   if (currentWorkflowStep && stepType(currentWorkflowStep) === "gate" && !workflowAction) {
     return NextResponse.json(
       { ok: false, error: "WORKFLOW_ACTION_REQUIRED" },
