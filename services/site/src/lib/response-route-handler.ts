@@ -180,6 +180,25 @@ function hasActiveExecution(changeRequestId: string, excludeExecutionId?: string
   })
 }
 
+function activeExecutionForIdempotencyKey(changeRequestId: string, idempotencyKey: string) {
+  return listChangeRequestExecutions(changeRequestId).find((execution) => {
+    if (!["planned", "running"].includes(execution.status)) {
+      return false
+    }
+    return typeof execution.meta.idempotencyKey === "string" && execution.meta.idempotencyKey === idempotencyKey
+  }) ?? null
+}
+
+function workflowStepRunIdempotencyKey(input: {
+  requestId: string
+  workflowRunId: string
+  stepKey: string
+  action?: string | null
+}) {
+  const actionKey = input.action && input.action.trim() ? input.action.trim() : "run"
+  return `workflow:${input.requestId}:${input.workflowRunId}:${input.stepKey}:${actionKey}`
+}
+
 function workflowRunStillOnStep(requestId: string, workflowRunId: string, stepKey: string) {
   const run = getWorkflowRunForRequest(requestId)
   return Boolean(run && run.id === workflowRunId && run.status === "active" && run.currentStepKey === stepKey)
@@ -720,6 +739,7 @@ function startWorkflowAgentStep(input: {
   workflowKey: string
   stepKey: string
   sessionId: string
+  idempotencyKey: string
   action?: string | null
   autoContinued?: boolean
 }) {
@@ -754,6 +774,7 @@ function startWorkflowAgentStep(input: {
       workflowKey: input.workflowKey,
       workflowRunId: input.workflowRunId,
       workflowStepKey: input.stepKey,
+      idempotencyKey: input.idempotencyKey,
       transport: "site",
       sessionId: input.sessionId,
       autoContinued: input.autoContinued === true,
@@ -1044,6 +1065,26 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       )
     }
 
+    const idempotencyKey = workflowStepRunIdempotencyKey({
+      requestId: activeLinkedChangeRequestId,
+      workflowRunId: linkedWorkflowRun.id,
+      stepKey: runnableStepKey,
+      action: workflowAction,
+    })
+    const existingExecution = activeExecutionForIdempotencyKey(activeLinkedChangeRequestId, idempotencyKey)
+    if (existingExecution) {
+      return NextResponse.json(
+        {
+          ok: true,
+          duplicate: true,
+          reason: "CHANGE_REQUEST_EXECUTION_ALREADY_RUNNING",
+          execution: existingExecution,
+          idempotencyKey,
+        },
+        { status: 202 },
+      )
+    }
+
     if (hasActiveExecution(activeLinkedChangeRequestId)) {
       return NextResponse.json(
         { ok: false, error: "CHANGE_REQUEST_EXECUTION_ALREADY_RUNNING" },
@@ -1073,6 +1114,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       workflowKey: linkedChangeRequest.workflowKey,
       stepKey: runnableStepKey,
       sessionId: session.id,
+      idempotencyKey,
       action: workflowAction,
     })
   }
@@ -1234,6 +1276,16 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           break
         }
 
+        const continuationIdempotencyKey = workflowStepRunIdempotencyKey({
+          requestId: activeLinkedChangeRequestId,
+          workflowRunId: latestRun.id,
+          stepKey: continuationStepKey,
+          action: null,
+        })
+        if (activeExecutionForIdempotencyKey(activeLinkedChangeRequestId, continuationIdempotencyKey)) {
+          break
+        }
+
         const continuationExecutionId = startWorkflowAgentStep({
           requestId: activeLinkedChangeRequestId,
           targetEnvironmentId: activeLinkedTargetEnvironmentId ?? latestRequest.targetEnvironmentId,
@@ -1241,6 +1293,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           workflowKey: linkedChangeRequest.workflowKey,
           stepKey: continuationStepKey,
           sessionId: session.id,
+          idempotencyKey: continuationIdempotencyKey,
           autoContinued: true,
         })
 

@@ -148,6 +148,10 @@ Adapter-originated requests and approvals should also enqueue durable runs.
   expected step.
 - [x] Preserve execution results and trace even when workflow mutation is
   ignored.
+- [x] Store workflow-step active-run idempotency in execution metadata as a
+  compatibility layer for future `agent_runs.idempotency_key`.
+- [x] Reuse an active execution response when the same request, workflow run,
+  step, and action are submitted again.
 - [ ] Add tests or focused validation for stale completion behavior.
 - [ ] Confirm Prism Console, request autostart, task workflow-runner, hook
   autostart, and Discord approval routes all pass through the same guard.
