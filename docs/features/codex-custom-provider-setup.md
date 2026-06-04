@@ -145,6 +145,11 @@ Then set the API key on `codex-runtime`:
 VENICE_API_KEY="<venice-api-key>"
 ```
 
+The interactive helper supports both modes. In direct-token mode, it can read
+the current shell's `VENICE_API_KEY` and write that value into
+`experimental_bearer_token`. This avoids manual paste, but the resulting
+`config.toml` still stores the token on the `codex-runtime` volume.
+
 No `codex login --device-auth` is required for this mode.
 
 Health should treat custom-provider mode as configured when:

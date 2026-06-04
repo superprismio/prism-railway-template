@@ -51,8 +51,11 @@ npm run configure:provider
 ```
 
 The helper backs up any existing `config.toml`, writes the provider config, and
-can either reference a Railway env var such as `VENICE_API_KEY` or write the
-provider token directly using Codex's `experimental_bearer_token` setting.
+can either reference a Railway env var such as `VENICE_API_KEY` or write Codex's
+`experimental_bearer_token` setting. In direct-token mode, the helper can read
+the token from `VENICE_API_KEY` in the current shell so the operator does not
+need to paste it manually, but the generated `config.toml` will still contain
+the token because that is what the Venice Codex guide currently documents.
 
 Venice example:
 

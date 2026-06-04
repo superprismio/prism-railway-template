@@ -53,13 +53,22 @@ reasoning_effort="$(prompt "Model reasoning effort (blank to omit)" "high")"
 
 printf '\nSecret handling\n'
 printf '1. Reference a Railway env var, for example VENICE_API_KEY.\n'
-printf '2. Write experimental_bearer_token directly into config.toml.\n'
+printf '2. Write experimental_bearer_token into config.toml, optionally reading it from an env var.\n'
 secret_mode="$(prompt "Choose 1 or 2" "1")"
 
 env_key=""
 bearer_token=""
 if [ "$secret_mode" = "2" ]; then
-  bearer_token="$(prompt_secret "Provider API key")"
+  token_env_key="$(prompt "Env key to read token from (blank to paste)" "VENICE_API_KEY")"
+  if [ -n "$token_env_key" ] && [ -n "${!token_env_key:-}" ]; then
+    bearer_token="${!token_env_key}"
+    printf 'Using %s from the current shell environment.\n' "$token_env_key"
+  else
+    if [ -n "$token_env_key" ]; then
+      printf '%s is not present in this shell. Paste the provider API key instead.\n' "$token_env_key"
+    fi
+    bearer_token="$(prompt_secret "Provider API key")"
+  fi
   if [ -z "$bearer_token" ]; then
     printf 'Provider API key is required for direct-token mode.\n' >&2
     exit 1
