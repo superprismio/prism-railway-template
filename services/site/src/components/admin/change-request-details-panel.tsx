@@ -1281,13 +1281,15 @@ export function RequestDetailsPanel({
   }
 
   function handleStopWorkflowRun() {
-    if (!activeExecution) return;
+    if (!activeAgentRun && !activeExecution) return;
 
     setThreadError(null);
     startCommandTransition(async () => {
       try {
         const response = await fetch(
-          `/admin/change-requests/${request.id}/executions/${activeExecution.id}/stop`,
+          activeAgentRun
+            ? `/admin/change-requests/${request.id}/workflow/cancel`
+            : `/admin/change-requests/${request.id}/executions/${activeExecution?.id}/stop`,
           { method: "POST" },
         );
         const payload = (await response.json().catch(() => null)) as {
@@ -1314,6 +1316,10 @@ export function RequestDetailsPanel({
   function handleSaveManualStatus() {
     const nextStep = currentWorkflowSteps.find((step) => step.key === manualWorkflowStepKey);
     if (!nextStep) return;
+    if (activeAgentRun) {
+      setThreadError("Cancel the active agent run before changing workflow steps.");
+      return;
+    }
     setCurrentWorkflowStepKey(manualWorkflowStepKey || null);
     setIsDraftDirty(false);
     onSave({

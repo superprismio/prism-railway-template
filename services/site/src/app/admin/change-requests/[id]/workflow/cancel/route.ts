@@ -3,9 +3,9 @@ import {
   cancelActiveAgentRunsForRequest,
   createWorkflowEvent,
   getChangeRequest,
-  getChangeRequestExecution,
   getWorkflowByKey,
   getWorkflowRunForRequest,
+  listChangeRequestExecutions,
   updateChangeRequest,
   updateChangeRequestExecution,
   updateWorkflowRun,
@@ -14,15 +14,15 @@ import { adminFetch } from "@/lib/admin"
 import { readRouteParam, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
 
 type RouteContext = {
-  params: Promise<{ id: string; executionId: string }>
+  params: Promise<{ id: string }>
 }
 
 export async function POST(_request: Request, context: RouteContext) {
-  const { id, executionId } = await context.params
+  const { id } = await context.params
 
   if (!useLocalAppApi()) {
     const response = await adminFetch(
-      `/api/admin/change-board/requests/${id}/executions/${executionId}/stop`,
+      `/api/admin/change-board/requests/${id}/workflow/cancel`,
       { method: "POST" },
     )
     const text = await response.text()
@@ -39,25 +39,12 @@ export async function POST(_request: Request, context: RouteContext) {
   }
 
   const changeRequestId = readRouteParam(id)
-  const execution = getChangeRequestExecution(readRouteParam(executionId))
-  if (!execution || execution.changeRequestId !== changeRequestId) {
-    return NextResponse.json({ ok: false, error: "Execution not found" }, { status: 404 })
-  }
-
   const changeRequest = getChangeRequest(changeRequestId)
   if (!changeRequest) {
     return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })
   }
 
-  if (execution.status !== "running") {
-    return NextResponse.json({ ok: false, error: "Execution is not running" }, { status: 409 })
-  }
-
   const now = new Date().toISOString()
-  const canceledAgentRuns = cancelActiveAgentRunsForRequest({
-    requestId: changeRequest.id,
-    reason: "Canceled by an admin operator.",
-  })
   const workflow = getWorkflowByKey(changeRequest.workflowKey)
   const workflowSteps = Array.isArray(workflow?.definition.steps)
     ? workflow.definition.steps.filter(
@@ -73,18 +60,26 @@ export async function POST(_request: Request, context: RouteContext) {
     typeof terminalStep?.key === "string" && terminalStep.key.trim()
       ? terminalStep.key
       : "closed"
-  const stoppedExecution = updateChangeRequestExecution(execution.id, {
-    status: "canceled",
-    summary: "Canceled by an admin operator.",
-    errorMessage: null,
-    finishedAt: now,
-    meta: {
-      cancelRequested: true,
-      canceledAt: now,
-      canceledBy: "admin",
-      terminalStepKey,
-    },
+
+  const canceledAgentRuns = cancelActiveAgentRunsForRequest({
+    requestId: changeRequest.id,
+    reason: "Canceled by an admin operator.",
   })
+  const canceledExecutions = listChangeRequestExecutions(changeRequest.id)
+    .filter((execution) => ["planned", "running"].includes(execution.status))
+    .map((execution) => updateChangeRequestExecution(execution.id, {
+      status: "canceled",
+      summary: "Canceled by an admin operator.",
+      errorMessage: null,
+      finishedAt: now,
+      meta: {
+        cancelRequested: true,
+        canceledAt: now,
+        canceledBy: "admin",
+        terminalStepKey,
+      },
+    }))
+    .filter(Boolean)
 
   const workflowRun = getWorkflowRunForRequest(changeRequest.id)
   if (workflowRun) {
@@ -102,12 +97,12 @@ export async function POST(_request: Request, context: RouteContext) {
       workflowRunId: workflowRun.id,
       requestId: changeRequest.id,
       stepKey: terminalStepKey,
-      eventType: "agent.canceled",
+      eventType: "workflow.canceled",
       actorType: "admin",
-      note: "Canceled the active agent execution and moved the workflow to a terminal step.",
+      note: "Canceled the workflow and moved it to a terminal step.",
       payload: {
-        executionId: execution.id,
         canceledAgentRunIds: canceledAgentRuns.map((run) => run.id),
+        canceledExecutionIds: canceledExecutions.map((execution) => execution?.id).filter(Boolean),
         previousStepKey: workflowRun.currentStepKey,
         terminalStepKey,
       },
@@ -116,8 +111,8 @@ export async function POST(_request: Request, context: RouteContext) {
 
   return NextResponse.json({
     ok: true,
-    execution: stoppedExecution,
     canceledAgentRuns,
+    canceledExecutions,
     changeRequest: getChangeRequest(changeRequest.id) ?? changeRequest,
     workflowRun: getWorkflowRunForRequest(changeRequest.id),
   })

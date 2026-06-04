@@ -10,7 +10,9 @@ These surfaces currently share parts of the same response handler, but each one
 also owns a different piece of run state. That makes browser timeouts, retries,
 late completions, and gate approvals hard to reason about.
 
-This spec proposes one durable run model for long-running agent work.
+This spec proposes one durable run model for long-running agent work and one
+subject-agnostic workflow model. Change requests remain an important domain
+object, but workflow mechanics should not be intrinsically change-request-only.
 
 ## Goals
 
@@ -96,6 +98,32 @@ agent_run
   timestamps
 ```
 
+Workflow state should be represented as a workflow run attached to a subject:
+
+```text
+workflow_run
+  id
+  workflow_key
+  subject_type: change_request | task | hook | portal_session | memory_curation | ...
+  subject_id
+  current_step_key
+  status: active | completed | canceled
+  timestamps
+```
+
+The current `workflow_runs.request_id` field is the first subject binding. The
+target model is equivalent to:
+
+```text
+subject_type = "change_request"
+subject_id = request_id
+```
+
+Change request fields such as title, priority, target app, artifacts, GitHub
+issue, and pull request are domain data. Step transitions, gates, checkpoint
+rules, terminal state, cancel/supersede behavior, and run history are workflow
+engine data and should apply the same way to any workflow subject.
+
 Every surface follows the same pattern:
 
 1. validate the caller and input
@@ -111,11 +139,35 @@ Every surface follows the same pattern:
 - A run that starts on step `X` may only complete step `X` if the workflow is
   still on `X`.
 - A run may only complete if its execution row is still active.
+- Manual step changes are blocked while a queued or running agent run exists for
+  the same workflow subject.
+- Operators can cancel/supersede an active run, then move the workflow step.
 - Terminal workflow states are final unless an explicit reopen operation creates
   a new run context.
 - Late completions from canceled or stale runs should record
   `agent.completion_ignored` and must not mutate workflow state.
 - Delivery failures must not roll back successful workflow mutation.
+
+## Step Types
+
+- `agent`: enqueues an `agent_run(kind="workflow_step")`.
+- `gate`: records a human or service decision and moves to the routed next step.
+- `checkpoint`: enqueues an `agent_run(kind="workflow_step")`, but the workflow
+  remains on the checkpoint unless a later explicit transition advances it.
+- `terminal`: finalizes the workflow run and cancels/supersedes active runs for
+  the same subject.
+
+## Cancel And Supersede
+
+Cancel is workflow-level by default. It means the current workflow run should no
+longer continue, and all active agent runs for that workflow subject should be
+marked `canceled` or `superseded`.
+
+Runtime work may still return after cancel. The site must treat those late
+returns as ignored completions and must not mutate workflow state.
+
+Step-level interruption can be introduced later, but should be named separately
+from workflow cancellation.
 
 ## Hook Trigger Rules
 
@@ -170,7 +222,12 @@ Adapter-originated requests and approvals should also enqueue durable runs.
   as a compatibility poll API.
 - [x] Surface request-linked `agent_runs` in the request execution log ahead of
   legacy execution rows.
-- [ ] Move request autostart and continue actions onto `agent_runs`.
+- [x] Block manual workflow step changes while active `agent_runs` exist.
+- [x] Make cancel workflow-level and mark active `agent_runs` canceled or
+  superseded.
+- [ ] Move request workflow metadata reads from `change_request_executions` to
+  `agent_runs.result`.
+- [ ] Generalize workflow runs from `request_id` to subject type/id.
 - [ ] Move hook trigger execution records onto `agent_runs` or link hook runs
   to agent runs.
 - [ ] Have task-runner enqueue site-owned runs instead of calling

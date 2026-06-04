@@ -9,6 +9,7 @@ import {
   getWorkflowByKey,
   getWorkflowRunForRequest,
   listAgentRuns,
+  listActiveAgentRunsForRequest,
   listChangeRequestExecutions,
   listRequestExternalRefs,
   updateChangeRequest,
@@ -95,6 +96,13 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (nextWorkflowStepKey) {
     if (!nextWorkflowStep) {
       return NextResponse.json({ ok: false, error: "Invalid workflow step" }, { status: 400 })
+    }
+    const activeAgentRuns = listActiveAgentRunsForRequest(changeRequestId)
+    if (activeAgentRuns.length) {
+      return NextResponse.json(
+        { ok: false, error: "AGENT_RUN_ACTIVE", activeAgentRuns },
+        { status: 409 },
+      )
     }
   }
 

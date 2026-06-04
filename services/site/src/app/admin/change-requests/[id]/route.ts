@@ -6,6 +6,7 @@ import {
   getChangeRequest,
   getWorkflowByKey,
   getWorkflowRunForRequest,
+  listActiveAgentRunsForRequest,
   listChangeRequestExecutions,
   updateChangeRequest,
   updateWorkflowRun,
@@ -96,6 +97,13 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (hasActiveExecution(changeRequestId)) {
         return NextResponse.json(
           { ok: false, error: "CHANGE_REQUEST_EXECUTION_ALREADY_RUNNING" },
+          { status: 409 },
+        )
+      }
+      const activeAgentRuns = listActiveAgentRunsForRequest(changeRequestId)
+      if (activeAgentRuns.length) {
+        return NextResponse.json(
+          { ok: false, error: "AGENT_RUN_ACTIVE", activeAgentRuns },
           { status: 409 },
         )
       }

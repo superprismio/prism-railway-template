@@ -4745,6 +4745,41 @@ export function findActiveAgentRunByIdempotencyKey(idempotencyKey: string) {
   return row ? mapAgentRunRow(row) : null;
 }
 
+export function listActiveAgentRunsForRequest(requestId: string) {
+  const id = normalizeText(requestId);
+  if (!id) {
+    return [];
+  }
+  const rows = getDb()
+    .prepare(
+      `SELECT *
+       FROM agent_runs
+       WHERE request_id = ?
+         AND status IN ('queued', 'running')
+       ORDER BY created_at DESC`,
+    )
+    .all(id) as AgentRunRow[];
+  return rows.map(mapAgentRunRow);
+}
+
+export function cancelActiveAgentRunsForRequest(input: {
+  requestId: string;
+  reason: string;
+  status?: 'canceled' | 'superseded';
+}) {
+  const runs = listActiveAgentRunsForRequest(input.requestId);
+  const now = new Date().toISOString();
+  return runs.map((run) => updateAgentRun(run.id, {
+    status: input.status ?? 'canceled',
+    result: {
+      ...run.result,
+      canceledReason: input.reason,
+    },
+    errorMessage: input.reason,
+    finishedAt: now,
+  })).filter((run): run is AgentRunRecord => Boolean(run));
+}
+
 export function getAdminChangeRequest(changeRequestId: string) {
   const row = getDb()
     .prepare(
