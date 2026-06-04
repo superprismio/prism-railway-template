@@ -127,7 +127,17 @@ function copyBlock(lines: string[]) {
   );
 }
 
+function codexAuthModeLabel(mode: string | null) {
+  if (mode === "device-auth") return "Device auth";
+  if (mode === "custom-provider") return "Custom provider";
+  return "Not configured";
+}
+
 function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
+  const codexMode = setup.codexRuntime.codexAuthMode;
+  const showDeviceAuthSetup = !setup.codexRuntime.codexAuthConfigured;
+  const showCustomProviderDetails = codexMode === "custom-provider";
+
   return (
     <section className="grid gap-4 lg:grid-cols-3">
       <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
@@ -163,7 +173,7 @@ function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
             Codex Runtime
           </CardTitle>
           <CardDescription>
-            Runtime health and persisted device auth.
+            Runtime health and persisted model access.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -175,25 +185,107 @@ function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
             {statusBadge(
               setup.codexRuntime.codexAuthConfigured,
               setup.codexRuntime.codexAuthConfigured
-                ? "Auth configured"
-                : "Auth needed",
+                ? "Model access configured"
+                : "Model access needed",
             )}
           </div>
+          <p className="text-sm text-muted-foreground">
+            Mode:{" "}
+            <span className="font-medium text-foreground">
+              {codexAuthModeLabel(setup.codexRuntime.codexAuthMode)}
+            </span>
+          </p>
           <p className="text-sm text-muted-foreground">
             Home:{" "}
             <span className="font-medium text-foreground">
               {setup.codexRuntime.codexHome ?? "not reported"}
             </span>
           </p>
-          {!setup.codexRuntime.codexAuthConfigured
-            ? copyBlock([
+          {setup.codexRuntime.codexModel ? (
+            <p className="text-sm text-muted-foreground">
+              Model:{" "}
+              <span className="font-medium text-foreground">
+                {setup.codexRuntime.codexModel}
+              </span>
+            </p>
+          ) : null}
+          {showCustomProviderDetails ? (
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p>
+                Provider:{" "}
+                <span className="font-medium text-foreground">
+                  {setup.codexRuntime.codexProviderName
+                    ?? setup.codexRuntime.codexModelProvider
+                    ?? "unknown"}
+                </span>
+              </p>
+              {setup.codexRuntime.codexProviderBaseUrl ? (
+                <p>
+                  Base URL:{" "}
+                  <span className="font-medium text-foreground">
+                    {setup.codexRuntime.codexProviderBaseUrl}
+                  </span>
+                </p>
+              ) : null}
+              {setup.codexRuntime.codexProviderWireApi ? (
+                <p>
+                  Wire API:{" "}
+                  <span className="font-medium text-foreground">
+                    {setup.codexRuntime.codexProviderWireApi}
+                  </span>
+                </p>
+              ) : null}
+              {setup.codexRuntime.codexProviderEnvKey ? (
+                <p>
+                  Provider key:{" "}
+                  <span className="font-medium text-foreground">
+                    {setup.codexRuntime.codexProviderEnvKey}{" "}
+                    {setup.codexRuntime.codexProviderEnvConfigured
+                      ? "configured"
+                      : "missing"}
+                  </span>
+                </p>
+              ) : setup.codexRuntime.codexProviderTokenConfigured ? (
+                <p className="font-medium text-foreground">
+                  Provider token configured in Codex config.
+                </p>
+              ) : null}
+              {setup.codexRuntime.codexProviderConfigError ? (
+                <p className="text-destructive">
+                  {setup.codexRuntime.codexProviderConfigError}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {showDeviceAuthSetup ? (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Device auth
+                </p>
+                {copyBlock([
                 "railway ssh -s codex-runtime",
                 "mkdir -p /data/codex",
                 "export CODEX_HOME=/data/codex",
                 'export PATH="/app/node_modules/.bin:$PATH"',
                 "codex login --device-auth",
-              ])
-            : null}
+                ])}
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Custom provider
+                </p>
+                {copyBlock([
+                  "railway ssh -s codex-runtime",
+                  "mkdir -p /data/codex",
+                  "export CODEX_HOME=/data/codex",
+                  "vi /data/codex/config.toml",
+                  "",
+                  "# Then set the provider API key on codex-runtime and redeploy.",
+                ])}
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

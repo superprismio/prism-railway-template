@@ -321,6 +321,28 @@ GIT_AUTHOR_NAME="Prism Codex" # Git author name used for Codex-created commits.
 GIT_AUTHOR_EMAIL="prism-codex@users.noreply.github.com" # Git author email used for Codex-created commits.
 ```
 
+Custom-provider experiments can use the same service without OpenAI device auth.
+For Venice, create `/data/codex/config.toml` on the `codex-runtime` volume:
+
+```toml
+#:schema https://developers.openai.com/codex/config-schema.json
+
+model = "openai-gpt-54"
+model_provider = "venice"
+model_reasoning_effort = "high"
+
+[model_providers.venice]
+name = "Venice"
+base_url = "https://api.venice.ai/api/v1/"
+experimental_bearer_token = "YOUR VENICE API KEY"
+wire_api = "responses"
+```
+
+If using `env_key = "VENICE_API_KEY"` instead of
+`experimental_bearer_token`, set `VENICE_API_KEY` on `codex-runtime` and
+redeploy. Leave `CODEX_MODEL` unset unless it names a model valid for that
+provider.
+
 ### Discord Sync Cron
 
 ```text

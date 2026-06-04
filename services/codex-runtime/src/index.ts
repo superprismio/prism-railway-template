@@ -64,11 +64,154 @@ async function pathExists(filePath: string) {
   );
 }
 
-async function codexAuthConfigured() {
-  if (!config.codexHome) {
-    return false;
+type CodexCustomProviderConfig = {
+  model: string | null;
+  modelProvider: string | null;
+  providerName: string | null;
+  providerBaseUrl: string | null;
+  providerEnvKey: string | null;
+  providerEnvConfigured: boolean | null;
+  providerTokenConfigured: boolean;
+  wireApi: string | null;
+  configPath: string;
+  error: string | null;
+};
+
+function parseTomlString(value: string) {
+  const trimmed = value.trim();
+  const quoted = trimmed.match(/^"((?:\\.|[^"\\])*)"$/) ?? trimmed.match(/^'([^']*)'$/);
+  if (!quoted) {
+    return null;
   }
-  return pathExists(path.join(config.codexHome, 'auth.json'));
+  return quoted[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+}
+
+function parseSimpleToml(content: string) {
+  const root: Record<string, string> = {};
+  const tables = new Map<string, Record<string, string>>();
+  let current: Record<string, string> = root;
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+    const tableMatch = line.match(/^\[([^\]]+)\]$/);
+    if (tableMatch) {
+      const tableName = tableMatch[1].trim();
+      current = tables.get(tableName) ?? {};
+      tables.set(tableName, current);
+      continue;
+    }
+    const assignment = line.match(/^([A-Za-z0-9_.-]+)\s*=\s*(.+)$/);
+    if (!assignment) {
+      continue;
+    }
+    const parsed = parseTomlString(assignment[2]);
+    if (parsed !== null) {
+      current[assignment[1].trim()] = parsed;
+    }
+  }
+
+  return { root, tables };
+}
+
+async function readCodexCustomProviderConfig(): Promise<CodexCustomProviderConfig | null> {
+  if (!config.codexHome) {
+    return null;
+  }
+  const configPath = path.join(config.codexHome, 'config.toml');
+  let content = '';
+  try {
+    content = await fs.readFile(configPath, 'utf8');
+  } catch {
+    return null;
+  }
+
+  const parsed = parseSimpleToml(content);
+  const model = parsed.root.model || null;
+  const modelProvider = parsed.root.model_provider || null;
+  if (!modelProvider) {
+    return {
+      model,
+      modelProvider: null,
+      providerName: null,
+      providerBaseUrl: null,
+      providerEnvKey: null,
+      providerEnvConfigured: null,
+      providerTokenConfigured: false,
+      wireApi: null,
+      configPath,
+      error: 'missing model_provider',
+    };
+  }
+
+  const providerTable = parsed.tables.get(`model_providers.${modelProvider}`) ?? null;
+  if (!providerTable) {
+    return {
+      model,
+      modelProvider,
+      providerName: null,
+      providerBaseUrl: null,
+      providerEnvKey: null,
+      providerEnvConfigured: null,
+      providerTokenConfigured: false,
+      wireApi: null,
+      configPath,
+      error: `missing [model_providers.${modelProvider}]`,
+    };
+  }
+
+  const providerEnvKey = providerTable.env_key || null;
+  const providerTokenConfigured = Boolean(providerTable.experimental_bearer_token?.trim());
+  const providerEnvConfigured = providerEnvKey ? Boolean(process.env[providerEnvKey]?.trim()) : null;
+  const providerBaseUrl = providerTable.base_url || null;
+  const error =
+    !providerBaseUrl
+      ? 'missing provider base_url'
+      : providerEnvKey && !providerEnvConfigured
+        ? `missing provider env ${providerEnvKey}`
+        : !providerEnvKey && !providerTokenConfigured
+          ? 'missing provider env_key or experimental_bearer_token'
+          : null;
+
+  return {
+    model,
+    modelProvider,
+    providerName: providerTable.name || null,
+    providerBaseUrl,
+    providerEnvKey,
+    providerEnvConfigured,
+    providerTokenConfigured,
+    wireApi: providerTable.wire_api || null,
+    configPath,
+    error,
+  };
+}
+
+async function codexAuthStatus() {
+  if (!config.codexHome) {
+    return {
+      configured: false,
+      mode: 'not-configured',
+      customProvider: null,
+    };
+  }
+  const deviceAuthConfigured = await pathExists(path.join(config.codexHome, 'auth.json'));
+  if (deviceAuthConfigured) {
+    return {
+      configured: true,
+      mode: 'device-auth',
+      customProvider: null,
+    };
+  }
+  const customProvider = await readCodexCustomProviderConfig();
+  const customProviderConfigured = Boolean(customProvider && !customProvider.error);
+  return {
+    configured: customProviderConfigured,
+    mode: customProvider ? 'custom-provider' : 'not-configured',
+    customProvider,
+  };
 }
 
 function normalizeRuntimeRequest(body: RuntimeRequestBody) {
@@ -172,6 +315,7 @@ async function runResponseJob(jobId: string) {
 }
 
 app.get('/health', async (_req, res) => {
+  const authStatus = await codexAuthStatus();
   res.json({
     ok: true,
     service: 'codex-runtime',
@@ -179,7 +323,18 @@ app.get('/health', async (_req, res) => {
     startedAt: startedAt.toISOString(),
     codexBinary: config.codexBinary,
     codexHome: config.codexHome,
-    codexAuthConfigured: await codexAuthConfigured(),
+    codexAuthConfigured: authStatus.configured,
+    codexAuthMode: authStatus.mode,
+    codexModel: config.codexModel ?? authStatus.customProvider?.model ?? null,
+    codexModelProvider: authStatus.customProvider?.modelProvider ?? null,
+    codexProviderName: authStatus.customProvider?.providerName ?? null,
+    codexProviderBaseUrl: authStatus.customProvider?.providerBaseUrl ?? null,
+    codexProviderEnvKey: authStatus.customProvider?.providerEnvKey ?? null,
+    codexProviderEnvConfigured: authStatus.customProvider?.providerEnvConfigured ?? null,
+    codexProviderTokenConfigured: authStatus.customProvider?.providerTokenConfigured ?? false,
+    codexProviderWireApi: authStatus.customProvider?.wireApi ?? null,
+    codexProviderConfigPath: authStatus.customProvider?.configPath ?? null,
+    codexProviderConfigError: authStatus.customProvider?.error ?? null,
     codexRuntimeEnabled: config.codexRuntimeEnabled,
     codexImageGenerationEnabled: config.codexImageGenerationEnabled,
   });

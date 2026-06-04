@@ -8,7 +8,7 @@ Behavior:
 - exposes `GET /codex/health`
 - exposes `POST /v1/responses`
 - starts or resumes Codex CLI sessions using `codex exec` and `codex exec resume`
-- persists Codex auth and session state through `CODEX_HOME`
+- persists Codex auth/config and session state through `CODEX_HOME`
 
 Required env:
 
@@ -34,5 +34,5 @@ Railway notes:
 - attach a persistent volume at `/data`
 - set `CODEX_HOME=/data/codex`
 - keep external target repos under `/data/workspaces`
-- run a one-time `codex login` inside the running service environment
+- run a one-time `codex login` inside the running service environment, or configure a custom provider in `/data/codex/config.toml`
 - adapters like Discord or Slack should call this service instead of embedding Codex directly

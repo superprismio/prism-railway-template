@@ -172,7 +172,18 @@ export type AdminSetupStatus = {
     status: number | null
     error: string | null
     codexAuthConfigured: boolean
+    codexAuthMode: string | null
     codexHome: string | null
+    codexModel: string | null
+    codexModelProvider: string | null
+    codexProviderName: string | null
+    codexProviderBaseUrl: string | null
+    codexProviderEnvKey: string | null
+    codexProviderEnvConfigured: boolean | null
+    codexProviderTokenConfigured: boolean
+    codexProviderWireApi: string | null
+    codexProviderConfigPath: string | null
+    codexProviderConfigError: string | null
   }
   targets: {
     targetAppCount: number

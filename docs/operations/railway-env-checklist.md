@@ -83,11 +83,12 @@ Recommended:
 
 Notes:
 
-- complete `codex login` once inside the running service so auth is written into `CODEX_HOME`
+- complete `codex login` once inside the running service so device auth is written into `CODEX_HOME`, or configure a custom provider in `CODEX_HOME/config.toml`
 - this service exposes `POST /v1/responses` for transport adapters
 - set the output adapter env refs if Codex agents should directly resolve destinations or send one-off Discord messages; scheduled task output delivery can still be handled by `task-runner`
 - external target apps like `daohaus-admin` need a writable target workspace path on the mounted volume so Codex can clone and edit the repo outside the runtime service source tree
-- follow [Codex Runtime Device Auth](codex-runtime-auth.md) for the exact Railway shell steps
+- follow [Codex Runtime Model Access](codex-runtime-auth.md) for device-auth and custom-provider setup
+- for Venice custom-provider experiments, set `VENICE_API_KEY` on `codex-runtime` if the Codex config uses `env_key`; otherwise keep the token in `config.toml` as documented by Venice
 
 ## `discord-adapter`
 

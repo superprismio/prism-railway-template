@@ -63,7 +63,20 @@ export async function getAdminSetupStatus() {
       status: codexRuntime.status,
       error: codexRuntime.error,
       codexAuthConfigured: codexPayload.codexAuthConfigured === true,
+      codexAuthMode: typeof codexPayload.codexAuthMode === 'string' ? codexPayload.codexAuthMode : null,
       codexHome: typeof codexPayload.codexHome === 'string' ? codexPayload.codexHome : null,
+      codexModel: typeof codexPayload.codexModel === 'string' ? codexPayload.codexModel : null,
+      codexModelProvider: typeof codexPayload.codexModelProvider === 'string' ? codexPayload.codexModelProvider : null,
+      codexProviderName: typeof codexPayload.codexProviderName === 'string' ? codexPayload.codexProviderName : null,
+      codexProviderBaseUrl: typeof codexPayload.codexProviderBaseUrl === 'string' ? codexPayload.codexProviderBaseUrl : null,
+      codexProviderEnvKey: typeof codexPayload.codexProviderEnvKey === 'string' ? codexPayload.codexProviderEnvKey : null,
+      codexProviderEnvConfigured:
+        typeof codexPayload.codexProviderEnvConfigured === 'boolean' ? codexPayload.codexProviderEnvConfigured : null,
+      codexProviderTokenConfigured: codexPayload.codexProviderTokenConfigured === true,
+      codexProviderWireApi: typeof codexPayload.codexProviderWireApi === 'string' ? codexPayload.codexProviderWireApi : null,
+      codexProviderConfigPath: typeof codexPayload.codexProviderConfigPath === 'string' ? codexPayload.codexProviderConfigPath : null,
+      codexProviderConfigError:
+        typeof codexPayload.codexProviderConfigError === 'string' ? codexPayload.codexProviderConfigError : null,
     },
     targets: {
       targetAppCount: listTargetApps().length,
