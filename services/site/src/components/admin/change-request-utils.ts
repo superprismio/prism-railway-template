@@ -260,7 +260,7 @@ export function describeExecutionStage(
   execution: ChangeRequestExecutionRecord | null,
 ) {
   if (!execution) {
-    return "No active execution";
+    return "No active legacy execution";
   }
 
   const traceEntry = latestTraceEntry(execution);

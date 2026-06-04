@@ -48,11 +48,11 @@ export default async function Page() {
                 Prism Refactory
               </p>
               <h1 className="max-w-4xl text-5xl leading-none tracking-tight md:text-7xl">
-                Change requests in front, controlled agent execution behind.
+                Change requests in front, controlled agent runs behind.
               </h1>
               <p className="max-w-3xl text-lg leading-8 text-muted-foreground md:text-2xl">
                 A product-friendly surface for triaging work, routing it into
-                controlled agent execution, and keeping every production-facing
+                controlled agent runs, and keeping every production-facing
                 change under human review.
               </p>
               <p className="max-w-2xl text-base leading-7 text-muted-foreground">

@@ -74,7 +74,7 @@ export async function GET(request: Request, context: RouteContext) {
     workflow,
     workflowRun,
     latestAgentRun: agentRuns[0] ?? null,
-    latestExecution: legacyExecutions[0] ?? null,
+    latestExecution: null,
     legacyExecutions,
     executions: legacyExecutions,
     agentRuns,

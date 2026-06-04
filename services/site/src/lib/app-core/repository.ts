@@ -442,38 +442,6 @@ export interface UpdateChangeRequestInput {
   agentRecommendation?: string | null;
 }
 
-export interface CreateChangeRequestExecutionInput {
-  changeRequestId: string;
-  targetEnvironmentId?: string | null;
-  status?: string;
-  actorType?: string;
-  branchName?: string | null;
-  commitSha?: string | null;
-  deployUrl?: string | null;
-  adapterKind?: string | null;
-  adapterStatus?: string | null;
-  summary?: string | null;
-  errorMessage?: string | null;
-  meta?: Record<string, unknown>;
-  startedAt?: string | null;
-  finishedAt?: string | null;
-}
-
-export interface UpdateChangeRequestExecutionInput {
-  status?: string;
-  targetEnvironmentId?: string | null;
-  branchName?: string | null;
-  commitSha?: string | null;
-  deployUrl?: string | null;
-  adapterKind?: string | null;
-  adapterStatus?: string | null;
-  summary?: string | null;
-  errorMessage?: string | null;
-  meta?: Record<string, unknown>;
-  startedAt?: string | null;
-  finishedAt?: string | null;
-}
-
 export interface AgentSessionRecord {
   id: string;
   source: string;
@@ -3988,91 +3956,6 @@ export function getChangeRequestExecution(executionId: string) {
     | undefined;
 
   return row ? parseChangeRequestExecutionRow(row) : null;
-}
-
-export function createChangeRequestExecution(input: CreateChangeRequestExecutionInput) {
-  const now = new Date().toISOString();
-  const id = randomUUID();
-
-  getDb()
-    .prepare(
-      `INSERT INTO change_request_executions (
-         id, change_request_id, target_environment_id, status, actor_type, branch_name, commit_sha,
-         deploy_url, adapter_kind, adapter_status, summary, error_message, meta_json,
-         created_at, updated_at, started_at, finished_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      id,
-      input.changeRequestId,
-      input.targetEnvironmentId ?? null,
-      input.status ?? 'planned',
-      input.actorType ?? 'codex',
-      input.branchName ?? null,
-      input.commitSha ?? null,
-      input.deployUrl ?? null,
-      input.adapterKind ?? null,
-      input.adapterStatus ?? null,
-      input.summary ?? null,
-      input.errorMessage ?? null,
-      JSON.stringify(input.meta ?? {}),
-      now,
-      now,
-      input.startedAt ?? null,
-      input.finishedAt ?? null,
-    );
-
-  return getChangeRequestExecution(id);
-}
-
-export function updateChangeRequestExecution(executionId: string, input: UpdateChangeRequestExecutionInput) {
-  const current = getChangeRequestExecution(executionId);
-  if (!current) {
-    return null;
-  }
-
-  const now = new Date().toISOString();
-
-  getDb()
-    .prepare(
-      `UPDATE change_request_executions
-       SET status = ?,
-           target_environment_id = ?,
-           branch_name = ?,
-           commit_sha = ?,
-           deploy_url = ?,
-           adapter_kind = ?,
-           adapter_status = ?,
-           summary = ?,
-           error_message = ?,
-           meta_json = ?,
-           started_at = ?,
-           finished_at = ?,
-           updated_at = ?
-       WHERE id = ?`,
-    )
-    .run(
-      input.status ?? current.status,
-      input.targetEnvironmentId !== undefined ? input.targetEnvironmentId : current.targetEnvironmentId,
-      input.branchName !== undefined ? input.branchName : current.branchName,
-      input.commitSha !== undefined ? input.commitSha : current.commitSha,
-      input.deployUrl !== undefined ? input.deployUrl : current.deployUrl,
-      input.adapterKind !== undefined ? input.adapterKind : current.adapterKind,
-      input.adapterStatus !== undefined ? input.adapterStatus : current.adapterStatus,
-      input.summary !== undefined ? input.summary : current.summary,
-      input.errorMessage !== undefined ? input.errorMessage : current.errorMessage,
-      JSON.stringify(
-        input.meta
-          ? { ...current.meta, ...input.meta }
-          : current.meta,
-      ),
-      input.startedAt !== undefined ? input.startedAt : current.startedAt,
-      input.finishedAt !== undefined ? input.finishedAt : current.finishedAt,
-      now,
-      executionId,
-    );
-
-  return getChangeRequestExecution(executionId);
 }
 
 export function getAgentSession(sessionId: string) {

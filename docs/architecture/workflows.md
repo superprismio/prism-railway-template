@@ -274,13 +274,14 @@ Put the judgment about when to delegate in the step markdown. For the default re
 
 ## Runtime State
 
-Workflow definitions are files and manifests. Workflow execution state is DB-backed.
+Workflow definitions are files and manifests. Workflow run state is DB-backed.
 
 The runtime tables are:
 
 - `workflow_runs`: one durable run per request, including current step and workflow key.
 - `workflow_events`: append-only history for workflow start, step changes, gate decisions, agent start, agent completion, and agent failure.
-- `change_request_executions`: concrete Codex execution records with branch, commit, trace, and summary.
+- `agent_runs`: concrete agent, task, hook, and console runs with status, idempotency, trace, and structured results.
+- `change_request_executions`: legacy request execution history retained for older requests only.
 - `request_artifacts`: files produced by workflow steps, with metadata in SQLite and file bytes stored under the site data volume.
 
 Request progress comes from `workflow_runs.current_step_key` and terminal workflow state. The board should not maintain a separate request status field.
@@ -420,9 +421,9 @@ x-service-token: <internal-service-token>
 }
 ```
 
-For a gate step, set `workflow_action` to `approved`, `changesRequested`, or another route key defined by the workflow manifest. The route records workflow events and execution rows.
+For a gate step, set `workflow_action` to `approved`, `changesRequested`, or another route key defined by the workflow manifest. The route records workflow events and creates or reuses agent runs.
 
-## Execution Flow
+## Agent Run Flow
 
 The workflow-aware request flow is:
 
@@ -431,10 +432,10 @@ The workflow-aware request flow is:
 3. Gate actions are recorded as `workflow_events` and routed through the manifest.
 4. Agent steps merge workflow-level and step-level `agentConfig`.
 5. `site` calls `codex-runtime` with workflow metadata and the step instructions.
-6. The response is recorded in `change_request_executions`.
+6. The response, branch, commit, trace, and errors are recorded in `agent_runs.result` and `agent_runs.trace`.
 7. The workflow run advances and workflow events are appended. Checkpoint steps are the exception: the check is recorded, but the workflow stays on the checkpoint until an operator moves or continues it.
 
-`change_request_executions` remains the record of concrete Codex runs: branch, commit, response text, runtime trace, deploy URL, and execution metadata. `workflow_events` is the higher-level workflow timeline.
+`agent_runs` is the record of concrete Codex runs: branch, commit, response text, runtime trace, deploy URL, and run metadata. `workflow_events` is the higher-level workflow timeline. `change_request_executions` may appear in API payloads as `legacyExecutions` for old request history, but new workflow-step runs should not create mirrored execution rows.
 
 The admin UI uses one primary step action. It runs the current agent step, or checks the current checkpoint step, and automatically continues through following `agent` steps until the workflow reaches a `gate`, `checkpoint`, `terminal` step, failure, or the server-side continuation cap.
 

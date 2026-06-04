@@ -66,13 +66,13 @@ continue request workflows by calling `/agent/responses`.
 
 Hook triggers translate external events into Prism state. They may create a
 change request and currently can autostart the request workflow. Hook run
-visibility is separate from request execution visibility.
+visibility is separate from request agent-run visibility.
 
 ### Communication Adapters
 
 Discord and Telegram commands should behave as ingress and egress layers. They
 can create requests, approve gates, or ask questions, but they should not own
-workflow execution state. They also need fast acknowledgement, idempotency, and
+workflow run state. They also need fast acknowledgement, idempotency, and
 best-effort delivery of status updates.
 
 ## Target Model
@@ -192,7 +192,7 @@ Adapter-originated requests and approvals should also enqueue durable runs.
 - acknowledge slash commands before Codex work begins
 - keep source refs, but do not use Discord threads/channels as workflow state
 - reject approval commands unless the current workflow step is a gate
-- record delivery failures separately from workflow execution
+- record delivery failures separately from workflow agent runs
 - ignore bot self-output unless a command explicitly opts in
 
 ## First Slice Checklist
@@ -222,7 +222,7 @@ Adapter-originated requests and approvals should also enqueue durable runs.
   `agent_runs` and return `202 Accepted`.
 - [x] Move Prism Console jobs onto `agent_runs` while keeping the old job route
   as a compatibility poll API.
-- [x] Surface request-linked `agent_runs` in the request execution log ahead of
+- [x] Surface request-linked `agent_runs` in the request run log ahead of
   legacy execution rows.
 - [x] Block manual workflow step changes while active `agent_runs` exist.
 - [x] Make cancel workflow-level and mark active `agent_runs` canceled or
@@ -236,7 +236,7 @@ Adapter-originated requests and approvals should also enqueue durable runs.
 - [x] Retire service-token mutation routes for `change_request_executions`;
   keep execution reads only for legacy history.
 - [ ] Generalize workflow runs from `request_id` to subject type/id.
-- [x] Move hook trigger execution records onto `agent_runs` or link hook runs
+- [x] Move hook trigger run records onto `agent_runs` or link hook runs
   to agent runs.
 - [x] Link task-runner task runs to `agent_runs` for shared operator
   visibility.

@@ -1373,15 +1373,13 @@ export function RequestDetailsPanel({
   }
 
   function handleStopWorkflowRun() {
-    if (!activeAgentRun && !activeExecution) return;
+    if (!activeAgentRun) return;
 
     setThreadError(null);
     startCommandTransition(async () => {
       try {
         const response = await fetch(
-          activeAgentRun
-            ? `/admin/change-requests/${request.id}/workflow/cancel`
-            : `/admin/change-requests/${request.id}/executions/${activeExecution?.id}/stop`,
+          `/admin/change-requests/${request.id}/workflow/cancel`,
           { method: "POST" },
         );
         const payload = (await response.json().catch(() => null)) as {
@@ -1481,7 +1479,7 @@ export function RequestDetailsPanel({
             workflowRunStatus={workflowRunStatus}
             steps={currentWorkflowSteps}
             isPending={isPending || isCommandPending || Boolean(activeWorkflowJobId)}
-            isStepRunning={Boolean(activeAgentRun ?? activeExecution)}
+            isStepRunning={Boolean(activeAgentRun)}
             isClosed={isWorkflowClosed}
             canRunWorkflowActions={canRunWorkflowActions}
             onContinue={handleContinueWorkflow}
@@ -1988,7 +1986,7 @@ export function RequestDetailsPanel({
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <LoaderCircle className="h-4 w-4 animate-spin" />
-                      <span className="font-medium">Current Run</span>
+                      <span className="font-medium">Legacy Execution Record</span>
                     </div>
                     <Badge variant="outline">{activeExecution.status}</Badge>
                   </div>
@@ -2465,7 +2463,7 @@ export function RequestDetailsPanel({
                     ))
                   ) : !agentRuns.length ? (
                     <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                      No execution records yet for this request.
+                      No agent runs or legacy execution records yet for this request.
                     </div>
                   ) : null}
                 </div>
