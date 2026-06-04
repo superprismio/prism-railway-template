@@ -47,7 +47,7 @@ Interactive setup:
 ```bash
 railway ssh -s codex-runtime
 export CODEX_HOME=/data/codex
-npm run configure:provider --workspace @prism-railway/codex-runtime
+npm run configure:provider
 ```
 
 The helper backs up any existing `config.toml`, writes the provider config, and

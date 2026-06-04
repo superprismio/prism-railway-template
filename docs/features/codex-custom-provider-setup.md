@@ -104,7 +104,7 @@ Interactive setup:
 ```bash
 railway ssh -s codex-runtime
 export CODEX_HOME=/data/codex
-npm run configure:provider --workspace @prism-railway/codex-runtime
+npm run configure:provider
 ```
 
 Example Venice config:

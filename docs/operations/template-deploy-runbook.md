@@ -327,7 +327,7 @@ Run the interactive helper over Railway SSH:
 ```bash
 railway ssh -s codex-runtime
 export CODEX_HOME=/data/codex
-npm run configure:provider --workspace @prism-railway/codex-runtime
+npm run configure:provider
 ```
 
 For Venice, the helper writes a `/data/codex/config.toml` shape like:

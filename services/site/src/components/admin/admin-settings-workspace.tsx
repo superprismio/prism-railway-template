@@ -278,7 +278,7 @@ function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
                 {copyBlock([
                   "railway ssh -s codex-runtime",
                   "export CODEX_HOME=/data/codex",
-                  "npm run configure:provider --workspace @prism-railway/codex-runtime",
+                  "npm run configure:provider",
                   "",
                   "# Then set the provider API key on codex-runtime and redeploy.",
                 ])}
