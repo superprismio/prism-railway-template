@@ -336,6 +336,36 @@ function hasAutoContinuedFlag(value: { meta?: Record<string, unknown>; payload?:
   return value.meta?.autoContinued === true || value.payload?.autoContinued === true;
 }
 
+type ResponseJobTraceEntry = {
+  at?: string;
+  kind?: string;
+  message?: string;
+};
+
+type ResponseJobPollError = Error & {
+  transient?: boolean;
+};
+
+const transientJobPollStatuses = new Set([408, 429, 502, 503, 504]);
+
+function workflowJobStorageKey(requestId: string) {
+  return `prism-change-request-workflow-job-${requestId}`;
+}
+
+function createTransientJobPollError(message: string) {
+  const error = new Error(message) as ResponseJobPollError;
+  error.transient = true;
+  return error;
+}
+
+function isTransientJobPollError(error: unknown) {
+  return (
+    error instanceof TypeError && /fetch/i.test(error.message)
+  ) || (
+    error instanceof Error && Boolean((error as ResponseJobPollError).transient)
+  );
+}
+
 function safeExternalHref(value: string) {
   try {
     const parsed = new URL(value);
@@ -431,6 +461,9 @@ export function RequestDetailsPanel({
   const [isReopenPending, startReopenTransition] = useTransition();
   const [isArtifactUploadPending, startArtifactUploadTransition] = useTransition();
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
+  const [activeWorkflowJobId, setActiveWorkflowJobId] = useState<string | null>(null);
+  const [workflowJobNotice, setWorkflowJobNotice] = useState<string | null>(null);
+  const [workflowJobTrace, setWorkflowJobTrace] = useState<ResponseJobTraceEntry[]>([]);
 
   useEffect(() => {
     setCurrentWorkflowStepKey(request.currentWorkflowStepKey);
@@ -452,6 +485,9 @@ export function RequestDetailsPanel({
     setReopenComment("");
     setIsReopenDialogOpen(false);
     setLatestUploadedArtifactName(null);
+    setActiveWorkflowJobId(window.localStorage.getItem(workflowJobStorageKey(request.id)));
+    setWorkflowJobNotice(null);
+    setWorkflowJobTrace([]);
   }, [request.id]);
 
   useEffect(() => {
@@ -514,7 +550,8 @@ export function RequestDetailsPanel({
   useEffect(() => {
     const shouldPollLiveState =
       executions.some((execution) => execution.status === "running") ||
-      isCommandPending;
+      isCommandPending ||
+      Boolean(activeWorkflowJobId);
 
     if (!shouldPollLiveState) {
       return;
@@ -621,7 +658,7 @@ export function RequestDetailsPanel({
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [executions, isCommandPending, request.id]);
+  }, [activeWorkflowJobId, executions, isCommandPending, request.id]);
 
   useEffect(() => {
     const scrollArea = threadScrollAreaRef.current;
@@ -658,6 +695,9 @@ export function RequestDetailsPanel({
       : null) ?? configuredBaseBranch,
     activeExecution?.branchName ?? null,
   );
+  const visibleWorkflowJobTrace = workflowJobTrace
+    .filter((entry) => entry.message?.trim())
+    .slice(-5);
   const lifecycleEvents = useMemo(
     () =>
       [
@@ -916,6 +956,112 @@ export function RequestDetailsPanel({
     setArtifacts(Array.isArray(payload.artifacts) ? payload.artifacts : []);
   }
 
+  async function refreshPanelState() {
+    await Promise.all([
+      refreshThread(),
+      refreshExecutions(),
+      refreshWorkflowEvents(),
+      refreshArtifacts(),
+    ]);
+  }
+
+  useEffect(() => {
+    if (!activeWorkflowJobId) return;
+
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    let transientFailureCount = 0;
+
+    async function pollWorkflowJob() {
+      try {
+        const response = await fetch(`/admin/console/jobs/${encodeURIComponent(activeWorkflowJobId!)}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          if (transientJobPollStatuses.has(response.status)) {
+            throw createTransientJobPollError(`Workflow job poll returned HTTP ${response.status}`);
+          }
+          throw new Error(await readApiError(response, "Could not load workflow job"));
+        }
+
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          job?: {
+            id: string;
+            status: string;
+            sessionId?: string | null;
+            errorMessage?: string | null;
+            trace?: ResponseJobTraceEntry[];
+          };
+        };
+        if (cancelled) return;
+
+        const job = payload.job;
+        if (!job) {
+          throw new Error("Workflow job response did not include a job");
+        }
+
+        transientFailureCount = 0;
+        setWorkflowJobNotice("Workflow step is running. This page can stay open while Prism works.");
+        setWorkflowJobTrace(Array.isArray(job.trace) ? job.trace.slice(-8) : []);
+        if (job.sessionId) {
+          setThreadSession({ id: job.sessionId });
+        }
+
+        if (job.status === "succeeded") {
+          window.localStorage.removeItem(workflowJobStorageKey(request.id));
+          setActiveWorkflowJobId(null);
+          setWorkflowJobTrace([]);
+          setWorkflowJobNotice(null);
+          setThreadError(null);
+          await refreshPanelState();
+          return;
+        }
+
+        if (job.status === "failed" || job.status === "canceled") {
+          window.localStorage.removeItem(workflowJobStorageKey(request.id));
+          setActiveWorkflowJobId(null);
+          setWorkflowJobTrace([]);
+          setWorkflowJobNotice(null);
+          setThreadError(job.errorMessage || `Workflow job ${job.status}`);
+          await refreshPanelState().catch(() => undefined);
+          return;
+        }
+      } catch (pollError) {
+        if (cancelled) return;
+        if (isTransientJobPollError(pollError)) {
+          transientFailureCount += 1;
+          const retryDelayMs = Math.min(15_000, 1500 + transientFailureCount * 1000);
+          setWorkflowJobNotice(
+            transientFailureCount === 1
+              ? "Workflow status connection was interrupted. Prism may still be working; retrying status..."
+              : `Workflow status is still retrying. Next check in ${Math.ceil(retryDelayMs / 1000)} seconds.`,
+          );
+          timeoutId = window.setTimeout(pollWorkflowJob, retryDelayMs);
+          return;
+        }
+
+        window.localStorage.removeItem(workflowJobStorageKey(request.id));
+        setActiveWorkflowJobId(null);
+        setWorkflowJobNotice(null);
+        setThreadError(describeFetchError(pollError, "Could not continue agent"));
+        return;
+      }
+
+      if (!cancelled) {
+        timeoutId = window.setTimeout(pollWorkflowJob, 1500);
+      }
+    }
+
+    void pollWorkflowJob();
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [activeWorkflowJobId, request.id]);
+
   async function openArtifactPreview(artifact: RequestArtifactRecord) {
     const requestToken = artifactPreviewRequestRef.current + 1;
     artifactPreviewRequestRef.current = requestToken;
@@ -986,7 +1132,7 @@ export function RequestDetailsPanel({
     workflowAction?: string,
     autoContinueUntilGate = false,
   ) {
-    const response = await fetch("/admin/responses", {
+    const response = await fetch("/admin/console/jobs", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -1008,16 +1154,21 @@ export function RequestDetailsPanel({
 
     const payload = (await response.json().catch(() => null)) as {
       error?: string;
+      jobId?: string;
       session_id?: string;
     } | null;
 
+    if (!payload?.jobId) {
+      throw new Error("Workflow job endpoint did not return jobId");
+    }
     if (payload?.session_id) {
       setThreadSession({ id: payload.session_id });
     }
-    await refreshThread();
-    await refreshExecutions();
-    await refreshWorkflowEvents();
-    await refreshArtifacts();
+    window.localStorage.setItem(workflowJobStorageKey(request.id), payload.jobId);
+    setWorkflowJobTrace([]);
+    setWorkflowJobNotice("Workflow step started. Prism will keep working even if the browser connection drops.");
+    setActiveWorkflowJobId(payload.jobId);
+    await refreshPanelState();
   }
 
   function handleAddComment() {
@@ -1209,13 +1360,27 @@ export function RequestDetailsPanel({
             currentWorkflowStepKey={currentWorkflowStepKey}
             workflowRunStatus={workflowRunStatus}
             steps={currentWorkflowSteps}
-            isPending={isPending || isCommandPending}
+            isPending={isPending || isCommandPending || Boolean(activeWorkflowJobId)}
             isStepRunning={Boolean(activeExecution)}
             isClosed={isWorkflowClosed}
             canRunWorkflowActions={canRunWorkflowActions}
             onContinue={handleContinueWorkflow}
             onStop={handleStopWorkflowRun}
           />
+          {workflowJobNotice ? (
+            <div className="rounded-none border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+              <div>{workflowJobNotice}</div>
+              {visibleWorkflowJobTrace.length > 0 ? (
+                <div className="mt-2 space-y-1 font-mono text-xs">
+                  {visibleWorkflowJobTrace.map((entry, index) => (
+                    <div key={`${entry.at ?? "trace"}-${index}`}>
+                      {entry.message}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {error || threadError ? (
             <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               {error ?? threadError}
