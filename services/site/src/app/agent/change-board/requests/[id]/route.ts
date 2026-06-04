@@ -41,14 +41,15 @@ export async function GET(_request: Request, context: RouteContext) {
 
   const targetApp = changeRequest.targetAppId ? getTargetApp(changeRequest.targetAppId) : null
   const targetEnvironment = changeRequest.targetEnvironmentId ? getTargetEnvironment(changeRequest.targetEnvironmentId) : null
-  const latestExecution = listChangeRequestExecutions(changeRequest.id)[0] ?? null
   const agentRuns = listAgentRuns({ requestId: changeRequest.id, limit: 50 })
+  const latestAgentRun = agentRuns[0] ?? null
+  const latestExecution = listChangeRequestExecutions(changeRequest.id)[0] ?? null
   const externalRefs = listRequestExternalRefs(changeRequest.id)
   const deployPlan = targetApp && targetEnvironment
     ? buildTargetEnvironmentDeployPlan({ request: changeRequest, targetApp, targetEnvironment })
     : null
 
-  return NextResponse.json({ ok: true, changeRequest, targetApp, targetEnvironment, deployPlan, latestExecution, agentRuns, externalRefs })
+  return NextResponse.json({ ok: true, changeRequest, targetApp, targetEnvironment, deployPlan, latestAgentRun, latestExecution, agentRuns, externalRefs })
 }
 
 export async function PATCH(request: Request, context: RouteContext) {

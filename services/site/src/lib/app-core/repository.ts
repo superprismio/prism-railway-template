@@ -3452,7 +3452,7 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
 
 export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) {
   const params: Array<string> = [];
-  const activeExecutionStatuses = ['planned', 'running'];
+  const activeAgentRunStatuses = ['queued', 'running'];
 
   let sql = `SELECT
       cr.id,
@@ -3495,12 +3495,12 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
       AND COALESCE(wr.status, 'active') != 'completed'
       AND NOT EXISTS (
         SELECT 1
-        FROM change_request_executions cre
-        WHERE cre.change_request_id = cr.id
-          AND cre.status IN (${activeExecutionStatuses.map(() => '?').join(', ')})
+        FROM agent_runs ar
+        WHERE ar.request_id = cr.id
+          AND ar.status IN (${activeAgentRunStatuses.map(() => '?').join(', ')})
       )`;
 
-  params.push(...activeExecutionStatuses);
+  params.push(...activeAgentRunStatuses);
 
   if (input.targetAppId) {
     sql += ' AND cr.target_app_id = ?';
@@ -3561,7 +3561,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
 
 export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {}) {
   const params: Array<string> = [];
-  const activeExecutionStatuses = ['planned', 'running'];
+  const activeAgentRunStatuses = ['queued', 'running'];
 
   let sql = `SELECT
       cr.id,
@@ -3604,12 +3604,12 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
       AND COALESCE(wr.status, 'active') != 'completed'
       AND EXISTS (
         SELECT 1
-        FROM change_request_executions cre
-        WHERE cre.change_request_id = cr.id
-          AND cre.status IN (${activeExecutionStatuses.map(() => '?').join(', ')})
+        FROM agent_runs ar
+        WHERE ar.request_id = cr.id
+          AND ar.status IN (${activeAgentRunStatuses.map(() => '?').join(', ')})
       )`;
 
-  params.push(...activeExecutionStatuses);
+  params.push(...activeAgentRunStatuses);
 
   if (input.targetAppId) {
     sql += ' AND cr.target_app_id = ?';
@@ -3620,17 +3620,17 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
     ORDER BY
       COALESCE(
         (
-          SELECT MAX(COALESCE(cre.started_at, cre.created_at))
-          FROM change_request_executions cre
-          WHERE cre.change_request_id = cr.id
-            AND cre.status IN (${activeExecutionStatuses.map(() => '?').join(', ')})
+          SELECT MAX(COALESCE(ar.started_at, ar.created_at))
+          FROM agent_runs ar
+          WHERE ar.request_id = cr.id
+            AND ar.status IN (${activeAgentRunStatuses.map(() => '?').join(', ')})
         ),
         cr.updated_at
       ) DESC,
       cr.request_number ASC
     LIMIT 1`;
 
-  params.push(...activeExecutionStatuses);
+  params.push(...activeAgentRunStatuses);
 
   const row = getDb().prepare(sql).get(...params) as Parameters<typeof parseTrackedChangeRequestRow>[0] | undefined;
   return row ? parseTrackedChangeRequestRow(row) : null;

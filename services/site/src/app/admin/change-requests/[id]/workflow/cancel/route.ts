@@ -5,9 +5,7 @@ import {
   getChangeRequest,
   getWorkflowByKey,
   getWorkflowRunForRequest,
-  listChangeRequestExecutions,
   updateChangeRequest,
-  updateChangeRequestExecution,
   updateWorkflowRun,
 } from "@/lib/app-core"
 import { adminFetch } from "@/lib/admin"
@@ -65,22 +63,6 @@ export async function POST(_request: Request, context: RouteContext) {
     requestId: changeRequest.id,
     reason: "Canceled by an admin operator.",
   })
-  const canceledExecutions = listChangeRequestExecutions(changeRequest.id)
-    .filter((execution) => ["planned", "running"].includes(execution.status))
-    .map((execution) => updateChangeRequestExecution(execution.id, {
-      status: "canceled",
-      summary: "Canceled by an admin operator.",
-      errorMessage: null,
-      finishedAt: now,
-      meta: {
-        cancelRequested: true,
-        canceledAt: now,
-        canceledBy: "admin",
-        terminalStepKey,
-      },
-    }))
-    .filter(Boolean)
-
   const workflowRun = getWorkflowRunForRequest(changeRequest.id)
   if (workflowRun) {
     updateChangeRequest(changeRequest.id, {
@@ -102,7 +84,6 @@ export async function POST(_request: Request, context: RouteContext) {
       note: "Canceled the workflow and moved it to a terminal step.",
       payload: {
         canceledAgentRunIds: canceledAgentRuns.map((run) => run.id),
-        canceledExecutionIds: canceledExecutions.map((execution) => execution?.id).filter(Boolean),
         previousStepKey: workflowRun.currentStepKey,
         terminalStepKey,
       },
@@ -112,7 +93,6 @@ export async function POST(_request: Request, context: RouteContext) {
   return NextResponse.json({
     ok: true,
     canceledAgentRuns,
-    canceledExecutions,
     changeRequest: getChangeRequest(changeRequest.id) ?? changeRequest,
     workflowRun: getWorkflowRunForRequest(changeRequest.id),
   })

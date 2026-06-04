@@ -51,8 +51,10 @@ service callers. Creation may autostart the workflow by calling
 `/agent/responses`. Continue and approve actions also call the shared response
 handler.
 
-The shared handler currently starts executions, calls Codex Runtime, records
-messages, and mutates workflow state.
+The shared handler now starts or resumes `agent_runs`, calls Codex Runtime,
+records messages, and mutates workflow state. Historical
+`change_request_executions` rows remain readable for older requests, but new
+workflow-step runs should not create mirrored execution rows.
 
 ### Tasks
 
@@ -138,7 +140,7 @@ Every surface follows the same pattern:
 - A workflow action such as `approved` is only valid on a gate step.
 - A run that starts on step `X` may only complete step `X` if the workflow is
   still on `X`.
-- A run may only complete if its execution row is still active.
+- A run may only complete if its `agent_runs` row is still active.
 - Manual step changes are blocked while a queued or running agent run exists for
   the same workflow subject.
 - Operators can cancel/supersede an active run, then move the workflow step.
@@ -196,13 +198,13 @@ Adapter-originated requests and approvals should also enqueue durable runs.
 ## First Slice Checklist
 
 - [x] Reject workflow actions on non-gate steps.
-- [x] Ignore late completions when the workflow is no longer on the execution's
+- [x] Ignore late completions when the workflow is no longer on the run's
   expected step.
-- [x] Preserve execution results and trace even when workflow mutation is
+- [x] Preserve run results and trace even when workflow mutation is
   ignored.
-- [x] Store workflow-step active-run idempotency in execution metadata as a
-  compatibility layer for future `agent_runs.idempotency_key`.
-- [x] Reuse an active execution response when the same request, workflow run,
+- [x] Store workflow-step active-run idempotency in
+  `agent_runs.idempotency_key`.
+- [x] Reuse an active agent run response when the same request, workflow run,
   step, and action are submitted again.
 - [ ] Add tests or focused validation for stale completion behavior.
 - [ ] Confirm Prism Console, request autostart, task workflow-runner, hook
@@ -212,7 +214,7 @@ Adapter-originated requests and approvals should also enqueue durable runs.
 
 - [x] Introduce a general `agent_runs` table.
 - [x] Link request workflow-step executions to `agent_runs` for observability
-  without changing the executor.
+  during the cutover.
 - [x] Add service/admin read routes for inspecting agent runs.
 - [x] Enqueue request workflow autostart through `agent_runs` instead of
   waiting on Codex Runtime during request creation.
@@ -225,8 +227,14 @@ Adapter-originated requests and approvals should also enqueue durable runs.
 - [x] Block manual workflow step changes while active `agent_runs` exist.
 - [x] Make cancel workflow-level and mark active `agent_runs` canceled or
   superseded.
-- [ ] Move request workflow metadata reads from `change_request_executions` to
+- [x] Move request workflow metadata reads from `change_request_executions` to
   `agent_runs.result`.
+- [x] Stop creating mirrored `change_request_executions` rows for new
+  workflow-step runs.
+- [x] Move request active/next selection and direct runtime idempotency guards
+  from active execution rows to active `agent_runs`.
+- [x] Retire service-token mutation routes for `change_request_executions`;
+  keep execution reads only for legacy history.
 - [ ] Generalize workflow runs from `request_id` to subject type/id.
 - [ ] Move hook trigger execution records onto `agent_runs` or link hook runs
   to agent runs.
