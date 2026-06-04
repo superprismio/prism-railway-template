@@ -203,6 +203,7 @@ export function HooksWorkspace() {
           </div>
           <p className="mt-1 truncate text-xs text-muted-foreground">
             {formatTimestamp(run.startedAt)}
+            {run.agentRunId ? ` - run ${run.agentRunId.slice(0, 8)}` : ""}
             {run.requestTitle ? ` - ${run.requestTitle}` : ""}
             {run.errorMessage ? ` - ${run.errorMessage}` : ""}
           </p>

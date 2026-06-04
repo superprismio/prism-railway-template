@@ -669,6 +669,7 @@ export function RequestDetailsPanel({
           messages?: AgentThreadMessage[];
         };
         const executionPayload = (await executionResponse.json()) as {
+          legacyExecutions?: ChangeRequestExecutionRecord[];
           executions?: ChangeRequestExecutionRecord[];
           agentRuns?: AgentRunRecord[];
         };
@@ -696,9 +697,11 @@ export function RequestDetailsPanel({
           Array.isArray(threadPayload.messages) ? threadPayload.messages : [],
         );
         setExecutions(
-          Array.isArray(executionPayload.executions)
-            ? executionPayload.executions
-            : [],
+          Array.isArray(executionPayload.legacyExecutions)
+            ? executionPayload.legacyExecutions
+            : Array.isArray(executionPayload.executions)
+              ? executionPayload.executions
+              : [],
         );
         setAgentRuns(
           Array.isArray(executionPayload.agentRuns)
@@ -835,6 +838,7 @@ export function RequestDetailsPanel({
 
         const payload = (await response.json()) as {
           ok?: boolean;
+          legacyExecutions?: ChangeRequestExecutionRecord[];
           executions?: ChangeRequestExecutionRecord[];
           agentRuns?: AgentRunRecord[];
           error?: string;
@@ -846,7 +850,11 @@ export function RequestDetailsPanel({
         }
 
         setExecutions(
-          Array.isArray(payload.executions) ? payload.executions : [],
+          Array.isArray(payload.legacyExecutions)
+            ? payload.legacyExecutions
+            : Array.isArray(payload.executions)
+              ? payload.executions
+              : [],
         );
         setAgentRuns(Array.isArray(payload.agentRuns) ? payload.agentRuns : []);
       } catch (error) {
@@ -1018,10 +1026,17 @@ export function RequestDetailsPanel({
     }
 
     const payload = (await response.json()) as {
+      legacyExecutions?: ChangeRequestExecutionRecord[];
       executions?: ChangeRequestExecutionRecord[];
       agentRuns?: AgentRunRecord[];
     };
-    setExecutions(Array.isArray(payload.executions) ? payload.executions : []);
+    setExecutions(
+      Array.isArray(payload.legacyExecutions)
+        ? payload.legacyExecutions
+        : Array.isArray(payload.executions)
+          ? payload.executions
+          : [],
+    );
     setAgentRuns(Array.isArray(payload.agentRuns) ? payload.agentRuns : []);
   }
 

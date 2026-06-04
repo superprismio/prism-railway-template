@@ -21,9 +21,11 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })
   }
 
+  const legacyExecutions = listChangeRequestExecutions(changeRequestId)
   return NextResponse.json({
     ok: true,
-    executions: listChangeRequestExecutions(changeRequestId),
+    legacyExecutions,
+    executions: legacyExecutions,
     agentRuns: listAgentRuns({ requestId: changeRequestId, limit: 100 }),
   })
 }

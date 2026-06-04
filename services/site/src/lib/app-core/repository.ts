@@ -689,6 +689,7 @@ export interface HookRecord {
 
 export interface HookRunRecord {
   id: string;
+  agentRunId: string | null;
   hookId: string | null;
   hookKey: string;
   hookName: string | null;
@@ -809,6 +810,7 @@ export interface UpsertRequestExternalRefInput {
 
 export interface TaskRunRecord {
   id: string;
+  agentRunId: string | null;
   taskId: string;
   taskKey: string | null;
   taskName: string | null;
@@ -1124,6 +1126,7 @@ interface RequestExternalRefRow {
 
 interface TaskRunRow {
   id: string;
+  agent_run_id: string | null;
   task_id: string;
   task_key: string | null;
   task_name: string | null;
@@ -1180,6 +1183,7 @@ interface HookRow {
 
 interface HookRunRow {
   id: string;
+  agent_run_id: string | null;
   hook_id: string | null;
   hook_key: string;
   hook_name: string | null;
@@ -1257,6 +1261,7 @@ function mapHookRow(row: HookRow): HookRecord {
 function mapHookRunRow(row: HookRunRow): HookRunRecord {
   return {
     id: row.id,
+    agentRunId: row.agent_run_id,
     hookId: row.hook_id,
     hookKey: row.hook_key,
     hookName: row.hook_name,
@@ -1361,6 +1366,7 @@ function mapRequestExternalRefRow(row: RequestExternalRefRow): RequestExternalRe
 function mapTaskRunRow(row: TaskRunRow): TaskRunRecord {
   return {
     id: row.id,
+    agentRunId: row.agent_run_id,
     taskId: row.task_id,
     taskKey: row.task_key,
     taskName: row.task_name,
@@ -4700,6 +4706,8 @@ export function listAgentRuns(input: {
   kind?: string | null;
   status?: string | null;
   requestId?: string | null;
+  taskKey?: string | null;
+  hookKey?: string | null;
   limit?: number;
 } = {}) {
   const limit = Math.max(1, Math.min(Number(input.limit ?? 50), 200));
@@ -4708,6 +4716,8 @@ export function listAgentRuns(input: {
   const kind = normalizeText(input.kind);
   const status = normalizeText(input.status);
   const requestId = normalizeText(input.requestId);
+  const taskKey = normalizeText(input.taskKey);
+  const hookKey = normalizeText(input.hookKey);
   if (kind) {
     filters.push('kind = ?');
     params.push(kind);
@@ -4719,6 +4729,14 @@ export function listAgentRuns(input: {
   if (requestId) {
     filters.push('request_id = ?');
     params.push(requestId);
+  }
+  if (taskKey) {
+    filters.push('task_key = ?');
+    params.push(taskKey);
+  }
+  if (hookKey) {
+    filters.push('hook_key = ?');
+    params.push(hookKey);
   }
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const rows = getDb()
@@ -5996,21 +6014,40 @@ export function createHookRun(input: CreateHookRunInput): HookRunRecord {
   if (!hookKey) {
     throw new Error('HOOK_RUN_KEY_REQUIRED');
   }
+  const source = normalizeText(input.source) || 'hook';
+  const hookName = normalizeText(input.hookName) || null;
+  const workflowKey = normalizeText(input.workflowKey) || null;
+  const agentRun = createAgentRun({
+    kind: 'hook',
+    status: 'running',
+    idempotencyKey: `hook:${id}`,
+    hookKey,
+    source,
+    input: {
+      hookRunId: id,
+      hookKey,
+      hookName,
+      workflowKey,
+      payload: input.payload ?? {},
+    },
+    startedAt,
+  });
   getDb().prepare(
     `INSERT INTO hook_runs (
-       id, hook_id, hook_key, hook_name, workflow_key, status, source, payload_json,
+       id, agent_run_id, hook_id, hook_key, hook_name, workflow_key, status, source, payload_json,
        result_json, started_at, created_at, updated_at
      ) VALUES (
-       @id, @hookId, @hookKey, @hookName, @workflowKey, 'running', @source, @payloadJson,
+       @id, @agentRunId, @hookId, @hookKey, @hookName, @workflowKey, 'running', @source, @payloadJson,
        '{}', @startedAt, @createdAt, @updatedAt
      )`,
   ).run({
     id,
+    agentRunId: agentRun?.id ?? null,
     hookId: normalizeText(input.hookId) || null,
     hookKey,
-    hookName: normalizeText(input.hookName) || null,
-    workflowKey: normalizeText(input.workflowKey) || null,
-    source: normalizeText(input.source) || 'hook',
+    hookName,
+    workflowKey,
+    source,
     payloadJson: JSON.stringify(input.payload ?? {}),
     startedAt,
     createdAt: now,
@@ -6067,6 +6104,36 @@ export function updateHookRun(id: string, input: UpdateHookRunInput): HookRunRec
     finishedAt,
     updatedAt: now,
   });
+  if (current.agentRunId) {
+    const requestId = input.requestId === undefined ? current.requestId : normalizeText(input.requestId) || null;
+    const requestNumber = input.requestNumber === undefined ? current.requestNumber : input.requestNumber;
+    const requestTitle = input.requestTitle === undefined ? current.requestTitle : normalizeText(input.requestTitle) || null;
+    const result = input.result === undefined ? current.result : input.result;
+    updateAgentRun(current.agentRunId, {
+      status:
+        status === 'succeeded'
+          ? 'succeeded'
+          : status === 'failed'
+            ? 'failed'
+            : status === 'canceled'
+              ? 'canceled'
+              : 'running',
+      requestId,
+      result: {
+        ...result,
+        hookRunId: current.id,
+        hookKey: current.hookKey,
+        hookName: current.hookName,
+        workflowKey: current.workflowKey,
+        requestNumber,
+        requestTitle,
+        autoStartQueued: input.autoStartQueued === undefined ? current.autoStartQueued : input.autoStartQueued,
+        autoStartStarted: input.autoStartStarted === undefined ? current.autoStartStarted : input.autoStartStarted,
+      },
+      errorMessage: input.errorMessage === undefined ? current.errorMessage : normalizeText(input.errorMessage) || null,
+      finishedAt: status === 'running' ? null : finishedAt,
+    });
+  }
   return getHookRun(id);
 }
 
@@ -6118,21 +6185,40 @@ export function createTaskRun(input: CreateTaskRunInput): TaskRunRecord {
 
   const now = new Date().toISOString();
   const id = randomUUID();
+  const status = normalizeText(input.status) || 'running';
+  const triggerSource = normalizeText(input.triggerSource) || 'manual';
+  const startedAt = input.startedAt ?? now;
+  const agentRun = createAgentRun({
+    kind: 'task',
+    status,
+    idempotencyKey: `task:${id}`,
+    taskKey: task.key,
+    source: triggerSource,
+    input: {
+      taskRunId: id,
+      taskKey: task.key,
+      taskName: task.name,
+      triggerSource,
+      inputSnapshot: input.inputSnapshot ?? {},
+    },
+    startedAt,
+  });
 
   getDb().prepare(
     `INSERT INTO task_runs (
-       id, task_id, status, trigger_source, started_at, finished_at, result_summary, error_message,
+       id, agent_run_id, task_id, status, trigger_source, started_at, finished_at, result_summary, error_message,
        input_snapshot_json, output_snapshot_json, artifact_refs_json, created_at, updated_at
      ) VALUES (
-       @id, @taskId, @status, @triggerSource, @startedAt, NULL, @resultSummary, @errorMessage,
+       @id, @agentRunId, @taskId, @status, @triggerSource, @startedAt, NULL, @resultSummary, @errorMessage,
        @inputSnapshotJson, @outputSnapshotJson, @artifactRefsJson, @createdAt, @updatedAt
      )`,
   ).run({
     id,
+    agentRunId: agentRun?.id ?? null,
     taskId: task.id,
-    status: normalizeText(input.status) || 'running',
-    triggerSource: normalizeText(input.triggerSource) || 'manual',
-    startedAt: input.startedAt ?? now,
+    status,
+    triggerSource,
+    startedAt,
     resultSummary: normalizeText(input.resultSummary) || null,
     errorMessage: normalizeText(input.errorMessage) || null,
     inputSnapshotJson: JSON.stringify(input.inputSnapshot ?? {}),
@@ -6189,6 +6275,31 @@ export function updateTaskRun(id: string, input: UpdateTaskRunInput): TaskRunRec
     artifactRefsJson: JSON.stringify(input.artifactRefs ?? current.artifactRefs),
     updatedAt: now,
   });
+  if (current.agentRunId) {
+    const status = normalizeText(input.status) || current.status;
+    updateAgentRun(current.agentRunId, {
+      status:
+        status === 'succeeded'
+          ? 'succeeded'
+          : status === 'failed'
+            ? 'failed'
+            : status === 'canceled'
+              ? 'canceled'
+              : 'running',
+      result: {
+        taskRunId: current.id,
+        taskKey: current.taskKey,
+        taskName: current.taskName,
+        triggerSource: current.triggerSource,
+        resultSummary:
+          input.resultSummary === undefined ? current.resultSummary : normalizeText(input.resultSummary) || null,
+        outputSnapshot: input.outputSnapshot ?? current.outputSnapshot,
+        artifactRefs: input.artifactRefs ?? current.artifactRefs,
+      },
+      errorMessage: input.errorMessage === undefined ? current.errorMessage : normalizeText(input.errorMessage) || null,
+      finishedAt: input.finishedAt === undefined ? current.finishedAt : input.finishedAt,
+    });
+  }
 
   const updated = getTaskRun(id);
   if (!updated) {
