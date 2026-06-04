@@ -563,6 +563,79 @@ function isCheckpointWorkflowStep(step: Record<string, unknown> | null | undefin
   return step ? stepType(step) === "checkpoint" : false
 }
 
+function workflowAgentRunResult(input: {
+  runtimeResponse: RuntimeResponsePayload
+  responseText?: string | null
+  workflowKey: string | null
+  workflowRunId: string
+  workflowStepKey: string
+  sessionId: string
+  autoContinued?: boolean
+  ignored?: boolean
+  reason?: string | null
+  expectedStepKey?: string | null
+}) {
+  const gitPushState = summarizeGitPushState(input.runtimeResponse.trace as RuntimeTraceEntry[] | undefined)
+  return {
+    responseText: input.responseText ?? null,
+    workflowKey: input.workflowKey,
+    workflowRunId: input.workflowRunId,
+    workflowStepKey: input.workflowStepKey,
+    sessionId: input.sessionId,
+    autoContinued: input.autoContinued === true,
+    codexThreadId: input.runtimeResponse.thread_id ?? null,
+    branchName: input.runtimeResponse.branchName ?? null,
+    commitSha: input.runtimeResponse.commitSha ?? null,
+    baseBranch: input.runtimeResponse.baseBranch ?? null,
+    baseCommitSha: input.runtimeResponse.baseCommitSha ?? null,
+    headCommitSha: input.runtimeResponse.commitSha ?? null,
+    branchUrl: input.runtimeResponse.branchUrl ?? null,
+    gitPushSucceeded: gitPushState.gitPushSucceeded,
+    gitPushError: gitPushState.gitPushError,
+    ignored: input.ignored === true,
+    reason: input.reason ?? null,
+    expectedStepKey: input.expectedStepKey ?? null,
+  }
+}
+
+function failedWorkflowAgentRunResult(input: {
+  runtimeError: RuntimeError
+  latestExecution: ReturnType<typeof getChangeRequestExecution> | null
+  workflowKey: string | null
+  workflowRunId: string
+  workflowStepKey: string
+  sessionId: string
+}) {
+  return {
+    responseText: null,
+    workflowKey: input.workflowKey,
+    workflowRunId: input.workflowRunId,
+    workflowStepKey: input.workflowStepKey,
+    sessionId: input.sessionId,
+    codexThreadId: input.runtimeError.codexThreadId ?? null,
+    branchName:
+      typeof input.runtimeError.branchName === "string"
+        ? input.runtimeError.branchName
+        : input.latestExecution?.branchName ?? null,
+    commitSha:
+      typeof input.runtimeError.commitSha === "string"
+        ? input.runtimeError.commitSha
+        : input.latestExecution?.commitSha ?? null,
+    baseBranch:
+      typeof input.runtimeError.baseBranch === "string"
+        ? input.runtimeError.baseBranch
+        : (input.latestExecution?.meta?.baseBranch as string | undefined) ?? null,
+    baseCommitSha:
+      typeof input.runtimeError.baseCommitSha === "string"
+        ? input.runtimeError.baseCommitSha
+        : (input.latestExecution?.meta?.baseCommitSha as string | undefined) ?? null,
+    headCommitSha:
+      typeof input.runtimeError.commitSha === "string"
+        ? input.runtimeError.commitSha
+        : input.latestExecution?.commitSha ?? null,
+  }
+}
+
 function completeWorkflowAgentStep(input: {
   executionId: string | null
   runtimeResponse: RuntimeResponsePayload
@@ -578,7 +651,7 @@ function completeWorkflowAgentStep(input: {
   agentRunId?: string | null
 }) {
   const execution = input.executionId ? getChangeRequestExecution(input.executionId) : null
-  const agentRunId = agentRunIdFromExecutionMeta(execution?.meta)
+  const agentRunId = input.agentRunId ?? agentRunIdFromExecutionMeta(execution?.meta)
   if (input.executionId && execution?.status === "canceled") {
     if (agentRunId) {
       updateAgentRun(agentRunId, {
@@ -637,11 +710,15 @@ function completeWorkflowAgentStep(input: {
   if (agentRunId) {
     updateAgentRun(agentRunId, {
       status: "succeeded",
-      result: {
+      result: workflowAgentRunResult({
+        runtimeResponse: input.runtimeResponse,
         responseText: input.responseText,
-        branchName: input.runtimeResponse.branchName ?? null,
-        commitSha: input.runtimeResponse.commitSha ?? null,
-      },
+        workflowKey: input.workflowKey,
+        workflowRunId: input.workflowRunId,
+        workflowStepKey: input.stepKey,
+        sessionId: input.sessionId,
+        autoContinued: input.autoContinued,
+      }),
       trace: Array.isArray(input.runtimeResponse.trace) ? input.runtimeResponse.trace : [],
       errorMessage: null,
       finishedAt: new Date().toISOString(),
@@ -653,14 +730,18 @@ function completeWorkflowAgentStep(input: {
   if (!workflowRunStillOnStep(input.requestId, input.workflowRunId, input.stepKey)) {
     if (agentRunId) {
       updateAgentRun(agentRunId, {
-        result: {
+        result: workflowAgentRunResult({
+          runtimeResponse: input.runtimeResponse,
           responseText: input.responseText,
-          branchName: input.runtimeResponse.branchName ?? null,
-          commitSha: input.runtimeResponse.commitSha ?? null,
+          workflowKey: input.workflowKey,
+          workflowRunId: input.workflowRunId,
+          workflowStepKey: input.stepKey,
+          sessionId: input.sessionId,
+          autoContinued: input.autoContinued,
           ignored: true,
           reason: "workflow_moved",
           expectedStepKey: input.stepKey,
-        },
+        }),
       })
     }
     createWorkflowEvent({
@@ -1647,16 +1728,14 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         if (failedAgentRunId) {
           updateAgentRun(failedAgentRunId, {
             status: "failed",
-            result: {
-              branchName:
-                typeof runtimeError.branchName === "string"
-                  ? runtimeError.branchName
-                  : linkedLatestExecution?.branchName ?? null,
-              commitSha:
-                typeof runtimeError.commitSha === "string"
-                  ? runtimeError.commitSha
-                  : linkedLatestExecution?.commitSha ?? null,
-            },
+            result: failedWorkflowAgentRunResult({
+              runtimeError,
+              latestExecution: linkedLatestExecution,
+              workflowKey: linkedChangeRequest.workflowKey,
+              workflowRunId: linkedWorkflowRun.id,
+              workflowStepKey: runnableStepKey,
+              sessionId: session.id,
+            }),
             trace: failureTrace,
             errorMessage: message,
             finishedAt: failedAt,

@@ -337,6 +337,66 @@ function hasAutoContinuedFlag(value: { meta?: Record<string, unknown>; payload?:
   return value.meta?.autoContinued === true || value.payload?.autoContinued === true;
 }
 
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function agentRunResultString(run: AgentRunRecord | null, key: string) {
+  return stringValue(run?.result?.[key]);
+}
+
+function agentRunBranchUrl(run: AgentRunRecord | null) {
+  return agentRunResultString(run, "branchUrl");
+}
+
+function agentRunDeployUrl(
+  run: AgentRunRecord | null,
+  targetEnvironment?: TargetEnvironmentRecord | null,
+) {
+  const direct = agentRunResultString(run, "deployUrl");
+  if (direct) return direct;
+
+  const staticUrl = agentRunResultString(run, "deployStaticUrl");
+  if (staticUrl) return staticUrl.startsWith("http") ? staticUrl : `https://${staticUrl}`;
+
+  const fallback = targetEnvironment?.baseUrl;
+  return stringValue(fallback);
+}
+
+function latestAgentRunTraceEntry(run: AgentRunRecord | null) {
+  const trace = Array.isArray(run?.trace) ? run.trace : [];
+  for (let index = trace.length - 1; index >= 0; index -= 1) {
+    const entry = trace[index];
+    const message = stringValue(entry?.message);
+    if (message) {
+      return {
+        kind: stringValue(entry?.kind) ?? "runtime",
+        message,
+      };
+    }
+  }
+
+  return null;
+}
+
+function describeAgentRunStage(run: AgentRunRecord | null) {
+  if (!run) return "No active agent run";
+
+  const traceEntry = latestAgentRunTraceEntry(run);
+  if (traceEntry) {
+    return `${traceEntry.kind}: ${traceEntry.message}`;
+  }
+
+  const branchName = agentRunResultString(run, "branchName");
+  if (branchName) {
+    return `Working on branch ${branchName}`;
+  }
+
+  return run.status === "queued"
+    ? "Queued and waiting for the runtime worker"
+    : "Agent run started and waiting for runtime updates";
+}
+
 type ResponseJobTraceEntry = {
   at?: string;
   kind?: string;
@@ -695,6 +755,15 @@ export function RequestDetailsPanel({
   const activeRunElapsed = formatDurationFrom(
     activeAgentRun?.startedAt ?? activeAgentRun?.createdAt ?? null,
     liveNowMs,
+  );
+  const activeAgentRunStage = describeAgentRunStage(activeAgentRun);
+  const activeAgentRunBranchName = agentRunResultString(activeAgentRun, "branchName");
+  const activeAgentRunBranchUrl = agentRunBranchUrl(activeAgentRun);
+  const activeAgentRunDeployUrl = agentRunDeployUrl(activeAgentRun, targetEnvironment);
+  const activeAgentRunPrUrl = githubCompareUrl(
+    targetApp,
+    agentRunResultString(activeAgentRun, "baseBranch") ?? configuredBaseBranch,
+    activeAgentRunBranchName,
   );
   const activeExecutionElapsed = formatDurationFrom(
     activeExecution?.startedAt ?? null,
@@ -1836,14 +1905,62 @@ export function RequestDetailsPanel({
                     </div>
                     <Badge variant="outline">{activeAgentRun.kind}</Badge>
                   </div>
-                  <div className="mt-3 grid gap-1 text-xs">
-                    {activeAgentRun.workflowStepKey ? <div>Step: {activeAgentRun.workflowStepKey}</div> : null}
-                    {activeRunElapsed ? <div>Elapsed: {activeRunElapsed}</div> : null}
-                    <div>Run: {activeAgentRun.id}</div>
+                  <div className="mt-3 space-y-2">
+                    <p className="leading-6">{activeAgentRunStage}</p>
+                    <div className="grid gap-1 text-xs text-sky-900/75">
+                      {activeAgentRun.workflowStepKey ? (
+                        <div>Step: {activeAgentRun.workflowStepKey}</div>
+                      ) : null}
+                      {activeRunElapsed ? <div>Elapsed: {activeRunElapsed}</div> : null}
+                      <div>Run: {activeAgentRun.id}</div>
+                      {activeAgentRunBranchName ? (
+                        <div>
+                          Branch:{" "}
+                          {activeAgentRunBranchUrl ? (
+                            <a
+                              href={activeAgentRunBranchUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-medium underline underline-offset-2"
+                            >
+                              {activeAgentRunBranchName}
+                            </a>
+                          ) : (
+                            activeAgentRunBranchName
+                          )}
+                        </div>
+                      ) : null}
+                      {activeAgentRunPrUrl ? (
+                        <div>
+                          PR:{" "}
+                          <a
+                            href={activeAgentRunPrUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium underline underline-offset-2"
+                          >
+                            Open compare / PR
+                          </a>
+                        </div>
+                      ) : null}
+                      {activeAgentRunDeployUrl ? (
+                        <div>
+                          Preview:{" "}
+                          <a
+                            href={activeAgentRunDeployUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium underline underline-offset-2"
+                          >
+                            {activeAgentRunDeployUrl}
+                          </a>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               ) : null}
-              {activeExecution ? (
+              {!activeAgentRun && activeExecution ? (
                 <div className="rounded-none border border-sky-200/70 bg-sky-50/80 p-4 text-sm text-sky-950">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
@@ -2054,11 +2171,22 @@ export function RequestDetailsPanel({
               <ScrollArea className="h-[420px] max-h-[calc(100vh-430px)] min-h-[240px]">
                 <div className="space-y-3">
                   {agentRuns.length ? (
-                    agentRuns.map((run) => (
-                      <div
-                        key={run.id}
-                        className="rounded-none border border-primary/25 bg-primary/5 p-4 text-sm"
-                      >
+                    agentRuns.map((run) => {
+                      const branchName = agentRunResultString(run, "branchName");
+                      const branchUrl = agentRunBranchUrl(run);
+                      const baseBranch =
+                        agentRunResultString(run, "baseBranch") ?? configuredBaseBranch;
+                      const compareUrl = githubCompareUrl(targetApp, baseBranch, branchName);
+                      const commitSha =
+                        agentRunResultString(run, "commitSha") ??
+                        agentRunResultString(run, "headCommitSha");
+                      const deployUrl = agentRunDeployUrl(run, targetEnvironment);
+
+                      return (
+                        <div
+                          key={run.id}
+                          className="rounded-none border border-primary/25 bg-primary/5 p-4 text-sm"
+                        >
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge
@@ -2092,6 +2220,50 @@ export function RequestDetailsPanel({
                         <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
                           <div>Run: {run.id}</div>
                           {run.idempotencyKey ? <div>Key: {run.idempotencyKey}</div> : null}
+                          {branchName ? (
+                            <div>
+                              Branch:{" "}
+                              {branchUrl ? (
+                                <a
+                                  href={branchUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="font-medium underline underline-offset-2"
+                                >
+                                  {branchName}
+                                </a>
+                              ) : (
+                                branchName
+                              )}
+                            </div>
+                          ) : null}
+                          {compareUrl ? (
+                            <div>
+                              PR:{" "}
+                              <a
+                                href={compareUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-medium underline underline-offset-2"
+                              >
+                                Open compare / PR
+                              </a>
+                            </div>
+                          ) : null}
+                          {commitSha ? <div>Commit: {commitSha}</div> : null}
+                          {deployUrl ? (
+                            <div>
+                              Preview:{" "}
+                              <a
+                                href={deployUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-medium underline underline-offset-2"
+                              >
+                                {deployUrl}
+                              </a>
+                            </div>
+                          ) : null}
                           {run.startedAt ? <div>Started: {isoLabel(run.startedAt)}</div> : null}
                           {run.finishedAt ? <div>Finished: {isoLabel(run.finishedAt)}</div> : null}
                         </div>
@@ -2100,8 +2272,9 @@ export function RequestDetailsPanel({
                             {JSON.stringify(run.trace.slice(-5), null, 2)}
                           </pre>
                         ) : null}
-                      </div>
-                    ))
+                        </div>
+                      );
+                    })
                   ) : null}
                   {executions.length ? (
                     executions.map((execution) => (
@@ -2126,7 +2299,7 @@ export function RequestDetailsPanel({
                               <Badge variant="outline">auto</Badge>
                             ) : null}
                             <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                              {execution.actorType}
+                              legacy execution · {execution.actorType}
                             </span>
                           </div>
                           <span className="text-xs text-muted-foreground">
