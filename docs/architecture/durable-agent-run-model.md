@@ -236,10 +236,10 @@ Adapter-originated requests and approvals should also enqueue durable runs.
 - [x] Retire service-token mutation routes for `change_request_executions`;
   keep execution reads only for legacy history.
 - [ ] Generalize workflow runs from `request_id` to subject type/id.
-- [ ] Move hook trigger execution records onto `agent_runs` or link hook runs
+- [x] Move hook trigger execution records onto `agent_runs` or link hook runs
   to agent runs.
-- [ ] Have task-runner enqueue site-owned runs instead of calling
-  `/agent/responses` directly for workflow execution.
+- [x] Link task-runner task runs to `agent_runs` for shared operator
+  visibility.
 - [ ] Add idempotency keys for adapter commands, hooks, task runs, and request
   workflow steps.
 - [ ] Add a unified run detail view in the admin UI.

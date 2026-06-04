@@ -298,7 +298,7 @@ function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>)
     || normalized.includes('change-request')
     || normalized.includes('next request')
     || normalized.includes('current request')
-    || normalized.includes('execution record')
+    || normalized.includes('agent run')
     || normalized.includes('deploy plan')
   ) {
     requested.add('change-request-ops');

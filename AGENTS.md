@@ -98,7 +98,7 @@ curl -fsSL \
   -d '{"comment":"Operator approved this gate from Discord.","workflowAction":"approved","autoContinueUntilGate":true}'
 ```
 
-For a human gate, `workflowAction` defaults to `approved`. The route records the gate event and uses the normal workflow runner so executions and auto-continue behavior stay in sync.
+For a human gate, `workflowAction` defaults to `approved`. The route records the gate event and uses the normal workflow runner so agent runs and auto-continue behavior stay in sync.
 
 For Prism Memory Discord bucket repair after `discord.category_to_bucket` changes, use Prism Memory ops auth and start with a dry-run:
 

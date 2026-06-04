@@ -2,7 +2,7 @@
 
 Check the linked pull request and linked issue state without starting new implementation work by default.
 
-Use the request details, latest comments, execution history, artifacts, and external refs. If a GitHub pull request ref exists, inspect the PR state, review comments, requested changes, failing checks, and merge readiness. If no pull request ref exists but a branch was pushed, create the PR into the target repository base branch when remote access is configured, then attach the PR external ref.
+Use the request details, latest comments, agent-run history, artifacts, and external refs. If a GitHub pull request ref exists, inspect the PR state, review comments, requested changes, failing checks, and merge readiness. If no pull request ref exists but a branch was pushed, create the PR into the target repository base branch when remote access is configured, then attach the PR external ref.
 
 Expected behavior:
 
