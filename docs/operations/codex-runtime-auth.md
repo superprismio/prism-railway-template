@@ -42,6 +42,18 @@ auth. This is useful for experiments with Venice AI or other model providers.
 In this mode, do not run `codex login --device-auth`; configure
 `/data/codex/config.toml`.
 
+Interactive setup:
+
+```bash
+railway ssh -s codex-runtime
+export CODEX_HOME=/data/codex
+npm run configure:provider --workspace @prism-railway/codex-runtime
+```
+
+The helper backs up any existing `config.toml`, writes the provider config, and
+can either reference a Railway env var such as `VENICE_API_KEY` or write the
+provider token directly using Codex's `experimental_bearer_token` setting.
+
 Venice example:
 
 ```toml

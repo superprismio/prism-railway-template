@@ -322,7 +322,15 @@ GIT_AUTHOR_EMAIL="prism-codex@users.noreply.github.com" # Git author email used 
 ```
 
 Custom-provider experiments can use the same service without OpenAI device auth.
-For Venice, create `/data/codex/config.toml` on the `codex-runtime` volume:
+Run the interactive helper over Railway SSH:
+
+```bash
+railway ssh -s codex-runtime
+export CODEX_HOME=/data/codex
+npm run configure:provider --workspace @prism-railway/codex-runtime
+```
+
+For Venice, the helper writes a `/data/codex/config.toml` shape like:
 
 ```toml
 #:schema https://developers.openai.com/codex/config-schema.json

@@ -99,6 +99,14 @@ Experimental first-class path. Operators configure:
 /data/codex/config.toml
 ```
 
+Interactive setup:
+
+```bash
+railway ssh -s codex-runtime
+export CODEX_HOME=/data/codex
+npm run configure:provider --workspace @prism-railway/codex-runtime
+```
+
 Example Venice config:
 
 ```toml
@@ -191,7 +199,7 @@ Option A: OpenAI/ChatGPT device auth
 ...
 
 Option B: Custom provider
-1. Create /data/codex/config.toml
+1. Run the interactive provider helper or create /data/codex/config.toml
 2. Set the provider API key env var on codex-runtime
 3. Redeploy codex-runtime
 ```
@@ -212,6 +220,8 @@ The runbook should make these distinctions clear:
 - `CODEX_MODEL` should be unset unless it names a model valid for the configured
   provider.
 - Venice's documented Codex CLI path uses `wire_api = "responses"`.
+- `services/codex-runtime/scripts/configure-custom-provider.sh` provides the
+  supported interactive setup helper.
 
 ## Template Env
 
