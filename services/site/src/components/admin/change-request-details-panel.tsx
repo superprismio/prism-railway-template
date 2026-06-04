@@ -337,6 +337,10 @@ function hasAutoContinuedFlag(value: { meta?: Record<string, unknown>; payload?:
   return value.meta?.autoContinued === true || value.payload?.autoContinued === true;
 }
 
+function executionAgentRunId(execution: ChangeRequestExecutionRecord) {
+  return stringValue(execution.meta?.agentRunId);
+}
+
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
@@ -751,6 +755,10 @@ export function RequestDetailsPanel({
     () =>
       agentRuns.find((run) => run.status === "queued" || run.status === "running") ?? null,
     [agentRuns],
+  );
+  const legacyOnlyExecutions = useMemo(
+    () => executions.filter((execution) => !executionAgentRunId(execution)),
+    [executions],
   );
   const activeRunElapsed = formatDurationFrom(
     activeAgentRun?.startedAt ?? activeAgentRun?.createdAt ?? null,
@@ -2276,8 +2284,8 @@ export function RequestDetailsPanel({
                       );
                     })
                   ) : null}
-                  {executions.length ? (
-                    executions.map((execution) => (
+                  {legacyOnlyExecutions.length ? (
+                    legacyOnlyExecutions.map((execution) => (
                       <div
                         key={execution.id}
                         className="rounded-none border border-border/70 bg-background/70 p-4 text-sm"
