@@ -44,6 +44,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { describeFetchError, readApiError } from "@/lib/client-api-errors";
 import type {
+  AgentRunRecord,
   ChangeRequestExecutionRecord,
   ChangeRequestRecord,
   RequestExternalRefRecord,
@@ -445,6 +446,7 @@ export function RequestDetailsPanel({
   const [executions, setExecutions] = useState<ChangeRequestExecutionRecord[]>(
     [],
   );
+  const [agentRuns, setAgentRuns] = useState<AgentRunRecord[]>([]);
   const [workflowEvents, setWorkflowEvents] = useState<WorkflowEventRecord[]>(
     [],
   );
@@ -549,6 +551,7 @@ export function RequestDetailsPanel({
 
   useEffect(() => {
     const shouldPollLiveState =
+      agentRuns.some((run) => run.status === "queued" || run.status === "running") ||
       executions.some((execution) => execution.status === "running") ||
       isCommandPending ||
       Boolean(activeWorkflowJobId);
@@ -603,6 +606,7 @@ export function RequestDetailsPanel({
         };
         const executionPayload = (await executionResponse.json()) as {
           executions?: ChangeRequestExecutionRecord[];
+          agentRuns?: AgentRunRecord[];
         };
         const workflowEventPayload = (await workflowEventResponse.json()) as {
           events?: WorkflowEventRecord[];
@@ -632,6 +636,11 @@ export function RequestDetailsPanel({
             ? executionPayload.executions
             : [],
         );
+        setAgentRuns(
+          Array.isArray(executionPayload.agentRuns)
+            ? executionPayload.agentRuns
+            : [],
+        );
         setWorkflowEvents(
           Array.isArray(workflowEventPayload.events)
             ? workflowEventPayload.events
@@ -658,7 +667,7 @@ export function RequestDetailsPanel({
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [activeWorkflowJobId, executions, isCommandPending, request.id]);
+  }, [activeWorkflowJobId, agentRuns, executions, isCommandPending, request.id]);
 
   useEffect(() => {
     const scrollArea = threadScrollAreaRef.current;
@@ -677,6 +686,15 @@ export function RequestDetailsPanel({
     () =>
       executions.find((execution) => execution.status === "running") ?? null,
     [executions],
+  );
+  const activeAgentRun = useMemo(
+    () =>
+      agentRuns.find((run) => run.status === "queued" || run.status === "running") ?? null,
+    [agentRuns],
+  );
+  const activeRunElapsed = formatDurationFrom(
+    activeAgentRun?.startedAt ?? activeAgentRun?.createdAt ?? null,
+    liveNowMs,
   );
   const activeExecutionElapsed = formatDurationFrom(
     activeExecution?.startedAt ?? null,
@@ -741,6 +759,7 @@ export function RequestDetailsPanel({
         const payload = (await response.json()) as {
           ok?: boolean;
           executions?: ChangeRequestExecutionRecord[];
+          agentRuns?: AgentRunRecord[];
           error?: string;
         };
 
@@ -752,6 +771,7 @@ export function RequestDetailsPanel({
         setExecutions(
           Array.isArray(payload.executions) ? payload.executions : [],
         );
+        setAgentRuns(Array.isArray(payload.agentRuns) ? payload.agentRuns : []);
       } catch (error) {
         if (!cancelled) {
           setThreadError(
@@ -922,8 +942,10 @@ export function RequestDetailsPanel({
 
     const payload = (await response.json()) as {
       executions?: ChangeRequestExecutionRecord[];
+      agentRuns?: AgentRunRecord[];
     };
     setExecutions(Array.isArray(payload.executions) ? payload.executions : []);
+    setAgentRuns(Array.isArray(payload.agentRuns) ? payload.agentRuns : []);
   }
 
   async function refreshWorkflowEvents() {
@@ -1361,7 +1383,7 @@ export function RequestDetailsPanel({
             workflowRunStatus={workflowRunStatus}
             steps={currentWorkflowSteps}
             isPending={isPending || isCommandPending || Boolean(activeWorkflowJobId)}
-            isStepRunning={Boolean(activeExecution)}
+            isStepRunning={Boolean(activeAgentRun ?? activeExecution)}
             isClosed={isWorkflowClosed}
             canRunWorkflowActions={canRunWorkflowActions}
             onContinue={handleContinueWorkflow}
@@ -1799,6 +1821,22 @@ export function RequestDetailsPanel({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {activeAgentRun ? (
+                <div className="rounded-none border border-sky-200/70 bg-sky-50/80 p-4 text-sm text-sky-950">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      <span className="font-medium">Agent run {activeAgentRun.status}</span>
+                    </div>
+                    <Badge variant="outline">{activeAgentRun.kind}</Badge>
+                  </div>
+                  <div className="mt-3 grid gap-1 text-xs">
+                    {activeAgentRun.workflowStepKey ? <div>Step: {activeAgentRun.workflowStepKey}</div> : null}
+                    {activeRunElapsed ? <div>Elapsed: {activeRunElapsed}</div> : null}
+                    <div>Run: {activeAgentRun.id}</div>
+                  </div>
+                </div>
+              ) : null}
               {activeExecution ? (
                 <div className="rounded-none border border-sky-200/70 bg-sky-50/80 p-4 text-sm text-sky-950">
                   <div className="flex items-center justify-between gap-3">
@@ -2009,6 +2047,56 @@ export function RequestDetailsPanel({
             <CardContent>
               <ScrollArea className="h-[420px] max-h-[calc(100vh-430px)] min-h-[240px]">
                 <div className="space-y-3">
+                  {agentRuns.length ? (
+                    agentRuns.map((run) => (
+                      <div
+                        key={run.id}
+                        className="rounded-none border border-primary/25 bg-primary/5 p-4 text-sm"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant={
+                                run.status === "succeeded"
+                                  ? "secondary"
+                                  : run.status === "running" || run.status === "queued"
+                                    ? "default"
+                                    : "outline"
+                              }
+                            >
+                              {run.status}
+                            </Badge>
+                            <Badge variant="outline">{run.kind}</Badge>
+                            {run.workflowStepKey ? (
+                              <Badge variant="secondary">{run.workflowStepKey}</Badge>
+                            ) : null}
+                            <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                              agent run
+                            </span>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {isoLabel(run.updatedAt) ?? ""}
+                          </span>
+                        </div>
+                        {run.errorMessage ? (
+                          <div className="mt-3 rounded-none border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
+                            {run.errorMessage}
+                          </div>
+                        ) : null}
+                        <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+                          <div>Run: {run.id}</div>
+                          {run.idempotencyKey ? <div>Key: {run.idempotencyKey}</div> : null}
+                          {run.startedAt ? <div>Started: {isoLabel(run.startedAt)}</div> : null}
+                          {run.finishedAt ? <div>Finished: {isoLabel(run.finishedAt)}</div> : null}
+                        </div>
+                        {run.trace.length ? (
+                          <pre className="mt-3 max-h-32 overflow-auto rounded-none border border-border/60 bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+                            {JSON.stringify(run.trace.slice(-5), null, 2)}
+                          </pre>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : null}
                   {executions.length ? (
                     executions.map((execution) => (
                       <div
@@ -2173,11 +2261,11 @@ export function RequestDetailsPanel({
                         ) : null}
                       </div>
                     ))
-                  ) : (
+                  ) : !agentRuns.length ? (
                     <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
                       No execution records yet for this request.
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </ScrollArea>
             </CardContent>

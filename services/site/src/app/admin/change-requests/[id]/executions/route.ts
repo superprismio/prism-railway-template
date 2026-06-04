@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getChangeRequest, listChangeRequestExecutions } from "@/lib/app-core"
+import { getChangeRequest, listAgentRuns, listChangeRequestExecutions } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
 import { readRouteParam, requireLocalMemberAccess, useLocalAppApi } from "@/lib/local-admin-api"
@@ -26,6 +26,7 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({
       ok: true,
       executions: listChangeRequestExecutions(changeRequestId),
+      agentRuns: listAgentRuns({ requestId: changeRequestId, limit: 100 }),
     })
   }
 

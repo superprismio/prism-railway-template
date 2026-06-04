@@ -100,6 +100,28 @@ export type ChangeRequestExecutionRecord = {
   finishedAt: string | null
 }
 
+export type AgentRunRecord = {
+  id: string
+  kind: string
+  status: string
+  idempotencyKey: string | null
+  requestId: string | null
+  workflowRunId: string | null
+  workflowStepKey: string | null
+  taskKey: string | null
+  hookKey: string | null
+  sessionId: string | null
+  source: string
+  input: Record<string, unknown>
+  result: Record<string, unknown>
+  trace: Array<Record<string, unknown>>
+  errorMessage: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export type WorkflowRecord = {
   id: string
   key: string

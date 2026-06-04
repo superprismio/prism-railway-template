@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createChangeRequestExecution, getChangeRequest, listChangeRequestExecutions } from "@/lib/app-core"
+import { createChangeRequestExecution, getChangeRequest, listAgentRuns, listChangeRequestExecutions } from "@/lib/app-core"
 
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
 import { readRouteParam } from "@/lib/local-admin-api"
@@ -25,7 +25,11 @@ export async function GET(_request: Request, context: RouteContext) {
     return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })
   }
 
-  return NextResponse.json({ ok: true, executions: listChangeRequestExecutions(changeRequestId) })
+  return NextResponse.json({
+    ok: true,
+    executions: listChangeRequestExecutions(changeRequestId),
+    agentRuns: listAgentRuns({ requestId: changeRequestId, limit: 100 }),
+  })
 }
 
 export async function POST(request: Request, context: RouteContext) {

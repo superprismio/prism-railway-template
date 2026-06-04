@@ -8,6 +8,7 @@ import {
   getWorkflowByKey,
   getWorkflowRunForRequest,
   listAgentMessages,
+  listAgentRuns,
   listChangeRequestExecutions,
   listRequestArtifacts,
   listRequestExternalRefs,
@@ -57,6 +58,7 @@ export async function GET(request: Request, context: RouteContext) {
   const workflow = getWorkflowByKey(changeRequest.workflowKey)
   const workflowRun = getWorkflowRunForRequest(changeRequest.id)
   const executions = listChangeRequestExecutions(changeRequest.id)
+  const agentRuns = listAgentRuns({ requestId: changeRequest.id, limit: 100 })
   const workflowEvents = listWorkflowEventsForRequest(changeRequest.id, eventLimit)
   const artifacts = listRequestArtifacts(changeRequest.id, artifactLimit)
   const externalRefs = listRequestExternalRefs(changeRequest.id)
@@ -73,6 +75,7 @@ export async function GET(request: Request, context: RouteContext) {
     workflowRun,
     latestExecution: executions[0] ?? null,
     executions,
+    agentRuns,
     workflowEvents,
     artifacts,
     externalRefs,

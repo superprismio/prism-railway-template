@@ -166,7 +166,10 @@ Adapter-originated requests and approvals should also enqueue durable runs.
   waiting on Codex Runtime during request creation.
 - [x] Enqueue service-token request workflow continue/approve actions through
   `agent_runs` and return `202 Accepted`.
-- [ ] Move Prism Console jobs onto `agent_runs`.
+- [x] Move Prism Console jobs onto `agent_runs` while keeping the old job route
+  as a compatibility poll API.
+- [x] Surface request-linked `agent_runs` in the request execution log ahead of
+  legacy execution rows.
 - [ ] Move request autostart and continue actions onto `agent_runs`.
 - [ ] Move hook trigger execution records onto `agent_runs` or link hook runs
   to agent runs.
