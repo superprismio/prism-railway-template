@@ -54,6 +54,7 @@ export {
   deleteCustomTaskByKey,
   deleteTaskScriptByKey,
   findLatestAgentSessionByChangeRequest,
+  findActiveAgentRunByIdempotencyKey,
   findAgentSessionByDiscordContext,
   findAgentSessionBySourceContext,
   getChangeRequest,

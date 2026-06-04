@@ -11,6 +11,7 @@ import {
   createWorkflowEvent,
   ensureWorkflowRunForRequest,
   getAgentSession,
+  getAgentRun,
   getChangeRequest,
   getChangeRequestExecution,
   getTargetApp,
@@ -574,6 +575,7 @@ function completeWorkflowAgentStep(input: {
   linkedWorkflowSteps: Record<string, unknown>[]
   sessionId: string
   autoContinued?: boolean
+  agentRunId?: string | null
 }) {
   const execution = input.executionId ? getChangeRequestExecution(input.executionId) : null
   const agentRunId = agentRunIdFromExecutionMeta(execution?.meta)
@@ -782,6 +784,7 @@ function startWorkflowAgentStep(input: {
   stepKey: string
   sessionId: string
   idempotencyKey: string
+  agentRunId?: string | null
   action?: string | null
   autoContinued?: boolean
 }) {
@@ -806,23 +809,34 @@ function startWorkflowAgentStep(input: {
     },
   })
 
-  const agentRun = createAgentRun({
-    kind: "workflow_step",
-    status: "running",
-    idempotencyKey: input.idempotencyKey,
-    requestId: input.requestId,
-    workflowRunId: input.workflowRunId,
-    workflowStepKey: input.stepKey,
-    sessionId: input.sessionId,
-    source: "site",
-    input: {
-      workflowKey: input.workflowKey,
-      workflowStepKey: input.stepKey,
-      action: input.action ?? null,
-      autoContinued: input.autoContinued === true,
-    },
-    startedAt: new Date().toISOString(),
-  })
+  const agentRun = input.agentRunId
+    ? updateAgentRun(input.agentRunId, {
+        status: "running",
+        idempotencyKey: input.idempotencyKey,
+        requestId: input.requestId,
+        workflowRunId: input.workflowRunId,
+        workflowStepKey: input.stepKey,
+        sessionId: input.sessionId,
+        source: "site",
+        startedAt: new Date().toISOString(),
+      }) ?? getAgentRun(input.agentRunId)
+    : createAgentRun({
+        kind: "workflow_step",
+        status: "running",
+        idempotencyKey: input.idempotencyKey,
+        requestId: input.requestId,
+        workflowRunId: input.workflowRunId,
+        workflowStepKey: input.stepKey,
+        sessionId: input.sessionId,
+        source: "site",
+        input: {
+          workflowKey: input.workflowKey,
+          workflowStepKey: input.stepKey,
+          action: input.action ?? null,
+          autoContinued: input.autoContinued === true,
+        },
+        startedAt: new Date().toISOString(),
+      })
   const execution = createChangeRequestExecution({
     changeRequestId: input.requestId,
     targetEnvironmentId: input.targetEnvironmentId,
@@ -948,6 +962,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   const autoContinueUntilGate =
     body.auto_continue_until_gate === true || body.autoContinueUntilGate === true
   const responseJobId = parseNullableString(body.response_job_id ?? body.responseJobId) ?? null
+  const providedAgentRunId = parseNullableString(body.agent_run_id ?? body.agentRunId) ?? null
   const recordRuntimeProgress = responseJobId
     ? (progress: {
         status: string
@@ -1082,6 +1097,18 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         workflowAction: workflowAction || "approved",
       },
     })
+    if (providedAgentRunId) {
+      updateAgentRun(providedAgentRunId, {
+        status: "succeeded",
+        sessionId: session.id,
+        requestId: activeLinkedChangeRequestId,
+        workflowRunId: linkedWorkflowRun.id,
+        workflowStepKey: runnableStepKey,
+        result: { responseText },
+        errorMessage: null,
+        finishedAt: new Date().toISOString(),
+      })
+    }
 
     return NextResponse.json({
       id: assistantMessage?.id ?? randomUUID(),
@@ -1175,6 +1202,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       stepKey: runnableStepKey,
       sessionId: session.id,
       idempotencyKey,
+      agentRunId: providedAgentRunId,
       action: workflowAction,
     })
   }

@@ -4727,6 +4727,24 @@ export function listAgentRuns(input: {
   return rows.map(mapAgentRunRow);
 }
 
+export function findActiveAgentRunByIdempotencyKey(idempotencyKey: string) {
+  const key = normalizeText(idempotencyKey);
+  if (!key) {
+    return null;
+  }
+  const row = getDb()
+    .prepare(
+      `SELECT *
+       FROM agent_runs
+       WHERE idempotency_key = ?
+         AND status IN ('queued', 'running')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+    )
+    .get(key) as AgentRunRow | undefined;
+  return row ? mapAgentRunRow(row) : null;
+}
+
 export function getAdminChangeRequest(changeRequestId: string) {
   const row = getDb()
     .prepare(

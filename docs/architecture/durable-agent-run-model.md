@@ -162,6 +162,10 @@ Adapter-originated requests and approvals should also enqueue durable runs.
 - [x] Link request workflow-step executions to `agent_runs` for observability
   without changing the executor.
 - [x] Add service/admin read routes for inspecting agent runs.
+- [x] Enqueue request workflow autostart through `agent_runs` instead of
+  waiting on Codex Runtime during request creation.
+- [x] Enqueue service-token request workflow continue/approve actions through
+  `agent_runs` and return `202 Accepted`.
 - [ ] Move Prism Console jobs onto `agent_runs`.
 - [ ] Move request autostart and continue actions onto `agent_runs`.
 - [ ] Move hook trigger execution records onto `agent_runs` or link hook runs
