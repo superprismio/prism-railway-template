@@ -57,7 +57,7 @@ Owns:
 - public/admin routes
 - auth and sessions
 - profiles, points, badges, and admin flows
-- change requests, executions, targets, and deploy metadata as the system of record
+- change requests, agent runs, targets, and deploy metadata as the system of record
 - agent chat sessions and Discord thread linkage as durable conversation state
 - the internal app API surface consumed by Codex runtime and Discord
 - the app SQLite/runtime volume at `/data`
@@ -91,7 +91,7 @@ Owns:
 Does not own:
 
 - durable request state
-- execution history as the source of truth
+- agent-run history as the source of truth
 - deploy metadata
 - Discord transport concerns
 - durable app-side chat session storage
