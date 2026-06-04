@@ -518,6 +518,28 @@ export interface AgentResponseJobRecord {
   updatedAt: string;
 }
 
+export interface AgentRunRecord {
+  id: string;
+  kind: string;
+  status: string;
+  idempotencyKey: string | null;
+  requestId: string | null;
+  workflowRunId: string | null;
+  workflowStepKey: string | null;
+  taskKey: string | null;
+  hookKey: string | null;
+  sessionId: string | null;
+  source: string;
+  input: Record<string, unknown>;
+  result: Record<string, unknown>;
+  trace: Array<Record<string, unknown>>;
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CreateAgentResponseJobInput {
   sessionId?: string | null;
   input: Record<string, unknown>;
@@ -530,6 +552,44 @@ export interface UpdateAgentResponseJobInput {
   outputText?: string | null;
   errorMessage?: string | null;
   trace?: Array<Record<string, unknown>>;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+}
+
+export interface CreateAgentRunInput {
+  kind: string;
+  status?: string;
+  idempotencyKey?: string | null;
+  requestId?: string | null;
+  workflowRunId?: string | null;
+  workflowStepKey?: string | null;
+  taskKey?: string | null;
+  hookKey?: string | null;
+  sessionId?: string | null;
+  source?: string;
+  input?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  trace?: Array<Record<string, unknown>>;
+  errorMessage?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+}
+
+export interface UpdateAgentRunInput {
+  kind?: string;
+  status?: string;
+  idempotencyKey?: string | null;
+  requestId?: string | null;
+  workflowRunId?: string | null;
+  workflowStepKey?: string | null;
+  taskKey?: string | null;
+  hookKey?: string | null;
+  sessionId?: string | null;
+  source?: string;
+  input?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  trace?: Array<Record<string, unknown>>;
+  errorMessage?: string | null;
   startedAt?: string | null;
   finishedAt?: string | null;
 }
@@ -1076,6 +1136,28 @@ interface TaskRunRow {
   input_snapshot_json: string;
   output_snapshot_json: string;
   artifact_refs_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface AgentRunRow {
+  id: string;
+  kind: string;
+  status: string;
+  idempotency_key: string | null;
+  request_id: string | null;
+  workflow_run_id: string | null;
+  workflow_step_key: string | null;
+  task_key: string | null;
+  hook_key: string | null;
+  session_id: string | null;
+  source: string;
+  input_json: string;
+  result_json: string;
+  trace_json: string;
+  error_message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1680,6 +1762,30 @@ function parseAgentResponseJobRow(row: {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   } satisfies AgentResponseJobRecord;
+}
+
+function mapAgentRunRow(row: AgentRunRow): AgentRunRecord {
+  return {
+    id: row.id,
+    kind: row.kind,
+    status: row.status,
+    idempotencyKey: row.idempotency_key,
+    requestId: row.request_id,
+    workflowRunId: row.workflow_run_id,
+    workflowStepKey: row.workflow_step_key,
+    taskKey: row.task_key,
+    hookKey: row.hook_key,
+    sessionId: row.session_id,
+    source: row.source,
+    input: parseJsonValue<Record<string, unknown>>(row.input_json, {}),
+    result: parseJsonValue<Record<string, unknown>>(row.result_json, {}),
+    trace: parseJsonValue<Array<Record<string, unknown>>>(row.trace_json, []),
+    errorMessage: row.error_message,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function listSkillLabelsForUser(userId: string | null) {
@@ -4494,6 +4600,131 @@ export function updateAgentResponseJob(id: string, input: UpdateAgentResponseJob
     );
 
   return getAgentResponseJob(id);
+}
+
+export function createAgentRun(input: CreateAgentRunInput) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  getDb()
+    .prepare(
+      `INSERT INTO agent_runs (
+         id, kind, status, idempotency_key, request_id, workflow_run_id, workflow_step_key,
+         task_key, hook_key, session_id, source, input_json, result_json, trace_json,
+         error_message, started_at, finished_at, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      normalizeText(input.kind) || 'console',
+      normalizeText(input.status) || 'queued',
+      normalizeText(input.idempotencyKey) || null,
+      normalizeText(input.requestId) || null,
+      normalizeText(input.workflowRunId) || null,
+      normalizeText(input.workflowStepKey) || null,
+      normalizeText(input.taskKey) || null,
+      normalizeText(input.hookKey) || null,
+      normalizeText(input.sessionId) || null,
+      normalizeText(input.source) || 'site',
+      JSON.stringify(input.input ?? {}),
+      JSON.stringify(input.result ?? {}),
+      JSON.stringify(input.trace ?? []),
+      normalizeText(input.errorMessage) || null,
+      normalizeText(input.startedAt) || null,
+      normalizeText(input.finishedAt) || null,
+      now,
+      now,
+    );
+  return getAgentRun(id);
+}
+
+export function getAgentRun(id: string) {
+  const row = getDb().prepare('SELECT * FROM agent_runs WHERE id = ?').get(id) as AgentRunRow | undefined;
+  return row ? mapAgentRunRow(row) : null;
+}
+
+export function updateAgentRun(id: string, input: UpdateAgentRunInput) {
+  const current = getAgentRun(id);
+  if (!current) {
+    return null;
+  }
+  const now = new Date().toISOString();
+  getDb()
+    .prepare(
+      `UPDATE agent_runs
+       SET kind = @kind,
+           status = @status,
+           idempotency_key = @idempotencyKey,
+           request_id = @requestId,
+           workflow_run_id = @workflowRunId,
+           workflow_step_key = @workflowStepKey,
+           task_key = @taskKey,
+           hook_key = @hookKey,
+           session_id = @sessionId,
+           source = @source,
+           input_json = @inputJson,
+           result_json = @resultJson,
+           trace_json = @traceJson,
+           error_message = @errorMessage,
+           started_at = @startedAt,
+           finished_at = @finishedAt,
+           updated_at = @updatedAt
+       WHERE id = @id`,
+    )
+    .run({
+      id,
+      kind: input.kind === undefined ? current.kind : normalizeText(input.kind) || current.kind,
+      status: input.status === undefined ? current.status : normalizeText(input.status) || current.status,
+      idempotencyKey:
+        input.idempotencyKey === undefined ? current.idempotencyKey : normalizeText(input.idempotencyKey) || null,
+      requestId: input.requestId === undefined ? current.requestId : normalizeText(input.requestId) || null,
+      workflowRunId:
+        input.workflowRunId === undefined ? current.workflowRunId : normalizeText(input.workflowRunId) || null,
+      workflowStepKey:
+        input.workflowStepKey === undefined ? current.workflowStepKey : normalizeText(input.workflowStepKey) || null,
+      taskKey: input.taskKey === undefined ? current.taskKey : normalizeText(input.taskKey) || null,
+      hookKey: input.hookKey === undefined ? current.hookKey : normalizeText(input.hookKey) || null,
+      sessionId: input.sessionId === undefined ? current.sessionId : normalizeText(input.sessionId) || null,
+      source: input.source === undefined ? current.source : normalizeText(input.source) || current.source,
+      inputJson: input.input === undefined ? JSON.stringify(current.input) : JSON.stringify(input.input),
+      resultJson: input.result === undefined ? JSON.stringify(current.result) : JSON.stringify(input.result),
+      traceJson: input.trace === undefined ? JSON.stringify(current.trace) : JSON.stringify(input.trace),
+      errorMessage: input.errorMessage === undefined ? current.errorMessage : normalizeText(input.errorMessage) || null,
+      startedAt: input.startedAt === undefined ? current.startedAt : normalizeText(input.startedAt) || null,
+      finishedAt: input.finishedAt === undefined ? current.finishedAt : normalizeText(input.finishedAt) || null,
+      updatedAt: now,
+    });
+  return getAgentRun(id);
+}
+
+export function listAgentRuns(input: {
+  kind?: string | null;
+  status?: string | null;
+  requestId?: string | null;
+  limit?: number;
+} = {}) {
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 50), 200));
+  const filters: string[] = [];
+  const params: unknown[] = [];
+  const kind = normalizeText(input.kind);
+  const status = normalizeText(input.status);
+  const requestId = normalizeText(input.requestId);
+  if (kind) {
+    filters.push('kind = ?');
+    params.push(kind);
+  }
+  if (status) {
+    filters.push('status = ?');
+    params.push(status);
+  }
+  if (requestId) {
+    filters.push('request_id = ?');
+    params.push(requestId);
+  }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const rows = getDb()
+    .prepare(`SELECT * FROM agent_runs ${where} ORDER BY created_at DESC LIMIT ?`)
+    .all(...params, limit) as AgentRunRow[];
+  return rows.map(mapAgentRunRow);
 }
 
 export function getAdminChangeRequest(changeRequestId: string) {

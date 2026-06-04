@@ -158,7 +158,10 @@ Adapter-originated requests and approvals should also enqueue durable runs.
 
 ## Later Checklist
 
-- [ ] Introduce a general `agent_runs` table.
+- [x] Introduce a general `agent_runs` table.
+- [x] Link request workflow-step executions to `agent_runs` for observability
+  without changing the executor.
+- [x] Add service/admin read routes for inspecting agent runs.
 - [ ] Move Prism Console jobs onto `agent_runs`.
 - [ ] Move request autostart and continue actions onto `agent_runs`.
 - [ ] Move hook trigger execution records onto `agent_runs` or link hook runs

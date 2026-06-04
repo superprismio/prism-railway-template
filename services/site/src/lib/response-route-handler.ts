@@ -5,6 +5,7 @@ import { NextResponse } from "next/server"
 import {
   buildTargetEnvironmentDeployPlan,
   createAgentMessage,
+  createAgentRun,
   createAgentSession,
   createChangeRequestExecution,
   createWorkflowEvent,
@@ -21,6 +22,7 @@ import {
   listRequestExternalRefs,
   loadConfig,
   updateAgentSession,
+  updateAgentRun,
   updateAgentResponseJob,
   updateChangeRequest,
   updateChangeRequestExecution,
@@ -197,6 +199,10 @@ function workflowStepRunIdempotencyKey(input: {
 }) {
   const actionKey = input.action && input.action.trim() ? input.action.trim() : "run"
   return `workflow:${input.requestId}:${input.workflowRunId}:${input.stepKey}:${actionKey}`
+}
+
+function agentRunIdFromExecutionMeta(value: Record<string, unknown> | null | undefined) {
+  return typeof value?.agentRunId === "string" && value.agentRunId.trim() ? value.agentRunId.trim() : null
 }
 
 function workflowRunStillOnStep(requestId: string, workflowRunId: string, stepKey: string) {
@@ -569,10 +575,21 @@ function completeWorkflowAgentStep(input: {
   sessionId: string
   autoContinued?: boolean
 }) {
-  if (
-    input.executionId &&
-    getChangeRequestExecution(input.executionId)?.status === "canceled"
-  ) {
+  const execution = input.executionId ? getChangeRequestExecution(input.executionId) : null
+  const agentRunId = agentRunIdFromExecutionMeta(execution?.meta)
+  if (input.executionId && execution?.status === "canceled") {
+    if (agentRunId) {
+      updateAgentRun(agentRunId, {
+        status: "canceled",
+        result: {
+          ignored: true,
+          reason: "execution_canceled",
+          responseText: input.responseText.slice(0, 4000),
+        },
+        trace: Array.isArray(input.runtimeResponse.trace) ? input.runtimeResponse.trace : [],
+        finishedAt: new Date().toISOString(),
+      })
+    }
     createWorkflowEvent({
       workflowRunId: input.workflowRunId,
       requestId: input.requestId,
@@ -615,10 +632,35 @@ function completeWorkflowAgentStep(input: {
       },
     })
   }
+  if (agentRunId) {
+    updateAgentRun(agentRunId, {
+      status: "succeeded",
+      result: {
+        responseText: input.responseText,
+        branchName: input.runtimeResponse.branchName ?? null,
+        commitSha: input.runtimeResponse.commitSha ?? null,
+      },
+      trace: Array.isArray(input.runtimeResponse.trace) ? input.runtimeResponse.trace : [],
+      errorMessage: null,
+      finishedAt: new Date().toISOString(),
+    })
+  }
 
   const currentStep = findStepByKey(input.linkedWorkflowSteps, input.stepKey)
   const shouldStayOnStep = isCheckpointWorkflowStep(currentStep)
   if (!workflowRunStillOnStep(input.requestId, input.workflowRunId, input.stepKey)) {
+    if (agentRunId) {
+      updateAgentRun(agentRunId, {
+        result: {
+          responseText: input.responseText,
+          branchName: input.runtimeResponse.branchName ?? null,
+          commitSha: input.runtimeResponse.commitSha ?? null,
+          ignored: true,
+          reason: "workflow_moved",
+          expectedStepKey: input.stepKey,
+        },
+      })
+    }
     createWorkflowEvent({
       workflowRunId: input.workflowRunId,
       requestId: input.requestId,
@@ -764,6 +806,23 @@ function startWorkflowAgentStep(input: {
     },
   })
 
+  const agentRun = createAgentRun({
+    kind: "workflow_step",
+    status: "running",
+    idempotencyKey: input.idempotencyKey,
+    requestId: input.requestId,
+    workflowRunId: input.workflowRunId,
+    workflowStepKey: input.stepKey,
+    sessionId: input.sessionId,
+    source: "site",
+    input: {
+      workflowKey: input.workflowKey,
+      workflowStepKey: input.stepKey,
+      action: input.action ?? null,
+      autoContinued: input.autoContinued === true,
+    },
+    startedAt: new Date().toISOString(),
+  })
   const execution = createChangeRequestExecution({
     changeRequestId: input.requestId,
     targetEnvironmentId: input.targetEnvironmentId,
@@ -775,6 +834,7 @@ function startWorkflowAgentStep(input: {
       workflowRunId: input.workflowRunId,
       workflowStepKey: input.stepKey,
       idempotencyKey: input.idempotencyKey,
+      agentRunId: agentRun?.id ?? null,
       transport: "site",
       sessionId: input.sessionId,
       autoContinued: input.autoContinued === true,
@@ -1520,7 +1580,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         activeExecutionId &&
         !activeExecutionWasCanceled
       ) {
-        updateChangeRequestExecution(activeExecutionId, {
+        const failedExecution = updateChangeRequestExecution(activeExecutionId, {
           status: "failed",
           branchName:
             typeof runtimeError.branchName === "string"
@@ -1555,6 +1615,25 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             runtimeTrace: failureTrace,
           },
         })
+        const failedAgentRunId = agentRunIdFromExecutionMeta(failedExecution?.meta)
+        if (failedAgentRunId) {
+          updateAgentRun(failedAgentRunId, {
+            status: "failed",
+            result: {
+              branchName:
+                typeof runtimeError.branchName === "string"
+                  ? runtimeError.branchName
+                  : linkedLatestExecution?.branchName ?? null,
+              commitSha:
+                typeof runtimeError.commitSha === "string"
+                  ? runtimeError.commitSha
+                  : linkedLatestExecution?.commitSha ?? null,
+            },
+            trace: failureTrace,
+            errorMessage: message,
+            finishedAt: failedAt,
+          })
+        }
       }
 
       createWorkflowEvent({
