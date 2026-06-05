@@ -1,6 +1,6 @@
 ---
 name: change-request-ops
-description: Use this skill when Codex needs to pull the next or current Prism request, inspect request/workflow state, create requests, attach external refs, or create and update execution records through the Prism Agent API.
+description: Use this skill when Codex needs to pull the next or current Prism request, inspect request/workflow state, create requests, attach external refs, inspect agent runs, or continue workflow steps through the Prism Agent API.
 ---
 
 Use this skill when Codex is operating on tracked change requests instead of freeform chat.
@@ -33,9 +33,8 @@ Core endpoints:
 - `GET /agent/change-board/requests/:id/artifacts`
 - `POST /agent/change-board/requests/:id/artifacts`
 - `GET /agent/change-board/requests/:id/artifacts/:artifactId/content`
+- `GET /agent/runs`
 - `GET /agent/change-board/requests/:id/executions`
-- `POST /agent/change-board/requests/:id/executions`
-- `PATCH /agent/change-board/executions/:executionId`
 - `GET /agent/change-board/requests/:id/deploy-plan`
 
 Queue reads:
@@ -60,7 +59,7 @@ curl -fsSL \
   "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/by-number/$REQUEST_NUMBER/review"
 ```
 
-Use this endpoint when a user asks what happened to request `#10`, why a workflow got stuck, or what should improve next time. It returns the request, workflow definition, workflow run, executions, workflow events, artifacts, external refs, latest linked agent session, and agent messages. Review the timeline before recommending changes.
+Use this endpoint when a user asks what happened to request `#10`, why a workflow got stuck, or what should improve next time. It returns the request, workflow definition, workflow run, agent runs, legacy executions, workflow events, artifacts, external refs, latest linked agent session, and agent messages. Review the agent runs and workflow events before recommending changes. Treat `legacyExecutions` as historical compatibility data only.
 
 Inspect request artifacts by request number:
 
@@ -140,27 +139,12 @@ Start-of-run pattern:
 
 1. Fetch `current`.
 2. If `current.changeRequest` is null, fetch `next`.
-3. Read `changeRequest`, `targetApp`, `targetEnvironment`, `deployPlan`, `latestExecution`, and `externalRefs`.
+3. Read `changeRequest`, `targetApp`, `targetEnvironment`, `deployPlan`, `latestAgentRun`, and `externalRefs`.
 4. During triage, write substantive detail into `triageSummary` and `agentRecommendation` before routing the request onward.
-5. If operating on a queued request, create an execution record before changing code.
+5. Do not create `change_request_executions`. Workflow work is represented by `agent_runs` and should be started through the workflow continue route or request autostart.
 6. Do not use legacy queue statuses such as `submitted`, `in-progress`, `ready-for-agent`, `awaiting-review`, `changes-requested`, `approved`, or `rejected`.
 7. The current workflow step is stored in `workflow_runs.current_step_key` and exposed as `currentWorkflowStepKey`; use that field to understand where the request is.
-8. Do not begin implementation, deployment, or execution in the same turn that finishes triage unless the user explicitly says to continue immediately on an already reviewed request.
-
-Create execution:
-
-```bash
-curl -fsSL \
-  -X POST \
-  -H "content-type: application/json" \
-  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/$CHANGE_REQUEST_ID/executions" \
-  -d '{
-    "status": "running",
-    "actorType": "codex",
-    "startedAt": "'"$(date -u +"%Y-%m-%dT%H:%M:%SZ")"'"
-  }'
-```
+8. Do not begin implementation, deployment, or agent-run work in the same turn that finishes triage unless the user explicitly says to continue immediately on an already reviewed request.
 
 Patch request metadata:
 
@@ -198,7 +182,7 @@ curl -fsSL \
   }'
 ```
 
-When a request has a linked GitHub issue, leave concise issue comments for meaningful workflow state changes such as triage completed, PR opened, review changes requested, checks passing, or ready for final review. Do not spam the issue with every internal execution update.
+When a request has a linked GitHub issue, leave concise issue comments for meaningful workflow state changes such as triage completed, PR opened, review changes requested, checks passing, or ready for final review. Do not spam the issue with every internal run update.
 
 When implementation pushes a request branch and repository access is configured, create a pull request from the request feature branch into the target repository base branch. Then attach it as a GitHub `pull_request` external ref. If a PR ref already exists, reuse and update it instead of creating duplicates.
 
@@ -238,38 +222,20 @@ curl -fsSL \
   }'
 ```
 
-Update execution with results:
-
-```bash
-curl -fsSL \
-  -X PATCH \
-  -H "content-type: application/json" \
-  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
-  "$PRISM_AGENT_API_BASE_URL/agent/change-board/executions/$EXECUTION_ID" \
-  -d '{
-    "status": "completed",
-    "branchName": "'"$BRANCH_NAME"'",
-    "commitSha": "'"$COMMIT_SHA"'",
-    "deployUrl": "'"$DEPLOY_URL"'",
-    "summary": "'"$SUMMARY"'",
-    "finishedAt": "'"$(date -u +"%Y-%m-%dT%H:%M:%SZ")"'"
-  }'
-```
-
 End-of-run pattern:
 
 1. A triage pass should end by recording useful triage details and leaving the workflow/request ready for the next explicit workflow step.
-2. An execution pass should update execution records and any durable artifacts/external refs. Workflow step movement is owned by the site workflow engine when running through `/agent/responses`.
-3. Update the execution with branch, commit, deploy URL, summary, error, timestamps, and notable runtime trace details.
-4. If work fails, record the failure on the execution and leave the request on the current workflow step unless the workflow reaches a terminal step.
+2. An agent run should save durable artifacts/external refs needed by later steps. Workflow step movement is owned by the site workflow engine when running through `/agent/responses` or the workflow continue route.
+3. Branch, commit, runtime trace, and failure details are recorded on `agent_runs.result` by the site runtime path. Do not patch legacy execution routes.
+4. If work fails, let the agent run fail and leave the request on the current workflow step unless the workflow reaches a terminal step.
 
 Rules:
 
 - Treat the API as the source of truth.
 - Re-read the request if the scope seems stale.
 - If the user explicitly asks to create a change request, prefer the change-board API path over Prism memory writing.
-- A chat-created request should start at the workflow entry step. It should not auto-run implementation unless the user or task explicitly requests workflow execution.
+- A chat-created request should start at the workflow entry step. It should not auto-run implementation unless the user or task explicitly requests an agent run.
 - Do not use request `status`; request progress is owned by `workflow_runs.current_step_key` and exposed on request records as `currentWorkflowStepKey`.
 - Keep summaries factual, but make triage useful enough that a human can understand the proposed edits without reopening the whole conversation.
 - `agentRecommendation` should describe the suggested changes, touched areas, and intended outcome, not just say "ready for agent".
-- Store machine-usable fields in execution metadata instead of burying them in prose.
+- Store machine-usable fields in request artifacts, external refs, or `agent_runs.result` instead of burying them in prose.

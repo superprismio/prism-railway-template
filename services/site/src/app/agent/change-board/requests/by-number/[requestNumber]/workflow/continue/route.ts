@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getChangeRequestByNumber } from "@/lib/app-core"
 import { parseString, requireServiceAccess } from "@/lib/internal-service"
-import { handleResponsePost } from "@/lib/response-route-handler"
+import { enqueueWorkflowAgentRun } from "@/lib/workflow-agent-run-queue"
 
 type RouteContext = {
   params: Promise<{ requestNumber: string }>
@@ -92,19 +92,29 @@ export async function POST(request: Request, context: RouteContext) {
       : "Advance only the current workflow step.",
   ].join("\n")
 
-  const forwardedRequest = new Request(new URL("/agent/responses", request.url), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      input: [{ role: "user", content: prompt }],
-      linked_change_request_id: changeRequest.id,
-      workflow_action: workflowAction,
-      auto_continue_until_gate: autoContinueUntilGate,
-      requested_skills: requestedSkills,
-    }),
+  const result = enqueueWorkflowAgentRun({
+    request: changeRequest,
+    prompt,
+    workflowAction,
+    autoContinueUntilGate,
+    requestedSkills,
+    baseUrl: request.url,
   })
 
-  return handleResponsePost(forwardedRequest, requireServiceAccess)
+  if (!result.queued) {
+    return NextResponse.json(
+      { ok: false, error: result.reason ?? "WORKFLOW_AGENT_RUN_QUEUE_FAILED", result },
+      { status: result.status ?? 500 },
+    )
+  }
+
+  return NextResponse.json(
+    {
+      ok: true,
+      accepted: true,
+      duplicate: result.duplicate === true,
+      agentRun: result.agentRun,
+    },
+    { status: 202 },
+  )
 }

@@ -36,7 +36,7 @@ Manual runs require `X-Task-Runner-Token` when `TASK_RUNNER_TOKEN` is configured
 
 When `APP_API_BASE_URL` is set, the runner idempotently registers built-in task defaults, reads effective enabled state and cron schedules from `site`, and writes task run history through internal APIs.
 
-Manual task runs return `202 Accepted` after the run is started. Completion is recorded asynchronously in the `site` task run row, so the UI should refresh task runs instead of waiting for the entire agent execution in the HTTP request.
+Manual task runs return `202 Accepted` after the run is started. Completion is recorded asynchronously in the `site` task run row and linked agent run, so the UI should refresh task runs instead of waiting for the entire agent run in the HTTP request.
 
 `TASK_RUNNER_HTTP_TIMEOUT_MS` applies to normal service calls. Codex-backed prompt and workflow steps use `TASK_RUNNER_LONG_RUNNING_HTTP_TIMEOUT_MS`, which defaults to `CODEX_RUNTIME_TIMEOUT_MS + 60000` or 15 minutes, whichever is larger. Both timeout values may be set higher for long-running agent tasks.
 

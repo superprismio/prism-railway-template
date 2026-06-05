@@ -10,7 +10,7 @@ The workflow keeps human gates explicit:
 - PR Review Checkpoint lets an operator ask Codex to pull linked pull request reviews, leave linked issue comments when useful, and decide whether the request is ready for human review or should return to work.
 - Review decides whether the branch is approved, needs more work, or should be closed.
 
-The request thread should remain continuous across the full request. If review sends work back, continue from the same thread and create a new execution record for the next agent run.
+The request thread should remain continuous across the full request. If review sends work back, continue from the same thread and start the next agent run through the workflow runner.
 
 ## Current Behavior
 

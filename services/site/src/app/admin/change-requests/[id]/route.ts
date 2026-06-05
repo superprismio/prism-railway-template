@@ -6,7 +6,7 @@ import {
   getChangeRequest,
   getWorkflowByKey,
   getWorkflowRunForRequest,
-  listChangeRequestExecutions,
+  listActiveAgentRunsForRequest,
   updateChangeRequest,
   updateWorkflowRun,
 } from "@/lib/app-core"
@@ -27,10 +27,6 @@ type RouteContext = {
 
 function isWorkflowStep(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value) && typeof (value as { key?: unknown }).key === "string"
-}
-
-function hasActiveExecution(changeRequestId: string) {
-  return listChangeRequestExecutions(changeRequestId).some((execution) => ["planned", "running"].includes(execution.status))
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -93,9 +89,10 @@ export async function PATCH(request: Request, context: RouteContext) {
           { status: 409 },
         )
       }
-      if (hasActiveExecution(changeRequestId)) {
+      const activeAgentRuns = listActiveAgentRunsForRequest(changeRequestId)
+      if (activeAgentRuns.length) {
         return NextResponse.json(
-          { ok: false, error: "CHANGE_REQUEST_EXECUTION_ALREADY_RUNNING" },
+          { ok: false, error: "AGENT_RUN_ACTIVE", activeAgentRuns },
           { status: 409 },
         )
       }

@@ -44,6 +44,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { describeFetchError, readApiError } from "@/lib/client-api-errors";
 import type {
+  AgentRunRecord,
   ChangeRequestExecutionRecord,
   ChangeRequestRecord,
   RequestExternalRefRecord,
@@ -336,6 +337,70 @@ function hasAutoContinuedFlag(value: { meta?: Record<string, unknown>; payload?:
   return value.meta?.autoContinued === true || value.payload?.autoContinued === true;
 }
 
+function executionAgentRunId(execution: ChangeRequestExecutionRecord) {
+  return stringValue(execution.meta?.agentRunId);
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function agentRunResultString(run: AgentRunRecord | null, key: string) {
+  return stringValue(run?.result?.[key]);
+}
+
+function agentRunBranchUrl(run: AgentRunRecord | null) {
+  return agentRunResultString(run, "branchUrl");
+}
+
+function agentRunDeployUrl(
+  run: AgentRunRecord | null,
+  targetEnvironment?: TargetEnvironmentRecord | null,
+) {
+  const direct = agentRunResultString(run, "deployUrl");
+  if (direct) return direct;
+
+  const staticUrl = agentRunResultString(run, "deployStaticUrl");
+  if (staticUrl) return staticUrl.startsWith("http") ? staticUrl : `https://${staticUrl}`;
+
+  const fallback = targetEnvironment?.baseUrl;
+  return stringValue(fallback);
+}
+
+function latestAgentRunTraceEntry(run: AgentRunRecord | null) {
+  const trace = Array.isArray(run?.trace) ? run.trace : [];
+  for (let index = trace.length - 1; index >= 0; index -= 1) {
+    const entry = trace[index];
+    const message = stringValue(entry?.message);
+    if (message) {
+      return {
+        kind: stringValue(entry?.kind) ?? "runtime",
+        message,
+      };
+    }
+  }
+
+  return null;
+}
+
+function describeAgentRunStage(run: AgentRunRecord | null) {
+  if (!run) return "No active agent run";
+
+  const traceEntry = latestAgentRunTraceEntry(run);
+  if (traceEntry) {
+    return `${traceEntry.kind}: ${traceEntry.message}`;
+  }
+
+  const branchName = agentRunResultString(run, "branchName");
+  if (branchName) {
+    return `Working on branch ${branchName}`;
+  }
+
+  return run.status === "queued"
+    ? "Queued and waiting for the runtime worker"
+    : "Agent run started and waiting for runtime updates";
+}
+
 type ResponseJobTraceEntry = {
   at?: string;
   kind?: string;
@@ -445,6 +510,7 @@ export function RequestDetailsPanel({
   const [executions, setExecutions] = useState<ChangeRequestExecutionRecord[]>(
     [],
   );
+  const [agentRuns, setAgentRuns] = useState<AgentRunRecord[]>([]);
   const [workflowEvents, setWorkflowEvents] = useState<WorkflowEventRecord[]>(
     [],
   );
@@ -549,6 +615,7 @@ export function RequestDetailsPanel({
 
   useEffect(() => {
     const shouldPollLiveState =
+      agentRuns.some((run) => run.status === "queued" || run.status === "running") ||
       executions.some((execution) => execution.status === "running") ||
       isCommandPending ||
       Boolean(activeWorkflowJobId);
@@ -602,7 +669,9 @@ export function RequestDetailsPanel({
           messages?: AgentThreadMessage[];
         };
         const executionPayload = (await executionResponse.json()) as {
+          legacyExecutions?: ChangeRequestExecutionRecord[];
           executions?: ChangeRequestExecutionRecord[];
+          agentRuns?: AgentRunRecord[];
         };
         const workflowEventPayload = (await workflowEventResponse.json()) as {
           events?: WorkflowEventRecord[];
@@ -628,8 +697,15 @@ export function RequestDetailsPanel({
           Array.isArray(threadPayload.messages) ? threadPayload.messages : [],
         );
         setExecutions(
-          Array.isArray(executionPayload.executions)
-            ? executionPayload.executions
+          Array.isArray(executionPayload.legacyExecutions)
+            ? executionPayload.legacyExecutions
+            : Array.isArray(executionPayload.executions)
+              ? executionPayload.executions
+              : [],
+        );
+        setAgentRuns(
+          Array.isArray(executionPayload.agentRuns)
+            ? executionPayload.agentRuns
             : [],
         );
         setWorkflowEvents(
@@ -658,7 +734,7 @@ export function RequestDetailsPanel({
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [activeWorkflowJobId, executions, isCommandPending, request.id]);
+  }, [activeWorkflowJobId, agentRuns, executions, isCommandPending, request.id]);
 
   useEffect(() => {
     const scrollArea = threadScrollAreaRef.current;
@@ -677,6 +753,28 @@ export function RequestDetailsPanel({
     () =>
       executions.find((execution) => execution.status === "running") ?? null,
     [executions],
+  );
+  const activeAgentRun = useMemo(
+    () =>
+      agentRuns.find((run) => run.status === "queued" || run.status === "running") ?? null,
+    [agentRuns],
+  );
+  const legacyOnlyExecutions = useMemo(
+    () => executions.filter((execution) => !executionAgentRunId(execution)),
+    [executions],
+  );
+  const activeRunElapsed = formatDurationFrom(
+    activeAgentRun?.startedAt ?? activeAgentRun?.createdAt ?? null,
+    liveNowMs,
+  );
+  const activeAgentRunStage = describeAgentRunStage(activeAgentRun);
+  const activeAgentRunBranchName = agentRunResultString(activeAgentRun, "branchName");
+  const activeAgentRunBranchUrl = agentRunBranchUrl(activeAgentRun);
+  const activeAgentRunDeployUrl = agentRunDeployUrl(activeAgentRun, targetEnvironment);
+  const activeAgentRunPrUrl = githubCompareUrl(
+    targetApp,
+    agentRunResultString(activeAgentRun, "baseBranch") ?? configuredBaseBranch,
+    activeAgentRunBranchName,
   );
   const activeExecutionElapsed = formatDurationFrom(
     activeExecution?.startedAt ?? null,
@@ -740,7 +838,9 @@ export function RequestDetailsPanel({
 
         const payload = (await response.json()) as {
           ok?: boolean;
+          legacyExecutions?: ChangeRequestExecutionRecord[];
           executions?: ChangeRequestExecutionRecord[];
+          agentRuns?: AgentRunRecord[];
           error?: string;
         };
 
@@ -750,8 +850,13 @@ export function RequestDetailsPanel({
         }
 
         setExecutions(
-          Array.isArray(payload.executions) ? payload.executions : [],
+          Array.isArray(payload.legacyExecutions)
+            ? payload.legacyExecutions
+            : Array.isArray(payload.executions)
+              ? payload.executions
+              : [],
         );
+        setAgentRuns(Array.isArray(payload.agentRuns) ? payload.agentRuns : []);
       } catch (error) {
         if (!cancelled) {
           setThreadError(
@@ -921,9 +1026,18 @@ export function RequestDetailsPanel({
     }
 
     const payload = (await response.json()) as {
+      legacyExecutions?: ChangeRequestExecutionRecord[];
       executions?: ChangeRequestExecutionRecord[];
+      agentRuns?: AgentRunRecord[];
     };
-    setExecutions(Array.isArray(payload.executions) ? payload.executions : []);
+    setExecutions(
+      Array.isArray(payload.legacyExecutions)
+        ? payload.legacyExecutions
+        : Array.isArray(payload.executions)
+          ? payload.executions
+          : [],
+    );
+    setAgentRuns(Array.isArray(payload.agentRuns) ? payload.agentRuns : []);
   }
 
   async function refreshWorkflowEvents() {
@@ -1259,13 +1373,13 @@ export function RequestDetailsPanel({
   }
 
   function handleStopWorkflowRun() {
-    if (!activeExecution) return;
+    if (!activeAgentRun) return;
 
     setThreadError(null);
     startCommandTransition(async () => {
       try {
         const response = await fetch(
-          `/admin/change-requests/${request.id}/executions/${activeExecution.id}/stop`,
+          `/admin/change-requests/${request.id}/workflow/cancel`,
           { method: "POST" },
         );
         const payload = (await response.json().catch(() => null)) as {
@@ -1292,6 +1406,10 @@ export function RequestDetailsPanel({
   function handleSaveManualStatus() {
     const nextStep = currentWorkflowSteps.find((step) => step.key === manualWorkflowStepKey);
     if (!nextStep) return;
+    if (activeAgentRun) {
+      setThreadError("Cancel the active agent run before changing workflow steps.");
+      return;
+    }
     setCurrentWorkflowStepKey(manualWorkflowStepKey || null);
     setIsDraftDirty(false);
     onSave({
@@ -1361,7 +1479,7 @@ export function RequestDetailsPanel({
             workflowRunStatus={workflowRunStatus}
             steps={currentWorkflowSteps}
             isPending={isPending || isCommandPending || Boolean(activeWorkflowJobId)}
-            isStepRunning={Boolean(activeExecution)}
+            isStepRunning={Boolean(activeAgentRun)}
             isClosed={isWorkflowClosed}
             canRunWorkflowActions={canRunWorkflowActions}
             onContinue={handleContinueWorkflow}
@@ -1799,12 +1917,76 @@ export function RequestDetailsPanel({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {activeExecution ? (
+              {activeAgentRun ? (
                 <div className="rounded-none border border-sky-200/70 bg-sky-50/80 p-4 text-sm text-sky-950">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <LoaderCircle className="h-4 w-4 animate-spin" />
-                      <span className="font-medium">Current Run</span>
+                      <span className="font-medium">Agent run {activeAgentRun.status}</span>
+                    </div>
+                    <Badge variant="outline">{activeAgentRun.kind}</Badge>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    <p className="leading-6">{activeAgentRunStage}</p>
+                    <div className="grid gap-1 text-xs text-sky-900/75">
+                      {activeAgentRun.workflowStepKey ? (
+                        <div>Step: {activeAgentRun.workflowStepKey}</div>
+                      ) : null}
+                      {activeRunElapsed ? <div>Elapsed: {activeRunElapsed}</div> : null}
+                      <div>Run: {activeAgentRun.id}</div>
+                      {activeAgentRunBranchName ? (
+                        <div>
+                          Branch:{" "}
+                          {activeAgentRunBranchUrl ? (
+                            <a
+                              href={activeAgentRunBranchUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-medium underline underline-offset-2"
+                            >
+                              {activeAgentRunBranchName}
+                            </a>
+                          ) : (
+                            activeAgentRunBranchName
+                          )}
+                        </div>
+                      ) : null}
+                      {activeAgentRunPrUrl ? (
+                        <div>
+                          PR:{" "}
+                          <a
+                            href={activeAgentRunPrUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium underline underline-offset-2"
+                          >
+                            Open compare / PR
+                          </a>
+                        </div>
+                      ) : null}
+                      {activeAgentRunDeployUrl ? (
+                        <div>
+                          Preview:{" "}
+                          <a
+                            href={activeAgentRunDeployUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium underline underline-offset-2"
+                          >
+                            {activeAgentRunDeployUrl}
+                          </a>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              {!activeAgentRun && activeExecution ? (
+                <div className="rounded-none border border-sky-200/70 bg-sky-50/80 p-4 text-sm text-sky-950">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <LoaderCircle className="h-4 w-4 animate-spin" />
+                      <span className="font-medium">Legacy Execution Record</span>
                     </div>
                     <Badge variant="outline">{activeExecution.status}</Badge>
                   </div>
@@ -2009,8 +2191,114 @@ export function RequestDetailsPanel({
             <CardContent>
               <ScrollArea className="h-[420px] max-h-[calc(100vh-430px)] min-h-[240px]">
                 <div className="space-y-3">
-                  {executions.length ? (
-                    executions.map((execution) => (
+                  {agentRuns.length ? (
+                    agentRuns.map((run) => {
+                      const branchName = agentRunResultString(run, "branchName");
+                      const branchUrl = agentRunBranchUrl(run);
+                      const baseBranch =
+                        agentRunResultString(run, "baseBranch") ?? configuredBaseBranch;
+                      const compareUrl = githubCompareUrl(targetApp, baseBranch, branchName);
+                      const commitSha =
+                        agentRunResultString(run, "commitSha") ??
+                        agentRunResultString(run, "headCommitSha");
+                      const deployUrl = agentRunDeployUrl(run, targetEnvironment);
+
+                      return (
+                        <div
+                          key={run.id}
+                          className="rounded-none border border-primary/25 bg-primary/5 p-4 text-sm"
+                        >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant={
+                                run.status === "succeeded"
+                                  ? "secondary"
+                                  : run.status === "running" || run.status === "queued"
+                                    ? "default"
+                                    : "outline"
+                              }
+                            >
+                              {run.status}
+                            </Badge>
+                            <Badge variant="outline">{run.kind}</Badge>
+                            {run.workflowStepKey ? (
+                              <Badge variant="secondary">{run.workflowStepKey}</Badge>
+                            ) : null}
+                            <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                              agent run
+                            </span>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {isoLabel(run.updatedAt) ?? ""}
+                          </span>
+                        </div>
+                        {run.errorMessage ? (
+                          <div className="mt-3 rounded-none border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
+                            {run.errorMessage}
+                          </div>
+                        ) : null}
+                        <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
+                          <div>Run: {run.id}</div>
+                          {run.idempotencyKey ? <div>Key: {run.idempotencyKey}</div> : null}
+                          {branchName ? (
+                            <div>
+                              Branch:{" "}
+                              {branchUrl ? (
+                                <a
+                                  href={branchUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="font-medium underline underline-offset-2"
+                                >
+                                  {branchName}
+                                </a>
+                              ) : (
+                                branchName
+                              )}
+                            </div>
+                          ) : null}
+                          {compareUrl ? (
+                            <div>
+                              PR:{" "}
+                              <a
+                                href={compareUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-medium underline underline-offset-2"
+                              >
+                                Open compare / PR
+                              </a>
+                            </div>
+                          ) : null}
+                          {commitSha ? <div>Commit: {commitSha}</div> : null}
+                          {deployUrl ? (
+                            <div>
+                              Preview:{" "}
+                              <a
+                                href={deployUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-medium underline underline-offset-2"
+                              >
+                                {deployUrl}
+                              </a>
+                            </div>
+                          ) : null}
+                          {run.startedAt ? <div>Started: {isoLabel(run.startedAt)}</div> : null}
+                          {run.finishedAt ? <div>Finished: {isoLabel(run.finishedAt)}</div> : null}
+                        </div>
+                        {run.trace.length ? (
+                          <pre className="mt-3 max-h-32 overflow-auto rounded-none border border-border/60 bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+                            {JSON.stringify(run.trace.slice(-5), null, 2)}
+                          </pre>
+                        ) : null}
+                        </div>
+                      );
+                    })
+                  ) : null}
+                  {legacyOnlyExecutions.length ? (
+                    legacyOnlyExecutions.map((execution) => (
                       <div
                         key={execution.id}
                         className="rounded-none border border-border/70 bg-background/70 p-4 text-sm"
@@ -2032,7 +2320,7 @@ export function RequestDetailsPanel({
                               <Badge variant="outline">auto</Badge>
                             ) : null}
                             <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                              {execution.actorType}
+                              legacy execution · {execution.actorType}
                             </span>
                           </div>
                           <span className="text-xs text-muted-foreground">
@@ -2173,11 +2461,11 @@ export function RequestDetailsPanel({
                         ) : null}
                       </div>
                     ))
-                  ) : (
+                  ) : !agentRuns.length ? (
                     <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                      No execution records yet for this request.
+                      No agent runs or legacy execution records yet for this request.
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </ScrollArea>
             </CardContent>

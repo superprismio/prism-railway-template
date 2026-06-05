@@ -17,7 +17,7 @@ Expected behavior:
 - leave a short linked GitHub issue comment when a linked issue exists, summarizing the branch/PR and what changed
 - return a review summary with branch, commit, PR, test, and preview context when available
 
-If review sends the request back with changes requested, continue from the existing request thread and address the review feedback in a new execution.
+If review sends the request back with changes requested, continue from the existing request thread and address the review feedback in the next agent run.
 
 ## Delegation
 

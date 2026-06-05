@@ -178,5 +178,5 @@ Likely next slices:
 - per-hook secrets for third-party webhook callers that should not receive the full agent service token
 - optional payload-to-external-ref mapping
 - replay/retry from a stored hook payload
-- hook execution history beyond `last_triggered_at`
+- hook run history beyond `last_triggered_at`
 - richer trigger diagnostics in the Hooks tab

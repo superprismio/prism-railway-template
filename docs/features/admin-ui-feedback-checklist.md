@@ -19,7 +19,7 @@ Triage date: 2026-05-18
 
 - [x] Improve global working status indicator.
   - Added a tab-header level "Prism is working" indicator when requests are running.
-  - Request detail already has a pulse/spinner in the workflow subway map during active execution.
+  - Request detail already has a pulse/spinner in the workflow subway map during active agent runs.
   - Reference implementation is available at `../reference-implementation-demos`.
   - Reuse or adapt `components/ui/prism-loader.tsx` for a Prism-branded working indicator, and consider `components/ui/thinking-loader.tsx` for compact text-only states.
 
@@ -34,7 +34,7 @@ Triage date: 2026-05-18
 
 - [x] Add a stop button for active request workflow runs.
   - Implemented as a cancel model, not a process kill.
-  - The active execution is marked `canceled`, the workflow moves to a terminal step, and late runtime completion/failure updates for that execution are ignored.
+  - The active agent run is marked `canceled`, the workflow moves to a terminal step, and late runtime completion/failure updates for that run are ignored.
   - Canceled runs get destructive/red visual treatment in request rows and the workflow subway map.
 
 - [x] Fix Skills view dialog overflow.
@@ -51,9 +51,9 @@ Triage date: 2026-05-18
 
 - [ ] Missing PR/branch links in request detail.
   - This mainly applies to the built-in change request workflow.
-  - Detail log can show branch URLs, compare/PR links, and deploy URLs from execution metadata, and linked records/external refs may now cover some of this.
-  - If missing, verify whether the built-in workflow is writing linked issue/PR records and whether request detail surfaces them clearly, not just execution metadata compare links.
-  - Verify with a request that should have a branch/PR and inspect executions/external refs.
+  - Detail log can show branch URLs, compare/PR links, and deploy URLs from agent-run results, and linked records/external refs may now cover some of this.
+  - If missing, verify whether the built-in workflow is writing linked issue/PR records and whether request detail surfaces them clearly, not just agent-run compare links.
+  - Verify with a request that should have a branch/PR and inspect agent runs/external refs.
 
 ## Suggested Work Order
 

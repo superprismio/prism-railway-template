@@ -40,6 +40,12 @@ Setup, deployment, and runtime operations:
 - [Railway Setup](operations/railway-setup.md)
 - [Template Deploy Runbook](operations/template-deploy-runbook.md)
 
+## Research
+
+Exploratory comparisons and external project research:
+
+- [Prism vs OpenClaw and Hermes](research/prism-vs-openclaw-hermes.md)
+
 ## Template
 
 Railway template authoring and publishing:

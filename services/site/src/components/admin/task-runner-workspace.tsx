@@ -680,6 +680,7 @@ export function TaskRunnerWorkspace() {
             <thead className="border-b border-border/70 bg-muted/40 text-xs uppercase tracking-[0.12em] text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Task</th>
+                <th className="px-4 py-3 font-medium">Run</th>
                 <th className="px-4 py-3 font-medium">Status</th>
                 <th className="px-4 py-3 font-medium">Source</th>
                 <th className="px-4 py-3 font-medium">Started</th>
@@ -692,6 +693,9 @@ export function TaskRunnerWorkspace() {
               {runs.slice(0, 20).map((run) => (
                 <tr key={run.id} className="border-b border-border/50 last:border-b-0">
                   <td className="px-4 py-3 font-medium">{run.taskKey ?? "unknown"}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                    {run.agentRunId ? run.agentRunId.slice(0, 8) : "legacy"}
+                  </td>
                   <td className="px-4 py-3">{statusBadge(run.status)}</td>
                   <td className="px-4 py-3 text-muted-foreground">{run.triggerSource}</td>
                   <td className="px-4 py-3 text-muted-foreground">{formatDate(run.startedAt)}</td>
@@ -714,7 +718,7 @@ export function TaskRunnerWorkspace() {
               ))}
               {!runs.length ? (
                 <tr>
-                  <td className="px-4 py-6 text-center text-muted-foreground" colSpan={7}>
+                  <td className="px-4 py-6 text-center text-muted-foreground" colSpan={8}>
                     No task runs recorded yet.
                   </td>
                 </tr>
@@ -817,6 +821,9 @@ export function TaskRunnerWorkspace() {
               <div className="flex flex-wrap items-center gap-2">
                 {statusBadge(selectedRun.status)}
                 <Badge variant="outline">{selectedRun.taskName ?? selectedRun.taskKey ?? "unknown"}</Badge>
+                <Badge variant="outline">
+                  {selectedRun.agentRunId ? `agent run ${selectedRun.agentRunId}` : "legacy task run"}
+                </Badge>
               </div>
 
               {selectedRun.resultSummary ? (

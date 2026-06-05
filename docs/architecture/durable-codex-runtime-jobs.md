@@ -28,7 +28,7 @@ Make Codex work durable and inspectable as a first-class run:
 
 ## Non-Goals
 
-- Replace task runs, workflow executions, or request artifacts immediately.
+- Replace task runs, workflow-step agent runs, or request artifacts immediately.
 - Build a distributed queue system as the first slice.
 - Require websockets before the basic model works.
 - Make every tool call stream live in the first implementation.
@@ -201,7 +201,7 @@ Polling should use bounded retry/backoff:
 Prism Console can start with local run cards. A later global activity surface can aggregate:
 
 - active console jobs
-- active workflow executions
+- active workflow-step agent runs
 - task runs
 - hook-triggered requests
 - recent failures
@@ -263,7 +263,7 @@ Task and workflow records should keep their existing domain-specific tables, but
 
 ### Phase 4: Workflow/Task Adoption
 
-- Add runtime job id to workflow execution metadata.
+- Add runtime job id to workflow-step agent-run metadata.
 - Add runtime job id to task run metadata.
 - Use runtime polling for prompt-based task runs and workflow agent steps.
 

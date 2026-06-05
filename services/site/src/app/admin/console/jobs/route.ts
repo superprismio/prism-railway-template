@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server"
 
 import {
+  createAgentRun,
   createAgentResponseJob,
   createAgentSession,
+  getAgentRun,
   getAgentResponseJob,
   getAgentSession,
+  updateAgentRun,
   updateAgentResponseJob,
 } from "@/lib/app-core"
 import { requireLocalAdminAccess } from "@/lib/local-admin-api"
@@ -39,11 +42,19 @@ function traceFromPayload(payload: Record<string, unknown>) {
   return []
 }
 
-async function runConsoleJob(jobId: string, requestUrl: string) {
+function parseString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+async function runConsoleJob(jobId: string, agentRunId: string, requestUrl: string) {
   const job = createJobSnapshot(jobId)
   if (!job) return
 
   const startedAt = new Date().toISOString()
+  updateAgentRun(agentRunId, {
+    status: "running",
+    startedAt,
+  })
   updateAgentResponseJob(jobId, {
     status: "running",
     startedAt,
@@ -56,6 +67,7 @@ async function runConsoleJob(jobId: string, requestUrl: string) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           ...job.input,
+          agent_run_id: agentRunId,
           response_job_id: jobId,
         }),
       }),
@@ -80,10 +92,24 @@ async function runConsoleJob(jobId: string, requestUrl: string) {
       trace,
       finishedAt: new Date().toISOString(),
     })
+    updateAgentRun(agentRunId, {
+      sessionId,
+      status: response.ok ? "succeeded" : "failed",
+      result: payload,
+      trace,
+      errorMessage: response.ok ? null : typeof payload.error === "string" ? payload.error : `HTTP ${response.status}`,
+      finishedAt: new Date().toISOString(),
+    })
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "CONSOLE_JOB_FAILED"
     updateAgentResponseJob(jobId, {
       status: "failed",
-      errorMessage: error instanceof Error ? error.message : "CONSOLE_JOB_FAILED",
+      errorMessage,
+      finishedAt: new Date().toISOString(),
+    })
+    updateAgentRun(agentRunId, {
+      status: "failed",
+      errorMessage,
       finishedAt: new Date().toISOString(),
     })
   }
@@ -154,21 +180,55 @@ export async function POST(request: Request) {
     ...body,
     session_id: session.id,
   }
-  const job = createAgentResponseJob({
+  const linkedChangeRequestId = parseString(body.linked_change_request_id ?? body.linkedChangeRequestId)
+  const linkedTargetEnvironmentId = parseString(body.linked_target_environment_id ?? body.linkedTargetEnvironmentId)
+  const agentRun = createAgentRun({
+    kind: linkedChangeRequestId ? "workflow_step" : "console",
+    status: "queued",
+    requestId: linkedChangeRequestId,
     sessionId: session.id,
+    source: "admin-console",
     input,
   })
+  if (!agentRun) {
+    return NextResponse.json({ ok: false, error: "AGENT_RUN_CREATE_FAILED" }, { status: 500 })
+  }
+  const job = createAgentResponseJob({
+    sessionId: session.id,
+    input: {
+      ...input,
+      agent_run_id: agentRun.id,
+    },
+  })
   if (!job) {
+    updateAgentRun(agentRun.id, {
+      status: "failed",
+      errorMessage: "CONSOLE_JOB_CREATE_FAILED",
+      finishedAt: new Date().toISOString(),
+    })
     return NextResponse.json({ ok: false, error: "CONSOLE_JOB_CREATE_FAILED" }, { status: 500 })
   }
 
-  void runConsoleJob(job.id, request.url)
+  updateAgentRun(agentRun.id, {
+    result: {
+      responseJobId: job.id,
+      linkedTargetEnvironmentId,
+    },
+  })
+
+  void runConsoleJob(job.id, agentRun.id, request.url)
 
   return NextResponse.json(
     {
       ok: true,
-      job,
-      jobId: job.id,
+      job: {
+        ...job,
+        id: agentRun.id,
+        status: agentRun.status,
+        trace: agentRun.trace,
+      },
+      agentRun,
+      jobId: agentRun.id,
       session_id: session.id,
     },
     { status: 202 },

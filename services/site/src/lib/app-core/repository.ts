@@ -442,38 +442,6 @@ export interface UpdateChangeRequestInput {
   agentRecommendation?: string | null;
 }
 
-export interface CreateChangeRequestExecutionInput {
-  changeRequestId: string;
-  targetEnvironmentId?: string | null;
-  status?: string;
-  actorType?: string;
-  branchName?: string | null;
-  commitSha?: string | null;
-  deployUrl?: string | null;
-  adapterKind?: string | null;
-  adapterStatus?: string | null;
-  summary?: string | null;
-  errorMessage?: string | null;
-  meta?: Record<string, unknown>;
-  startedAt?: string | null;
-  finishedAt?: string | null;
-}
-
-export interface UpdateChangeRequestExecutionInput {
-  status?: string;
-  targetEnvironmentId?: string | null;
-  branchName?: string | null;
-  commitSha?: string | null;
-  deployUrl?: string | null;
-  adapterKind?: string | null;
-  adapterStatus?: string | null;
-  summary?: string | null;
-  errorMessage?: string | null;
-  meta?: Record<string, unknown>;
-  startedAt?: string | null;
-  finishedAt?: string | null;
-}
-
 export interface AgentSessionRecord {
   id: string;
   source: string;
@@ -518,6 +486,28 @@ export interface AgentResponseJobRecord {
   updatedAt: string;
 }
 
+export interface AgentRunRecord {
+  id: string;
+  kind: string;
+  status: string;
+  idempotencyKey: string | null;
+  requestId: string | null;
+  workflowRunId: string | null;
+  workflowStepKey: string | null;
+  taskKey: string | null;
+  hookKey: string | null;
+  sessionId: string | null;
+  source: string;
+  input: Record<string, unknown>;
+  result: Record<string, unknown>;
+  trace: Array<Record<string, unknown>>;
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CreateAgentResponseJobInput {
   sessionId?: string | null;
   input: Record<string, unknown>;
@@ -530,6 +520,44 @@ export interface UpdateAgentResponseJobInput {
   outputText?: string | null;
   errorMessage?: string | null;
   trace?: Array<Record<string, unknown>>;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+}
+
+export interface CreateAgentRunInput {
+  kind: string;
+  status?: string;
+  idempotencyKey?: string | null;
+  requestId?: string | null;
+  workflowRunId?: string | null;
+  workflowStepKey?: string | null;
+  taskKey?: string | null;
+  hookKey?: string | null;
+  sessionId?: string | null;
+  source?: string;
+  input?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  trace?: Array<Record<string, unknown>>;
+  errorMessage?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+}
+
+export interface UpdateAgentRunInput {
+  kind?: string;
+  status?: string;
+  idempotencyKey?: string | null;
+  requestId?: string | null;
+  workflowRunId?: string | null;
+  workflowStepKey?: string | null;
+  taskKey?: string | null;
+  hookKey?: string | null;
+  sessionId?: string | null;
+  source?: string;
+  input?: Record<string, unknown>;
+  result?: Record<string, unknown>;
+  trace?: Array<Record<string, unknown>>;
+  errorMessage?: string | null;
   startedAt?: string | null;
   finishedAt?: string | null;
 }
@@ -629,6 +657,7 @@ export interface HookRecord {
 
 export interface HookRunRecord {
   id: string;
+  agentRunId: string | null;
   hookId: string | null;
   hookKey: string;
   hookName: string | null;
@@ -749,6 +778,7 @@ export interface UpsertRequestExternalRefInput {
 
 export interface TaskRunRecord {
   id: string;
+  agentRunId: string | null;
   taskId: string;
   taskKey: string | null;
   taskName: string | null;
@@ -1064,6 +1094,7 @@ interface RequestExternalRefRow {
 
 interface TaskRunRow {
   id: string;
+  agent_run_id: string | null;
   task_id: string;
   task_key: string | null;
   task_name: string | null;
@@ -1076,6 +1107,28 @@ interface TaskRunRow {
   input_snapshot_json: string;
   output_snapshot_json: string;
   artifact_refs_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface AgentRunRow {
+  id: string;
+  kind: string;
+  status: string;
+  idempotency_key: string | null;
+  request_id: string | null;
+  workflow_run_id: string | null;
+  workflow_step_key: string | null;
+  task_key: string | null;
+  hook_key: string | null;
+  session_id: string | null;
+  source: string;
+  input_json: string;
+  result_json: string;
+  trace_json: string;
+  error_message: string | null;
+  started_at: string | null;
+  finished_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1098,6 +1151,7 @@ interface HookRow {
 
 interface HookRunRow {
   id: string;
+  agent_run_id: string | null;
   hook_id: string | null;
   hook_key: string;
   hook_name: string | null;
@@ -1175,6 +1229,7 @@ function mapHookRow(row: HookRow): HookRecord {
 function mapHookRunRow(row: HookRunRow): HookRunRecord {
   return {
     id: row.id,
+    agentRunId: row.agent_run_id,
     hookId: row.hook_id,
     hookKey: row.hook_key,
     hookName: row.hook_name,
@@ -1279,6 +1334,7 @@ function mapRequestExternalRefRow(row: RequestExternalRefRow): RequestExternalRe
 function mapTaskRunRow(row: TaskRunRow): TaskRunRecord {
   return {
     id: row.id,
+    agentRunId: row.agent_run_id,
     taskId: row.task_id,
     taskKey: row.task_key,
     taskName: row.task_name,
@@ -1680,6 +1736,30 @@ function parseAgentResponseJobRow(row: {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   } satisfies AgentResponseJobRecord;
+}
+
+function mapAgentRunRow(row: AgentRunRow): AgentRunRecord {
+  return {
+    id: row.id,
+    kind: row.kind,
+    status: row.status,
+    idempotencyKey: row.idempotency_key,
+    requestId: row.request_id,
+    workflowRunId: row.workflow_run_id,
+    workflowStepKey: row.workflow_step_key,
+    taskKey: row.task_key,
+    hookKey: row.hook_key,
+    sessionId: row.session_id,
+    source: row.source,
+    input: parseJsonValue<Record<string, unknown>>(row.input_json, {}),
+    result: parseJsonValue<Record<string, unknown>>(row.result_json, {}),
+    trace: parseJsonValue<Array<Record<string, unknown>>>(row.trace_json, []),
+    errorMessage: row.error_message,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 
 function listSkillLabelsForUser(userId: string | null) {
@@ -3346,7 +3426,7 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
 
 export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) {
   const params: Array<string> = [];
-  const activeExecutionStatuses = ['planned', 'running'];
+  const activeAgentRunStatuses = ['queued', 'running'];
 
   let sql = `SELECT
       cr.id,
@@ -3389,12 +3469,12 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
       AND COALESCE(wr.status, 'active') != 'completed'
       AND NOT EXISTS (
         SELECT 1
-        FROM change_request_executions cre
-        WHERE cre.change_request_id = cr.id
-          AND cre.status IN (${activeExecutionStatuses.map(() => '?').join(', ')})
+        FROM agent_runs ar
+        WHERE ar.request_id = cr.id
+          AND ar.status IN (${activeAgentRunStatuses.map(() => '?').join(', ')})
       )`;
 
-  params.push(...activeExecutionStatuses);
+  params.push(...activeAgentRunStatuses);
 
   if (input.targetAppId) {
     sql += ' AND cr.target_app_id = ?';
@@ -3455,7 +3535,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
 
 export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {}) {
   const params: Array<string> = [];
-  const activeExecutionStatuses = ['planned', 'running'];
+  const activeAgentRunStatuses = ['queued', 'running'];
 
   let sql = `SELECT
       cr.id,
@@ -3498,12 +3578,12 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
       AND COALESCE(wr.status, 'active') != 'completed'
       AND EXISTS (
         SELECT 1
-        FROM change_request_executions cre
-        WHERE cre.change_request_id = cr.id
-          AND cre.status IN (${activeExecutionStatuses.map(() => '?').join(', ')})
+        FROM agent_runs ar
+        WHERE ar.request_id = cr.id
+          AND ar.status IN (${activeAgentRunStatuses.map(() => '?').join(', ')})
       )`;
 
-  params.push(...activeExecutionStatuses);
+  params.push(...activeAgentRunStatuses);
 
   if (input.targetAppId) {
     sql += ' AND cr.target_app_id = ?';
@@ -3514,17 +3594,17 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
     ORDER BY
       COALESCE(
         (
-          SELECT MAX(COALESCE(cre.started_at, cre.created_at))
-          FROM change_request_executions cre
-          WHERE cre.change_request_id = cr.id
-            AND cre.status IN (${activeExecutionStatuses.map(() => '?').join(', ')})
+          SELECT MAX(COALESCE(ar.started_at, ar.created_at))
+          FROM agent_runs ar
+          WHERE ar.request_id = cr.id
+            AND ar.status IN (${activeAgentRunStatuses.map(() => '?').join(', ')})
         ),
         cr.updated_at
       ) DESC,
       cr.request_number ASC
     LIMIT 1`;
 
-  params.push(...activeExecutionStatuses);
+  params.push(...activeAgentRunStatuses);
 
   const row = getDb().prepare(sql).get(...params) as Parameters<typeof parseTrackedChangeRequestRow>[0] | undefined;
   return row ? parseTrackedChangeRequestRow(row) : null;
@@ -3876,91 +3956,6 @@ export function getChangeRequestExecution(executionId: string) {
     | undefined;
 
   return row ? parseChangeRequestExecutionRow(row) : null;
-}
-
-export function createChangeRequestExecution(input: CreateChangeRequestExecutionInput) {
-  const now = new Date().toISOString();
-  const id = randomUUID();
-
-  getDb()
-    .prepare(
-      `INSERT INTO change_request_executions (
-         id, change_request_id, target_environment_id, status, actor_type, branch_name, commit_sha,
-         deploy_url, adapter_kind, adapter_status, summary, error_message, meta_json,
-         created_at, updated_at, started_at, finished_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      id,
-      input.changeRequestId,
-      input.targetEnvironmentId ?? null,
-      input.status ?? 'planned',
-      input.actorType ?? 'codex',
-      input.branchName ?? null,
-      input.commitSha ?? null,
-      input.deployUrl ?? null,
-      input.adapterKind ?? null,
-      input.adapterStatus ?? null,
-      input.summary ?? null,
-      input.errorMessage ?? null,
-      JSON.stringify(input.meta ?? {}),
-      now,
-      now,
-      input.startedAt ?? null,
-      input.finishedAt ?? null,
-    );
-
-  return getChangeRequestExecution(id);
-}
-
-export function updateChangeRequestExecution(executionId: string, input: UpdateChangeRequestExecutionInput) {
-  const current = getChangeRequestExecution(executionId);
-  if (!current) {
-    return null;
-  }
-
-  const now = new Date().toISOString();
-
-  getDb()
-    .prepare(
-      `UPDATE change_request_executions
-       SET status = ?,
-           target_environment_id = ?,
-           branch_name = ?,
-           commit_sha = ?,
-           deploy_url = ?,
-           adapter_kind = ?,
-           adapter_status = ?,
-           summary = ?,
-           error_message = ?,
-           meta_json = ?,
-           started_at = ?,
-           finished_at = ?,
-           updated_at = ?
-       WHERE id = ?`,
-    )
-    .run(
-      input.status ?? current.status,
-      input.targetEnvironmentId !== undefined ? input.targetEnvironmentId : current.targetEnvironmentId,
-      input.branchName !== undefined ? input.branchName : current.branchName,
-      input.commitSha !== undefined ? input.commitSha : current.commitSha,
-      input.deployUrl !== undefined ? input.deployUrl : current.deployUrl,
-      input.adapterKind !== undefined ? input.adapterKind : current.adapterKind,
-      input.adapterStatus !== undefined ? input.adapterStatus : current.adapterStatus,
-      input.summary !== undefined ? input.summary : current.summary,
-      input.errorMessage !== undefined ? input.errorMessage : current.errorMessage,
-      JSON.stringify(
-        input.meta
-          ? { ...current.meta, ...input.meta }
-          : current.meta,
-      ),
-      input.startedAt !== undefined ? input.startedAt : current.startedAt,
-      input.finishedAt !== undefined ? input.finishedAt : current.finishedAt,
-      now,
-      executionId,
-    );
-
-  return getChangeRequestExecution(executionId);
 }
 
 export function getAgentSession(sessionId: string) {
@@ -4494,6 +4489,196 @@ export function updateAgentResponseJob(id: string, input: UpdateAgentResponseJob
     );
 
   return getAgentResponseJob(id);
+}
+
+export function createAgentRun(input: CreateAgentRunInput) {
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  getDb()
+    .prepare(
+      `INSERT INTO agent_runs (
+         id, kind, status, idempotency_key, request_id, workflow_run_id, workflow_step_key,
+         task_key, hook_key, session_id, source, input_json, result_json, trace_json,
+         error_message, started_at, finished_at, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      normalizeText(input.kind) || 'console',
+      normalizeText(input.status) || 'queued',
+      normalizeText(input.idempotencyKey) || null,
+      normalizeText(input.requestId) || null,
+      normalizeText(input.workflowRunId) || null,
+      normalizeText(input.workflowStepKey) || null,
+      normalizeText(input.taskKey) || null,
+      normalizeText(input.hookKey) || null,
+      normalizeText(input.sessionId) || null,
+      normalizeText(input.source) || 'site',
+      JSON.stringify(input.input ?? {}),
+      JSON.stringify(input.result ?? {}),
+      JSON.stringify(input.trace ?? []),
+      normalizeText(input.errorMessage) || null,
+      normalizeText(input.startedAt) || null,
+      normalizeText(input.finishedAt) || null,
+      now,
+      now,
+    );
+  return getAgentRun(id);
+}
+
+export function getAgentRun(id: string) {
+  const row = getDb().prepare('SELECT * FROM agent_runs WHERE id = ?').get(id) as AgentRunRow | undefined;
+  return row ? mapAgentRunRow(row) : null;
+}
+
+export function updateAgentRun(id: string, input: UpdateAgentRunInput) {
+  const current = getAgentRun(id);
+  if (!current) {
+    return null;
+  }
+  const now = new Date().toISOString();
+  getDb()
+    .prepare(
+      `UPDATE agent_runs
+       SET kind = @kind,
+           status = @status,
+           idempotency_key = @idempotencyKey,
+           request_id = @requestId,
+           workflow_run_id = @workflowRunId,
+           workflow_step_key = @workflowStepKey,
+           task_key = @taskKey,
+           hook_key = @hookKey,
+           session_id = @sessionId,
+           source = @source,
+           input_json = @inputJson,
+           result_json = @resultJson,
+           trace_json = @traceJson,
+           error_message = @errorMessage,
+           started_at = @startedAt,
+           finished_at = @finishedAt,
+           updated_at = @updatedAt
+       WHERE id = @id`,
+    )
+    .run({
+      id,
+      kind: input.kind === undefined ? current.kind : normalizeText(input.kind) || current.kind,
+      status: input.status === undefined ? current.status : normalizeText(input.status) || current.status,
+      idempotencyKey:
+        input.idempotencyKey === undefined ? current.idempotencyKey : normalizeText(input.idempotencyKey) || null,
+      requestId: input.requestId === undefined ? current.requestId : normalizeText(input.requestId) || null,
+      workflowRunId:
+        input.workflowRunId === undefined ? current.workflowRunId : normalizeText(input.workflowRunId) || null,
+      workflowStepKey:
+        input.workflowStepKey === undefined ? current.workflowStepKey : normalizeText(input.workflowStepKey) || null,
+      taskKey: input.taskKey === undefined ? current.taskKey : normalizeText(input.taskKey) || null,
+      hookKey: input.hookKey === undefined ? current.hookKey : normalizeText(input.hookKey) || null,
+      sessionId: input.sessionId === undefined ? current.sessionId : normalizeText(input.sessionId) || null,
+      source: input.source === undefined ? current.source : normalizeText(input.source) || current.source,
+      inputJson: input.input === undefined ? JSON.stringify(current.input) : JSON.stringify(input.input),
+      resultJson: input.result === undefined ? JSON.stringify(current.result) : JSON.stringify(input.result),
+      traceJson: input.trace === undefined ? JSON.stringify(current.trace) : JSON.stringify(input.trace),
+      errorMessage: input.errorMessage === undefined ? current.errorMessage : normalizeText(input.errorMessage) || null,
+      startedAt: input.startedAt === undefined ? current.startedAt : normalizeText(input.startedAt) || null,
+      finishedAt: input.finishedAt === undefined ? current.finishedAt : normalizeText(input.finishedAt) || null,
+      updatedAt: now,
+    });
+  return getAgentRun(id);
+}
+
+export function listAgentRuns(input: {
+  kind?: string | null;
+  status?: string | null;
+  requestId?: string | null;
+  taskKey?: string | null;
+  hookKey?: string | null;
+  limit?: number;
+} = {}) {
+  const limit = Math.max(1, Math.min(Number(input.limit ?? 50), 200));
+  const filters: string[] = [];
+  const params: unknown[] = [];
+  const kind = normalizeText(input.kind);
+  const status = normalizeText(input.status);
+  const requestId = normalizeText(input.requestId);
+  const taskKey = normalizeText(input.taskKey);
+  const hookKey = normalizeText(input.hookKey);
+  if (kind) {
+    filters.push('kind = ?');
+    params.push(kind);
+  }
+  if (status) {
+    filters.push('status = ?');
+    params.push(status);
+  }
+  if (requestId) {
+    filters.push('request_id = ?');
+    params.push(requestId);
+  }
+  if (taskKey) {
+    filters.push('task_key = ?');
+    params.push(taskKey);
+  }
+  if (hookKey) {
+    filters.push('hook_key = ?');
+    params.push(hookKey);
+  }
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const rows = getDb()
+    .prepare(`SELECT * FROM agent_runs ${where} ORDER BY created_at DESC LIMIT ?`)
+    .all(...params, limit) as AgentRunRow[];
+  return rows.map(mapAgentRunRow);
+}
+
+export function findActiveAgentRunByIdempotencyKey(idempotencyKey: string) {
+  const key = normalizeText(idempotencyKey);
+  if (!key) {
+    return null;
+  }
+  const row = getDb()
+    .prepare(
+      `SELECT *
+       FROM agent_runs
+       WHERE idempotency_key = ?
+         AND status IN ('queued', 'running')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+    )
+    .get(key) as AgentRunRow | undefined;
+  return row ? mapAgentRunRow(row) : null;
+}
+
+export function listActiveAgentRunsForRequest(requestId: string) {
+  const id = normalizeText(requestId);
+  if (!id) {
+    return [];
+  }
+  const rows = getDb()
+    .prepare(
+      `SELECT *
+       FROM agent_runs
+       WHERE request_id = ?
+         AND status IN ('queued', 'running')
+       ORDER BY created_at DESC`,
+    )
+    .all(id) as AgentRunRow[];
+  return rows.map(mapAgentRunRow);
+}
+
+export function cancelActiveAgentRunsForRequest(input: {
+  requestId: string;
+  reason: string;
+  status?: 'canceled' | 'superseded';
+}) {
+  const runs = listActiveAgentRunsForRequest(input.requestId);
+  const now = new Date().toISOString();
+  return runs.map((run) => updateAgentRun(run.id, {
+    status: input.status ?? 'canceled',
+    result: {
+      ...run.result,
+      canceledReason: input.reason,
+    },
+    errorMessage: input.reason,
+    finishedAt: now,
+  })).filter((run): run is AgentRunRecord => Boolean(run));
 }
 
 export function getAdminChangeRequest(changeRequestId: string) {
@@ -5712,21 +5897,40 @@ export function createHookRun(input: CreateHookRunInput): HookRunRecord {
   if (!hookKey) {
     throw new Error('HOOK_RUN_KEY_REQUIRED');
   }
+  const source = normalizeText(input.source) || 'hook';
+  const hookName = normalizeText(input.hookName) || null;
+  const workflowKey = normalizeText(input.workflowKey) || null;
+  const agentRun = createAgentRun({
+    kind: 'hook',
+    status: 'running',
+    idempotencyKey: `hook:${id}`,
+    hookKey,
+    source,
+    input: {
+      hookRunId: id,
+      hookKey,
+      hookName,
+      workflowKey,
+      payload: input.payload ?? {},
+    },
+    startedAt,
+  });
   getDb().prepare(
     `INSERT INTO hook_runs (
-       id, hook_id, hook_key, hook_name, workflow_key, status, source, payload_json,
+       id, agent_run_id, hook_id, hook_key, hook_name, workflow_key, status, source, payload_json,
        result_json, started_at, created_at, updated_at
      ) VALUES (
-       @id, @hookId, @hookKey, @hookName, @workflowKey, 'running', @source, @payloadJson,
+       @id, @agentRunId, @hookId, @hookKey, @hookName, @workflowKey, 'running', @source, @payloadJson,
        '{}', @startedAt, @createdAt, @updatedAt
      )`,
   ).run({
     id,
+    agentRunId: agentRun?.id ?? null,
     hookId: normalizeText(input.hookId) || null,
     hookKey,
-    hookName: normalizeText(input.hookName) || null,
-    workflowKey: normalizeText(input.workflowKey) || null,
-    source: normalizeText(input.source) || 'hook',
+    hookName,
+    workflowKey,
+    source,
     payloadJson: JSON.stringify(input.payload ?? {}),
     startedAt,
     createdAt: now,
@@ -5783,6 +5987,36 @@ export function updateHookRun(id: string, input: UpdateHookRunInput): HookRunRec
     finishedAt,
     updatedAt: now,
   });
+  if (current.agentRunId) {
+    const requestId = input.requestId === undefined ? current.requestId : normalizeText(input.requestId) || null;
+    const requestNumber = input.requestNumber === undefined ? current.requestNumber : input.requestNumber;
+    const requestTitle = input.requestTitle === undefined ? current.requestTitle : normalizeText(input.requestTitle) || null;
+    const result = input.result === undefined ? current.result : input.result;
+    updateAgentRun(current.agentRunId, {
+      status:
+        status === 'succeeded'
+          ? 'succeeded'
+          : status === 'failed'
+            ? 'failed'
+            : status === 'canceled'
+              ? 'canceled'
+              : 'running',
+      requestId,
+      result: {
+        ...result,
+        hookRunId: current.id,
+        hookKey: current.hookKey,
+        hookName: current.hookName,
+        workflowKey: current.workflowKey,
+        requestNumber,
+        requestTitle,
+        autoStartQueued: input.autoStartQueued === undefined ? current.autoStartQueued : input.autoStartQueued,
+        autoStartStarted: input.autoStartStarted === undefined ? current.autoStartStarted : input.autoStartStarted,
+      },
+      errorMessage: input.errorMessage === undefined ? current.errorMessage : normalizeText(input.errorMessage) || null,
+      finishedAt: status === 'running' ? null : finishedAt,
+    });
+  }
   return getHookRun(id);
 }
 
@@ -5834,21 +6068,40 @@ export function createTaskRun(input: CreateTaskRunInput): TaskRunRecord {
 
   const now = new Date().toISOString();
   const id = randomUUID();
+  const status = normalizeText(input.status) || 'running';
+  const triggerSource = normalizeText(input.triggerSource) || 'manual';
+  const startedAt = input.startedAt ?? now;
+  const agentRun = createAgentRun({
+    kind: 'task',
+    status,
+    idempotencyKey: `task:${id}`,
+    taskKey: task.key,
+    source: triggerSource,
+    input: {
+      taskRunId: id,
+      taskKey: task.key,
+      taskName: task.name,
+      triggerSource,
+      inputSnapshot: input.inputSnapshot ?? {},
+    },
+    startedAt,
+  });
 
   getDb().prepare(
     `INSERT INTO task_runs (
-       id, task_id, status, trigger_source, started_at, finished_at, result_summary, error_message,
+       id, agent_run_id, task_id, status, trigger_source, started_at, finished_at, result_summary, error_message,
        input_snapshot_json, output_snapshot_json, artifact_refs_json, created_at, updated_at
      ) VALUES (
-       @id, @taskId, @status, @triggerSource, @startedAt, NULL, @resultSummary, @errorMessage,
+       @id, @agentRunId, @taskId, @status, @triggerSource, @startedAt, NULL, @resultSummary, @errorMessage,
        @inputSnapshotJson, @outputSnapshotJson, @artifactRefsJson, @createdAt, @updatedAt
      )`,
   ).run({
     id,
+    agentRunId: agentRun?.id ?? null,
     taskId: task.id,
-    status: normalizeText(input.status) || 'running',
-    triggerSource: normalizeText(input.triggerSource) || 'manual',
-    startedAt: input.startedAt ?? now,
+    status,
+    triggerSource,
+    startedAt,
     resultSummary: normalizeText(input.resultSummary) || null,
     errorMessage: normalizeText(input.errorMessage) || null,
     inputSnapshotJson: JSON.stringify(input.inputSnapshot ?? {}),
@@ -5905,6 +6158,31 @@ export function updateTaskRun(id: string, input: UpdateTaskRunInput): TaskRunRec
     artifactRefsJson: JSON.stringify(input.artifactRefs ?? current.artifactRefs),
     updatedAt: now,
   });
+  if (current.agentRunId) {
+    const status = normalizeText(input.status) || current.status;
+    updateAgentRun(current.agentRunId, {
+      status:
+        status === 'succeeded'
+          ? 'succeeded'
+          : status === 'failed'
+            ? 'failed'
+            : status === 'canceled'
+              ? 'canceled'
+              : 'running',
+      result: {
+        taskRunId: current.id,
+        taskKey: current.taskKey,
+        taskName: current.taskName,
+        triggerSource: current.triggerSource,
+        resultSummary:
+          input.resultSummary === undefined ? current.resultSummary : normalizeText(input.resultSummary) || null,
+        outputSnapshot: input.outputSnapshot ?? current.outputSnapshot,
+        artifactRefs: input.artifactRefs ?? current.artifactRefs,
+      },
+      errorMessage: input.errorMessage === undefined ? current.errorMessage : normalizeText(input.errorMessage) || null,
+      finishedAt: input.finishedAt === undefined ? current.finishedAt : input.finishedAt,
+    });
+  }
 
   const updated = getTaskRun(id);
   if (!updated) {

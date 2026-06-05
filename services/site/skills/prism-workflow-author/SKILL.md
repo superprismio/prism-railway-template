@@ -11,7 +11,7 @@ Prism workflows are markdown-first and DB-indexed:
 
 - Workflow and step instructions are human/agent-authored markdown.
 - The workflow manifest is thin structure for UI display and deterministic routing.
-- Workflow state, approvals, executions, and event history belong in the DB, not markdown.
+- Workflow state, approvals, agent runs, and event history belong in the DB, not markdown.
 
 ## Storage
 
@@ -34,7 +34,7 @@ Instance custom workflows should use the site-owned volume when that API/storage
     <step-key>.md
 ```
 
-Do not store runtime approval state, current step, retry state, or execution history in workflow files.
+Do not store runtime approval state, current step, retry state, or run history in workflow files.
 
 In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the API is unavailable.
 
@@ -160,7 +160,7 @@ Do not add workflow-specific hacks for board status, terminal status, auto-advan
 - terminal run state
 - gate routing mechanics
 - auto-continue behavior
-- execution and workflow event history
+- agent-run and workflow event history
 
 Workflow markdown should define domain truth and evidence:
 
