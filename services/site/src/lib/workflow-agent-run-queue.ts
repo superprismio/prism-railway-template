@@ -136,7 +136,10 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
     return { queued: false, reason: "workflow_runnable_step_not_found", status: 409 }
   }
   const runnableStepType = stepType(runnableStep)
-  if (runnableStepType !== "agent" && runnableStepType !== "checkpoint" && runnableStepType !== "terminal") {
+  if (runnableStepType === "terminal") {
+    return { queued: false, reason: "WORKFLOW_ALREADY_TERMINAL", status: 409 }
+  }
+  if (runnableStepType !== "agent" && runnableStepType !== "checkpoint") {
     return { queued: false, reason: "WORKFLOW_STEP_NOT_RUNNABLE", status: 409 }
   }
 

@@ -176,6 +176,10 @@ function hasActiveAgentRun(changeRequestId: string, excludeAgentRunId?: string |
   return listActiveAgentRunsForRequest(changeRequestId).some((run) => run.id !== excludeAgentRunId)
 }
 
+function isStoppedAgentRunStatus(status: string | null | undefined) {
+  return status === "canceled" || status === "superseded"
+}
+
 function workflowStepRunIdempotencyKey(input: {
   requestId: string
   workflowRunId: string
@@ -636,13 +640,13 @@ function completeWorkflowAgentStep(input: {
 }) {
   const agentRunId = input.agentRunId ?? null
   const agentRun = agentRunId ? getAgentRun(agentRunId) : null
-  if (agentRun?.status === "canceled") {
+  if (isStoppedAgentRunStatus(agentRun?.status)) {
     if (agentRunId) {
       updateAgentRun(agentRunId, {
-        status: "canceled",
+        status: agentRun?.status ?? "canceled",
         result: {
           ignored: true,
-          reason: "agent_run_canceled",
+          reason: `agent_run_${agentRun?.status ?? "stopped"}`,
           responseText: input.responseText.slice(0, 4000),
         },
         trace: Array.isArray(input.runtimeResponse.trace) ? input.runtimeResponse.trace : [],
@@ -655,7 +659,7 @@ function completeWorkflowAgentStep(input: {
       stepKey: input.stepKey,
       eventType: "agent.completion_ignored",
       actorType: "system",
-      note: "Ignored a late runtime completion because the agent run was stopped by an operator.",
+      note: `Ignored a late runtime completion because the agent run was ${agentRun?.status ?? "stopped"}.`,
       payload: {
         agentRunId,
       },
@@ -824,6 +828,10 @@ function startWorkflowAgentStep(input: {
   action?: string | null
   autoContinued?: boolean
 }) {
+  if (input.agentRunId && !getAgentRun(input.agentRunId)) {
+    return null
+  }
+
   updateChangeRequest(input.requestId, {
     workflowStepKey: input.stepKey,
   })
@@ -982,6 +990,12 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     body.auto_continue_until_gate === true || body.autoContinueUntilGate === true
   const responseJobId = parseNullableString(body.response_job_id ?? body.responseJobId) ?? null
   const providedAgentRunId = parseNullableString(body.agent_run_id ?? body.agentRunId) ?? null
+  if (providedAgentRunId && !getAgentRun(providedAgentRunId)) {
+    return NextResponse.json(
+      { ok: false, error: "UNKNOWN_AGENT_RUN", agentRunId: providedAgentRunId },
+      { status: 409 },
+    )
+  }
   const recordRuntimeProgress = responseJobId
     ? (progress: {
         status: string
@@ -1223,6 +1237,12 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       agentRunId: providedAgentRunId,
       action: workflowAction,
     })
+    if (!activeAgentRunId) {
+      return NextResponse.json(
+        { ok: false, error: "AGENT_RUN_START_FAILED" },
+        { status: 409 },
+      )
+    }
   }
 
   try {
@@ -1614,14 +1634,14 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     const runtimeError = error as RuntimeError
     const failureTrace = Array.isArray(runtimeError.trace) ? runtimeError.trace : []
     const failureSummary = formatTraceSummary(failureTrace)
-    const activeAgentRunWasCanceled =
+    const activeAgentRunWasStopped =
       Boolean(activeAgentRunId) &&
-      getAgentRun(activeAgentRunId!)?.status === "canceled"
+      isStoppedAgentRunStatus(getAgentRun(activeAgentRunId!)?.status)
 
     if (activeLinkedChangeRequestId && linkedChangeRequest && linkedWorkflowRun && runnableStepKey) {
       if (
         activeAgentRunId &&
-        !activeAgentRunWasCanceled
+        !activeAgentRunWasStopped
       ) {
         updateAgentRun(activeAgentRunId, {
           status: "failed",
@@ -1643,27 +1663,27 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         workflowRunId: linkedWorkflowRun.id,
         requestId: activeLinkedChangeRequestId,
         stepKey: runnableStepKey,
-        eventType: activeAgentRunWasCanceled ? "agent.failure_ignored" : "agent.failed",
-        actorType: activeAgentRunWasCanceled ? "system" : "codex",
-        note: activeAgentRunWasCanceled
-          ? "Ignored a late runtime failure because the agent run was stopped by an operator."
+        eventType: activeAgentRunWasStopped ? "agent.failure_ignored" : "agent.failed",
+        actorType: activeAgentRunWasStopped ? "system" : "codex",
+        note: activeAgentRunWasStopped
+          ? "Ignored a late runtime failure because the agent run was stopped before the runtime returned."
           : message,
         payload: {
           agentRunId: activeAgentRunId,
           runtimeTrace: failureTrace,
         },
       })
-      if (!activeAgentRunWasCanceled) {
+      if (!activeAgentRunWasStopped) {
         updateChangeRequest(activeLinkedChangeRequestId, {
           workflowStepKey: runnableStepKey,
         })
       }
     }
 
-    if (activeAgentRunWasCanceled) {
+    if (activeAgentRunWasStopped) {
       return NextResponse.json({
         ok: true,
-        output_text: "The canceled workflow agent run returned after cancellation and was ignored.",
+        output_text: "The stopped workflow agent run returned after it was canceled or superseded and was ignored.",
         session_id: session.id,
       })
     }
