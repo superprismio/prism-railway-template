@@ -99,7 +99,7 @@ Workflow steps should save durable files through the request artifact API instea
 }
 ```
 
-Send that body to `POST /agent/change-board/requests/<request-id>/artifacts` with internal service auth. Use `encoding: "base64"` for image or other binary content. Artifacts are owned by the site service, stored under `/data/workflow-artifacts`, listed on the request Artifacts tab, and recorded as `artifact.created` workflow events.
+Send that body to `POST /agent/change-board/requests/<request-id>/artifacts` with internal service auth. Use `encoding: "base64"` for image or other binary content. When the workflow prompt provides a current agent run id, include it as `agent_run_id` so the artifact links back to the run that produced it. Artifacts are owned by the site service, stored under `/data/workflow-artifacts`, listed on the request Artifacts tab, and recorded as `artifact.created` workflow events.
 
 When a later workflow step needs prior artifact bodies, read them through the site API instead of guessing volume paths:
 

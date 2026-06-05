@@ -19,6 +19,7 @@ import { taskScriptsMigration } from './019_task_scripts';
 import { hookRunsMigration } from './020_hook_runs';
 import { agentRunsMigration } from './021_agent_runs';
 import { runLinksMigration } from './022_run_links';
+import { requestArtifactRunLinksMigration } from './023_request_artifact_run_links';
 
 export interface Migration {
   name: string;
@@ -47,4 +48,5 @@ export const migrations: Migration[] = [
   hookRunsMigration,
   agentRunsMigration,
   runLinksMigration,
+  requestArtifactRunLinksMigration,
 ];

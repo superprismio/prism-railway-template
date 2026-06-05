@@ -1294,6 +1294,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                 ? `Workflow step instructions:\n${workflowStepInstruction}`
                 : "This response is linked to a tracked request workflow step.",
               runnableStepKey ? `Current workflow step: ${runnableStepKey}.` : null,
+              activeAgentRunId ? `Current agent run id: ${activeAgentRunId}. When creating request artifacts for this step, include this as agent_run_id.` : null,
               isCheckpointWorkflowStep(runnableWorkflowStep)
                 ? [
                     "This workflow step is a checkpoint. Check external state and durable artifacts without starting duplicate work.",
@@ -1482,6 +1483,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                   ? `Workflow step instructions:\n${continuationInstruction}`
                   : "This response is linked to a tracked request workflow step.",
                 `Current workflow step: ${continuationStepKey}.`,
+                continuationAgentRunId ? `Current agent run id: ${continuationAgentRunId}. When creating request artifacts for this step, include this as agent_run_id.` : null,
                 continuationNextStepKey ? `When this step is complete, advance the workflow run to ${continuationNextStepKey}.` : null,
                 `To read prior workflow artifact bodies, call GET /agent/change-board/requests/by-number/${latestRequest.requestNumber}/artifacts with x-service-token. Filter by name or kind when useful.`,
                 "Auto-continue is enabled; the site will run the next agent step until the workflow reaches a gate, checkpoint, or terminal step.",

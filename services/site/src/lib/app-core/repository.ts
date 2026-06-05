@@ -718,6 +718,7 @@ export interface WorkflowEventRecord {
 
 export interface RequestArtifactRecord {
   id: string;
+  agentRunId: string | null;
   requestId: string;
   workflowRunId: string | null;
   executionId: string | null;
@@ -750,6 +751,7 @@ export interface RequestExternalRefRecord {
 
 export interface CreateRequestArtifactInput {
   id?: string;
+  agentRunId?: string | null;
   requestId: string;
   workflowRunId?: string | null;
   executionId?: string | null;
@@ -1062,6 +1064,7 @@ interface WorkflowEventRow {
 
 interface RequestArtifactRow {
   id: string;
+  agent_run_id: string | null;
   request_id: string;
   workflow_run_id: string | null;
   execution_id: string | null;
@@ -1298,6 +1301,7 @@ function mapWorkflowEventRow(row: WorkflowEventRow): WorkflowEventRecord {
 function mapRequestArtifactRow(row: RequestArtifactRow): RequestArtifactRecord {
   return {
     id: row.id,
+    agentRunId: row.agent_run_id,
     requestId: row.request_id,
     workflowRunId: row.workflow_run_id,
     executionId: row.execution_id,
@@ -1350,6 +1354,36 @@ function mapTaskRunRow(row: TaskRunRow): TaskRunRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function extractTraceFromTaskOutputSnapshot(outputSnapshot: Record<string, unknown>) {
+  const directTrace = outputSnapshot.trace;
+  if (Array.isArray(directTrace)) {
+    return directTrace.filter((entry): entry is Record<string, unknown> =>
+      Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry),
+    );
+  }
+
+  const body = outputSnapshot.body;
+  if (typeof body !== 'string' || !body.trim()) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(body) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return undefined;
+    }
+    const nestedTrace = (parsed as Record<string, unknown>).trace;
+    if (!Array.isArray(nestedTrace)) {
+      return undefined;
+    }
+    return nestedTrace.filter((entry): entry is Record<string, unknown> =>
+      Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry),
+    );
+  } catch {
+    return undefined;
+  }
 }
 
 function canViewerAccessField(scope: VisibilityScope, requesterUserId?: string | null) {
@@ -5460,12 +5494,13 @@ export function createRequestArtifact(input: CreateRequestArtifactInput): Reques
   getDb()
     .prepare(
       `INSERT INTO request_artifacts (
-         id, request_id, workflow_run_id, execution_id, kind, name, description,
+         id, agent_run_id, request_id, workflow_run_id, execution_id, kind, name, description,
          mime_type, storage_path, size_bytes, metadata_json, created_by, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
+      input.agentRunId ?? null,
       input.requestId,
       input.workflowRunId ?? null,
       input.executionId ?? null,
@@ -6071,6 +6106,11 @@ export function createTaskRun(input: CreateTaskRunInput): TaskRunRecord {
   const status = normalizeText(input.status) || 'running';
   const triggerSource = normalizeText(input.triggerSource) || 'manual';
   const startedAt = input.startedAt ?? now;
+  const outputSnapshot = input.outputSnapshot ?? {};
+  const artifactRefs = input.artifactRefs ?? [];
+  const resultSummary = normalizeText(input.resultSummary) || null;
+  const errorMessage = normalizeText(input.errorMessage) || null;
+  const finishedAt = status === 'running' || status === 'queued' ? null : now;
   const agentRun = createAgentRun({
     kind: 'task',
     status,
@@ -6084,7 +6124,19 @@ export function createTaskRun(input: CreateTaskRunInput): TaskRunRecord {
       triggerSource,
       inputSnapshot: input.inputSnapshot ?? {},
     },
+    result: {
+      taskRunId: id,
+      taskKey: task.key,
+      taskName: task.name,
+      triggerSource,
+      resultSummary,
+      outputSnapshot,
+      artifactRefs,
+    },
+    trace: extractTraceFromTaskOutputSnapshot(outputSnapshot),
+    errorMessage,
     startedAt,
+    finishedAt,
   });
 
   getDb().prepare(
@@ -6092,7 +6144,7 @@ export function createTaskRun(input: CreateTaskRunInput): TaskRunRecord {
        id, agent_run_id, task_id, status, trigger_source, started_at, finished_at, result_summary, error_message,
        input_snapshot_json, output_snapshot_json, artifact_refs_json, created_at, updated_at
      ) VALUES (
-       @id, @agentRunId, @taskId, @status, @triggerSource, @startedAt, NULL, @resultSummary, @errorMessage,
+       @id, @agentRunId, @taskId, @status, @triggerSource, @startedAt, @finishedAt, @resultSummary, @errorMessage,
        @inputSnapshotJson, @outputSnapshotJson, @artifactRefsJson, @createdAt, @updatedAt
      )`,
   ).run({
@@ -6102,11 +6154,12 @@ export function createTaskRun(input: CreateTaskRunInput): TaskRunRecord {
     status,
     triggerSource,
     startedAt,
-    resultSummary: normalizeText(input.resultSummary) || null,
-    errorMessage: normalizeText(input.errorMessage) || null,
+    finishedAt,
+    resultSummary,
+    errorMessage,
     inputSnapshotJson: JSON.stringify(input.inputSnapshot ?? {}),
-    outputSnapshotJson: JSON.stringify(input.outputSnapshot ?? {}),
-    artifactRefsJson: JSON.stringify(input.artifactRefs ?? []),
+    outputSnapshotJson: JSON.stringify(outputSnapshot),
+    artifactRefsJson: JSON.stringify(artifactRefs),
     createdAt: now,
     updatedAt: now,
   });
@@ -6135,6 +6188,9 @@ export function updateTaskRun(id: string, input: UpdateTaskRunInput): TaskRunRec
   }
 
   const now = new Date().toISOString();
+  const nextOutputSnapshot = input.outputSnapshot ?? current.outputSnapshot;
+  const nextArtifactRefs = input.artifactRefs ?? current.artifactRefs;
+  const nextTrace = extractTraceFromTaskOutputSnapshot(nextOutputSnapshot);
 
   getDb().prepare(
     `UPDATE task_runs
@@ -6154,8 +6210,8 @@ export function updateTaskRun(id: string, input: UpdateTaskRunInput): TaskRunRec
     resultSummary: input.resultSummary === undefined ? current.resultSummary : normalizeText(input.resultSummary) || null,
     errorMessage: input.errorMessage === undefined ? current.errorMessage : normalizeText(input.errorMessage) || null,
     inputSnapshotJson: JSON.stringify(input.inputSnapshot ?? current.inputSnapshot),
-    outputSnapshotJson: JSON.stringify(input.outputSnapshot ?? current.outputSnapshot),
-    artifactRefsJson: JSON.stringify(input.artifactRefs ?? current.artifactRefs),
+    outputSnapshotJson: JSON.stringify(nextOutputSnapshot),
+    artifactRefsJson: JSON.stringify(nextArtifactRefs),
     updatedAt: now,
   });
   if (current.agentRunId) {
@@ -6176,9 +6232,10 @@ export function updateTaskRun(id: string, input: UpdateTaskRunInput): TaskRunRec
         triggerSource: current.triggerSource,
         resultSummary:
           input.resultSummary === undefined ? current.resultSummary : normalizeText(input.resultSummary) || null,
-        outputSnapshot: input.outputSnapshot ?? current.outputSnapshot,
-        artifactRefs: input.artifactRefs ?? current.artifactRefs,
+        outputSnapshot: nextOutputSnapshot,
+        artifactRefs: nextArtifactRefs,
       },
+      trace: nextTrace,
       errorMessage: input.errorMessage === undefined ? current.errorMessage : normalizeText(input.errorMessage) || null,
       finishedAt: input.finishedAt === undefined ? current.finishedAt : input.finishedAt,
     });
