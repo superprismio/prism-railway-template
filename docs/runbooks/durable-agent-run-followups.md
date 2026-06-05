@@ -52,12 +52,8 @@ cutover on the live `prism-stack` Railway instance.
 - Add regression tests for gate approval creating exactly one next-step
   `agent_run`, especially across browser retry, Discord retry, and service
   route retry paths.
-- Rework the request detail cancel control. Cancel should be a workflow-level
-  action that remains available during an active run and while paused at gates
-  or checkpoints. It should create an operator comment/note, cancel active
-  agent runs when present, and move the workflow to the terminal closed state.
-  The current UI can feel like cancel is disabled during a run and replaced by
-  Continue while paused after a step.
+- Add regression coverage for workflow-level cancel from a running agent step
+  and from paused gate/checkpoint states.
 
 ## Started in `feat/agent-run-observability-followups`
 
@@ -67,3 +63,7 @@ cutover on the live `prism-stack` Railway instance.
   `agent_run_id` when creating request artifacts.
 - Normalized task-run Codex traces from task output snapshots into linked
   `agent_runs.trace`.
+- Reworked the request detail cancel control into a workflow-level action with
+  a required operator note. The cancel route records that note as a request
+  comment and workflow event, cancels active agent runs when present, and moves
+  the workflow to a terminal closed step.

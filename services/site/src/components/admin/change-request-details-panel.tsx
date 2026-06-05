@@ -75,21 +75,23 @@ function CommandCenter({
   workflowRunStatus,
   steps,
   isPending,
+  isCancelPending,
   isStepRunning,
   isClosed,
   canRunWorkflowActions,
   onContinue,
-  onStop,
+  onCancel,
 }: {
   currentWorkflowStepKey: string | null;
   workflowRunStatus: string | null;
   steps: WorkflowStep[];
   isPending: boolean;
+  isCancelPending: boolean;
   isStepRunning: boolean;
   isClosed: boolean;
   canRunWorkflowActions: boolean;
   onContinue: () => void;
-  onStop: () => void;
+  onCancel: () => void;
 }) {
   const currentWorkflowPosition = workflowStepForKey(currentWorkflowStepKey, steps);
   const currentStepIndex = currentWorkflowPosition.index;
@@ -98,6 +100,7 @@ function CommandCenter({
   const isCanceled = workflowRunStatus === "canceled";
   const isTerminal = currentStep.type === "terminal" || isClosed;
   const canContinue = canRunWorkflowActions && !isRunning && !isTerminal;
+  const canCancel = canRunWorkflowActions && !isTerminal;
   const actionLabel =
     currentStep.type === "checkpoint"
       ? currentStep.resumeLabel ?? `Check ${currentStep.label}`
@@ -232,20 +235,20 @@ function CommandCenter({
               </p>
             ) : null}
           </div>
-          {canContinue && currentStep.type === "agent" ? (
+          {canContinue || canCancel ? (
             <div className="flex flex-wrap justify-end gap-2">
-              <Button type="button" onClick={onContinue} disabled={isPending}>
-                {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-                {actionLabel}
-              </Button>
-            </div>
-          ) : null}
-          {canContinue && currentStep.type !== "agent" ? (
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button type="button" onClick={onContinue} disabled={isPending}>
-                {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
-                {actionLabel}
-              </Button>
+              {canContinue ? (
+                <Button type="button" onClick={onContinue} disabled={isPending}>
+                  {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                  {actionLabel}
+                </Button>
+              ) : null}
+              {canCancel ? (
+                <Button type="button" variant="destructive" onClick={onCancel} disabled={isCancelPending}>
+                  <X className="h-4 w-4" />
+                  Cancel workflow
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -256,15 +259,10 @@ function CommandCenter({
               <p className="font-medium">Step running</p>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 Prism is working through the current workflow step. The request
-                will move forward when the run completes, unless it is canceled.
+                will move forward when the run completes. Canceling the workflow
+                closes the request and marks active runs canceled.
               </p>
             </div>
-            {canRunWorkflowActions ? (
-              <Button type="button" variant="outline" onClick={onStop} disabled={isPending}>
-                {isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
-                Cancel run
-              </Button>
-            ) : null}
           </div>
         ) : null}
 
@@ -504,8 +502,10 @@ export function RequestDetailsPanel({
   const artifactUploadInputRef = useRef<HTMLInputElement>(null);
   const [latestUploadedArtifactName, setLatestUploadedArtifactName] = useState<string | null>(null);
   const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
+  const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [reopenStepKey, setReopenStepKey] = useState("");
   const [reopenComment, setReopenComment] = useState("");
+  const [cancelComment, setCancelComment] = useState("Cancel this workflow and close the request.");
   const [threadError, setThreadError] = useState<string | null>(null);
   const [executions, setExecutions] = useState<ChangeRequestExecutionRecord[]>(
     [],
@@ -1372,15 +1372,26 @@ export function RequestDetailsPanel({
     });
   }
 
-  function handleStopWorkflowRun() {
-    if (!activeAgentRun) return;
+  function handleOpenCancelWorkflowDialog() {
+    setCancelComment((current) => current || "Cancel this workflow and close the request.");
+    setIsCancelDialogOpen(true);
+  }
 
+  function handleCancelWorkflow() {
     setThreadError(null);
     startCommandTransition(async () => {
       try {
         const response = await fetch(
           `/admin/change-requests/${request.id}/workflow/cancel`,
-          { method: "POST" },
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              comment: cancelComment.trim(),
+            }),
+          },
         );
         const payload = (await response.json().catch(() => null)) as {
           ok?: boolean;
@@ -1388,17 +1399,18 @@ export function RequestDetailsPanel({
           changeRequest?: ChangeRequestRecord;
         } | null;
         if (!response.ok || payload?.ok === false) {
-          throw new Error(payload?.error || "Could not stop workflow run");
+          throw new Error(payload?.error || "Could not cancel workflow");
         }
         if (payload?.changeRequest) {
           setCurrentWorkflowStepKey(payload.changeRequest.currentWorkflowStepKey);
           setWorkflowRunStatus(payload.changeRequest.workflowRunStatus);
           setManualWorkflowStepKey(payload.changeRequest.currentWorkflowStepKey ?? "");
         }
-        await refreshExecutions();
-        await refreshWorkflowEvents();
+        setIsCancelDialogOpen(false);
+        setCancelComment("Cancel this workflow and close the request.");
+        await refreshPanelState();
       } catch (error) {
-        setThreadError(error instanceof Error ? error.message : "Could not stop workflow run");
+        setThreadError(error instanceof Error ? error.message : "Could not cancel workflow");
       }
     });
   }
@@ -1479,11 +1491,12 @@ export function RequestDetailsPanel({
             workflowRunStatus={workflowRunStatus}
             steps={currentWorkflowSteps}
             isPending={isPending || isCommandPending || Boolean(activeWorkflowJobId)}
+            isCancelPending={isCommandPending}
             isStepRunning={Boolean(activeAgentRun)}
             isClosed={isWorkflowClosed}
             canRunWorkflowActions={canRunWorkflowActions}
             onContinue={handleContinueWorkflow}
-            onStop={handleStopWorkflowRun}
+            onCancel={handleOpenCancelWorkflowDialog}
           />
           {workflowJobNotice ? (
             <div className="rounded-none border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
@@ -1689,6 +1702,45 @@ export function RequestDetailsPanel({
                 >
                   {isReopenPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
                   Reopen request
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={isCancelDialogOpen} onOpenChange={setIsCancelDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Cancel workflow</DialogTitle>
+                <DialogDescription>
+                  This closes the request and cancels any active agent run. Add a note so reviewers know why it was canceled.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label htmlFor="cancel-workflow-comment">Cancel note</Label>
+                <Textarea
+                  id="cancel-workflow-comment"
+                  value={cancelComment}
+                  onChange={(event) => setCancelComment(event.target.value)}
+                  placeholder="Explain why this workflow should be canceled."
+                  className="min-h-24"
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsCancelDialogOpen(false)}
+                  disabled={isCommandPending}
+                >
+                  Keep workflow
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={handleCancelWorkflow}
+                  disabled={isCommandPending || !cancelComment.trim()}
+                >
+                  {isCommandPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                  Cancel workflow
                 </Button>
               </DialogFooter>
             </DialogContent>
