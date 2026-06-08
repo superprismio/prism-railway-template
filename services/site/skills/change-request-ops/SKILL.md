@@ -100,7 +100,20 @@ curl -fsSL \
   }'
 ```
 
-Use `lane: "workflow-input"` when the attachment is meant as input to the current workflow. This first slice creates private site request artifacts; promote text or Markdown to Prism Memory separately when the user explicitly asks for a shareable memory link.
+Use `lane: "workflow-input"` when the attachment is meant as input to the current workflow. For "summarize this attachment" or temporary session context, prefer `lane: "memory-inbox"` for text-like attachments so Prism returns a shareable memory artifact without treating it as Knowledge:
+
+```json
+{
+  "platform": "discord",
+  "channelId": "<discord-channel-id>",
+  "messageId": "<discord-message-id>",
+  "attachmentId": "<discord-attachment-id>",
+  "lane": "memory-inbox",
+  "purpose": "summarize-attachment"
+}
+```
+
+Only promote to Knowledge after explicit confirmation. If the user asks for long-term/canonical knowledge, explain that a linked GitHub or source-backed knowledge source is usually better before writing to Knowledge inbox.
 
 Continue or approve a workflow by request number:
 

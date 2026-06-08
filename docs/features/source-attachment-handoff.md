@@ -253,14 +253,15 @@ Suggested default:
 - Implemented `POST /attachments/fetch` on the communication adapter for
   Discord attachments.
 - Implemented `POST /agent/source-attachments/ingest` on the site service for
-  `request-artifact` and `workflow-input` lanes.
+  `request-artifact`, `workflow-input`, and `memory-inbox` lanes.
+- Implemented memory inbox promotion for fetched text-like attachments as
+  `session_attachment` memory artifacts.
 - Updated built-in request/workflow skills to prefer attachment handoff over
   raw Discord CDN URLs.
 
 Still pending:
 
 - operator-facing Discord command or natural-language route,
-- memory inbox promotion for fetched text/Markdown attachments,
 - policy-driven auto-fetch rules.
 
 ## Deferred

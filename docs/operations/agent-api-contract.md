@@ -125,9 +125,12 @@ curl -fsSL \
   }'
 ```
 
-The first slice supports Discord attachments and the `request-artifact` or
-`workflow-input` lanes. The site fetches bytes through the communication
-adapter, stores a private request artifact, and preserves source provenance.
+The first slice supports Discord attachments and the `request-artifact`,
+`workflow-input`, or `memory-inbox` lanes. The site fetches bytes through the
+communication adapter and preserves source provenance. Request/workflow lanes
+store a private request artifact. The memory lane writes text-like attachments
+to Prism Memory as `session_attachment` records and returns the Memory artifact
+URL when available.
 
 Branding:
 

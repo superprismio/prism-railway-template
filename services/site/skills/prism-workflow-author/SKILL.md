@@ -118,6 +118,8 @@ If a workflow expects a user-supplied Discord attachment, instruct the agent to 
 
 Send that body to `POST /agent/source-attachments/ingest`. The site calls the communication adapter, stores the bytes as a private request artifact, and preserves source provenance. Text or Markdown attachments should only be promoted to Prism Memory when the operator explicitly asks for a shareable memory artifact.
 
+For "summarize this attachment" style workflows where the attachment is current-session context rather than a durable request input, use `lane: "memory-inbox"` for text-like files. This writes a `session_attachment` memory inbox artifact and returns a shareable Memory artifact URL. Do not route these directly to Knowledge; for long-term canonical docs, ask for confirmation and recommend a linked source-backed Knowledge path when appropriate.
+
 When a later workflow step needs prior artifact bodies, read them through the site API instead of guessing volume paths:
 
 ```http
