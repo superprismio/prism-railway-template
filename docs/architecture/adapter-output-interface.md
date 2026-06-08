@@ -34,6 +34,7 @@ Returns adapter capabilities and supported destination types.
   "destinationTypes": ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"],
   "routes": {
     "attachmentsFetch": "/attachments/fetch",
+    "attachmentsResolve": "/attachments/resolve",
     "destinations": "/destinations",
     "messages": "/messages"
   }
@@ -68,6 +69,51 @@ The adapter re-fetches the message through the platform API and only downloads
 an attachment found on that message. Callers should treat any source CDN URL as
 non-durable and store the returned bytes in a Prism-owned artifact or memory
 surface.
+
+### `POST /attachments/resolve`
+
+Returns attachment candidates for a source message without downloading file
+bytes. This is useful when an operator gives Prism a Discord message URL and the
+agent needs to choose or ask about the attached file.
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
+  "$COMMUNICATION_ADAPTER_BASE_URL/attachments/resolve" \
+  -d '{
+    "platform": "discord",
+    "channelId": "456",
+    "messageId": "123"
+  }'
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "platform": "discord",
+  "channelId": "456",
+  "messageId": "123",
+  "message": {
+    "id": "123",
+    "channelId": "456",
+    "messageUrl": "https://discord.com/channels/...",
+    "text": "Please use this transcript."
+  },
+  "attachments": [
+    {
+      "id": "789",
+      "filename": "transcript.md",
+      "contentType": "text/markdown",
+      "size": 4812,
+      "textLike": true
+    }
+  ]
+}
+```
 
 ### `GET /destinations`
 

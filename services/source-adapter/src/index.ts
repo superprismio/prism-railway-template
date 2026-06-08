@@ -69,6 +69,14 @@ type AttachmentFetchResult = {
   filename: string;
 };
 
+type AttachmentSummary = JsonObject & {
+  id: string;
+  filename: string;
+  contentType: string | null;
+  size: number | null;
+  url: string | null;
+};
+
 type AdapterDestination = {
   adapter: string;
   id: string;
@@ -826,6 +834,46 @@ async function fetchDiscordAttachment(input: {
     metadata,
     contentType,
     filename,
+  };
+}
+
+async function resolveDiscordMessageAttachments(input: {
+  channelId: string;
+  messageId: string;
+}): Promise<{ message: JsonObject; attachments: AttachmentSummary[] }> {
+  const config = adapterConfig();
+  const message = await discordApiRequest<JsonObject>(
+    `/channels/${encodeURIComponent(input.channelId)}/messages/${encodeURIComponent(input.messageId)}`,
+  );
+  const attachments = Array.isArray(message.attachments)
+    ? message.attachments.filter((item): item is JsonObject => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+  return {
+    message: {
+      id: input.messageId,
+      channelId: input.channelId,
+      messageUrl: config.discordGuildId
+        ? discordMessageUrl(config.discordGuildId, input.channelId, input.messageId)
+        : null,
+      author: buildMessageAuthor(message),
+      timestamp: stringField(message, "timestamp") || null,
+      text: stringField(message, "content"),
+    },
+    attachments: attachments.map((attachment) => {
+      const id = stringField(attachment, "id");
+      const filename = stringField(attachment, "filename") || "attachment";
+      const contentType = stringField(attachment, "content_type") || null;
+      return {
+        id,
+        filename,
+        contentType,
+        size: numberField(attachment, "size"),
+        url: stringField(attachment, "url") || null,
+        width: numberField(attachment, "width"),
+        height: numberField(attachment, "height"),
+        textLike: attachmentIsTextLike(attachment),
+      };
+    }).filter((attachment) => attachment.id),
   };
 }
 
@@ -3532,6 +3580,7 @@ async function main(): Promise<void> {
       destinationTypes: ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"],
       routes: {
         attachmentsFetch: "/attachments/fetch",
+        attachmentsResolve: "/attachments/resolve",
         destinations: "/destinations",
         guildChannels: "/guild/channels",
         messages: "/messages",
@@ -3625,6 +3674,39 @@ async function main(): Promise<void> {
         : message === "ATTACHMENT_NOT_FOUND" ? 404
         : message.startsWith("ATTACHMENT_TOO_LARGE:") ? 413
         : 500;
+      response.status(status).json({ ok: false, error: message });
+    }
+  });
+
+  app.post("/attachments/resolve", async (request: Request, response: Response) => {
+    try {
+      requireAdapterToken(request);
+      const body = request.body && typeof request.body === "object" ? request.body as JsonObject : {};
+      const platform = typeof body.platform === "string" ? body.platform.trim().toLowerCase() : "discord";
+      if (platform !== "discord") {
+        response.status(400).json({ ok: false, error: "Unsupported attachment platform" });
+        return;
+      }
+      const channelId = typeof body.channelId === "string"
+        ? body.channelId.trim()
+        : typeof body.channel_id === "string"
+          ? body.channel_id.trim()
+          : "";
+      const messageId = typeof body.messageId === "string"
+        ? body.messageId.trim()
+        : typeof body.message_id === "string"
+          ? body.message_id.trim()
+          : "";
+      if (!channelId || !messageId) {
+        response.status(400).json({ ok: false, error: "channelId and messageId are required" });
+        return;
+      }
+
+      const result = await resolveDiscordMessageAttachments({ channelId, messageId });
+      response.json({ ok: true, platform, channelId, messageId, ...result });
+    } catch (error) {
+      const message = describeError(error);
+      const status = message === "Unauthorized" ? 401 : message.includes("Discord API failed: 404") ? 404 : 500;
       response.status(status).json({ ok: false, error: message });
     }
   });

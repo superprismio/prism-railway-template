@@ -19,7 +19,7 @@ Current behavior:
 
 - `GET /health` for service health and config visibility
 - `POST /sync` runs a Discord REST sync and posts a normalized batch to `prism-memory`
-- `GET /capabilities`, `GET /destinations`, `POST /messages`, and `POST /attachments/fetch` expose the adapter output interface for agent-authored delivery and attachment handoff
+- `GET /capabilities`, `GET /destinations`, `POST /messages`, `POST /attachments/resolve`, and `POST /attachments/fetch` expose the adapter output interface for agent-authored delivery and attachment handoff
 - `GET /guild/channels` exposes a protected guild channel inventory for instance setup and Prism Memory bucket mapping
 - optional live Discord mention/thread chat forwarding to `codex-runtime`
 - slash commands can now route into the same Discord session/Codex path as mentions
@@ -29,6 +29,7 @@ Current behavior:
 - `POST /sync?reset_checkpoint=true` ignores the saved cursor and re-runs the full configured window
 - `GET /destinations` lists Discord text channels and known Telegram chats as output destinations
 - `POST /messages` sends text to a resolved Discord channel id or Telegram chat id; requires `X-Adapter-Token` when `SOURCE_ADAPTER_TOKEN` is configured
+- `POST /attachments/resolve` lists attachments on a Discord message by channel id and message id; requires `X-Adapter-Token` when `SOURCE_ADAPTER_TOKEN` is configured
 - `POST /attachments/fetch` fetches a Discord message attachment by channel id, message id, and attachment id; requires `X-Adapter-Token` when `SOURCE_ADAPTER_TOKEN` is configured
 - `POST /recordings/:sessionId/recover` finalizes a known unfinished recording session from the volume; requires `X-Adapter-Token`
 - this service is now being consolidated onto a TypeScript/`discord.js` runtime so Discord-facing code can absorb voice and meeting commands later without a Python split

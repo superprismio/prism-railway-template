@@ -252,8 +252,12 @@ Suggested default:
 
 - Implemented `POST /attachments/fetch` on the communication adapter for
   Discord attachments.
+- Implemented `POST /attachments/resolve` on the communication adapter for
+  message-level attachment discovery.
 - Implemented `POST /agent/source-attachments/ingest` on the site service for
   `request-artifact`, `workflow-input`, and `memory-inbox` lanes.
+- Implemented `POST /agent/source-attachments/resolve-and-ingest` on the site
+  service so agents can use Discord message URLs and intent labels directly.
 - Implemented memory inbox promotion for fetched text-like attachments as
   `session_attachment` memory artifacts.
 - Updated built-in request/workflow skills to prefer attachment handoff over

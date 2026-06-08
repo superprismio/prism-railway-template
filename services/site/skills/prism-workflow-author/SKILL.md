@@ -120,6 +120,8 @@ Send that body to `POST /agent/source-attachments/ingest`. The site calls the co
 
 For "summarize this attachment" style workflows where the attachment is current-session context rather than a durable request input, use `lane: "memory-inbox"` for text-like files. This writes a `session_attachment` memory inbox artifact and returns a shareable Memory artifact URL. Do not route these directly to Knowledge; for long-term canonical docs, ask for confirmation and recommend a linked source-backed Knowledge path when appropriate.
 
+If the workflow only has a Discord message URL, use `POST /agent/source-attachments/resolve-and-ingest` with an intent such as `summarize`, `promote-memory`, `request-artifact`, or `workflow-input`. If the message has multiple attachments, the route returns candidates and the agent should ask the operator which attachment to use.
+
 When a later workflow step needs prior artifact bodies, read them through the site API instead of guessing volume paths:
 
 ```http
