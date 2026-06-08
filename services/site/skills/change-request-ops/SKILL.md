@@ -208,6 +208,10 @@ curl -fsSL \
   }'
 ```
 
+When the workflow prompt provides a current agent run id, include it as
+`agent_run_id` in artifact creation requests so operators can trace artifacts
+back to the run that produced them.
+
 For richer triage updates, patch the request with both summary and suggested changes:
 
 ```bash

@@ -1,27 +1,39 @@
 import { NextResponse } from "next/server"
 import {
   cancelActiveAgentRunsForRequest,
+  createAgentMessage,
+  createAgentSession,
   createWorkflowEvent,
+  findLatestAgentSessionByChangeRequest,
   getChangeRequest,
   getWorkflowByKey,
   getWorkflowRunForRequest,
+  listAgentMessages,
+  updateAgentSession,
   updateChangeRequest,
   updateWorkflowRun,
 } from "@/lib/app-core"
 import { adminFetch } from "@/lib/admin"
-import { readRouteParam, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
+import { parseString, readRouteParam, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
 
 type RouteContext = {
   params: Promise<{ id: string }>
 }
 
-export async function POST(_request: Request, context: RouteContext) {
+export async function POST(request: Request, context: RouteContext) {
   const { id } = await context.params
+  const rawBody = await request.text().catch(() => "")
 
   if (!useLocalAppApi()) {
     const response = await adminFetch(
       `/api/admin/change-board/requests/${id}/workflow/cancel`,
-      { method: "POST" },
+      {
+        method: "POST",
+        body: rawBody || undefined,
+        headers: rawBody
+          ? { "content-type": request.headers.get("content-type") ?? "application/json" }
+          : undefined,
+      },
     )
     const text = await response.text()
     const contentType = response.headers.get("content-type") ?? "application/json"
@@ -35,6 +47,22 @@ export async function POST(_request: Request, context: RouteContext) {
   if (!access.ok) {
     return NextResponse.json({ ok: false, error: access.error }, { status: access.status })
   }
+
+  let payload: unknown = null
+  if (rawBody.trim()) {
+    try {
+      payload = JSON.parse(rawBody)
+    } catch {
+      return NextResponse.json({ ok: false, error: "Invalid JSON body" }, { status: 400 })
+    }
+  }
+
+  const body =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : {}
+  const operatorNote =
+    parseString(body.comment ?? body.note) || "Canceled by an admin operator."
 
   const changeRequestId = readRouteParam(id)
   const changeRequest = getChangeRequest(changeRequestId)
@@ -61,14 +89,14 @@ export async function POST(_request: Request, context: RouteContext) {
 
   const canceledAgentRuns = cancelActiveAgentRunsForRequest({
     requestId: changeRequest.id,
-    reason: "Canceled by an admin operator.",
+    reason: operatorNote,
   })
   const workflowRun = getWorkflowRunForRequest(changeRequest.id)
+  updateChangeRequest(changeRequest.id, {
+    workflowStepKey: terminalStepKey,
+    resolutionSummary: operatorNote,
+  })
   if (workflowRun) {
-    updateChangeRequest(changeRequest.id, {
-      workflowStepKey: terminalStepKey,
-      resolutionSummary: "Canceled by an admin operator.",
-    })
     updateWorkflowRun({
       requestId: changeRequest.id,
       currentStepKey: terminalStepKey,
@@ -81,13 +109,56 @@ export async function POST(_request: Request, context: RouteContext) {
       stepKey: terminalStepKey,
       eventType: "workflow.canceled",
       actorType: "admin",
-      note: "Canceled the workflow and moved it to a terminal step.",
+      note: operatorNote,
       payload: {
         canceledAgentRunIds: canceledAgentRuns.map((run) => run.id),
         previousStepKey: workflowRun.currentStepKey,
         terminalStepKey,
+        comment: operatorNote,
       },
     })
+  }
+
+  let messages = null
+  if (operatorNote) {
+    let session = findLatestAgentSessionByChangeRequest(changeRequest.id)
+    if (!session) {
+      session = createAgentSession({
+        source: "admin-console",
+        status: "active",
+        title: changeRequest.title,
+        linkedChangeRequestId: changeRequest.id,
+        linkedTargetEnvironmentId: changeRequest.targetEnvironmentId,
+        createdByUserId: null,
+        meta: { transport: "site" },
+        lastMessageAt: new Date().toISOString(),
+      })
+    }
+
+    if (session) {
+      createAgentMessage({
+        sessionId: session.id,
+        role: "user",
+        source: "site-comment",
+        sourceMessageId: null,
+        content: operatorNote,
+        meta: {
+          transport: "site",
+          kind: "comment",
+          workflowCanceled: true,
+        },
+      })
+      updateAgentSession(session.id, {
+        linkedChangeRequestId: changeRequest.id,
+        linkedTargetEnvironmentId: changeRequest.targetEnvironmentId,
+        lastMessageAt: new Date().toISOString(),
+        meta: {
+          ...session.meta,
+          transport: "site",
+        },
+      })
+      messages = listAgentMessages(session.id, 100)
+    }
   }
 
   return NextResponse.json({
@@ -95,5 +166,6 @@ export async function POST(_request: Request, context: RouteContext) {
     canceledAgentRuns,
     changeRequest: getChangeRequest(changeRequest.id) ?? changeRequest,
     workflowRun: getWorkflowRunForRequest(changeRequest.id),
+    messages,
   })
 }

@@ -150,6 +150,7 @@ export type WorkflowEventRecord = {
 
 export type RequestArtifactRecord = {
   id: string
+  agentRunId: string | null
   requestId: string
   workflowRunId: string | null
   executionId: string | null
