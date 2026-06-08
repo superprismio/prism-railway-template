@@ -1,6 +1,6 @@
 # Source Attachment Handoff
 
-Status: planned / future
+Status: first slice in progress
 
 ## Purpose
 
@@ -247,6 +247,21 @@ Suggested default:
   URLs.
 - Add a small operator-facing Discord path for "use the attached file in this
   request" or "add the attached transcript to memory inbox."
+
+## First Slice Progress
+
+- Implemented `POST /attachments/fetch` on the communication adapter for
+  Discord attachments.
+- Implemented `POST /agent/source-attachments/ingest` on the site service for
+  `request-artifact` and `workflow-input` lanes.
+- Updated built-in request/workflow skills to prefer attachment handoff over
+  raw Discord CDN URLs.
+
+Still pending:
+
+- operator-facing Discord command or natural-language route,
+- memory inbox promotion for fetched text/Markdown attachments,
+- policy-driven auto-fetch rules.
 
 ## Deferred
 

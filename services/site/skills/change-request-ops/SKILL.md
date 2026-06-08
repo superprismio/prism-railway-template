@@ -33,6 +33,7 @@ Core endpoints:
 - `GET /agent/change-board/requests/:id/artifacts`
 - `POST /agent/change-board/requests/:id/artifacts`
 - `GET /agent/change-board/requests/:id/artifacts/:artifactId/content`
+- `POST /agent/source-attachments/ingest`
 - `GET /agent/runs`
 - `GET /agent/change-board/requests/:id/executions`
 - `GET /agent/change-board/requests/:id/deploy-plan`
@@ -79,6 +80,27 @@ The by-number artifact route includes text, markdown, and JSON bodies by default
 - `?maxBytes=500000`
 
 If a user asks whether artifacts were created for a request number, this endpoint is the first API to call. Do not claim the board is admin-password gated until the `/agent/.../by-number/...` routes have been tried with service-token auth.
+
+When a user references a Discord attachment that should be used by a request or workflow, do not rely on the raw Discord CDN URL as durable storage. Ask the site to fetch it through the communication adapter and create a request artifact:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/source-attachments/ingest" \
+  -d '{
+    "platform": "discord",
+    "requestId": "'"$REQUEST_ID"'",
+    "channelId": "'"$DISCORD_CHANNEL_ID"'",
+    "messageId": "'"$DISCORD_MESSAGE_ID"'",
+    "attachmentId": "'"$DISCORD_ATTACHMENT_ID"'",
+    "lane": "request-artifact",
+    "purpose": "workflow-input"
+  }'
+```
+
+Use `lane: "workflow-input"` when the attachment is meant as input to the current workflow. This first slice creates private site request artifacts; promote text or Markdown to Prism Memory separately when the user explicitly asks for a shareable memory link.
 
 Continue or approve a workflow by request number:
 

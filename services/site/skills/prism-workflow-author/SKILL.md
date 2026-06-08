@@ -101,6 +101,23 @@ Workflow steps should save durable files through the request artifact API instea
 
 Send that body to `POST /agent/change-board/requests/<request-id>/artifacts` with internal service auth. Use `encoding: "base64"` for image or other binary content. When the workflow prompt provides a current agent run id, include it as `agent_run_id` so the artifact links back to the run that produced it. Artifacts are owned by the site service, stored under `/data/workflow-artifacts`, listed on the request Artifacts tab, and recorded as `artifact.created` workflow events.
 
+If a workflow expects a user-supplied Discord attachment, instruct the agent to use the attachment handoff route instead of pasting or trusting a Discord CDN URL:
+
+```json
+{
+  "platform": "discord",
+  "requestId": "<request-id>",
+  "channelId": "<discord-channel-id>",
+  "messageId": "<discord-message-id>",
+  "attachmentId": "<discord-attachment-id>",
+  "lane": "workflow-input",
+  "purpose": "workflow-input",
+  "agent_run_id": "<current-agent-run-id>"
+}
+```
+
+Send that body to `POST /agent/source-attachments/ingest`. The site calls the communication adapter, stores the bytes as a private request artifact, and preserves source provenance. Text or Markdown attachments should only be promoted to Prism Memory when the operator explicitly asks for a shareable memory artifact.
+
 When a later workflow step needs prior artifact bodies, read them through the site API instead of guessing volume paths:
 
 ```http

@@ -83,6 +83,7 @@ Requests and artifacts:
 - `GET /agent/change-board/requests/by-number/:requestNumber/artifacts`
 - `POST /agent/change-board/requests/:id/artifacts`
 - `GET /agent/change-board/requests/:id/artifacts/:artifactId/content`
+- `POST /agent/source-attachments/ingest`
 - `GET /agent/change-board/requests/:id/external-refs`
 - `POST /agent/change-board/requests/:id/external-refs`
 
@@ -104,6 +105,29 @@ Request creation accepts these `priority` values:
 - `urgent`
 
 If a request creation call sends an invalid type or priority, the `400` response includes `validRequestTypes` or `validPriorities` so agents can retry with a supported value.
+
+Source attachment ingest:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/source-attachments/ingest" \
+  -d '{
+    "platform": "discord",
+    "requestId": "<request-id>",
+    "channelId": "<discord-channel-id>",
+    "messageId": "<discord-message-id>",
+    "attachmentId": "<discord-attachment-id>",
+    "lane": "request-artifact",
+    "purpose": "workflow-input"
+  }'
+```
+
+The first slice supports Discord attachments and the `request-artifact` or
+`workflow-input` lanes. The site fetches bytes through the communication
+adapter, stores a private request artifact, and preserves source provenance.
 
 Branding:
 
