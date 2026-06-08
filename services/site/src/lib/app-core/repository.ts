@@ -5496,25 +5496,28 @@ export function createRequestArtifact(input: CreateRequestArtifactInput): Reques
       `INSERT INTO request_artifacts (
          id, agent_run_id, request_id, workflow_run_id, execution_id, kind, name, description,
          mime_type, storage_path, size_bytes, metadata_json, created_by, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       ) VALUES (
+         @id, @agentRunId, @requestId, @workflowRunId, @executionId, @kind, @name, @description,
+         @mimeType, @storagePath, @sizeBytes, @metadataJson, @createdBy, @createdAt, @updatedAt
+       )`,
     )
-    .run(
+    .run({
       id,
-      input.agentRunId ?? null,
-      input.requestId,
-      input.workflowRunId ?? null,
-      input.executionId ?? null,
+      agentRunId: input.agentRunId ?? null,
+      requestId: input.requestId,
+      workflowRunId: input.workflowRunId ?? null,
+      executionId: input.executionId ?? null,
       kind,
       name,
-      normalizeText(input.description) || null,
+      description: normalizeText(input.description) || null,
       mimeType,
       storagePath,
-      Math.max(0, Math.trunc(input.sizeBytes)),
-      JSON.stringify(input.metadata ?? {}),
-      normalizeText(input.createdBy) || 'system',
-      now,
-      now,
-    );
+      sizeBytes: Math.max(0, Math.trunc(input.sizeBytes)),
+      metadataJson: JSON.stringify(input.metadata ?? {}),
+      createdBy: normalizeText(input.createdBy) || 'system',
+      createdAt: now,
+      updatedAt: now,
+    });
 
   const artifact = getRequestArtifact(id);
   if (!artifact) {
