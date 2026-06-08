@@ -83,6 +83,8 @@ Requests and artifacts:
 - `GET /agent/change-board/requests/by-number/:requestNumber/artifacts`
 - `POST /agent/change-board/requests/:id/artifacts`
 - `GET /agent/change-board/requests/:id/artifacts/:artifactId/content`
+- `POST /agent/source-attachments/ingest`
+- `POST /agent/source-attachments/resolve-and-ingest`
 - `GET /agent/change-board/requests/:id/external-refs`
 - `POST /agent/change-board/requests/:id/external-refs`
 
@@ -104,6 +106,55 @@ Request creation accepts these `priority` values:
 - `urgent`
 
 If a request creation call sends an invalid type or priority, the `400` response includes `validRequestTypes` or `validPriorities` so agents can retry with a supported value.
+
+Source attachment ingest:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/source-attachments/ingest" \
+  -d '{
+    "platform": "discord",
+    "requestId": "<request-id>",
+    "channelId": "<discord-channel-id>",
+    "messageId": "<discord-message-id>",
+    "attachmentId": "<discord-attachment-id>",
+    "lane": "request-artifact",
+    "purpose": "workflow-input"
+  }'
+```
+
+The first slice supports Discord attachments and the `request-artifact`,
+`workflow-input`, or `memory-inbox` lanes. The site fetches bytes through the
+communication adapter and preserves source provenance. Request/workflow lanes
+store a private request artifact. The memory lane writes text-like attachments
+to Prism Memory as `session_attachment` records and returns the Memory artifact
+URL when available.
+
+When the caller has a Discord message URL rather than explicit ids, use the
+resolver route:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/source-attachments/resolve-and-ingest" \
+  -d '{
+    "messageUrl": "https://discord.com/channels/<guild>/<channel>/<message>",
+    "intent": "summarize"
+  }'
+```
+
+Supported intents:
+
+- `summarize`: writes a text-like attachment to Memory as current-session context.
+- `promote-memory`: writes a text-like attachment to Memory and returns the shareable artifact URL.
+- `request-artifact`: requires `requestId` and creates a private request artifact.
+- `workflow-input`: requires `requestId` and creates a private workflow input artifact.
+- `promote-knowledge`: returns a confirmation warning; prefer source-backed Knowledge for long-term canonical docs.
 
 Branding:
 

@@ -62,6 +62,21 @@ type AttachmentText = {
   error?: string;
 };
 
+type AttachmentFetchResult = {
+  body: Buffer;
+  metadata: JsonObject;
+  contentType: string;
+  filename: string;
+};
+
+type AttachmentSummary = JsonObject & {
+  id: string;
+  filename: string;
+  contentType: string | null;
+  size: number | null;
+  url: string | null;
+};
+
 type AdapterDestination = {
   adapter: string;
   id: string;
@@ -361,6 +376,7 @@ function adapterConfig() {
     discordAttachmentTextMaxBytes: parseIntEnv("DISCORD_ATTACHMENT_TEXT_MAX_BYTES", 200_000, 1, 2_000_000),
     discordAttachmentTextMaxChars: parseIntEnv("DISCORD_ATTACHMENT_TEXT_MAX_CHARS", 12_000, 500, 100_000),
     discordAttachmentTextMaxFilesPerMessage: parseIntEnv("DISCORD_ATTACHMENT_TEXT_MAX_FILES_PER_MESSAGE", 3, 0, 10),
+    discordAttachmentFetchMaxBytes: parseIntEnv("DISCORD_ATTACHMENT_FETCH_MAX_BYTES", 50 * 1024 * 1024, 1, 500 * 1024 * 1024),
     discordChatEnabled: parseBoolEnv("DISCORD_CHAT_ENABLED", true),
     discordRegisterCommands: parseBoolEnv("DISCORD_REGISTER_COMMANDS", true),
     discordCommandGuildId: ((process.env.DISCORD_COMMAND_GUILD_ID ?? "").trim() || (process.env.DISCORD_GUILD_ID ?? "").trim()),
@@ -730,6 +746,135 @@ function renderDiscordMessageText(baseText: string, embeds: JsonObject[], attach
   }
 
   return sections.join("\n\n").trim();
+}
+
+function stringField(record: JsonObject, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function numberField(record: JsonObject, key: string): number | null {
+  const value = record[key];
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+async function fetchDiscordAttachment(input: {
+  channelId: string;
+  messageId: string;
+  attachmentId: string;
+}): Promise<AttachmentFetchResult> {
+  const config = adapterConfig();
+  const message = await discordApiRequest<JsonObject>(
+    `/channels/${encodeURIComponent(input.channelId)}/messages/${encodeURIComponent(input.messageId)}`,
+  );
+  const attachments = Array.isArray(message.attachments)
+    ? message.attachments.filter((item): item is JsonObject => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+  const attachment = attachments.find((item) => stringField(item, "id") === input.attachmentId);
+  if (!attachment) {
+    throw new Error("ATTACHMENT_NOT_FOUND");
+  }
+
+  const url = stringField(attachment, "url");
+  if (!url || !attachmentUrlAllowed(url)) {
+    throw new Error("ATTACHMENT_URL_NOT_ALLOWED");
+  }
+  const filename = stringField(attachment, "filename") || "attachment";
+  const size = numberField(attachment, "size");
+  if (size !== null && size > config.discordAttachmentFetchMaxBytes) {
+    throw new Error(`ATTACHMENT_TOO_LARGE:${size}:${config.discordAttachmentFetchMaxBytes}`);
+  }
+
+  const headers = new Headers({ "User-Agent": "prism-source-adapter/1.0" });
+  if (new URL(url).hostname.includes("discord") && process.env.DISCORD_BOT_TOKEN) {
+    headers.set("Authorization", `Bot ${process.env.DISCORD_BOT_TOKEN}`);
+  }
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    throw new Error(`ATTACHMENT_FETCH_FAILED:${response.status}:${response.statusText}`);
+  }
+  const body = Buffer.from(await response.arrayBuffer());
+  if (body.byteLength > config.discordAttachmentFetchMaxBytes) {
+    throw new Error(`ATTACHMENT_TOO_LARGE:${body.byteLength}:${config.discordAttachmentFetchMaxBytes}`);
+  }
+
+  const contentType =
+    stringField(attachment, "content_type") ||
+    response.headers.get("content-type")?.trim() ||
+    "application/octet-stream";
+  const width = numberField(attachment, "width");
+  const height = numberField(attachment, "height");
+  const metadata: JsonObject = {
+    platform: "discord",
+    channelId: input.channelId,
+    messageId: input.messageId,
+    attachmentId: input.attachmentId,
+    filename,
+    contentType,
+    size: size ?? body.byteLength,
+    url,
+    sourceUrlDurable: false,
+    messageUrl: config.discordGuildId
+      ? discordMessageUrl(config.discordGuildId, input.channelId, input.messageId)
+      : null,
+    width,
+    height,
+    fetchedAt: nowUtcIso(),
+  };
+
+  return {
+    body,
+    metadata,
+    contentType,
+    filename,
+  };
+}
+
+async function resolveDiscordMessageAttachments(input: {
+  channelId: string;
+  messageId: string;
+}): Promise<{ message: JsonObject; attachments: AttachmentSummary[] }> {
+  const config = adapterConfig();
+  const message = await discordApiRequest<JsonObject>(
+    `/channels/${encodeURIComponent(input.channelId)}/messages/${encodeURIComponent(input.messageId)}`,
+  );
+  const attachments = Array.isArray(message.attachments)
+    ? message.attachments.filter((item): item is JsonObject => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
+  return {
+    message: {
+      id: input.messageId,
+      channelId: input.channelId,
+      messageUrl: config.discordGuildId
+        ? discordMessageUrl(config.discordGuildId, input.channelId, input.messageId)
+        : null,
+      author: buildMessageAuthor(message),
+      timestamp: stringField(message, "timestamp") || null,
+      text: stringField(message, "content"),
+    },
+    attachments: attachments.map((attachment) => {
+      const id = stringField(attachment, "id");
+      const filename = stringField(attachment, "filename") || "attachment";
+      const contentType = stringField(attachment, "content_type") || null;
+      return {
+        id,
+        filename,
+        contentType,
+        size: numberField(attachment, "size"),
+        url: stringField(attachment, "url") || null,
+        width: numberField(attachment, "width"),
+        height: numberField(attachment, "height"),
+        textLike: attachmentIsTextLike(attachment),
+      };
+    }).filter((attachment) => attachment.id),
+  };
 }
 
 function appApiBaseUrl(): string {
@@ -2300,6 +2445,17 @@ type DiscordPromptTransport = {
   sendAssistantMessage: (content: string) => Promise<{ sourceMessageId: string | null }>;
 };
 
+function discordSourceAttachmentInstructions(): string {
+  return [
+    "When a Discord user asks to summarize, inspect, use, save, or promote an attachment from a Discord message link, use the Prism Agent API route POST /agent/source-attachments/resolve-and-ingest with x-service-token auth.",
+    "Use intent summarize for read/summarize/inspect requests and intent promote-memory for save/add/promote-to-memory requests. Both create Memory inbox context for text-like attachments.",
+    "Use intent workflow-input or request-artifact only when the user is operating on a tracked request/workflow and a requestId is available.",
+    "If the user asks to promote an attachment to Knowledge, explain that source-backed Knowledge is usually better for canonical long-term docs and ask for confirmation before continuing.",
+    "If the resolver returns multiple attachments, ask the user which attachment to use instead of guessing.",
+    "Do not rely on raw Discord CDN URLs as durable storage.",
+  ].join(" ");
+}
+
 async function sendSanitizedAssistantMessage(
   transport: DiscordPromptTransport,
   content: string,
@@ -2460,6 +2616,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
             capabilities: canSendAdapterMessages ? ["list-destinations", "send-message"] : [],
             destinationTypes: canSendAdapterMessages ? ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"] : [],
           },
+          sourceAttachmentInstructions: discordSourceAttachmentInstructions(),
           availableOutputDestinations: canSendAdapterMessages
             ? await listAdapterDestinations().catch((error) => {
                 console.warn("[discord-adapter] destination discovery failed", describeError(error));
@@ -3431,9 +3588,11 @@ async function main(): Promise<void> {
         "discord",
         (process.env.TELEGRAM_BOT_TOKEN ?? "").trim() ? "telegram" : null,
       ].filter(Boolean),
-      capabilities: ["list-destinations", "send-message"],
+      capabilities: ["list-destinations", "send-message", "fetch-attachment"],
       destinationTypes: ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"],
       routes: {
+        attachmentsFetch: "/attachments/fetch",
+        attachmentsResolve: "/attachments/resolve",
         destinations: "/destinations",
         guildChannels: "/guild/channels",
         messages: "/messages",
@@ -3482,6 +3641,85 @@ async function main(): Promise<void> {
     } catch (error) {
       const message = describeError(error);
       response.status(message === "Unauthorized" ? 401 : 500).json({ ok: false, error: message });
+    }
+  });
+
+  app.post("/attachments/fetch", async (request: Request, response: Response) => {
+    try {
+      requireAdapterToken(request);
+      const body = request.body && typeof request.body === "object" ? request.body as JsonObject : {};
+      const platform = typeof body.platform === "string" ? body.platform.trim().toLowerCase() : "discord";
+      if (platform !== "discord") {
+        response.status(400).json({ ok: false, error: "Unsupported attachment platform" });
+        return;
+      }
+      const channelId = typeof body.channelId === "string"
+        ? body.channelId.trim()
+        : typeof body.channel_id === "string"
+          ? body.channel_id.trim()
+          : "";
+      const messageId = typeof body.messageId === "string"
+        ? body.messageId.trim()
+        : typeof body.message_id === "string"
+          ? body.message_id.trim()
+          : "";
+      const attachmentId = typeof body.attachmentId === "string"
+        ? body.attachmentId.trim()
+        : typeof body.attachment_id === "string"
+          ? body.attachment_id.trim()
+          : "";
+      if (!channelId || !messageId || !attachmentId) {
+        response.status(400).json({ ok: false, error: "channelId, messageId, and attachmentId are required" });
+        return;
+      }
+
+      const fetched = await fetchDiscordAttachment({ channelId, messageId, attachmentId });
+      response.setHeader("content-type", fetched.contentType);
+      response.setHeader("content-length", String(fetched.body.byteLength));
+      response.setHeader("content-disposition", `attachment; filename="${fetched.filename.replace(/[\x00-\x1F\x7F"\\]/g, "_")}"`);
+      response.setHeader("x-prism-attachment-metadata", Buffer.from(JSON.stringify(fetched.metadata), "utf8").toString("base64url"));
+      response.send(fetched.body);
+    } catch (error) {
+      const message = describeError(error);
+      const status =
+        message === "Unauthorized" ? 401
+        : message === "ATTACHMENT_NOT_FOUND" ? 404
+        : message.startsWith("ATTACHMENT_TOO_LARGE:") ? 413
+        : 500;
+      response.status(status).json({ ok: false, error: message });
+    }
+  });
+
+  app.post("/attachments/resolve", async (request: Request, response: Response) => {
+    try {
+      requireAdapterToken(request);
+      const body = request.body && typeof request.body === "object" ? request.body as JsonObject : {};
+      const platform = typeof body.platform === "string" ? body.platform.trim().toLowerCase() : "discord";
+      if (platform !== "discord") {
+        response.status(400).json({ ok: false, error: "Unsupported attachment platform" });
+        return;
+      }
+      const channelId = typeof body.channelId === "string"
+        ? body.channelId.trim()
+        : typeof body.channel_id === "string"
+          ? body.channel_id.trim()
+          : "";
+      const messageId = typeof body.messageId === "string"
+        ? body.messageId.trim()
+        : typeof body.message_id === "string"
+          ? body.message_id.trim()
+          : "";
+      if (!channelId || !messageId) {
+        response.status(400).json({ ok: false, error: "channelId and messageId are required" });
+        return;
+      }
+
+      const result = await resolveDiscordMessageAttachments({ channelId, messageId });
+      response.json({ ok: true, platform, channelId, messageId, ...result });
+    } catch (error) {
+      const message = describeError(error);
+      const status = message === "Unauthorized" ? 401 : message.includes("Discord API failed: 404") ? 404 : 500;
+      response.status(status).json({ ok: false, error: message });
     }
   });
 

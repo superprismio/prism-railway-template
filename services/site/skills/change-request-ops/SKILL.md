@@ -33,6 +33,8 @@ Core endpoints:
 - `GET /agent/change-board/requests/:id/artifacts`
 - `POST /agent/change-board/requests/:id/artifacts`
 - `GET /agent/change-board/requests/:id/artifacts/:artifactId/content`
+- `POST /agent/source-attachments/ingest`
+- `POST /agent/source-attachments/resolve-and-ingest`
 - `GET /agent/runs`
 - `GET /agent/change-board/requests/:id/executions`
 - `GET /agent/change-board/requests/:id/deploy-plan`
@@ -79,6 +81,61 @@ The by-number artifact route includes text, markdown, and JSON bodies by default
 - `?maxBytes=500000`
 
 If a user asks whether artifacts were created for a request number, this endpoint is the first API to call. Do not claim the board is admin-password gated until the `/agent/.../by-number/...` routes have been tried with service-token auth.
+
+When a user references a Discord message link with an attachment, use the high-level resolver so the agent does not need to manually extract ids:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/source-attachments/resolve-and-ingest" \
+  -d '{
+    "messageUrl": "'"$DISCORD_MESSAGE_URL"'",
+    "intent": "summarize"
+  }'
+```
+
+Intent defaults:
+
+- "summarize this attachment" -> `intent: "summarize"`; writes text-like files to Memory as `session_attachment` context.
+- "promote this to memory" -> `intent: "promote-memory"`; returns a shareable Memory artifact URL.
+- "use this in request/workflow" -> `intent: "workflow-input"` with `requestId`.
+- "promote this to knowledge" -> `intent: "promote-knowledge"`; explain that source-backed Knowledge is usually better for long-term canonical docs and ask for confirmation.
+
+When a user references exact Discord attachment ids that should be used by a request or workflow, do not rely on the raw Discord CDN URL as durable storage. Ask the site to fetch it through the communication adapter and create a request artifact:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/source-attachments/ingest" \
+  -d '{
+    "platform": "discord",
+    "requestId": "'"$REQUEST_ID"'",
+    "channelId": "'"$DISCORD_CHANNEL_ID"'",
+    "messageId": "'"$DISCORD_MESSAGE_ID"'",
+    "attachmentId": "'"$DISCORD_ATTACHMENT_ID"'",
+    "lane": "request-artifact",
+    "purpose": "workflow-input"
+  }'
+```
+
+Use `lane: "workflow-input"` when the attachment is meant as input to the current workflow. For "summarize this attachment" or temporary session context, prefer `lane: "memory-inbox"` for text-like attachments so Prism returns a shareable memory artifact without treating it as Knowledge:
+
+```json
+{
+  "platform": "discord",
+  "channelId": "<discord-channel-id>",
+  "messageId": "<discord-message-id>",
+  "attachmentId": "<discord-attachment-id>",
+  "lane": "memory-inbox",
+  "purpose": "summarize-attachment"
+}
+```
+
+Only promote to Knowledge after explicit confirmation. If the user asks for long-term/canonical knowledge, explain that a linked GitHub or source-backed knowledge source is usually better before writing to Knowledge inbox.
 
 Continue or approve a workflow by request number:
 

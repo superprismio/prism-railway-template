@@ -1,6 +1,6 @@
 # Source Attachment Handoff
 
-Status: planned / future
+Status: first slice in progress
 
 ## Purpose
 
@@ -246,7 +246,30 @@ Suggested default:
   agents know to use explicit attachment handoff instead of raw Discord CDN
   URLs.
 - Add a small operator-facing Discord path for "use the attached file in this
-  request" or "add the attached transcript to memory inbox."
+  request" or "add the attached transcript to memory inbox" by making the
+  Discord chat bridge give Codex explicit attachment handoff instructions.
+
+## First Slice Progress
+
+- Implemented `POST /attachments/fetch` on the communication adapter for
+  Discord attachments.
+- Implemented `POST /attachments/resolve` on the communication adapter for
+  message-level attachment discovery.
+- Implemented `POST /agent/source-attachments/ingest` on the site service for
+  `request-artifact`, `workflow-input`, and `memory-inbox` lanes.
+- Implemented `POST /agent/source-attachments/resolve-and-ingest` on the site
+  service so agents can use Discord message URLs and intent labels directly.
+- Implemented memory inbox promotion for fetched text-like attachments as
+  `session_attachment` memory artifacts.
+- Updated built-in request/workflow skills to prefer attachment handoff over
+  raw Discord CDN URLs.
+- Updated the Discord chat bridge runtime metadata so Codex knows to call the
+  site resolver route for attachment summarize/use/promote requests. The adapter
+  does not parse attachment intent itself.
+
+Still pending:
+
+- policy-driven auto-fetch rules.
 
 ## Deferred
 

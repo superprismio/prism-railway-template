@@ -101,6 +101,27 @@ Workflow steps should save durable files through the request artifact API instea
 
 Send that body to `POST /agent/change-board/requests/<request-id>/artifacts` with internal service auth. Use `encoding: "base64"` for image or other binary content. When the workflow prompt provides a current agent run id, include it as `agent_run_id` so the artifact links back to the run that produced it. Artifacts are owned by the site service, stored under `/data/workflow-artifacts`, listed on the request Artifacts tab, and recorded as `artifact.created` workflow events.
 
+If a workflow expects a user-supplied Discord attachment, instruct the agent to use the attachment handoff route instead of pasting or trusting a Discord CDN URL:
+
+```json
+{
+  "platform": "discord",
+  "requestId": "<request-id>",
+  "channelId": "<discord-channel-id>",
+  "messageId": "<discord-message-id>",
+  "attachmentId": "<discord-attachment-id>",
+  "lane": "workflow-input",
+  "purpose": "workflow-input",
+  "agent_run_id": "<current-agent-run-id>"
+}
+```
+
+Send that body to `POST /agent/source-attachments/ingest`. The site calls the communication adapter, stores the bytes as a private request artifact, and preserves source provenance. Text or Markdown attachments should only be promoted to Prism Memory when the operator explicitly asks for a shareable memory artifact.
+
+For "summarize this attachment" style workflows where the attachment is current-session context rather than a durable request input, use `lane: "memory-inbox"` for text-like files. This writes a `session_attachment` memory inbox artifact and returns a shareable Memory artifact URL. Do not route these directly to Knowledge; for long-term canonical docs, ask for confirmation and recommend a linked source-backed Knowledge path when appropriate.
+
+If the workflow only has a Discord message URL, use `POST /agent/source-attachments/resolve-and-ingest` with an intent such as `summarize`, `promote-memory`, `request-artifact`, or `workflow-input`. If the message has multiple attachments, the route returns candidates and the agent should ask the operator which attachment to use.
+
 When a later workflow step needs prior artifact bodies, read them through the site API instead of guessing volume paths:
 
 ```http
