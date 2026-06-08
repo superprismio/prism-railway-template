@@ -246,7 +246,8 @@ Suggested default:
   agents know to use explicit attachment handoff instead of raw Discord CDN
   URLs.
 - Add a small operator-facing Discord path for "use the attached file in this
-  request" or "add the attached transcript to memory inbox."
+  request" or "add the attached transcript to memory inbox" by making the
+  Discord chat bridge give Codex explicit attachment handoff instructions.
 
 ## First Slice Progress
 
@@ -262,10 +263,12 @@ Suggested default:
   `session_attachment` memory artifacts.
 - Updated built-in request/workflow skills to prefer attachment handoff over
   raw Discord CDN URLs.
+- Updated the Discord chat bridge runtime metadata so Codex knows to call the
+  site resolver route for attachment summarize/use/promote requests. The adapter
+  does not parse attachment intent itself.
 
 Still pending:
 
-- operator-facing Discord command or natural-language route,
 - policy-driven auto-fetch rules.
 
 ## Deferred

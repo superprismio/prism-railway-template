@@ -2445,6 +2445,17 @@ type DiscordPromptTransport = {
   sendAssistantMessage: (content: string) => Promise<{ sourceMessageId: string | null }>;
 };
 
+function discordSourceAttachmentInstructions(): string {
+  return [
+    "When a Discord user asks to summarize, inspect, use, save, or promote an attachment from a Discord message link, use the Prism Agent API route POST /agent/source-attachments/resolve-and-ingest with x-service-token auth.",
+    "Use intent summarize for read/summarize/inspect requests and intent promote-memory for save/add/promote-to-memory requests. Both create Memory inbox context for text-like attachments.",
+    "Use intent workflow-input or request-artifact only when the user is operating on a tracked request/workflow and a requestId is available.",
+    "If the user asks to promote an attachment to Knowledge, explain that source-backed Knowledge is usually better for canonical long-term docs and ask for confirmation before continuing.",
+    "If the resolver returns multiple attachments, ask the user which attachment to use instead of guessing.",
+    "Do not rely on raw Discord CDN URLs as durable storage.",
+  ].join(" ");
+}
+
 async function sendSanitizedAssistantMessage(
   transport: DiscordPromptTransport,
   content: string,
@@ -2605,6 +2616,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
             capabilities: canSendAdapterMessages ? ["list-destinations", "send-message"] : [],
             destinationTypes: canSendAdapterMessages ? ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"] : [],
           },
+          sourceAttachmentInstructions: discordSourceAttachmentInstructions(),
           availableOutputDestinations: canSendAdapterMessages
             ? await listAdapterDestinations().catch((error) => {
                 console.warn("[discord-adapter] destination discovery failed", describeError(error));
