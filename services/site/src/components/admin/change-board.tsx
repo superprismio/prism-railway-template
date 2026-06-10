@@ -165,6 +165,18 @@ export function ChangeBoard({
     (request) => workflowStepForRequest(request).type === "terminal",
   ).length;
   const activeCount = data.changeRequests.length - closedCount;
+  const estimatedHumanHours = data.changeRequests.reduce((totals, request) => {
+    const estimate = typeof request.estimatedHumanHours === "number" && Number.isFinite(request.estimatedHumanHours)
+      ? request.estimatedHumanHours
+      : 0;
+    totals.total += estimate;
+    if (workflowStepForRequest(request).type !== "terminal") {
+      totals.active += estimate;
+    }
+    return totals;
+  }, { active: 0, total: 0 });
+  const estimatedHumanHoursActiveLabel = humanHoursLabel(estimatedHumanHours.active);
+  const estimatedHumanHoursTotalLabel = humanHoursLabel(estimatedHumanHours.total);
   const runningCount = data.changeRequests.filter(
     (request) => request.workflowRunStatus === "running",
   ).length;
@@ -686,6 +698,17 @@ export function ChangeBoard({
                       Closed
                     </p>
                     <p className="mt-2 text-3xl font-semibold">{closedCount}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      Active Human Estimate
+                    </p>
+                    <p className="mt-2 text-3xl font-semibold">
+                      {estimatedHumanHoursActiveLabel ?? "0h human"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {estimatedHumanHoursTotalLabel ?? "0h human"} total estimated
+                    </p>
                   </div>
                   <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
                     <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
