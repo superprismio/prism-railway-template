@@ -65,6 +65,7 @@ export type ChangeRequestRecord = {
   currentWorkflowStepKey: string | null
   workflowRunStatus: string | null
   triageSummary: string | null
+  estimatedHumanHours: number | null
   acceptanceCriteria: unknown[]
   constraints: Record<string, unknown>
   attachments: unknown[]

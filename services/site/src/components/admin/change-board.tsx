@@ -41,6 +41,7 @@ import type { Capability } from "@/lib/role-access";
 
 import {
   environmentForRequest,
+  humanHoursLabel,
   parseTimestamp,
   priorityVariant,
   requestSourceLabel,
@@ -188,6 +189,9 @@ export function ChangeBoard({
         selectedRequest.currentWorkflowStepKey,
         workflowSteps(selectedWorkflow),
       ).step
+    : null;
+  const selectedEstimatedHumanHoursLabel = selectedRequest
+    ? humanHoursLabel(selectedRequest.estimatedHumanHours)
     : null;
 
   const requestTypeOptions = useMemo(
@@ -574,6 +578,11 @@ export function ChangeBoard({
                       <Badge variant="outline">
                         {requestSourceLabel(selectedRequest.source)}
                       </Badge>
+                      {selectedEstimatedHumanHoursLabel ? (
+                        <Badge variant="outline">
+                          {selectedEstimatedHumanHoursLabel}
+                        </Badge>
+                      ) : null}
                       <span className="text-sm text-muted-foreground">
                         {selectedTargetApp?.name ??
                           selectedRequest.targetAppSlug ??

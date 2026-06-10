@@ -178,6 +178,12 @@ export function requestSourceLabel(value: string) {
   return requestTypeLabel(value || "unknown");
 }
 
+export function humanHoursLabel(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const formatted = Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+  return `${formatted}h human`;
+}
+
 export function parseTimestamp(value: string | null) {
   if (!value) return 0;
   const timestamp = new Date(value).getTime();

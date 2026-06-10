@@ -7,6 +7,7 @@ import {
   requireServiceAccess,
 } from "@/lib/internal-service"
 import { trackedChangeRequestPriorities, trackedChangeRequestTypes } from "@/lib/local-admin-api"
+import { parseEstimatedHumanHours } from "@/lib/request-estimates"
 import { autoStartWorkflowRequest } from "@/lib/workflow-autostart"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -34,6 +35,8 @@ export async function POST(request: Request) {
   const targetAppId = parseString(body.targetAppId ?? body.target_app_id)
   const workflowKey = parseString(body.workflowKey ?? body.workflow_key) || "change-request-default"
   const priority = parseString(body.priority) || "normal"
+  const hasEstimatedHumanHours = body.estimatedHumanHours !== undefined || body.estimated_human_hours !== undefined
+  const estimatedHumanHours = parseEstimatedHumanHours(body.estimatedHumanHours ?? body.estimated_human_hours)
   const workflow = getWorkflowByKey(workflowKey)
   const target = workflow?.definition?.target
   const targetRequired = workflowKey === "change-request-default"
@@ -69,6 +72,9 @@ export async function POST(request: Request) {
       validPriorities: trackedChangeRequestPriorities,
     }, { status: 400 })
   }
+  if (hasEstimatedHumanHours && estimatedHumanHours === undefined) {
+    return NextResponse.json({ ok: false, error: "Invalid estimatedHumanHours" }, { status: 400 })
+  }
 
   const changeRequest = createChangeRequest({
     title,
@@ -86,6 +92,7 @@ export async function POST(request: Request) {
           ?? null
         : null,
     triageSummary: parseNullableString(body.triageSummary ?? body.triage_summary) ?? null,
+    estimatedHumanHours: estimatedHumanHours ?? null,
     acceptanceCriteria: Array.isArray(body.acceptanceCriteria) ? body.acceptanceCriteria : [],
     constraints: body.constraints && typeof body.constraints === "object" && !Array.isArray(body.constraints) ? body.constraints as Record<string, unknown> : {},
     attachments: Array.isArray(body.attachments) ? body.attachments : [],

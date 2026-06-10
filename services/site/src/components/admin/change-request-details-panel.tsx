@@ -61,6 +61,7 @@ import {
   executionDeployUrl,
   formatDurationFrom,
   githubCompareUrl,
+  humanHoursLabel,
   isoLabel,
   priorityVariant,
   workflowStepForKey,
@@ -1779,6 +1780,14 @@ export function RequestDetailsPanel({
                     Priority
                   </p>
                   <p className="mt-2 font-medium">{request.priority}</p>
+                </div>
+                <div className="rounded-none border border-border/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                    Human Estimate
+                  </p>
+                  <p className="mt-2 font-medium">
+                    {humanHoursLabel(request.estimatedHumanHours) ?? "Not estimated"}
+                  </p>
                 </div>
                 <div className="rounded-none border border-border/70 p-4">
                   <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">

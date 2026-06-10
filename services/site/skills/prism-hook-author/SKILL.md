@@ -24,6 +24,8 @@ Hook authoring rules:
 
 Hook request templates must use one of these `requestType` values: `bug`, `feature`, `issue`, `content`, `design`, `config`, or `ops`. Use `issue` when the hook represents an imported issue-like source item rather than a broader feature or content request.
 
+When the hook creates a predictable request shape, include `requestTemplate.estimatedHumanHours`. Estimate the whole request, including expected human gates, review/approval time, coordination, and likely loopbacks. Choose one bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`. Leave it out only when the incoming payload determines scope at trigger time.
+
 Recommended hook shape:
 
 ```json
@@ -39,6 +41,7 @@ Recommended hook shape:
     "descriptionTemplate": "Create a daily brief from this trigger payload.\n\nPayload:\n{{payload}}",
     "requestType": "content",
     "priority": "normal",
+    "estimatedHumanHours": 1,
     "constraints": {
       "source": "hook"
     }

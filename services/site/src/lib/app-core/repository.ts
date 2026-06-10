@@ -334,6 +334,7 @@ export interface ChangeRequestRecord {
   currentWorkflowStepKey: string | null;
   workflowRunStatus: string | null;
   triageSummary: string | null;
+  estimatedHumanHours: number | null;
   acceptanceCriteria: unknown[];
   constraints: Record<string, unknown>;
   attachments: unknown[];
@@ -426,6 +427,7 @@ export interface CreateChangeRequestInput {
   targetAppId?: string | null;
   targetEnvironmentId?: string | null;
   triageSummary?: string | null;
+  estimatedHumanHours?: number | null;
   acceptanceCriteria?: unknown[];
   constraints?: Record<string, unknown>;
   attachments?: unknown[];
@@ -437,6 +439,7 @@ export interface UpdateChangeRequestInput {
   priority?: string;
   targetEnvironmentId?: string | null;
   triageSummary?: string | null;
+  estimatedHumanHours?: number | null;
   reviewNotes?: string | null;
   resolutionSummary?: string | null;
   agentRecommendation?: string | null;
@@ -1594,6 +1597,7 @@ function parseTrackedChangeRequestRow(row: {
   current_workflow_step_key?: string | null;
   workflow_run_status?: string | null;
   triage_summary: string | null;
+  estimated_human_hours: number | null;
   acceptance_criteria_json: string | null;
   constraints_json: string | null;
   attachments_json: string | null;
@@ -1627,6 +1631,7 @@ function parseTrackedChangeRequestRow(row: {
     currentWorkflowStepKey: row.current_workflow_step_key ?? null,
     workflowRunStatus: row.workflow_run_status ?? null,
     triageSummary: row.triage_summary,
+    estimatedHumanHours: row.estimated_human_hours,
     acceptanceCriteria: parseJsonValue<unknown[]>(row.acceptance_criteria_json, []),
     constraints: parseJsonValue<Record<string, unknown>>(row.constraints_json, {}),
     attachments: parseJsonValue<unknown[]>(row.attachments_json, []),
@@ -3392,6 +3397,7 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
       wr.current_step_key AS current_workflow_step_key,
       wr.status AS workflow_run_status,
       cr.triage_summary,
+      cr.estimated_human_hours,
       cr.acceptance_criteria_json,
       cr.constraints_json,
       cr.attachments_json,
@@ -3441,6 +3447,7 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     current_workflow_step_key: string | null;
     workflow_run_status: string | null;
     triage_summary: string | null;
+    estimated_human_hours: number | null;
     acceptance_criteria_json: string | null;
     constraints_json: string | null;
     attachments_json: string | null;
@@ -3482,6 +3489,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
       wr.current_step_key AS current_workflow_step_key,
       wr.status AS workflow_run_status,
       cr.triage_summary,
+      cr.estimated_human_hours,
       cr.acceptance_criteria_json,
       cr.constraints_json,
       cr.attachments_json,
@@ -3549,6 +3557,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
         current_workflow_step_key: string | null;
         workflow_run_status: string | null;
         triage_summary: string | null;
+        estimated_human_hours: number | null;
         acceptance_criteria_json: string | null;
         constraints_json: string | null;
         attachments_json: string | null;
@@ -3591,6 +3600,7 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
       wr.current_step_key AS current_workflow_step_key,
       wr.status AS workflow_run_status,
       cr.triage_summary,
+      cr.estimated_human_hours,
       cr.acceptance_criteria_json,
       cr.constraints_json,
       cr.attachments_json,
@@ -3667,6 +3677,7 @@ export function getChangeRequest(changeRequestId: string) {
          wr.current_step_key AS current_workflow_step_key,
          wr.status AS workflow_run_status,
          cr.triage_summary,
+         cr.estimated_human_hours,
          cr.acceptance_criteria_json,
          cr.constraints_json,
          cr.attachments_json,
@@ -3705,6 +3716,7 @@ export function getChangeRequest(changeRequestId: string) {
         target_environment_slug: string | null;
         target_environment_name: string | null;
         triage_summary: string | null;
+        estimated_human_hours: number | null;
         acceptance_criteria_json: string | null;
         constraints_json: string | null;
         attachments_json: string | null;
@@ -3766,9 +3778,9 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
         `INSERT INTO change_requests (
            id, request_number, workflow_key, title, description, request_type, priority, source,
            requested_by_user_id, target_app_id, target_environment_id, triage_summary,
-           acceptance_criteria_json, constraints_json, attachments_json, agent_recommendation,
+           estimated_human_hours, acceptance_criteria_json, constraints_json, attachments_json, agent_recommendation,
            created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -3783,6 +3795,7 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
         input.targetAppId ?? null,
         input.targetEnvironmentId ?? null,
         input.triageSummary ?? null,
+        input.estimatedHumanHours ?? null,
         JSON.stringify(input.acceptanceCriteria ?? []),
         JSON.stringify(input.constraints ?? {}),
         JSON.stringify(input.attachments ?? []),
@@ -3821,6 +3834,7 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
        SET priority = ?,
            target_environment_id = ?,
            triage_summary = ?,
+           estimated_human_hours = ?,
            review_notes = ?,
            resolution_summary = ?,
            agent_recommendation = ?,
@@ -3845,6 +3859,7 @@ export function updateChangeRequest(changeRequestId: string, input: UpdateChange
       input.priority ?? current.priority,
       input.targetEnvironmentId !== undefined ? input.targetEnvironmentId : current.targetEnvironmentId,
       input.triageSummary !== undefined ? input.triageSummary : current.triageSummary,
+      input.estimatedHumanHours !== undefined ? input.estimatedHumanHours : current.estimatedHumanHours,
       input.reviewNotes !== undefined ? input.reviewNotes : current.reviewNotes,
       input.resolutionSummary !== undefined ? input.resolutionSummary : current.resolutionSummary,
       input.agentRecommendation !== undefined ? input.agentRecommendation : current.agentRecommendation,

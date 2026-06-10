@@ -1144,6 +1144,7 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
         requestedSkills: mergeRequestedSkills(siteTask),
         targetAppId: requestConfig.targetAppId ?? null,
         targetEnvironmentId: requestConfig.targetEnvironmentId ?? null,
+        estimatedHumanHours: requestConfig.estimatedHumanHours ?? requestConfig.estimated_human_hours ?? null,
         constraints: isRecord(requestConfig.constraints) ? requestConfig.constraints : {},
         attachments: Array.isArray(requestConfig.attachments) ? requestConfig.attachments : [],
       };

@@ -15,6 +15,7 @@ import {
   type HookRecord,
 } from "@/lib/app-core"
 import { randomUUID } from "node:crypto"
+import { parseEstimatedHumanHours } from "@/lib/request-estimates"
 import { autoStartWorkflowRequest } from "@/lib/workflow-autostart"
 
 type HookTriggerResult = {
@@ -194,6 +195,23 @@ export async function triggerHook(
   const constraints = isRecord(requestTemplate.constraints) ? requestTemplate.constraints : {}
   const payloadConstraints = isRecord(payload.constraints) ? payload.constraints : {}
   const attachments = Array.isArray(requestTemplate.attachments) ? requestTemplate.attachments : []
+  const hasEstimatedHumanHours =
+    requestTemplate.estimatedHumanHours !== undefined ||
+    requestTemplate.estimated_human_hours !== undefined ||
+    payload.estimatedHumanHours !== undefined ||
+    payload.estimated_human_hours !== undefined
+  const estimatedHumanHours = parseEstimatedHumanHours(
+    requestTemplate.estimatedHumanHours ?? requestTemplate.estimated_human_hours ?? payload.estimatedHumanHours ?? payload.estimated_human_hours,
+  )
+  if (hasEstimatedHumanHours && estimatedHumanHours === undefined) {
+    updateHookRun(hookRunId, {
+      status: "failed",
+      errorMessage: "INVALID_ESTIMATED_HUMAN_HOURS",
+      result: { error: "INVALID_ESTIMATED_HUMAN_HOURS" },
+      finishedAt: new Date().toISOString(),
+    })
+    throw new Error("INVALID_ESTIMATED_HUMAN_HOURS")
+  }
 
   const changeRequest = createChangeRequest({
     title: renderTemplate(requestTemplate.titleTemplate ?? requestTemplate.title, payload, `${hook.name} - {{date}}`),
@@ -210,6 +228,7 @@ export async function triggerHook(
     targetAppId: targetAppId || null,
     targetEnvironmentId: targetEnvironmentId || null,
     triageSummary: null,
+    estimatedHumanHours: estimatedHumanHours ?? null,
     acceptanceCriteria: Array.isArray(requestTemplate.acceptanceCriteria) ? requestTemplate.acceptanceCriteria : [],
     constraints: {
       ...constraints,
