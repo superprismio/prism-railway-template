@@ -10,6 +10,7 @@ import type {
 
 import {
   environmentForRequest,
+  humanHoursLabel,
   isoLabel,
   priorityVariant,
   requestSourceLabel,
@@ -43,6 +44,7 @@ export function ChangeRequestRow({
     targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch";
   const isRunning = request.workflowRunStatus === "running";
   const isCanceled = request.workflowRunStatus === "canceled";
+  const estimatedHumanHoursLabel = humanHoursLabel(request.estimatedHumanHours);
 
   return (
     <button
@@ -75,6 +77,9 @@ export function ChangeRequestRow({
           </Badge>
           <Badge variant="outline">{request.requestType}</Badge>
           <Badge variant="outline">{requestSourceLabel(request.source)}</Badge>
+          {estimatedHumanHoursLabel ? (
+            <Badge variant="outline">{estimatedHumanHoursLabel}</Badge>
+          ) : null}
         </div>
         <h3 className="line-clamp-1 text-base font-semibold">
           {request.title}

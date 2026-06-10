@@ -86,6 +86,8 @@ Send that body to `POST /agent/responses` with `x-service-token` service auth. F
 
 Workflow steps should save durable files through the request artifact API instead of leaving important outputs only in chat text. Use artifacts for drafts, image prompts, generated images, publish packets, JSON plans, or any step output that future steps or humans should inspect.
 
+If a triage or intake step sees a request without `estimatedHumanHours` and the scope is clear, patch the request once with a coarse whole-request human effort estimate. Include expected human gates, review/approval time, coordination, and likely loopbacks such as review changes that return the workflow to an earlier step. Use one bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`. Do not add rationale/source fields or per-step estimates.
+
 ```json
 {
   "kind": "markdown",

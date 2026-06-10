@@ -21,6 +21,7 @@ Task authoring rules:
 12. A resolved output destination must include `adapter`, `type`, `id`, and `label`. If you only know the label, the destination is unresolved.
 13. If a requested destination cannot be resolved, create the task disabled and state that delivery is unresolved.
 14. When a task creates a request from an outside system, attach that source as a request external ref when the API is available. Examples: GitHub issue collector tasks attach the source issue, Discord support triage tasks attach the source message or thread, and publishing tasks attach the final CMS post.
+15. For `workflow-runner` tasks, include `inputConfig.request.estimatedHumanHours` when the request scope is predictable. Estimate the whole request, including expected human gates, review/approval time, coordination, and likely loopbacks. Choose one bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`.
 
 Workflow-runner request types must use one of: `bug`, `feature`, `issue`, `content`, `design`, `config`, or `ops`. Use `issue` for imported GitHub issues or issue-like support intake when the source item itself is the request.
 
@@ -81,7 +82,8 @@ Workflow runner task shape:
       "title": "Weekly blog post",
       "description": "Create this week's blog post from Prism Memory and Knowledge.",
       "requestType": "content",
-      "priority": "normal"
+      "priority": "normal",
+      "estimatedHumanHours": 2
     },
     "autoRun": {
       "enabled": true,

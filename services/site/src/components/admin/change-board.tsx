@@ -41,6 +41,7 @@ import type { Capability } from "@/lib/role-access";
 
 import {
   environmentForRequest,
+  humanHoursLabel,
   parseTimestamp,
   priorityVariant,
   requestSourceLabel,
@@ -574,6 +575,11 @@ export function ChangeBoard({
                       <Badge variant="outline">
                         {requestSourceLabel(selectedRequest.source)}
                       </Badge>
+                      {humanHoursLabel(selectedRequest.estimatedHumanHours) ? (
+                        <Badge variant="outline">
+                          {humanHoursLabel(selectedRequest.estimatedHumanHours)}
+                        </Badge>
+                      ) : null}
                       <span className="text-sm text-muted-foreground">
                         {selectedTargetApp?.name ??
                           selectedRequest.targetAppSlug ??

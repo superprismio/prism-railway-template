@@ -107,6 +107,8 @@ Request creation accepts these `priority` values:
 
 If a request creation call sends an invalid type or priority, the `400` response includes `validRequestTypes` or `validPriorities` so agents can retry with a supported value.
 
+Agent-created requests should include `estimatedHumanHours` when there is enough context to infer a coarse whole-request human effort estimate. Include expected human gates, review/approval time, coordination, and likely loopbacks such as review changes that return the workflow to an earlier step. Choose the nearest bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`. The field is optional and must be a finite number from `0` through `999`.
+
 Source attachment ingest:
 
 ```bash

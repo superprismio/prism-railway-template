@@ -164,6 +164,7 @@ Create request pattern:
 6. If the entry step is a gate, the request waits for an operator decision.
 7. The create response returns the created row as `request`; read `changeRequest` only as a compatibility fallback.
 8. Valid `requestType` values are `bug`, `feature`, `issue`, `content`, `design`, `config`, and `ops`.
+9. Include `estimatedHumanHours` when there is enough context to infer a coarse whole-request human effort estimate. Include expected human gates, review/approval time, coordination, and likely loopbacks such as review changes that return the workflow to an earlier step. Choose one bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`; omit only when the request scope is genuinely unclear.
 
 List target apps:
 
@@ -187,6 +188,7 @@ curl -fsSL \
     "requestType": "'"$REQUEST_TYPE"'",
     "targetAppId": "'"$TARGET_APP_ID"'",
     "priority": "'"${PRIORITY:-normal}"'",
+    "estimatedHumanHours": 2,
     "source": "chat",
     "autoStart": true
   }'
@@ -197,7 +199,7 @@ Start-of-run pattern:
 1. Fetch `current`.
 2. If `current.changeRequest` is null, fetch `next`.
 3. Read `changeRequest`, `targetApp`, `targetEnvironment`, `deployPlan`, `latestAgentRun`, and `externalRefs`.
-4. During triage, write substantive detail into `triageSummary` and `agentRecommendation` before routing the request onward.
+4. During triage, write substantive detail into `triageSummary` and `agentRecommendation` before routing the request onward. If `estimatedHumanHours` is missing and the scope is clear, patch it once using the same bucket list used during request creation.
 5. Do not create `change_request_executions`. Workflow work is represented by `agent_runs` and should be started through the workflow continue route or request autostart.
 6. Do not use legacy queue statuses such as `submitted`, `in-progress`, `ready-for-agent`, `awaiting-review`, `changes-requested`, `approved`, or `rejected`.
 7. The current workflow step is stored in `workflow_runs.current_step_key` and exposed as `currentWorkflowStepKey`; use that field to understand where the request is.

@@ -20,6 +20,7 @@ import {
   trackedChangeRequestPriorities,
   useLocalAppApi,
 } from "@/lib/local-admin-api"
+import { parseEstimatedHumanHours } from "@/lib/request-estimates"
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -57,6 +58,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
     const body = payload as Record<string, unknown>
     const nextPriority = typeof body.priority === "string" ? body.priority : undefined
+    const hasEstimatedHumanHours = body.estimatedHumanHours !== undefined || body.estimated_human_hours !== undefined
+    const estimatedHumanHours = parseEstimatedHumanHours(body.estimatedHumanHours ?? body.estimated_human_hours)
     const rawWorkflowStepKey = body.currentWorkflowStepKey ?? body.current_workflow_step_key
     const nextWorkflowStepKey =
       typeof rawWorkflowStepKey === "string"
@@ -75,6 +78,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       nextPriority && !trackedChangeRequestPriorities.includes(nextPriority as typeof trackedChangeRequestPriorities[number])
     ) {
       return NextResponse.json({ ok: false, error: "Invalid priority" }, { status: 400 })
+    }
+    if (hasEstimatedHumanHours && estimatedHumanHours === undefined) {
+      return NextResponse.json({ ok: false, error: "Invalid estimatedHumanHours" }, { status: 400 })
     }
     if (nextWorkflowStepKey) {
       if (!nextWorkflowStep) {
@@ -109,6 +115,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         body.triageSummary !== undefined || body.triage_summary !== undefined
           ? parseNullableString(body.triageSummary ?? body.triage_summary) ?? null
           : undefined,
+      estimatedHumanHours: hasEstimatedHumanHours ? estimatedHumanHours ?? null : undefined,
       reviewNotes:
         body.reviewNotes !== undefined || body.review_notes !== undefined
           ? parseNullableString(body.reviewNotes ?? body.review_notes) ?? null
