@@ -190,6 +190,9 @@ export function ChangeBoard({
         workflowSteps(selectedWorkflow),
       ).step
     : null;
+  const selectedEstimatedHumanHoursLabel = selectedRequest
+    ? humanHoursLabel(selectedRequest.estimatedHumanHours)
+    : null;
 
   const requestTypeOptions = useMemo(
     () =>
@@ -575,9 +578,9 @@ export function ChangeBoard({
                       <Badge variant="outline">
                         {requestSourceLabel(selectedRequest.source)}
                       </Badge>
-                      {humanHoursLabel(selectedRequest.estimatedHumanHours) ? (
+                      {selectedEstimatedHumanHoursLabel ? (
                         <Badge variant="outline">
-                          {humanHoursLabel(selectedRequest.estimatedHumanHours)}
+                          {selectedEstimatedHumanHoursLabel}
                         </Badge>
                       ) : null}
                       <span className="text-sm text-muted-foreground">
