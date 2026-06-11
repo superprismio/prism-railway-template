@@ -53,6 +53,8 @@ import {
   type RequestSortValue,
 } from "./change-request-utils";
 
+const codexConsoleSessionControlsId = "codex-console-session-controls";
+
 const workspaceTabs = [
   "requests",
   "codex-console",
@@ -748,17 +750,26 @@ export function ChangeBoard({
 
         <TabsContent value="codex-console" className="mt-0 flex-1">
           <section className="min-h-full">
-            <div className="border-b border-border/60 px-5 py-4 md:px-6">
-              <h1 className="text-2xl font-semibold tracking-tight">
-                Prism Console
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Work directly with Prism on request context, review state, and
-                implementation planning.
-              </p>
+            <div className="flex flex-col gap-3 border-b border-border/60 px-5 py-4 sm:flex-row sm:items-start sm:justify-between md:px-6">
+              <div className="min-w-0">
+                <h1 className="text-2xl font-semibold tracking-tight">
+                  Prism Console
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                  Work directly with Prism on request context, review state, and
+                  implementation planning.
+                </p>
+              </div>
+              <div
+                id={codexConsoleSessionControlsId}
+                className="flex shrink-0 justify-start sm:justify-end"
+              />
             </div>
 
-            <CodexConsole isActive={activeTab === "codex-console"} />
+            <CodexConsole
+              isActive={activeTab === "codex-console"}
+              sessionControlsTargetId={codexConsoleSessionControlsId}
+            />
           </section>
         </TabsContent>
 
