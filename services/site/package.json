@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "scripts": {
     "build": "next build",
-    "dev": "next dev --hostname 0.0.0.0 --port ${SITE_PORT:-3100}",
+    "dev": "set -a; [ -f ../../.env ] && . ../../.env; set +a; next dev --hostname 0.0.0.0 --port ${SITE_PORT:-3100}",
     "migrate": "tsx src/cli/migrate.ts",
     "bootstrap:admin": "tsx src/cli/bootstrap-admin.ts",
     "bootstrap:targets": "tsx src/cli/bootstrap-targets.ts",

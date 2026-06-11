@@ -1,15 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { BookOpen, ChevronDown, Eye, RefreshCw, Trash2 } from "lucide-react";
+import { BookOpen, Eye, RefreshCw, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +40,8 @@ type DeleteSkillPayload = {
   error?: string;
 };
 
+type SkillsView = "custom" | "built-in";
+
 function sourceLabel(source: SkillRecord["source"]) {
   if (source === "custom") return "site volume";
   return "site";
@@ -56,7 +53,7 @@ export function SkillsWorkspace() {
   const [selectedSkill, setSelectedSkill] = useState<SkillRecord | null>(null);
   const [selectedContent, setSelectedContent] = useState<string>("");
   const [isViewing, setIsViewing] = useState(false);
-  const [isBuiltInOpen, setIsBuiltInOpen] = useState(false);
+  const [activeView, setActiveView] = useState<SkillsView>("custom");
   const [isRefreshing, startRefresh] = useTransition();
 
   async function loadSkills() {
@@ -75,7 +72,11 @@ export function SkillsWorkspace() {
       try {
         await loadSkills();
       } catch (nextError) {
-        setError(nextError instanceof Error ? nextError.message : "Could not load skills");
+        setError(
+          nextError instanceof Error
+            ? nextError.message
+            : "Could not load skills",
+        );
       }
     });
   }
@@ -85,16 +86,21 @@ export function SkillsWorkspace() {
     setSelectedContent("");
     setIsViewing(true);
     try {
-      const response = await fetch(`/admin/skills/${encodeURIComponent(skill.name)}`, {
-        cache: "no-store",
-      });
+      const response = await fetch(
+        `/admin/skills/${encodeURIComponent(skill.name)}`,
+        {
+          cache: "no-store",
+        },
+      );
       const payload = (await response.json()) as SkillContentPayload;
       if (!response.ok || !payload.ok || typeof payload.content !== "string") {
         throw new Error(payload.error || "Could not load skill");
       }
       setSelectedContent(payload.content);
     } catch (nextError) {
-      setSelectedContent(nextError instanceof Error ? nextError.message : "Could not load skill");
+      setSelectedContent(
+        nextError instanceof Error ? nextError.message : "Could not load skill",
+      );
     }
   }
 
@@ -105,21 +111,32 @@ export function SkillsWorkspace() {
 
     setError(null);
     try {
-      const response = await fetch(`/admin/skills/${encodeURIComponent(skill.name)}`, {
-        method: "DELETE",
-      });
-      const payload = (await response.json().catch(() => ({}))) as DeleteSkillPayload;
+      const response = await fetch(
+        `/admin/skills/${encodeURIComponent(skill.name)}`,
+        {
+          method: "DELETE",
+        },
+      );
+      const payload = (await response
+        .json()
+        .catch(() => ({}))) as DeleteSkillPayload;
       if (!response.ok || payload.ok === false) {
         throw new Error(payload.error || "Could not delete skill");
       }
-      setSkills((current) => current.filter((currentSkill) => currentSkill.name !== skill.name));
+      setSkills((current) =>
+        current.filter((currentSkill) => currentSkill.name !== skill.name),
+      );
       if (selectedSkill?.name === skill.name) {
         setSelectedSkill(null);
         setSelectedContent("");
         setIsViewing(false);
       }
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Could not delete skill");
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Could not delete skill",
+      );
     }
   }
 
@@ -136,8 +153,26 @@ export function SkillsWorkspace() {
     }),
     [skills],
   );
-  const customSkills = useMemo(() => skills.filter((skill) => skill.kind === "custom"), [skills]);
-  const builtInSkills = useMemo(() => skills.filter((skill) => skill.kind === "built-in"), [skills]);
+  const customSkills = useMemo(
+    () => skills.filter((skill) => skill.kind === "custom"),
+    [skills],
+  );
+  const builtInSkills = useMemo(
+    () => skills.filter((skill) => skill.kind === "built-in"),
+    [skills],
+  );
+  const viewOptions: Array<{
+    value: SkillsView;
+    label: string;
+    count: number;
+  }> = [
+    { value: "custom", label: "Custom Skills", count: customSkills.length },
+    {
+      value: "built-in",
+      label: "Built-In Skills",
+      count: builtInSkills.length,
+    },
+  ];
 
   function renderSkill(skill: SkillRecord) {
     return (
@@ -162,12 +197,20 @@ export function SkillsWorkspace() {
           <p className="truncate">{skill.path}</p>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => viewSkill(skill)}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => viewSkill(skill)}
+          >
             <Eye className="h-4 w-4" />
             View
           </Button>
           {skill.kind === "custom" ? (
-            <Button type="button" variant="destructive" onClick={() => deleteSkill(skill)}>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => deleteSkill(skill)}
+            >
               <Trash2 className="h-4 w-4" />
               Delete
             </Button>
@@ -178,83 +221,109 @@ export function SkillsWorkspace() {
   }
 
   return (
-    <div className="grid gap-5 px-5 py-5 md:px-6">
-      <section className="grid gap-3 md:grid-cols-3">
-        <div className="border border-border/70 bg-background p-4">
-          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Skills</p>
-          <p className="mt-2 text-3xl font-semibold">{counts.total}</p>
-        </div>
-        <div className="border border-border/70 bg-background p-4">
-          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Built-In</p>
-          <p className="mt-2 text-3xl font-semibold">{counts.builtIn}</p>
-        </div>
-        <div className="border border-border/70 bg-background p-4">
-          <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Custom</p>
-          <p className="mt-2 text-3xl font-semibold">{counts.custom}</p>
-        </div>
-      </section>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
+    <div className="grid gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 px-5 py-4 md:px-6">
         <div className="min-w-0">
-          <p className="text-sm font-medium">Available Skills</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Skills</h1>
           <p className="text-sm text-muted-foreground">
-            Built-ins come from the template. Custom skills are discovered from /data/skills.
+            View built-in and instance custom Codex skills available to Prism.
           </p>
         </div>
-        <Button type="button" variant="outline" onClick={refresh} disabled={isRefreshing}>
-          <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={refresh}
+          disabled={isRefreshing}
+        >
+          <RefreshCw
+            className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
+          />
           Refresh
         </Button>
       </div>
 
-      {error ? (
-        <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
-      ) : null}
-
-      <section className="grid gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium">Custom Skills</p>
-            <p className="text-sm text-muted-foreground">Instance-owned skills from the site volume.</p>
+      <section className="grid gap-5 px-5 md:px-6">
+        <section className="grid gap-3 md:grid-cols-3">
+          <div className="border border-border/70 bg-background p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+              Skills
+            </p>
+            <p className="mt-2 text-3xl font-semibold">{counts.total}</p>
           </div>
-          <Badge variant="outline">{customSkills.length}</Badge>
+          <div className="border border-border/70 bg-background p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+              Built-In
+            </p>
+            <p className="mt-2 text-3xl font-semibold">{counts.builtIn}</p>
+          </div>
+          <div className="border border-border/70 bg-background p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+              Custom
+            </p>
+            <p className="mt-2 text-3xl font-semibold">{counts.custom}</p>
+          </div>
+        </section>
+
+        <div className="inline-flex h-auto flex-wrap bg-transparent p-0">
+          {viewOptions.map((option) => {
+            const isActive = option.value === activeView;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => setActiveView(option.value)}
+                className={[
+                  "rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors",
+                  isActive
+                    ? "border-border/70 bg-background text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                ].join(" ")}
+              >
+                {option.label}
+                <span className="ml-2 text-muted-foreground">
+                  {option.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
-        {customSkills.map(renderSkill)}
-        {!customSkills.length && !error ? (
-          <div className="border border-border/70 bg-background px-4 py-6 text-sm text-muted-foreground">
-            No custom skills discovered.
+
+        {error ? (
+          <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {error}
           </div>
         ) : null}
-      </section>
 
-      <Collapsible open={isBuiltInOpen} onOpenChange={setIsBuiltInOpen} className="grid gap-3">
-        <CollapsibleTrigger asChild>
-          <Button type="button" variant="outline" className="justify-between">
-            <span>Built-In Skills</span>
-            <span className="flex items-center gap-2 text-muted-foreground">
-              {builtInSkills.length}
-              <ChevronDown className={`h-4 w-4 transition-transform ${isBuiltInOpen ? "rotate-180" : ""}`} />
-            </span>
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="grid gap-3">
-          {builtInSkills.map(renderSkill)}
-          {!builtInSkills.length && !error ? (
-            <div className="border border-border/70 bg-background px-4 py-6 text-sm text-muted-foreground">
-              No built-in skills discovered.
+        {activeView === "custom" ? (
+          <section className="grid gap-3">
+            {customSkills.map(renderSkill)}
+            {!customSkills.length && !error ? (
+              <div className="border border-border/70 bg-background px-4 py-6 text-sm text-muted-foreground">
+                No custom skills discovered.
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {activeView === "built-in" ? (
+          <section className="grid gap-3">
+            {builtInSkills.map(renderSkill)}
+            {!builtInSkills.length && !error ? (
+              <div className="border border-border/70 bg-background px-4 py-6 text-sm text-muted-foreground">
+                No built-in skills discovered.
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        <section className="grid gap-3">
+          {!skills.length && !error ? (
+            <div className="border border-border/70 bg-background px-4 py-8 text-sm text-muted-foreground">
+              No skills discovered.
             </div>
           ) : null}
-        </CollapsibleContent>
-      </Collapsible>
-
-      <section className="grid gap-3">
-        {!skills.length && !error ? (
-          <div className="border border-border/70 bg-background px-4 py-8 text-sm text-muted-foreground">
-            No skills discovered.
-          </div>
-        ) : null}
+        </section>
       </section>
 
       <Dialog open={isViewing} onOpenChange={setIsViewing}>

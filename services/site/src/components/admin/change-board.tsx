@@ -764,56 +764,24 @@ export function ChangeBoard({
 
         <TabsContent value="tasks" className="mt-0 flex-1">
           <section className="min-h-full">
-            <div className="border-b border-border/60 px-5 py-4 md:px-6">
-              <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-              <p className="text-sm text-muted-foreground">
-                View built-in schedules, edit DB-backed cron settings, and run
-                tasks manually.
-              </p>
-            </div>
-
             <TaskRunnerWorkspace />
           </section>
         </TabsContent>
 
         <TabsContent value="skills" className="mt-0 flex-1">
           <section className="min-h-full">
-            <div className="border-b border-border/60 px-5 py-4 md:px-6">
-              <h1 className="text-2xl font-semibold tracking-tight">Skills</h1>
-              <p className="text-sm text-muted-foreground">
-                View built-in and instance custom Codex skills available to
-                Prism.
-              </p>
-            </div>
-
             <SkillsWorkspace />
           </section>
         </TabsContent>
 
         <TabsContent value="workflows" className="mt-0 flex-1">
           <section className="min-h-full">
-            <div className="border-b border-border/60 px-5 py-4 md:px-6">
-              <h1 className="text-2xl font-semibold tracking-tight">
-                Workflows
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                View request workflow definitions and their agent configuration.
-              </p>
-            </div>
-
             <WorkflowsWorkspace />
           </section>
         </TabsContent>
 
         <TabsContent value="hooks" className="mt-0 flex-1">
           <section className="min-h-full">
-            <div className="border-b border-border/60 px-5 py-4 md:px-6">
-              <h1 className="text-2xl font-semibold tracking-tight">Hooks</h1>
-              <p className="text-sm text-muted-foreground">
-                Manage on-demand triggers that create workflow-backed requests.
-              </p>
-            </div>
-
             <HooksWorkspace />
           </section>
         </TabsContent>
