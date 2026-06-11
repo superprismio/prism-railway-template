@@ -97,7 +97,10 @@ export function ChangeBoard({
   const [isSaving, startSaving] = useTransition();
   const [modalError, setModalError] = useState<string | null>(null);
 
-  function updateAdminUrl(next: { tab?: string; request?: ChangeRequestRecord | null }) {
+  function updateAdminUrl(next: {
+    tab?: string;
+    request?: ChangeRequestRecord | null;
+  }) {
     const params = new URLSearchParams(searchParams.toString());
     if (next.tab) {
       params.set("tab", next.tab);
@@ -165,18 +168,27 @@ export function ChangeBoard({
     (request) => workflowStepForRequest(request).type === "terminal",
   ).length;
   const activeCount = data.changeRequests.length - closedCount;
-  const estimatedHumanHours = data.changeRequests.reduce((totals, request) => {
-    const estimate = typeof request.estimatedHumanHours === "number" && Number.isFinite(request.estimatedHumanHours)
-      ? request.estimatedHumanHours
-      : 0;
-    totals.total += estimate;
-    if (workflowStepForRequest(request).type !== "terminal") {
-      totals.active += estimate;
-    }
-    return totals;
-  }, { active: 0, total: 0 });
-  const estimatedHumanHoursActiveLabel = humanHoursLabel(estimatedHumanHours.active);
-  const estimatedHumanHoursTotalLabel = humanHoursLabel(estimatedHumanHours.total);
+  const estimatedHumanHours = data.changeRequests.reduce(
+    (totals, request) => {
+      const estimate =
+        typeof request.estimatedHumanHours === "number" &&
+        Number.isFinite(request.estimatedHumanHours)
+          ? request.estimatedHumanHours
+          : 0;
+      totals.total += estimate;
+      if (workflowStepForRequest(request).type !== "terminal") {
+        totals.active += estimate;
+      }
+      return totals;
+    },
+    { active: 0, total: 0 },
+  );
+  const estimatedHumanHoursActiveLabel = humanHoursLabel(
+    estimatedHumanHours.active,
+  );
+  const estimatedHumanHoursTotalLabel = humanHoursLabel(
+    estimatedHumanHours.total,
+  );
   const runningCount = data.changeRequests.filter(
     (request) => request.workflowRunStatus === "running",
   ).length;
@@ -459,7 +471,7 @@ export function ChangeBoard({
             <form action="/admin/logout" method="post">
               <Button variant="outline" type="submit">
                 <LogOut className="h-4 w-4" />
-                <span className="hidden sm:inline">Exit admin</span>
+                <span className="hidden sm:inline">Logout</span>
               </Button>
             </form>
           </>
@@ -548,7 +560,8 @@ export function ChangeBoard({
             {runningCount ? (
               <div className="mt-3 inline-flex items-center gap-2 border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm text-primary">
                 <LoaderCircle className="h-4 w-4 animate-spin" />
-                Prism is working on {runningCount} request{runningCount === 1 ? "" : "s"}
+                Prism is working on {runningCount} request
+                {runningCount === 1 ? "" : "s"}
               </div>
             ) : null}
           </div>
@@ -707,7 +720,8 @@ export function ChangeBoard({
                       {estimatedHumanHoursActiveLabel ?? "0h human"}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {estimatedHumanHoursTotalLabel ?? "0h human"} total estimated
+                      {estimatedHumanHoursTotalLabel ?? "0h human"} total
+                      estimated
                     </p>
                   </div>
                   <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
