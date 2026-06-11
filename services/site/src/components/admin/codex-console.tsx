@@ -386,7 +386,7 @@ export function CodexConsole({
       {sessionControlsTarget
         ? createPortal(sessionControls, sessionControlsTarget)
         : null}
-      {!sessionControlsTargetId ? (
+      {!sessionControlsTarget ? (
         <div className="border-b border-border/60 px-5 py-4 md:px-6">
           {sessionControls}
         </div>
