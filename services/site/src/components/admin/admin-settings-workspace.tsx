@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useState,
+  useTransition,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Activity,
   Bot,
@@ -18,12 +25,6 @@ import {
   Palette,
 } from "lucide-react";
 
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -113,6 +114,40 @@ type SourceAdapterPolicySettings = {
   platforms: Record<string, SourceAdapterPlatformPolicy>;
 };
 
+type SettingsView = "status" | "config" | "docs";
+
+const settingsViewOptions: Array<{
+  value: SettingsView;
+  label: string;
+  title: string;
+  description: string;
+}> = [
+  {
+    value: "status",
+    label: "Status",
+    title: "Operational Status",
+    description: "Runtime, memory, and target readiness for agent work.",
+  },
+  {
+    value: "config",
+    label: "Configuration",
+    title: "Admin Configuration",
+    description:
+      "Instance identity, access policy, repository targets, and members.",
+  },
+  {
+    value: "docs",
+    label: "Docs",
+    title: "Documentation",
+    description:
+      "Environment setup notes for services that still require Railway variables.",
+  },
+];
+
+function isSettingsView(value: string | null): value is SettingsView {
+  return value === "status" || value === "config" || value === "docs";
+}
+
 const managedRoleOptions: Array<{
   value: RoleSlug;
   label: string;
@@ -168,6 +203,46 @@ function copyBlock(lines: string[]) {
   );
 }
 
+function SettingsSectionHeader({
+  icon,
+  title,
+  description,
+  action,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+      <div>
+        <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
+          {icon}
+          {title}
+        </h3>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      </div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+}
+
+function SettingsViewHeader({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div>
+      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+      <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+    </div>
+  );
+}
+
 function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
   const targetsReady =
     setup.targets.targetAppCount > 0 &&
@@ -178,10 +253,10 @@ function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Activity className="h-4 w-4" />
-          Operational Status
+          System Readiness
         </CardTitle>
         <CardDescription>
-          Runtime, memory, and target readiness for agent work.
+          Current health signals for the services that support agent work.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -250,22 +325,18 @@ function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
         </div>
 
         {!setup.codexRuntime.codexAuthConfigured ? (
-          <Accordion type="single" collapsible>
-            <AccordionItem value="codex-auth">
-              <AccordionTrigger className="py-2 text-sm">
-                Codex device auth setup command
-              </AccordionTrigger>
-              <AccordionContent>
-                {copyBlock([
-                  "railway ssh -s codex-runtime",
-                  "mkdir -p /data/codex",
-                  "export CODEX_HOME=/data/codex",
-                  'export PATH="/app/node_modules/.bin:$PATH"',
-                  "codex login --device-auth",
-                ])}
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+          <div className="grid gap-2">
+            <p className="text-sm font-medium">
+              Codex device auth setup command
+            </p>
+            {copyBlock([
+              "railway ssh -s codex-runtime",
+              "mkdir -p /data/codex",
+              "export CODEX_HOME=/data/codex",
+              'export PATH="/app/node_modules/.bin:$PATH"',
+              "codex login --device-auth",
+            ])}
+          </div>
         ) : null}
       </CardContent>
     </Card>
@@ -280,79 +351,96 @@ function EnvironmentInstructions() {
   );
 
   return (
-    <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
+    <section className="grid gap-4">
+      <div>
+        <h3 className="flex items-center gap-2 text-base font-semibold tracking-tight">
           <KeyRound className="h-4 w-4" />
-          Documentation
-        </CardTitle>
-        <CardDescription>
-          Environment setup notes for services that still require Railway variables.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Accordion
-          type="multiple"
-          className="rounded-none border border-border/60 px-4"
-        >
-          <AccordionItem value="communication-adapter">
-            <AccordionTrigger>Communication Adapter</AccordionTrigger>
-            <AccordionContent>
-              {serviceLabel("communication adapter")}
-              {copyBlock([
-                'TELEGRAM_BOT_TOKEN=""',
-                'DISCORD_BOT_TOKEN=""',
-                'DISCORD_GUILD_ID=""',
-                'DISCORD_APPLICATION_ID=""',
-              ])}
-              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                Telegram only needs a bot token for first setup. Discord needs
-                the bot token and guild ID for chat, sync, slash commands, and voice.
+          Service Setup
+        </h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Copy reference values into the owning service environment when needed.
+        </p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-1 xl:grid-cols-2">
+        <div className="grid gap-3 rounded-none border border-border/60 p-4">
+          <div>
+            <h4 className="font-medium">Communication Adapter</h4>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              Telegram only needs a bot token for first setup. Discord needs
+              bot, guild, and application credentials.
+            </p>
+          </div>
+          <div>
+            {serviceLabel("communication adapter")}
+            {copyBlock([
+              'TELEGRAM_BOT_TOKEN=""',
+              'DISCORD_BOT_TOKEN=""',
+              'DISCORD_GUILD_ID=""',
+              'DISCORD_APPLICATION_ID=""',
+            ])}
+          </div>
+        </div>
+
+        <div className="grid gap-3 rounded-none border border-border/60 p-4">
+          <div>
+            <h4 className="font-medium">Discord Memory Buckets</h4>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              Inspect live Discord categories before enabling recurring sync.
+            </p>
+          </div>
+          <div>
+            {serviceLabel("communication adapter and prism-memory")}
+            <div className="space-y-2 text-xs leading-relaxed text-muted-foreground">
+              <p>
+                Use the communication adapter inventory endpoint to inspect
+                Discord categories, then map category IDs to Prism Memory
+                buckets.
               </p>
-            </AccordionContent>
-          </AccordionItem>
-          <AccordionItem value="discord-memory-buckets">
-            <AccordionTrigger>Discord Memory Buckets</AccordionTrigger>
-            <AccordionContent>
-              {serviceLabel("communication adapter and prism-memory")}
-              <div className="space-y-2 text-xs leading-relaxed text-muted-foreground">
-                <p>
-                  Use the communication adapter inventory endpoint to inspect
-                  Discord categories, then map category IDs to Prism Memory buckets.
-                </p>
-                <p>
-                  If messages were collected before the mapping was corrected, run
-                  <code> /ops/memory/repair-discord-buckets</code> with
-                  <code> dry_run:true</code>, then rerun with
-                  <code> rebuild:true</code>.
-                </p>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-          <AccordionItem value="voice">
-            <AccordionTrigger>Voice Optional</AccordionTrigger>
-            <AccordionContent>
-              {serviceLabel("communication adapter")}
-              {copyBlock([
-                'VOICE_DAVE_ENCRYPTION="true"',
-                'VOICE_RECORDING_WARNING_MINUTES="50"',
-                'VOICE_RECORDING_MAX_MINUTES="60"',
-                'VOICE_TRANSCRIPTION_BASE_URL="https://api.venice.ai/api/v1/audio/transcriptions"',
-                'VOICE_TRANSCRIPTION_API_KEY=""',
-                'VOICE_TRANSCRIPTION_MODEL="nvidia/parakeet-tdt-0.6b-v3"',
-              ])}
-            </AccordionContent>
-          </AccordionItem>
-          <AccordionItem value="github-push" className="border-b-0">
-            <AccordionTrigger>GitHub Push Access</AccordionTrigger>
-            <AccordionContent>
-              {serviceLabel("codex-runtime")}
-              {copyBlock(['TARGET_REPO_GITHUB_TOKEN=""'])}
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-      </CardContent>
-    </Card>
+              <p>
+                If messages were collected before the mapping was corrected, run
+                <code> /ops/memory/repair-discord-buckets</code> with
+                <code> dry_run:true</code>, then rerun with
+                <code> rebuild:true</code>.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 rounded-none border border-border/60 p-4">
+          <div>
+            <h4 className="font-medium">Voice Optional</h4>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              Discord recording stays disabled until the transcription key is
+              set.
+            </p>
+          </div>
+          <div>
+            {serviceLabel("communication adapter")}
+            {copyBlock([
+              'VOICE_DAVE_ENCRYPTION="true"',
+              'VOICE_RECORDING_WARNING_MINUTES="50"',
+              'VOICE_RECORDING_MAX_MINUTES="60"',
+              'VOICE_TRANSCRIPTION_BASE_URL="https://api.venice.ai/api/v1/audio/transcriptions"',
+              'VOICE_TRANSCRIPTION_API_KEY=""',
+              'VOICE_TRANSCRIPTION_MODEL="nvidia/parakeet-tdt-0.6b-v3"',
+            ])}
+          </div>
+        </div>
+
+        <div className="grid gap-3 rounded-none border border-border/60 p-4">
+          <div>
+            <h4 className="font-medium">GitHub Push Access</h4>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              Only needed for private repositories or branch pushes.
+            </p>
+          </div>
+          <div>
+            {serviceLabel("codex-runtime")}
+            {copyBlock(['TARGET_REPO_GITHUB_TOKEN=""'])}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -409,101 +497,95 @@ function BrandingSettings({
   }
 
   return (
-    <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Palette className="h-4 w-4" />
-          Instance Branding
-        </CardTitle>
-        <CardDescription>
-          Set the header name, workspace label, and logo for this instance.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-4">
-        {error ? (
-          <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-            {error}
+    <section className="grid gap-4">
+      <SettingsSectionHeader
+        icon={<Palette className="h-4 w-4" />}
+        title="Instance Branding"
+        description="Set the header name, workspace label, and logo for this instance."
+      />
+      {error ? (
+        <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
+      <div className="grid gap-4 md:grid-cols-[auto_minmax(0,1fr)]">
+        <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-none border border-border/70 bg-muted/40">
+          {draft.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={draft.logoUrl}
+              alt={draft.logoAlt || "Logo preview"}
+              className="h-full w-full object-contain p-1"
+            />
+          ) : (
+            <Palette className="h-5 w-5 text-muted-foreground" />
+          )}
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="brand-name">Brand name</Label>
+            <Input
+              id="brand-name"
+              value={draft.brandName}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  brandName: event.target.value,
+                }))
+              }
+              placeholder="Prism Refactory"
+            />
           </div>
-        ) : null}
-        <div className="grid gap-4 md:grid-cols-[auto_minmax(0,1fr)]">
-          <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-none border border-border/70 bg-muted/40">
-            {draft.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={draft.logoUrl}
-                alt={draft.logoAlt || "Logo preview"}
-                className="h-full w-full object-contain p-1"
-              />
-            ) : (
-              <Palette className="h-5 w-5 text-muted-foreground" />
-            )}
+          <div className="space-y-2">
+            <Label htmlFor="workspace-label">Workspace label</Label>
+            <Input
+              id="workspace-label"
+              value={draft.workspaceLabel}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  workspaceLabel: event.target.value,
+                }))
+              }
+              placeholder="Admin workspace"
+            />
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="brand-name">Brand name</Label>
-              <Input
-                id="brand-name"
-                value={draft.brandName}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    brandName: event.target.value,
-                  }))
-                }
-                placeholder="Prism Refactory"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="workspace-label">Workspace label</Label>
-              <Input
-                id="workspace-label"
-                value={draft.workspaceLabel}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    workspaceLabel: event.target.value,
-                  }))
-                }
-                placeholder="Admin workspace"
-              />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="logo-url">Logo URL</Label>
-              <Input
-                id="logo-url"
-                value={draft.logoUrl}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    logoUrl: event.target.value,
-                  }))
-                }
-                placeholder="https://... or data:image/..."
-              />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="logo-alt">Logo alt text</Label>
-              <Input
-                id="logo-alt"
-                value={draft.logoAlt}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    logoAlt: event.target.value,
-                  }))
-                }
-                placeholder="Workspace logo"
-              />
-            </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="logo-url">Logo URL</Label>
+            <Input
+              id="logo-url"
+              value={draft.logoUrl}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  logoUrl: event.target.value,
+                }))
+              }
+              placeholder="https://... or data:image/..."
+            />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="logo-alt">Logo alt text</Label>
+            <Input
+              id="logo-alt"
+              value={draft.logoAlt}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  logoAlt: event.target.value,
+                }))
+              }
+              placeholder="Workspace logo"
+            />
           </div>
         </div>
-        <div className="flex justify-end">
-          <Button type="button" onClick={saveBranding} disabled={isPending}>
-            Save branding
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+      <div className="flex justify-end">
+        <Button type="button" onClick={saveBranding} disabled={isPending}>
+          Save branding
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -724,218 +806,209 @@ function SourceAdapterPolicySettings() {
   }
 
   return (
-    <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <ShieldAlert className="h-4 w-4" />
-          Source Adapter Access
-        </CardTitle>
-        <CardDescription>
-          Configure public chat access without changing environment variables or
-          rebuilding services.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-4">
-        {error ? (
-          <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-            {error}
+    <section className="grid gap-4 border-t border-border/60 pt-5">
+      <SettingsSectionHeader
+        icon={<ShieldAlert className="h-4 w-4" />}
+        title="Source Adapter Access"
+        description="Configure public chat access without changing environment variables or rebuilding services."
+      />
+      {error ? (
+        <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
+      {platformPolicy ? (
+        <>
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="space-y-2">
+              <Label>Platform</Label>
+              <Select
+                value={selectedPlatform}
+                onValueChange={(value) => {
+                  setSelectedPlatform(value);
+                  const nextPlatform = policy?.platforms[value];
+                  setTargetsJson(formatPolicyMap(nextPlatform?.targets ?? {}));
+                  setGroupsJson(formatPolicyMap(nextPlatform?.groups ?? {}));
+                  setUsersJson(formatPolicyMap(nextPlatform?.users ?? {}));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {platformOptions.map((platform) => (
+                    <SelectItem key={platform} value={platform}>
+                      {sourceAdapterPlatformProfile(platform).label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {platformProfile.description}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Default mode</Label>
+              <Select
+                value={platformPolicy.defaultMode}
+                onValueChange={(value) =>
+                  updatePlatformPolicy((current) => ({
+                    ...current,
+                    defaultMode: value as SourceAdapterAccessMode,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {accessModeOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {
+                  accessModeOptions.find(
+                    (option) => option.value === platformPolicy.defaultMode,
+                  )?.description
+                }
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="source-rate-window">Rate window seconds</Label>
+              <Input
+                id="source-rate-window"
+                type="number"
+                min={1}
+                value={platformPolicy.defaultRateLimit.windowSeconds}
+                onChange={(event) =>
+                  updatePlatformPolicy((current) => ({
+                    ...current,
+                    defaultRateLimit: {
+                      ...current.defaultRateLimit,
+                      windowSeconds:
+                        Number.parseInt(event.target.value, 10) ||
+                        current.defaultRateLimit.windowSeconds,
+                    },
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="source-rate-max">Max requests</Label>
+              <Input
+                id="source-rate-max"
+                type="number"
+                min={1}
+                value={platformPolicy.defaultRateLimit.maxRequests}
+                onChange={(event) =>
+                  updatePlatformPolicy((current) => ({
+                    ...current,
+                    defaultRateLimit: {
+                      ...current.defaultRateLimit,
+                      maxRequests:
+                        Number.parseInt(event.target.value, 10) ||
+                        current.defaultRateLimit.maxRequests,
+                    },
+                  }))
+                }
+              />
+            </div>
           </div>
-        ) : null}
-        {platformPolicy ? (
-          <>
-            <div className="grid gap-3 md:grid-cols-4">
-              <div className="space-y-2">
-                <Label>Platform</Label>
-                <Select
-                  value={selectedPlatform}
-                  onValueChange={(value) => {
-                    setSelectedPlatform(value);
-                    const nextPlatform = policy?.platforms[value];
-                    setTargetsJson(
-                      formatPolicyMap(nextPlatform?.targets ?? {}),
-                    );
-                    setGroupsJson(formatPolicyMap(nextPlatform?.groups ?? {}));
-                    setUsersJson(formatPolicyMap(nextPlatform?.users ?? {}));
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {platformOptions.map((platform) => (
-                      <SelectItem key={platform} value={platform}>
-                        {sourceAdapterPlatformProfile(platform).label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {platformProfile.description}
-                </p>
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Default
               </div>
-              <div className="space-y-2">
-                <Label>Default mode</Label>
-                <Select
-                  value={platformPolicy.defaultMode}
-                  onValueChange={(value) =>
-                    updatePlatformPolicy((current) => ({
-                      ...current,
-                      defaultMode: value as SourceAdapterAccessMode,
-                    }))
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accessModeOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {
-                    accessModeOptions.find(
-                      (option) => option.value === platformPolicy.defaultMode,
-                    )?.description
-                  }
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="source-rate-window">Rate window seconds</Label>
-                <Input
-                  id="source-rate-window"
-                  type="number"
-                  min={1}
-                  value={platformPolicy.defaultRateLimit.windowSeconds}
-                  onChange={(event) =>
-                    updatePlatformPolicy((current) => ({
-                      ...current,
-                      defaultRateLimit: {
-                        ...current.defaultRateLimit,
-                        windowSeconds:
-                          Number.parseInt(event.target.value, 10) ||
-                          current.defaultRateLimit.windowSeconds,
-                      },
-                    }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="source-rate-max">Max requests</Label>
-                <Input
-                  id="source-rate-max"
-                  type="number"
-                  min={1}
-                  value={platformPolicy.defaultRateLimit.maxRequests}
-                  onChange={(event) =>
-                    updatePlatformPolicy((current) => ({
-                      ...current,
-                      defaultRateLimit: {
-                        ...current.defaultRateLimit,
-                        maxRequests:
-                          Number.parseInt(event.target.value, 10) ||
-                          current.defaultRateLimit.maxRequests,
-                      },
-                    }))
-                  }
-                />
+              <div className="mt-1 text-sm font-medium">
+                {
+                  accessModeOptions.find(
+                    (option) => option.value === platformPolicy.defaultMode,
+                  )?.label
+                }
               </div>
             </div>
-            <div className="grid gap-3 md:grid-cols-4">
-              <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
-                <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  Default
-                </div>
-                <div className="mt-1 text-sm font-medium">
-                  {
-                    accessModeOptions.find(
-                      (option) => option.value === platformPolicy.defaultMode,
-                    )?.label
-                  }
-                </div>
+            <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Target rules
               </div>
-              <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
-                <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  Target rules
-                </div>
-                <div className="mt-1 text-sm font-medium">
-                  {Object.keys(platformPolicy.targets).length}
-                </div>
-              </div>
-              <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
-                <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  Group rules
-                </div>
-                <div className="mt-1 text-sm font-medium">
-                  {Object.keys(platformPolicy.groups).length}
-                </div>
-              </div>
-              <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
-                <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                  User rules
-                </div>
-                <div className="mt-1 text-sm font-medium">
-                  {Object.keys(platformPolicy.users).length}
-                </div>
+              <div className="mt-1 text-sm font-medium">
+                {Object.keys(platformPolicy.targets).length}
               </div>
             </div>
-            <div className="rounded-none border border-border/60 bg-background/40 px-4 py-3 text-sm text-muted-foreground">
-              {platformProfile.promptHelp}
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label htmlFor="source-target-rules">Targets</Label>
-                <Textarea
-                  id="source-target-rules"
-                  className="min-h-40 font-mono text-xs"
-                  value={targetsJson}
-                  onChange={(event) => setTargetsJson(event.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {platformProfile.targetHelp}
-                </p>
+            <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Group rules
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="source-group-rules">Groups</Label>
-                <Textarea
-                  id="source-group-rules"
-                  className="min-h-40 font-mono text-xs"
-                  value={groupsJson}
-                  onChange={(event) => setGroupsJson(event.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {platformProfile.groupHelp}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="source-user-rules">Users</Label>
-                <Textarea
-                  id="source-user-rules"
-                  className="min-h-40 font-mono text-xs"
-                  value={usersJson}
-                  onChange={(event) => setUsersJson(event.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {platformProfile.userHelp}
-                </p>
+              <div className="mt-1 text-sm font-medium">
+                {Object.keys(platformPolicy.groups).length}
               </div>
             </div>
-            <div className="flex justify-end">
-              <Button type="button" onClick={savePolicy} disabled={isPending}>
-                Save source policy
-              </Button>
+            <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
+              <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                User rules
+              </div>
+              <div className="mt-1 text-sm font-medium">
+                {Object.keys(platformPolicy.users).length}
+              </div>
             </div>
-          </>
-        ) : (
-          <div className="rounded-none border border-border/60 px-4 py-3 text-sm text-muted-foreground">
-            Loading source adapter policy.
           </div>
-        )}
-      </CardContent>
-    </Card>
+          <div className="rounded-none border border-border/60 bg-background/40 px-4 py-3 text-sm text-muted-foreground">
+            {platformProfile.promptHelp}
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="source-target-rules">Targets</Label>
+              <Textarea
+                id="source-target-rules"
+                className="min-h-40 font-mono text-xs"
+                value={targetsJson}
+                onChange={(event) => setTargetsJson(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {platformProfile.targetHelp}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="source-group-rules">Groups</Label>
+              <Textarea
+                id="source-group-rules"
+                className="min-h-40 font-mono text-xs"
+                value={groupsJson}
+                onChange={(event) => setGroupsJson(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {platformProfile.groupHelp}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="source-user-rules">Users</Label>
+              <Textarea
+                id="source-user-rules"
+                className="min-h-40 font-mono text-xs"
+                value={usersJson}
+                onChange={(event) => setUsersJson(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {platformProfile.userHelp}
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button type="button" onClick={savePolicy} disabled={isPending}>
+              Save source policy
+            </Button>
+          </div>
+        </>
+      ) : (
+        <div className="rounded-none border border-border/60 px-4 py-3 text-sm text-muted-foreground">
+          Loading source adapter policy.
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -954,7 +1027,7 @@ function MembersAndRoles({ canManageUsers }: { canManageUsers: boolean }) {
   } | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  async function loadMembers() {
+  const loadMembers = useCallback(async () => {
     if (!canManageUsers) return;
     try {
       const response = await fetch("/admin/members", { cache: "no-store" });
@@ -975,11 +1048,11 @@ function MembersAndRoles({ canManageUsers }: { canManageUsers: boolean }) {
           : "Could not load members",
       );
     }
-  }
+  }, [canManageUsers]);
 
   useEffect(() => {
     void loadMembers();
-  }, [canManageUsers]);
+  }, [loadMembers]);
 
   function saveMemberRoles(member: AdminMember, roleSlugs: RoleSlug[]) {
     const normalizedRoles = roleSlugs.length ? roleSlugs : ["member" as const];
@@ -1013,6 +1086,7 @@ function MembersAndRoles({ canManageUsers }: { canManageUsers: boolean }) {
   }
 
   function openEditRoles(member: AdminMember) {
+    setError(null);
     setEditingMember(member);
     setEditingRoles(member.roleSlugs);
   }
@@ -1108,39 +1182,37 @@ function MembersAndRoles({ canManageUsers }: { canManageUsers: boolean }) {
 
   if (!canManageUsers) {
     return (
-      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="h-4 w-4" />
-            Members & Roles
-          </CardTitle>
-          <CardDescription>
-            Only admins can manage member roles.
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <section className="grid gap-4 border-t border-border/60 pt-5">
+        <SettingsSectionHeader
+          icon={<Users className="h-4 w-4" />}
+          title="Members & Roles"
+          description="Only admins can manage member roles."
+        />
+      </section>
     );
   }
 
   return (
     <>
-      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Users className="h-4 w-4" />
-              Members & Roles
-            </CardTitle>
-            <CardDescription>
-              Manage app roles and account claim/reset links for workspace users.
-            </CardDescription>
-          </div>
-          <Button type="button" onClick={() => setIsAddMemberOpen(true)}>
-            <UserPlus className="h-4 w-4" />
-            Add member
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-5">
+      <section className="grid gap-4 border-t border-border/60 pt-5">
+        <SettingsSectionHeader
+          icon={<Users className="h-4 w-4" />}
+          title="Members & Roles"
+          description="Manage app roles and account claim/reset links for workspace users."
+          action={
+            <Button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setIsAddMemberOpen(true);
+              }}
+            >
+              <UserPlus className="h-4 w-4" />
+              Add member
+            </Button>
+          }
+        />
+        <div className="space-y-5">
           {error ? (
             <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               {error}
@@ -1201,7 +1273,9 @@ function MembersAndRoles({ canManageUsers }: { canManageUsers: boolean }) {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={member.claimedAt ? "secondary" : "outline"}>
+                      <Badge
+                        variant={member.claimedAt ? "secondary" : "outline"}
+                      >
                         {member.claimedAt ? "Claimed" : "Unclaimed"}
                       </Badge>
                     </TableCell>
@@ -1246,8 +1320,8 @@ function MembersAndRoles({ canManageUsers }: { canManageUsers: boolean }) {
               </TableBody>
             </Table>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
         <DialogContent>
@@ -1257,6 +1331,11 @@ function MembersAndRoles({ canManageUsers }: { canManageUsers: boolean }) {
               Create a managed account and generate an invite link.
             </DialogDescription>
           </DialogHeader>
+          {error ? (
+            <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          ) : null}
           <div className="grid gap-4">
             <div className="space-y-2">
               <Label htmlFor="member-email">Email</Label>
@@ -1308,6 +1387,11 @@ function MembersAndRoles({ canManageUsers }: { canManageUsers: boolean }) {
                 editingMember?.id}
             </DialogDescription>
           </DialogHeader>
+          {error ? (
+            <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          ) : null}
           <div className="grid gap-2">
             {managedRoleOptions.map((role) => (
               <label
@@ -1341,7 +1425,9 @@ function MembersAndRoles({ canManageUsers }: { canManageUsers: boolean }) {
             <Button
               type="button"
               onClick={() =>
-                editingMember ? saveMemberRoles(editingMember, editingRoles) : null
+                editingMember
+                  ? saveMemberRoles(editingMember, editingRoles)
+                  : null
               }
               disabled={isPending || !editingMember}
             >
@@ -1528,6 +1614,7 @@ function RepositorySetup({
   }
 
   function openEditTarget(targetApp: TargetAppRecord) {
+    setError(null);
     setEditingTarget(targetApp);
   }
 
@@ -1535,136 +1622,146 @@ function RepositorySetup({
 
   return (
     <>
-      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <GitBranch className="h-4 w-4" />
-              Repository Targets
-            </CardTitle>
-            <CardDescription>
-              Repositories and default environments available to change requests.
-            </CardDescription>
+      <section className="grid gap-4 border-t border-border/60 pt-5">
+        <SettingsSectionHeader
+          icon={<GitBranch className="h-4 w-4" />}
+          title="Repository Targets"
+          description="Repositories and default environments available to change requests."
+          action={
+            <Button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setIsAddTargetOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              Add target
+            </Button>
+          }
+        />
+        {error ? (
+          <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            {error}
           </div>
-          <Button type="button" onClick={() => setIsAddTargetOpen(true)}>
-            <Plus className="h-4 w-4" />
-            Add target
-          </Button>
-        </CardHeader>
-        <CardContent className="grid gap-3">
-          {error ? (
-            <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-              {error}
-            </div>
-          ) : null}
-          <div className="rounded-none border border-border/70">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Target</TableHead>
-                  <TableHead>Repo</TableHead>
-                  <TableHead>Branch</TableHead>
-                  <TableHead>Environments</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {targetApps.map((targetApp) => {
-                  const environments = targetEnvironments.filter(
-                    (environment) => environment.targetAppId === targetApp.id,
-                  );
-                  const defaultEnvironment =
-                    environments.find(
-                      (environment) => environment.isDefaultForAgent,
-                    ) ?? environments[0];
-                  const writableCount = environments.filter(
-                    (environment) => environment.agentWritable,
-                  ).length;
+        ) : null}
+        <div className="rounded-none border border-border/70">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Target</TableHead>
+                <TableHead>Repo</TableHead>
+                <TableHead>Branch</TableHead>
+                <TableHead>Environments</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {targetApps.map((targetApp) => {
+                const environments = targetEnvironments.filter(
+                  (environment) => environment.targetAppId === targetApp.id,
+                );
+                const defaultEnvironment =
+                  environments.find(
+                    (environment) => environment.isDefaultForAgent,
+                  ) ?? environments[0];
+                const writableCount = environments.filter(
+                  (environment) => environment.agentWritable,
+                ).length;
 
-                  return (
-                    <TableRow key={targetApp.id}>
-                      <TableCell>
-                        <div className="font-medium">{targetApp.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {targetApp.slug}
-                        </div>
-                      </TableCell>
-                      <TableCell className="max-w-[280px] truncate text-muted-foreground">
-                        {targetApp.repoUrl ?? "No repo URL"}
-                      </TableCell>
-                      <TableCell>
-                        {defaultEnvironment?.branch ??
-                          targetApp.defaultBranch ??
-                          "main"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="outline">
-                            <Boxes className="mr-1 h-3 w-3" />
-                            {environments.length}
-                          </Badge>
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            {writableCount ? (
-                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                            ) : (
-                              <ShieldAlert className="h-3.5 w-3.5 text-amber-700" />
-                            )}
-                            {writableCount} writable
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={targetApp.agentEnabled ? "secondary" : "muted"}
-                        >
-                          {targetApp.agentEnabled ? "Active" : "Inactive"}
+                return (
+                  <TableRow key={targetApp.id}>
+                    <TableCell>
+                      <div className="font-medium">{targetApp.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {targetApp.slug}
+                      </div>
+                    </TableCell>
+                    <TableCell className="max-w-[280px] truncate text-muted-foreground">
+                      {targetApp.repoUrl ?? "No repo URL"}
+                    </TableCell>
+                    <TableCell>
+                      {defaultEnvironment?.branch ??
+                        targetApp.defaultBranch ??
+                        "main"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">
+                          <Boxes className="mr-1 h-3 w-3" />
+                          {environments.length}
                         </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex justify-end">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openEditTarget(targetApp)}
-                          >
-                            <Pencil className="h-4 w-4" />
-                            Edit
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-                {!targetApps.length ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="h-24 text-center text-muted-foreground"
-                    >
-                      No repository targets configured.
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          {writableCount ? (
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                          ) : (
+                            <ShieldAlert className="h-3.5 w-3.5 text-amber-700" />
+                          )}
+                          {writableCount} writable
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={targetApp.agentEnabled ? "secondary" : "muted"}
+                      >
+                        {targetApp.agentEnabled ? "Active" : "Inactive"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openEditTarget(targetApp)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Edit
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
-                ) : null}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+                );
+              })}
+              {!targetApps.length ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    No repository targets configured.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </div>
+      </section>
 
       <Dialog open={isAddTargetOpen} onOpenChange={setIsAddTargetOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add repository target</DialogTitle>
             <DialogDescription>
-              Create one Codex target. Change request branches start from the target branch.
+              Create one Codex target. Change request branches start from the
+              target branch.
             </DialogDescription>
           </DialogHeader>
-          <form action="/admin/target-apps" method="post" className="grid gap-4">
+          <form
+            action="/admin/target-apps"
+            method="post"
+            className="grid gap-4"
+          >
             <div className="space-y-2">
               <Label htmlFor="new-target-name">Name</Label>
-              <Input id="new-target-name" name="name" placeholder="DAOhaus Admin" required />
+              <Input
+                id="new-target-name"
+                name="name"
+                placeholder="DAOhaus Admin"
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="new-target-repo">GitHub Repo URL</Label>
@@ -1677,7 +1774,11 @@ function RepositorySetup({
             </div>
             <div className="space-y-2">
               <Label htmlFor="new-target-branch">Target Branch</Label>
-              <Input id="new-target-branch" name="defaultBranch" defaultValue="main" />
+              <Input
+                id="new-target-branch"
+                name="defaultBranch"
+                defaultValue="main"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="new-target-description">Description</Label>
@@ -1717,16 +1818,25 @@ function RepositorySetup({
               {editingTarget?.name ?? "Repository target"}
             </DialogDescription>
           </DialogHeader>
+          {error ? (
+            <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          ) : null}
           {editingTarget && editingDraft ? (
             <div className="grid gap-4">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor={`target-name-${editingTarget.id}`}>Name</Label>
+                  <Label htmlFor={`target-name-${editingTarget.id}`}>
+                    Name
+                  </Label>
                   <Input
                     id={`target-name-${editingTarget.id}`}
                     value={editingDraft.name}
                     onChange={(event) =>
-                      updateDraft(editingTarget.id, { name: event.target.value })
+                      updateDraft(editingTarget.id, {
+                        name: event.target.value,
+                      })
                     }
                   />
                 </div>
@@ -1752,7 +1862,9 @@ function RepositorySetup({
                     id={`target-repo-${editingTarget.id}`}
                     value={editingDraft.repoUrl}
                     onChange={(event) =>
-                      updateDraft(editingTarget.id, { repoUrl: event.target.value })
+                      updateDraft(editingTarget.id, {
+                        repoUrl: event.target.value,
+                      })
                     }
                     placeholder="https://github.com/org/repo.git"
                   />
@@ -1835,35 +1947,83 @@ export function AdminSettingsWorkspace({
     capabilities: Capability[];
   };
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const canManageUsers = session.capabilities.includes("canManageUsers");
+  const settingsParam = searchParams.get("settings");
+  const [activeView, setActiveView] = useState<SettingsView>(() =>
+    isSettingsView(settingsParam) ? settingsParam : "status",
+  );
+  const activeViewMeta =
+    settingsViewOptions.find((option) => option.value === activeView) ??
+    settingsViewOptions[0];
+
+  useEffect(() => {
+    if (isSettingsView(settingsParam) && settingsParam !== activeView) {
+      setActiveView(settingsParam);
+    } else if (!settingsParam && activeView !== "status") {
+      setActiveView("status");
+    }
+  }, [activeView, settingsParam]);
+
+  function selectSettingsView(view: SettingsView) {
+    setActiveView(view);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "settings");
+    params.set("settings", view);
+    router.replace(`/admin?${params.toString()}`, { scroll: false });
+  }
 
   return (
-    <div className="grid gap-4">
-      <section className="px-5 py-4 md:px-6">
-        <SetupStatus setup={setup} />
-      </section>
-      <section className="grid gap-4 border-t border-border/60 px-5 py-4 md:px-6">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">
-            Admin Configuration
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Instance identity, access policy, repository targets, and members.
-          </p>
+    <div className="grid">
+      <div className="border-b border-border/60 px-5 py-3 md:px-6">
+        <div className="inline-flex h-auto flex-wrap bg-transparent p-0">
+          {settingsViewOptions.map((option) => {
+            const isActive = option.value === activeView;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => selectSettingsView(option.value)}
+                className={[
+                  "rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors",
+                  isActive
+                    ? "border-border/70 bg-background text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                ].join(" ")}
+              >
+                {option.label}
+              </button>
+            );
+          })}
         </div>
-        <BrandingSettings
-          branding={branding}
-          onBrandingChange={onBrandingChange}
+      </div>
+
+      <section className="grid gap-5 px-5 py-5 md:px-6">
+        <SettingsViewHeader
+          title={activeViewMeta.title}
+          description={activeViewMeta.description}
         />
-        <SourceAdapterPolicySettings />
-        <RepositorySetup
-          targetApps={targetApps}
-          targetEnvironments={targetEnvironments}
-        />
-        <MembersAndRoles canManageUsers={canManageUsers} />
-      </section>
-      <section className="border-t border-border/60 px-5 py-4 md:px-6">
-        <EnvironmentInstructions />
+
+        {activeView === "status" ? <SetupStatus setup={setup} /> : null}
+
+        {activeView === "config" ? (
+          <div className="grid gap-5">
+            <BrandingSettings
+              branding={branding}
+              onBrandingChange={onBrandingChange}
+            />
+            <MembersAndRoles canManageUsers={canManageUsers} />
+            <RepositorySetup
+              targetApps={targetApps}
+              targetEnvironments={targetEnvironments}
+            />
+            <SourceAdapterPolicySettings />
+          </div>
+        ) : null}
+
+        {activeView === "docs" ? <EnvironmentInstructions /> : null}
       </section>
     </div>
   );
