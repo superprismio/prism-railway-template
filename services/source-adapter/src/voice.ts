@@ -141,6 +141,14 @@ type SpeakerTranscript = {
   segments: TranscriptionSegment[];
 };
 
+type SkippedTranscriptionChunk = {
+  speaker: string;
+  speakerId: string;
+  chunkIndex: number;
+  fileName: string;
+  reason: string;
+};
+
 type SessionTranscriptArtifacts = {
   speakerTranscripts: SpeakerTranscript[];
   chatMessages: TranscriptionSegment[];
@@ -148,6 +156,7 @@ type SessionTranscriptArtifacts = {
   mergedTranscript: string;
   transcriptJsonPath: string;
   transcriptMarkdownPath: string;
+  skippedChunks?: SkippedTranscriptionChunk[];
 };
 
 type SessionSummary = {
@@ -185,6 +194,8 @@ type VoiceTranscriptionResponse = {
 };
 
 type JsonObject = Record<string, unknown>;
+
+const MIN_TRANSCRIBABLE_AUDIO_BYTES = 16 * 1024;
 
 type VoiceConnectionState = {
   channelId: string;
@@ -1499,13 +1510,48 @@ export class DiscordVoiceManager {
   ): Promise<SessionTranscriptArtifacts | null> {
     const chatMessages = await this.fetchVoiceChannelChatSegments(session, metadata.endedAt);
     const speakerTranscripts: SpeakerTranscript[] = [];
+    const skippedChunks: SkippedTranscriptionChunk[] = [];
 
     if (this.voiceTranscriptionApiKey()) {
       for (const speaker of metadata.speakers) {
         const segments: TranscriptionSegment[] = [];
         for (const chunk of speaker.chunks) {
           const chunkPath = path.join(session.flacDir, chunk.fileName);
-          const result = await this.transcribeChunk(chunkPath);
+          const chunkStat = await fs.stat(chunkPath).catch(() => null);
+          if (!chunkStat || chunkStat.size < MIN_TRANSCRIBABLE_AUDIO_BYTES) {
+            const reason = chunkStat ? `audio chunk too small (${chunkStat.size} bytes)` : "audio chunk missing";
+            skippedChunks.push({
+              speaker: speaker.username,
+              speakerId: speaker.userId,
+              chunkIndex: chunk.index,
+              fileName: chunk.fileName,
+              reason,
+            });
+            console.warn(
+              `[discord-adapter] skipped voice transcription chunk session=${session.sessionId} user=${speaker.userId} chunk=${chunk.fileName}: ${reason}`,
+            );
+            continue;
+          }
+          let result: VoiceTranscriptionResponse;
+          try {
+            result = await this.transcribeChunk(chunkPath);
+          } catch (error) {
+            if (!this.isSkippableTranscriptionError(error)) {
+              throw error;
+            }
+            const reason = this.describeError(error);
+            skippedChunks.push({
+              speaker: speaker.username,
+              speakerId: speaker.userId,
+              chunkIndex: chunk.index,
+              fileName: chunk.fileName,
+              reason,
+            });
+            console.warn(
+              `[discord-adapter] skipped voice transcription chunk session=${session.sessionId} user=${speaker.userId} chunk=${chunk.fileName}: ${reason}`,
+            );
+            continue;
+          }
           const offsetSeconds = chunk.startedAt
             ? voiceOffsetSeconds(chunk.startedAt, session.startedAt)
             : voiceOffsetSeconds(speaker.firstAudioAt ?? speaker.startedAt, session.startedAt) + (chunk.startMs ?? 0) / 1000;
@@ -1574,10 +1620,20 @@ export class DiscordVoiceManager {
       chatMessages,
       mergedSegments,
       mergedTranscript,
+      skippedChunks,
     };
 
     const transcriptJsonPath = path.join(session.transcriptDir, "transcript.json");
     const transcriptMarkdownPath = path.join(session.transcriptDir, "transcript.md");
+    const skippedChunkLines =
+      skippedChunks.length > 0
+        ? [
+            "## Skipped Audio Chunks",
+            "",
+            ...skippedChunks.map((chunk) => `- ${chunk.speaker} chunk ${chunk.chunkIndex} (${chunk.fileName}): ${chunk.reason}`),
+            "",
+          ]
+        : [];
     await fs.writeFile(transcriptJsonPath, `${JSON.stringify(transcriptPayload, null, 2)}\n`, "utf8");
     await fs.writeFile(
       transcriptMarkdownPath,
@@ -1590,6 +1646,7 @@ export class DiscordVoiceManager {
         `- Started: ${new Date(metadata.startedAt).toISOString()}`,
         `- Ended: ${new Date(metadata.endedAt).toISOString()}`,
         "",
+        ...skippedChunkLines,
         mergedTranscript || "_No transcript content generated._",
         "",
       ].join("\n"),
@@ -1982,6 +2039,17 @@ export class DiscordVoiceManager {
       throw new Error(`Voice transcription failed: ${response.status} ${(await response.text()).slice(0, 300)}`);
     }
     return (await response.json()) as VoiceTranscriptionResponse;
+  }
+
+  private isSkippableTranscriptionError(error: unknown): boolean {
+    const message = this.describeError(error).toLowerCase();
+    return (
+      message.includes("voice transcription failed: 422") ||
+      message.includes("audio could not be processed") ||
+      message.includes("zero-length") ||
+      message.includes("silent") ||
+      message.includes("corrupt")
+    );
   }
 
   private formatTimeSec(value: number): string {
