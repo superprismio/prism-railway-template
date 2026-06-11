@@ -83,6 +83,94 @@ function stepType(step: Record<string, unknown>) {
     : "unknown";
 }
 
+function stepKey(step: Record<string, unknown>, index: number) {
+  return typeof step.key === "string" && step.key.trim()
+    ? step.key
+    : `step-${index + 1}`;
+}
+
+function stepDotClass(type: string) {
+  if (type === "terminal") {
+    return "border-muted-foreground/70 bg-background text-muted-foreground";
+  }
+  if (type === "gate") {
+    return "border-primary bg-primary/10 text-primary";
+  }
+  if (type === "checkpoint") {
+    return "border-border bg-muted/40 text-foreground";
+  }
+  if (type === "agent") {
+    return "border-primary/80 bg-primary/10 text-primary";
+  }
+  return "border-border bg-background text-muted-foreground";
+}
+
+function WorkflowStepMap({ steps }: { steps: Record<string, unknown>[] }) {
+  if (!steps.length) {
+    return (
+      <div className="border-t border-border/60 pt-4 text-sm text-muted-foreground">
+        No steps in definition.
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-border/60 pt-4">
+      <div
+        className="relative flex flex-col gap-3 md:grid"
+        style={{
+          gridTemplateColumns:
+            steps.length > 1
+              ? `repeat(${steps.length}, minmax(0, 1fr))`
+              : "minmax(0, 1fr)",
+        }}
+      >
+        {steps.length > 1 ? (
+          <div
+            className="absolute top-3 hidden h-px bg-border md:block"
+            style={{
+              left: `calc(100% / ${steps.length * 2})`,
+              right: `calc(100% / ${steps.length * 2})`,
+            }}
+          />
+        ) : null}
+        {steps.map((step, index) => {
+          const type = stepType(step);
+
+          return (
+            <div
+              key={stepKey(step, index)}
+              className="relative flex min-w-0 gap-3 md:block"
+            >
+              {index < steps.length - 1 ? (
+                <div className="absolute left-3 top-6 h-[calc(100%+0.75rem)] w-px bg-border md:hidden" />
+              ) : null}
+              <div className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center md:mx-auto">
+                <div
+                  className={[
+                    "flex h-6 w-6 items-center justify-center rounded-full border text-[10px] font-semibold",
+                    stepDotClass(type),
+                  ].join(" ")}
+                >
+                  {index + 1}
+                </div>
+              </div>
+              <div className="min-w-0 md:mt-2 md:text-center">
+                <p className="truncate text-sm font-medium">
+                  {stepLabel(step)}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {type}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function WorkflowsWorkspace() {
   const [workflows, setWorkflows] = useState<WorkflowRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -197,67 +285,41 @@ export function WorkflowsWorkspace() {
     return (
       <div
         key={workflow.key}
-        className="grid gap-4 border border-border/70 bg-background p-4 xl:grid-cols-[minmax(220px,1fr)_minmax(360px,1.4fr)_auto]"
+        className="grid gap-4 border border-border/70 bg-background p-4"
       >
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <Route className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-base font-semibold">{workflow.name}</h2>
-            <Badge variant={workflow.enabled ? "default" : "outline"}>
-              {workflow.enabled ? "enabled" : "disabled"}
-            </Badge>
-            {workflow.systemDefault ? (
-              <Badge variant="outline">system</Badge>
-            ) : null}
-            <Badge variant="outline">v{workflow.version}</Badge>
-          </div>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {workflow.description || "No description found."}
-          </p>
-          <p className="mt-2 truncate text-xs text-muted-foreground">
-            {workflow.key}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {steps.map((step, index) => (
-            <div
-              key={`${workflow.key}:${String(step.key ?? index)}`}
-              className="grid min-w-[150px] max-w-[220px] flex-1 grid-cols-[28px_minmax(0,1fr)] items-center gap-2 border border-border/60 bg-muted/20 p-2 text-sm"
-            >
-              <div className="flex h-7 w-7 items-center justify-center border border-border/70 bg-muted/30 text-xs">
-                {index + 1}
-              </div>
-              <div className="min-w-0">
-                <div className="flex min-w-0 items-center gap-2">
-                  <p className="truncate font-medium">{stepLabel(step)}</p>
-                  <Badge variant="outline" className="shrink-0">
-                    {stepType(step)}
-                  </Badge>
-                </div>
-                <p className="truncate text-xs text-muted-foreground">
-                  {typeof step.key === "string" ? step.key : "unkeyed"}
-                </p>
-              </div>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Route className="h-4 w-4 text-muted-foreground" />
+              <h2 className="text-base font-semibold">{workflow.name}</h2>
+              <Badge variant={workflow.enabled ? "default" : "outline"}>
+                {workflow.enabled ? "enabled" : "disabled"}
+              </Badge>
+              {workflow.systemDefault ? (
+                <Badge variant="outline">system</Badge>
+              ) : null}
+              <Badge variant="outline">v{workflow.version}</Badge>
             </div>
-          ))}
-          {!steps.length ? (
-            <p className="text-sm text-muted-foreground">
-              No steps in definition.
+            <p className="mt-2 text-sm text-muted-foreground">
+              {workflow.description || "No description found."}
             </p>
-          ) : null}
-        </div>
+            <p className="mt-2 truncate text-xs text-muted-foreground">
+              {workflow.key}
+            </p>
+          </div>
 
-        <div className="flex items-center justify-end">
           <Button
             type="button"
             variant="outline"
+            className="shrink-0"
             onClick={() => openWorkflow(workflow)}
           >
             <Eye className="h-4 w-4" />
             View
           </Button>
         </div>
+
+        <WorkflowStepMap steps={steps} />
       </div>
     );
   }
