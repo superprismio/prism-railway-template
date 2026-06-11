@@ -4,8 +4,12 @@ import { useEffect, useState, useTransition } from "react";
 import {
   Activity,
   Bot,
+  Boxes,
+  CheckCircle2,
   GitBranch,
   KeyRound,
+  Pencil,
+  Plus,
   Power,
   Save,
   ShieldAlert,
@@ -14,7 +18,12 @@ import {
   Palette,
 } from "lucide-react";
 
-import { ReposWorkspace } from "@/components/admin/repos-workspace";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +33,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -33,6 +50,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import type {
   AdminSetupStatus,
@@ -88,10 +113,26 @@ type SourceAdapterPolicySettings = {
   platforms: Record<string, SourceAdapterPlatformPolicy>;
 };
 
-const managedRoleOptions: Array<{ value: RoleSlug; label: string; description: string }> = [
-  { value: "admin", label: "Admin", description: "Full instance ownership controls." },
-  { value: "moderator", label: "Moderator", description: "Operational workspace controls." },
-  { value: "member", label: "Member", description: "Read-mostly workspace access." },
+const managedRoleOptions: Array<{
+  value: RoleSlug;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "admin",
+    label: "Admin",
+    description: "Full instance ownership controls.",
+  },
+  {
+    value: "moderator",
+    label: "Moderator",
+    description: "Operational workspace controls.",
+  },
+  {
+    value: "member",
+    label: "Member",
+    description: "Read-mostly workspace access.",
+  },
 ];
 
 function formatDate(value: string | null) {
@@ -114,7 +155,7 @@ function statusBadge(ok: boolean, label?: string) {
         ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : undefined
       }
     >
-      {ok ? label ?? "Ready" : label ?? "Needs setup"}
+      {ok ? (label ?? "Ready") : (label ?? "Needs setup")}
     </Badge>
   );
 }
@@ -128,111 +169,106 @@ function copyBlock(lines: string[]) {
 }
 
 function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
+  const targetsReady =
+    setup.targets.targetAppCount > 0 &&
+    setup.targets.targetEnvironmentCount > 0;
+
   return (
-    <section className="grid gap-4 lg:grid-cols-3">
-      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Activity className="h-4 w-4" />
-            Prism Memory
-          </CardTitle>
-          <CardDescription>
-            Memory API reachability and active space.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {statusBadge(setup.prismMemory.reachable)}
-          <p className="text-sm text-muted-foreground">
-            Space:{" "}
-            <span className="font-medium text-foreground">
-              {setup.prismMemory.space ?? "unknown"}
-            </span>
-          </p>
-          {setup.prismMemory.error ? (
-            <p className="text-sm text-destructive">
-              {setup.prismMemory.error}
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Bot className="h-4 w-4" />
-            Codex Runtime
-          </CardTitle>
-          <CardDescription>
-            Runtime health and persisted device auth.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {statusBadge(
-              setup.codexRuntime.reachable,
-              setup.codexRuntime.reachable ? "Reachable" : "Unreachable",
-            )}
-            {statusBadge(
-              setup.codexRuntime.codexAuthConfigured,
-              setup.codexRuntime.codexAuthConfigured
-                ? "Auth configured"
-                : "Auth needed",
-            )}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Home:{" "}
-            <span className="font-medium text-foreground">
-              {setup.codexRuntime.codexHome ?? "not reported"}
-            </span>
-          </p>
-          {!setup.codexRuntime.codexAuthConfigured
-            ? copyBlock([
-                "railway ssh -s codex-runtime",
-                "mkdir -p /data/codex",
-                "export CODEX_HOME=/data/codex",
-                'export PATH="/app/node_modules/.bin:$PATH"',
-                "codex login --device-auth",
-              ])
-            : null}
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <GitBranch className="h-4 w-4" />
-            Target Repos
-          </CardTitle>
-          <CardDescription>
-            App-owned target metadata for Codex workspaces.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-lg border border-border bg-background/70 p-3">
-              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                Apps
-              </p>
-              <p className="mt-1 text-2xl font-semibold">
-                {setup.targets.targetAppCount}
-              </p>
+    <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Activity className="h-4 w-4" />
+          Operational Status
+        </CardTitle>
+        <CardDescription>
+          Runtime, memory, and target readiness for agent work.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 lg:grid-cols-3">
+          <div className="rounded-none border border-border/70 bg-background/60 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="flex items-center gap-2 font-medium">
+                  <Activity className="h-4 w-4" />
+                  Prism Memory
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Space: {setup.prismMemory.space ?? "unknown"}
+                </p>
+              </div>
+              {statusBadge(setup.prismMemory.reachable)}
             </div>
-            <div className="rounded-lg border border-border bg-background/70 p-3">
-              <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                Envs
+            {setup.prismMemory.error ? (
+              <p className="mt-3 text-sm text-destructive">
+                {setup.prismMemory.error}
               </p>
-              <p className="mt-1 text-2xl font-semibold">
-                {setup.targets.targetEnvironmentCount}
-              </p>
+            ) : null}
+          </div>
+
+          <div className="rounded-none border border-border/70 bg-background/60 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="flex items-center gap-2 font-medium">
+                  <Bot className="h-4 w-4" />
+                  Codex Runtime
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Home: {setup.codexRuntime.codexHome ?? "not reported"}
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                {statusBadge(
+                  setup.codexRuntime.reachable,
+                  setup.codexRuntime.reachable ? "Reachable" : "Unreachable",
+                )}
+                {statusBadge(
+                  setup.codexRuntime.codexAuthConfigured,
+                  setup.codexRuntime.codexAuthConfigured
+                    ? "Auth configured"
+                    : "Auth needed",
+                )}
+              </div>
             </div>
           </div>
-          {statusBadge(
-            setup.targets.targetAppCount > 0 &&
-              setup.targets.targetEnvironmentCount > 0,
-          )}
-        </CardContent>
-      </Card>
-    </section>
+
+          <div className="rounded-none border border-border/70 bg-background/60 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="flex items-center gap-2 font-medium">
+                  <GitBranch className="h-4 w-4" />
+                  Target Repos
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {setup.targets.targetAppCount} apps /{" "}
+                  {setup.targets.targetEnvironmentCount} envs
+                </p>
+              </div>
+              {statusBadge(targetsReady)}
+            </div>
+          </div>
+        </div>
+
+        {!setup.codexRuntime.codexAuthConfigured ? (
+          <Accordion type="single" collapsible>
+            <AccordionItem value="codex-auth">
+              <AccordionTrigger className="py-2 text-sm">
+                Codex device auth setup command
+              </AccordionTrigger>
+              <AccordionContent>
+                {copyBlock([
+                  "railway ssh -s codex-runtime",
+                  "mkdir -p /data/codex",
+                  "export CODEX_HOME=/data/codex",
+                  'export PATH="/app/node_modules/.bin:$PATH"',
+                  "codex login --device-auth",
+                ])}
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -244,97 +280,79 @@ function EnvironmentInstructions() {
   );
 
   return (
-    <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <KeyRound className="h-4 w-4" />
-            Communication Adapter
-          </CardTitle>
-          <CardDescription>
-            Add provider credentials on the adapter service, then allow channels in Source Adapter Access below.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {serviceLabel("communication adapter")}
-          {copyBlock([
-            'TELEGRAM_BOT_TOKEN=""',
-            'DISCORD_BOT_TOKEN=""',
-            'DISCORD_GUILD_ID=""',
-            'DISCORD_APPLICATION_ID=""',
-          ])}
-          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            Telegram only needs a bot token for first setup. Discord needs the bot token and guild ID for chat, sync, slash commands, and voice.
-          </p>
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Bot className="h-4 w-4" />
-            Discord Memory Buckets
-          </CardTitle>
-          <CardDescription>
-            Configure buckets from the live server before enabling recurring sync.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {serviceLabel("communication adapter and prism-memory")}
-          <div className="space-y-2 text-xs leading-relaxed text-muted-foreground">
-            <p>
-              Use the communication adapter inventory endpoint to inspect Discord categories,
-              then map category IDs to Prism Memory buckets.
-            </p>
-            <p>
-              If messages were collected before the mapping was corrected, run
-              <code> /ops/memory/repair-discord-buckets</code> with
-              <code> dry_run:true</code>, then rerun with
-              <code> rebuild:true</code>.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Activity className="h-4 w-4" />
-            Voice Optional
-          </CardTitle>
-          <CardDescription>
-            Discord recording stays disabled until the transcription key is set.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {serviceLabel("communication adapter")}
-          {copyBlock([
-            'VOICE_DAVE_ENCRYPTION="true"',
-            'VOICE_RECORDING_WARNING_MINUTES="50"',
-            'VOICE_RECORDING_MAX_MINUTES="60"',
-            'VOICE_TRANSCRIPTION_BASE_URL="https://api.venice.ai/api/v1/audio/transcriptions"',
-            'VOICE_TRANSCRIPTION_API_KEY=""',
-            'VOICE_TRANSCRIPTION_MODEL="nvidia/parakeet-tdt-0.6b-v3"',
-          ])}
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldAlert className="h-4 w-4" />
-            GitHub Push Access
-          </CardTitle>
-          <CardDescription>
-            Only needed for private repos or branch pushes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {serviceLabel("codex-runtime")}
-          {copyBlock(['TARGET_REPO_GITHUB_TOKEN=""'])}
-        </CardContent>
-      </Card>
-    </section>
+    <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <KeyRound className="h-4 w-4" />
+          Documentation
+        </CardTitle>
+        <CardDescription>
+          Environment setup notes for services that still require Railway variables.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Accordion
+          type="multiple"
+          className="rounded-none border border-border/60 px-4"
+        >
+          <AccordionItem value="communication-adapter">
+            <AccordionTrigger>Communication Adapter</AccordionTrigger>
+            <AccordionContent>
+              {serviceLabel("communication adapter")}
+              {copyBlock([
+                'TELEGRAM_BOT_TOKEN=""',
+                'DISCORD_BOT_TOKEN=""',
+                'DISCORD_GUILD_ID=""',
+                'DISCORD_APPLICATION_ID=""',
+              ])}
+              <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                Telegram only needs a bot token for first setup. Discord needs
+                the bot token and guild ID for chat, sync, slash commands, and voice.
+              </p>
+            </AccordionContent>
+          </AccordionItem>
+          <AccordionItem value="discord-memory-buckets">
+            <AccordionTrigger>Discord Memory Buckets</AccordionTrigger>
+            <AccordionContent>
+              {serviceLabel("communication adapter and prism-memory")}
+              <div className="space-y-2 text-xs leading-relaxed text-muted-foreground">
+                <p>
+                  Use the communication adapter inventory endpoint to inspect
+                  Discord categories, then map category IDs to Prism Memory buckets.
+                </p>
+                <p>
+                  If messages were collected before the mapping was corrected, run
+                  <code> /ops/memory/repair-discord-buckets</code> with
+                  <code> dry_run:true</code>, then rerun with
+                  <code> rebuild:true</code>.
+                </p>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+          <AccordionItem value="voice">
+            <AccordionTrigger>Voice Optional</AccordionTrigger>
+            <AccordionContent>
+              {serviceLabel("communication adapter")}
+              {copyBlock([
+                'VOICE_DAVE_ENCRYPTION="true"',
+                'VOICE_RECORDING_WARNING_MINUTES="50"',
+                'VOICE_RECORDING_MAX_MINUTES="60"',
+                'VOICE_TRANSCRIPTION_BASE_URL="https://api.venice.ai/api/v1/audio/transcriptions"',
+                'VOICE_TRANSCRIPTION_API_KEY=""',
+                'VOICE_TRANSCRIPTION_MODEL="nvidia/parakeet-tdt-0.6b-v3"',
+              ])}
+            </AccordionContent>
+          </AccordionItem>
+          <AccordionItem value="github-push" className="border-b-0">
+            <AccordionTrigger>GitHub Push Access</AccordionTrigger>
+            <AccordionContent>
+              {serviceLabel("codex-runtime")}
+              {copyBlock(['TARGET_REPO_GITHUB_TOKEN=""'])}
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -381,7 +399,11 @@ function BrandingSettings({
           onBrandingChange(nextBranding);
         }
       } catch (saveError) {
-        setError(saveError instanceof Error ? saveError.message : "Could not save branding");
+        setError(
+          saveError instanceof Error
+            ? saveError.message
+            : "Could not save branding",
+        );
       }
     });
   }
@@ -407,7 +429,11 @@ function BrandingSettings({
           <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-none border border-border/70 bg-muted/40">
             {draft.logoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={draft.logoUrl} alt={draft.logoAlt || "Logo preview"} className="h-full w-full object-contain p-1" />
+              <img
+                src={draft.logoUrl}
+                alt={draft.logoAlt || "Logo preview"}
+                className="h-full w-full object-contain p-1"
+              />
             ) : (
               <Palette className="h-5 w-5 text-muted-foreground" />
             )}
@@ -418,7 +444,12 @@ function BrandingSettings({
               <Input
                 id="brand-name"
                 value={draft.brandName}
-                onChange={(event) => setDraft((current) => ({ ...current, brandName: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    brandName: event.target.value,
+                  }))
+                }
                 placeholder="Prism Refactory"
               />
             </div>
@@ -427,7 +458,12 @@ function BrandingSettings({
               <Input
                 id="workspace-label"
                 value={draft.workspaceLabel}
-                onChange={(event) => setDraft((current) => ({ ...current, workspaceLabel: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    workspaceLabel: event.target.value,
+                  }))
+                }
                 placeholder="Admin workspace"
               />
             </div>
@@ -436,7 +472,12 @@ function BrandingSettings({
               <Input
                 id="logo-url"
                 value={draft.logoUrl}
-                onChange={(event) => setDraft((current) => ({ ...current, logoUrl: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    logoUrl: event.target.value,
+                  }))
+                }
                 placeholder="https://... or data:image/..."
               />
             </div>
@@ -445,7 +486,12 @@ function BrandingSettings({
               <Input
                 id="logo-alt"
                 value={draft.logoAlt}
-                onChange={(event) => setDraft((current) => ({ ...current, logoAlt: event.target.value }))}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    logoAlt: event.target.value,
+                  }))
+                }
                 placeholder="Workspace logo"
               />
             </div>
@@ -461,55 +507,90 @@ function BrandingSettings({
   );
 }
 
-const accessModeOptions: Array<{ value: SourceAdapterAccessMode; label: string; description: string }> = [
-  { value: "off", label: "Off", description: "Do not answer in this surface." },
-  { value: "readonly", label: "Readonly", description: "Answer questions and read context only." },
-  { value: "run-approved", label: "Run approved", description: "Run existing approved tasks and workflows." },
-  { value: "full", label: "Full", description: "Allow authoring and write actions through runtime policy." },
-];
-
-const sourceAdapterPlatformProfiles: Record<string, {
+const accessModeOptions: Array<{
+  value: SourceAdapterAccessMode;
   label: string;
   description: string;
-  targetHelp: string;
-  groupHelp: string;
-  userHelp: string;
-  promptHelp: string;
-}> = {
+}> = [
+  { value: "off", label: "Off", description: "Do not answer in this surface." },
+  {
+    value: "readonly",
+    label: "Readonly",
+    description: "Answer questions and read context only.",
+  },
+  {
+    value: "run-approved",
+    label: "Run approved",
+    description: "Run existing approved tasks and workflows.",
+  },
+  {
+    value: "full",
+    label: "Full",
+    description: "Allow authoring and write actions through runtime policy.",
+  },
+];
+
+const sourceAdapterPlatformProfiles: Record<
+  string,
+  {
+    label: string;
+    description: string;
+    targetHelp: string;
+    groupHelp: string;
+    userHelp: string;
+    promptHelp: string;
+  }
+> = {
   discord: {
     label: "Discord",
-    description: "Controls who can use Prism through Discord mentions, slash-command chat, and channel/thread prompts.",
-    targetHelp: "Discord channel or thread IDs. Use a channel for broad access, or a thread for narrower access.",
-    groupHelp: "Discord role IDs. Role rules can grant moderators or trusted members higher access.",
-    userHelp: "Discord user IDs. User rules override the default for specific operators.",
-    promptHelp: "Discord responds when mentioned, used through configured slash commands, or invoked by workflow/task delivery.",
+    description:
+      "Controls who can use Prism through Discord mentions, slash-command chat, and channel/thread prompts.",
+    targetHelp:
+      "Discord channel or thread IDs. Use a channel for broad access, or a thread for narrower access.",
+    groupHelp:
+      "Discord role IDs. Role rules can grant moderators or trusted members higher access.",
+    userHelp:
+      "Discord user IDs. User rules override the default for specific operators.",
+    promptHelp:
+      "Discord responds when mentioned, used through configured slash commands, or invoked by workflow/task delivery.",
   },
   telegram: {
     label: "Telegram",
-    description: "Controls who can use Prism through Telegram groups and channels discovered by the bot.",
-    targetHelp: "Telegram chat, group, supergroup, or channel IDs. Groups usually look like negative IDs such as -1001234567890.",
-    groupHelp: "Not used by Telegram yet. Keep this empty unless a future adapter adds group metadata.",
-    userHelp: "Telegram user IDs. Use these for trusted operators when the group default is more limited.",
-    promptHelp: "Telegram group chat responds to /prism, /superprism, or bot mentions. DMs are disabled by adapter config unless explicitly enabled.",
+    description:
+      "Controls who can use Prism through Telegram groups and channels discovered by the bot.",
+    targetHelp:
+      "Telegram chat, group, supergroup, or channel IDs. Groups usually look like negative IDs such as -1001234567890.",
+    groupHelp:
+      "Not used by Telegram yet. Keep this empty unless a future adapter adds group metadata.",
+    userHelp:
+      "Telegram user IDs. Use these for trusted operators when the group default is more limited.",
+    promptHelp:
+      "Telegram group chat responds to /prism, /superprism, or bot mentions. DMs are disabled by adapter config unless explicitly enabled.",
   },
 };
 
 function sourceAdapterPlatformProfile(platform: string) {
-  return sourceAdapterPlatformProfiles[platform] ?? {
-    label: platform,
-    description: "Controls source-adapter chat access for this platform.",
-    targetHelp: "Conversation surface IDs for this platform.",
-    groupHelp: "Platform group or role IDs when supported.",
-    userHelp: "Platform user IDs.",
-    promptHelp: "Prompt routing depends on the adapter implementation for this platform.",
-  };
+  return (
+    sourceAdapterPlatformProfiles[platform] ?? {
+      label: platform,
+      description: "Controls source-adapter chat access for this platform.",
+      targetHelp: "Conversation surface IDs for this platform.",
+      groupHelp: "Platform group or role IDs when supported.",
+      userHelp: "Platform user IDs.",
+      promptHelp:
+        "Prompt routing depends on the adapter implementation for this platform.",
+    }
+  );
 }
 
 function formatPolicyMap(value: Record<string, SourceAdapterPolicyRule>) {
   return JSON.stringify(value, null, 2);
 }
 
-function parsePolicyMap(value: string, label: string): Record<string, SourceAdapterPolicyRule> {
+function parsePolicyMap(
+  value: string,
+  label: string,
+): Record<string, SourceAdapterPolicyRule> {
   const parsed = value.trim() ? JSON.parse(value) : {};
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error(`${label} must be a JSON object`);
@@ -518,7 +599,9 @@ function parsePolicyMap(value: string, label: string): Record<string, SourceAdap
 }
 
 function SourceAdapterPolicySettings() {
-  const [policy, setPolicy] = useState<SourceAdapterPolicySettings | null>(null);
+  const [policy, setPolicy] = useState<SourceAdapterPolicySettings | null>(
+    null,
+  );
   const [targetsJson, setTargetsJson] = useState("{}");
   const [groupsJson, setGroupsJson] = useState("{}");
   const [usersJson, setUsersJson] = useState("{}");
@@ -534,18 +617,24 @@ function SourceAdapterPolicySettings() {
     let cancelled = false;
     async function loadPolicy() {
       try {
-        const response = await fetch("/admin/source-adapter-policy", { cache: "no-store" });
+        const response = await fetch("/admin/source-adapter-policy", {
+          cache: "no-store",
+        });
         const payload = (await response.json().catch(() => ({}))) as {
           ok?: boolean;
           policy?: SourceAdapterPolicySettings;
           error?: string;
         };
         if (!response.ok || payload.ok === false || !payload.policy) {
-          throw new Error(payload.error || "Could not load source adapter policy");
+          throw new Error(
+            payload.error || "Could not load source adapter policy",
+          );
         }
         if (cancelled) return;
         setPolicy(payload.policy);
-        const platform = payload.policy.platforms.discord ? "discord" : Object.keys(payload.policy.platforms)[0] ?? "discord";
+        const platform = payload.policy.platforms.discord
+          ? "discord"
+          : (Object.keys(payload.policy.platforms)[0] ?? "discord");
         setSelectedPlatform(platform);
         const currentPlatform = payload.policy.platforms[platform];
         setTargetsJson(formatPolicyMap(currentPlatform?.targets ?? {}));
@@ -554,7 +643,11 @@ function SourceAdapterPolicySettings() {
         setError(null);
       } catch (loadError) {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Could not load source adapter policy");
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Could not load source adapter policy",
+          );
         }
       }
     }
@@ -564,7 +657,11 @@ function SourceAdapterPolicySettings() {
     };
   }, []);
 
-  function updatePlatformPolicy(updater: (current: SourceAdapterPlatformPolicy) => SourceAdapterPlatformPolicy) {
+  function updatePlatformPolicy(
+    updater: (
+      current: SourceAdapterPlatformPolicy,
+    ) => SourceAdapterPlatformPolicy,
+  ) {
     setPolicy((current) => {
       if (!current?.platforms[selectedPlatform]) {
         return current;
@@ -607,7 +704,9 @@ function SourceAdapterPolicySettings() {
           error?: string;
         };
         if (!response.ok || payload.ok === false || !payload.policy) {
-          throw new Error(payload.error || "Could not save source adapter policy");
+          throw new Error(
+            payload.error || "Could not save source adapter policy",
+          );
         }
         setPolicy(payload.policy);
         const savedPlatform = payload.policy.platforms[selectedPlatform];
@@ -615,7 +714,11 @@ function SourceAdapterPolicySettings() {
         setGroupsJson(formatPolicyMap(savedPlatform?.groups ?? {}));
         setUsersJson(formatPolicyMap(savedPlatform?.users ?? {}));
       } catch (saveError) {
-        setError(saveError instanceof Error ? saveError.message : "Could not save source adapter policy");
+        setError(
+          saveError instanceof Error
+            ? saveError.message
+            : "Could not save source adapter policy",
+        );
       }
     });
   }
@@ -628,7 +731,8 @@ function SourceAdapterPolicySettings() {
           Source Adapter Access
         </CardTitle>
         <CardDescription>
-          Configure public chat access without changing environment variables or rebuilding services.
+          Configure public chat access without changing environment variables or
+          rebuilding services.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -647,7 +751,9 @@ function SourceAdapterPolicySettings() {
                   onValueChange={(value) => {
                     setSelectedPlatform(value);
                     const nextPlatform = policy?.platforms[value];
-                    setTargetsJson(formatPolicyMap(nextPlatform?.targets ?? {}));
+                    setTargetsJson(
+                      formatPolicyMap(nextPlatform?.targets ?? {}),
+                    );
                     setGroupsJson(formatPolicyMap(nextPlatform?.groups ?? {}));
                     setUsersJson(formatPolicyMap(nextPlatform?.users ?? {}));
                   }}
@@ -663,7 +769,9 @@ function SourceAdapterPolicySettings() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">{platformProfile.description}</p>
+                <p className="text-xs text-muted-foreground">
+                  {platformProfile.description}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Default mode</Label>
@@ -688,7 +796,11 @@ function SourceAdapterPolicySettings() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {accessModeOptions.find((option) => option.value === platformPolicy.defaultMode)?.description}
+                  {
+                    accessModeOptions.find(
+                      (option) => option.value === platformPolicy.defaultMode,
+                    )?.description
+                  }
                 </p>
               </div>
               <div className="space-y-2">
@@ -703,7 +815,9 @@ function SourceAdapterPolicySettings() {
                       ...current,
                       defaultRateLimit: {
                         ...current.defaultRateLimit,
-                        windowSeconds: Number.parseInt(event.target.value, 10) || current.defaultRateLimit.windowSeconds,
+                        windowSeconds:
+                          Number.parseInt(event.target.value, 10) ||
+                          current.defaultRateLimit.windowSeconds,
                       },
                     }))
                   }
@@ -721,7 +835,9 @@ function SourceAdapterPolicySettings() {
                       ...current,
                       defaultRateLimit: {
                         ...current.defaultRateLimit,
-                        maxRequests: Number.parseInt(event.target.value, 10) || current.defaultRateLimit.maxRequests,
+                        maxRequests:
+                          Number.parseInt(event.target.value, 10) ||
+                          current.defaultRateLimit.maxRequests,
                       },
                     }))
                   }
@@ -733,25 +849,37 @@ function SourceAdapterPolicySettings() {
                 <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   Default
                 </div>
-                <div className="mt-1 text-sm font-medium">{accessModeOptions.find((option) => option.value === platformPolicy.defaultMode)?.label}</div>
+                <div className="mt-1 text-sm font-medium">
+                  {
+                    accessModeOptions.find(
+                      (option) => option.value === platformPolicy.defaultMode,
+                    )?.label
+                  }
+                </div>
               </div>
               <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
                 <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   Target rules
                 </div>
-                <div className="mt-1 text-sm font-medium">{Object.keys(platformPolicy.targets).length}</div>
+                <div className="mt-1 text-sm font-medium">
+                  {Object.keys(platformPolicy.targets).length}
+                </div>
               </div>
               <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
                 <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   Group rules
                 </div>
-                <div className="mt-1 text-sm font-medium">{Object.keys(platformPolicy.groups).length}</div>
+                <div className="mt-1 text-sm font-medium">
+                  {Object.keys(platformPolicy.groups).length}
+                </div>
               </div>
               <div className="rounded-none border border-border/60 bg-background/40 px-3 py-2">
                 <div className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                   User rules
                 </div>
-                <div className="mt-1 text-sm font-medium">{Object.keys(platformPolicy.users).length}</div>
+                <div className="mt-1 text-sm font-medium">
+                  {Object.keys(platformPolicy.users).length}
+                </div>
               </div>
             </div>
             <div className="rounded-none border border-border/60 bg-background/40 px-4 py-3 text-sm text-muted-foreground">
@@ -766,7 +894,9 @@ function SourceAdapterPolicySettings() {
                   value={targetsJson}
                   onChange={(event) => setTargetsJson(event.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">{platformProfile.targetHelp}</p>
+                <p className="text-xs text-muted-foreground">
+                  {platformProfile.targetHelp}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="source-group-rules">Groups</Label>
@@ -776,7 +906,9 @@ function SourceAdapterPolicySettings() {
                   value={groupsJson}
                   onChange={(event) => setGroupsJson(event.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">{platformProfile.groupHelp}</p>
+                <p className="text-xs text-muted-foreground">
+                  {platformProfile.groupHelp}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="source-user-rules">Users</Label>
@@ -786,7 +918,9 @@ function SourceAdapterPolicySettings() {
                   value={usersJson}
                   onChange={(event) => setUsersJson(event.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">{platformProfile.userHelp}</p>
+                <p className="text-xs text-muted-foreground">
+                  {platformProfile.userHelp}
+                </p>
               </div>
             </div>
             <div className="flex justify-end">
@@ -805,16 +939,19 @@ function SourceAdapterPolicySettings() {
   );
 }
 
-function MembersAndRoles({
-  canManageUsers,
-}: {
-  canManageUsers: boolean;
-}) {
+function MembersAndRoles({ canManageUsers }: { canManageUsers: boolean }) {
   const [members, setMembers] = useState<AdminMember[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [newEmail, setNewEmail] = useState("");
   const [newDisplayName, setNewDisplayName] = useState("");
-  const [claimLink, setClaimLink] = useState<{ label: string; url: string; expiresAt: string } | null>(null);
+  const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState<AdminMember | null>(null);
+  const [editingRoles, setEditingRoles] = useState<RoleSlug[]>([]);
+  const [claimLink, setClaimLink] = useState<{
+    label: string;
+    url: string;
+    expiresAt: string;
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
 
   async function loadMembers() {
@@ -832,7 +969,11 @@ function MembersAndRoles({
       setMembers(payload.users ?? []);
       setError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load members");
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Could not load members",
+      );
     }
   }
 
@@ -840,18 +981,17 @@ function MembersAndRoles({
     void loadMembers();
   }, [canManageUsers]);
 
-  function toggleRole(member: AdminMember, role: RoleSlug) {
-    const nextRoles = member.roleSlugs.includes(role)
-      ? member.roleSlugs.filter((value) => value !== role)
-      : [...member.roleSlugs, role];
-    const normalizedRoles = nextRoles.length ? nextRoles : ["member" as const];
-
+  function saveMemberRoles(member: AdminMember, roleSlugs: RoleSlug[]) {
+    const normalizedRoles = roleSlugs.length ? roleSlugs : ["member" as const];
     startTransition(async () => {
       try {
         const response = await fetch("/admin/members", {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ userId: member.id, roleSlugs: normalizedRoles }),
+          body: JSON.stringify({
+            userId: member.id,
+            roleSlugs: normalizedRoles,
+          }),
         });
         const payload = (await response.json().catch(() => ({}))) as {
           ok?: boolean;
@@ -860,11 +1000,29 @@ function MembersAndRoles({
         if (!response.ok || payload.ok === false) {
           throw new Error(payload.error || "Could not update roles");
         }
+        setEditingMember(null);
         await loadMembers();
       } catch (updateError) {
-        setError(updateError instanceof Error ? updateError.message : "Could not update roles");
+        setError(
+          updateError instanceof Error
+            ? updateError.message
+            : "Could not update roles",
+        );
       }
     });
+  }
+
+  function openEditRoles(member: AdminMember) {
+    setEditingMember(member);
+    setEditingRoles(member.roleSlugs);
+  }
+
+  function toggleEditingRole(role: RoleSlug) {
+    setEditingRoles((current) =>
+      current.includes(role)
+        ? current.filter((value) => value !== role)
+        : [...current, role],
+    );
   }
 
   function createMember() {
@@ -895,6 +1053,7 @@ function MembersAndRoles({
         }
         setNewEmail("");
         setNewDisplayName("");
+        setIsAddMemberOpen(false);
         if (payload.invite?.claimUrl) {
           setClaimLink({
             label: "Invite link",
@@ -904,7 +1063,11 @@ function MembersAndRoles({
         }
         await loadMembers();
       } catch (createError) {
-        setError(createError instanceof Error ? createError.message : "Could not create member");
+        setError(
+          createError instanceof Error
+            ? createError.message
+            : "Could not create member",
+        );
       }
     });
   }
@@ -934,7 +1097,11 @@ function MembersAndRoles({
           expiresAt: payload.invite.expiresAt ?? "",
         });
       } catch (resetError) {
-        setError(resetError instanceof Error ? resetError.message : "Could not create reset link");
+        setError(
+          resetError instanceof Error
+            ? resetError.message
+            : "Could not create reset link",
+        );
       }
     });
   }
@@ -947,141 +1114,243 @@ function MembersAndRoles({
             <Users className="h-4 w-4" />
             Members & Roles
           </CardTitle>
-          <CardDescription>Only admins can manage member roles.</CardDescription>
+          <CardDescription>
+            Only admins can manage member roles.
+          </CardDescription>
         </CardHeader>
       </Card>
     );
   }
 
   return (
-    <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Users className="h-4 w-4" />
-          Members & Roles
-        </CardTitle>
-        <CardDescription>
-          Manage app roles for signed-in workspace users. Invite and password reset flows are still pending.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        {error ? (
-          <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-            {error}
+    <>
+      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
+        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Users className="h-4 w-4" />
+              Members & Roles
+            </CardTitle>
+            <CardDescription>
+              Manage app roles and account claim/reset links for workspace users.
+            </CardDescription>
           </div>
-        ) : null}
-
-        <div className="grid gap-3 rounded-none border border-border/70 p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-          <div className="space-y-2">
-            <Label htmlFor="member-email">Email</Label>
-            <Input
-              id="member-email"
-              type="email"
-              value={newEmail}
-              onChange={(event) => setNewEmail(event.target.value)}
-              placeholder="member@example.com"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="member-display-name">Display name</Label>
-            <Input
-              id="member-display-name"
-              value={newDisplayName}
-              onChange={(event) => setNewDisplayName(event.target.value)}
-              placeholder="Optional"
-            />
-          </div>
-          <div className="flex items-end">
-            <Button type="button" onClick={createMember} disabled={isPending}>
-              <UserPlus className="h-4 w-4" />
-              Add member
-            </Button>
-          </div>
-        </div>
-
-        {claimLink ? (
-          <div className="space-y-3 rounded-none border border-primary/40 bg-primary/5 p-4">
-            <div>
-              <p className="font-medium">{claimLink.label}</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Copy this link manually. It expires {formatDate(claimLink.expiresAt)}.
-              </p>
-            </div>
-            <Input readOnly value={claimLink.url} onFocus={(event) => event.currentTarget.select()} />
-          </div>
-        ) : null}
-
-        <div className="grid gap-3">
-          {members.map((member) => (
-            <div
-              key={member.id}
-              className="grid gap-4 rounded-none border border-border/70 bg-background/70 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,auto)]"
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium">
-                    {member.displayName || member.handle || member.email || member.id}
-                  </p>
-                  {member.roleSlugs.map((role) => (
-                    <Badge key={role} variant={role === "admin" ? "secondary" : "outline"}>
-                      {role}
-                    </Badge>
-                  ))}
-                </div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {member.email ?? "No email"} - Last seen {formatDate(member.lastSeenAt)}
-                </p>
-                {!member.claimedAt ? (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Invite/reset flow pending. This account is managed but not claimed.
-                  </p>
-                ) : null}
-              </div>
-              <div className="space-y-3">
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {managedRoleOptions.map((role) => (
-                    <label
-                      key={role.value}
-                      className="flex min-h-20 cursor-pointer flex-col gap-2 rounded-none border border-border/70 p-3 text-sm"
-                    >
-                      <span className="flex items-center gap-2 font-medium">
-                        <input
-                          type="checkbox"
-                          checked={member.roleSlugs.includes(role.value)}
-                          onChange={() => toggleRole(member, role.value)}
-                          disabled={isPending}
-                          className="h-4 w-4 accent-primary"
-                        />
-                        {role.label}
-                      </span>
-                      <span className="text-xs leading-5 text-muted-foreground">
-                        {role.description}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => createResetLink(member)}
-                    disabled={isPending}
-                  >
-                    <KeyRound className="h-4 w-4" />
-                    Create reset link
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ))}
-          {!members.length ? (
-            <div className="rounded-none border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              No members found.
+          <Button type="button" onClick={() => setIsAddMemberOpen(true)}>
+            <UserPlus className="h-4 w-4" />
+            Add member
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {error ? (
+            <div className="rounded-none border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {error}
             </div>
           ) : null}
-        </div>
-      </CardContent>
-    </Card>
+
+          {claimLink ? (
+            <div className="space-y-3 rounded-none border border-primary/40 bg-primary/5 p-4">
+              <div>
+                <p className="font-medium">{claimLink.label}</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Copy this link manually. It expires{" "}
+                  {formatDate(claimLink.expiresAt)}.
+                </p>
+              </div>
+              <Input
+                readOnly
+                value={claimLink.url}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </div>
+          ) : null}
+
+          <div className="rounded-none border border-border/70">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Member</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Roles</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Last seen</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {members.map((member) => (
+                  <TableRow key={member.id}>
+                    <TableCell className="font-medium">
+                      {member.displayName ||
+                        member.handle ||
+                        member.email ||
+                        member.id}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {member.email ?? "No email"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {member.roleSlugs.map((role) => (
+                          <Badge
+                            key={role}
+                            variant={role === "admin" ? "secondary" : "outline"}
+                          >
+                            {role}
+                          </Badge>
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={member.claimedAt ? "secondary" : "outline"}>
+                        {member.claimedAt ? "Claimed" : "Unclaimed"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDate(member.lastSeenAt)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openEditRoles(member)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                          Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => createResetLink(member)}
+                          disabled={isPending}
+                        >
+                          <KeyRound className="h-4 w-4" />
+                          Reset
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!members.length ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="h-24 text-center text-muted-foreground"
+                    >
+                      No members found.
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={isAddMemberOpen} onOpenChange={setIsAddMemberOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add member</DialogTitle>
+            <DialogDescription>
+              Create a managed account and generate an invite link.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="member-email">Email</Label>
+              <Input
+                id="member-email"
+                type="email"
+                value={newEmail}
+                onChange={(event) => setNewEmail(event.target.value)}
+                placeholder="member@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="member-display-name">Display name</Label>
+              <Input
+                id="member-display-name"
+                value={newDisplayName}
+                onChange={(event) => setNewDisplayName(event.target.value)}
+                placeholder="Optional"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsAddMemberOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={createMember} disabled={isPending}>
+              Add member
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(editingMember)}
+        onOpenChange={(open) => {
+          if (!open) setEditingMember(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit roles</DialogTitle>
+            <DialogDescription>
+              {editingMember?.email ??
+                editingMember?.displayName ??
+                editingMember?.id}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            {managedRoleOptions.map((role) => (
+              <label
+                key={role.value}
+                className="flex cursor-pointer items-start gap-3 rounded-none border border-border/70 p-3 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  checked={editingRoles.includes(role.value)}
+                  onChange={() => toggleEditingRole(role.value)}
+                  disabled={isPending}
+                  className="mt-0.5 h-4 w-4 accent-primary"
+                />
+                <span>
+                  <span className="block font-medium">{role.label}</span>
+                  <span className="text-xs leading-5 text-muted-foreground">
+                    {role.description}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditingMember(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() =>
+                editingMember ? saveMemberRoles(editingMember, editingRoles) : null
+              }
+              disabled={isPending || !editingMember}
+            >
+              Save roles
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -1107,7 +1376,8 @@ function RepositorySetup({
           {
             name: targetApp.name,
             repoUrl: targetApp.repoUrl ?? "",
-            defaultBranch: defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
+            defaultBranch:
+              defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
             description: targetApp.description ?? "",
             agentEnabled: targetApp.agentEnabled,
             defaultEnvironmentId: defaultEnvironment?.id ?? "",
@@ -1118,6 +1388,10 @@ function RepositorySetup({
   );
   const [error, setError] = useState<string | null>(null);
   const [savingTargetId, setSavingTargetId] = useState<string | null>(null);
+  const [isAddTargetOpen, setIsAddTargetOpen] = useState(false);
+  const [editingTarget, setEditingTarget] = useState<TargetAppRecord | null>(
+    null,
+  );
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -1136,7 +1410,8 @@ function RepositorySetup({
             {
               name: targetApp.name,
               repoUrl: targetApp.repoUrl ?? "",
-              defaultBranch: defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
+              defaultBranch:
+                defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
               description: targetApp.description ?? "",
               agentEnabled: targetApp.agentEnabled,
               defaultEnvironmentId: defaultEnvironment?.id ?? "",
@@ -1190,18 +1465,23 @@ function RepositorySetup({
     setSavingTargetId(targetApp.id);
     startTransition(async () => {
       try {
-        const targetResponse = await fetch(`/admin/target-apps/${targetApp.id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            name,
-            repoUrl: draft.repoUrl.trim() || null,
-            defaultBranch,
-            description: draft.description.trim() || null,
-            agentEnabled: draft.agentEnabled,
-          }),
-        });
-        const targetPayload = (await targetResponse.json().catch(() => ({}))) as {
+        const targetResponse = await fetch(
+          `/admin/target-apps/${targetApp.id}`,
+          {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              name,
+              repoUrl: draft.repoUrl.trim() || null,
+              defaultBranch,
+              description: draft.description.trim() || null,
+              agentEnabled: draft.agentEnabled,
+            }),
+          },
+        );
+        const targetPayload = (await targetResponse
+          .json()
+          .catch(() => ({}))) as {
           ok?: boolean;
           error?: string;
         };
@@ -1210,77 +1490,66 @@ function RepositorySetup({
         }
 
         if (draft.defaultEnvironmentId) {
-          const environmentResponse = await fetch(`/admin/target-environments/${draft.defaultEnvironmentId}`, {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              branch: defaultBranch,
-              isDefaultForAgent: true,
-            }),
-          });
-          const environmentPayload = (await environmentResponse.json().catch(() => ({}))) as {
+          const environmentResponse = await fetch(
+            `/admin/target-environments/${draft.defaultEnvironmentId}`,
+            {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                branch: defaultBranch,
+                isDefaultForAgent: true,
+              }),
+            },
+          );
+          const environmentPayload = (await environmentResponse
+            .json()
+            .catch(() => ({}))) as {
             ok?: boolean;
             error?: string;
           };
           if (!environmentResponse.ok || environmentPayload.ok === false) {
-            throw new Error(environmentPayload.error || "Saved target, but could not update target branch");
+            throw new Error(
+              environmentPayload.error ||
+                "Saved target, but could not update target branch",
+            );
           }
         }
 
         window.location.reload();
       } catch (saveError) {
-        setError(saveError instanceof Error ? saveError.message : "Could not save target");
+        setError(
+          saveError instanceof Error
+            ? saveError.message
+            : "Could not save target",
+        );
         setSavingTargetId(null);
       }
     });
   }
 
-  return (
-    <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-      <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-        <CardHeader>
-          <CardTitle>Repository Target</CardTitle>
-          <CardDescription>
-            Create one Codex target. Change request branches start from the
-            target branch.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form action="/admin/target-apps" method="post" className="space-y-4">
-            <div className="space-y-2">
-              <Label>Name</Label>
-              <Input name="name" placeholder="DAOhaus Admin" required />
-            </div>
-            <div className="space-y-2">
-              <Label>GitHub Repo URL</Label>
-              <Input
-                name="repoUrl"
-                placeholder="https://github.com/HausDAO/daohaus-admin.git"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Target Branch</Label>
-              <Input name="defaultBranch" defaultValue="main" />
-            </div>
-            <div className="space-y-2">
-              <Label>Description</Label>
-              <Textarea
-                name="description"
-                placeholder="What this target repo represents."
-              />
-            </div>
-            <Button type="submit">Create repository target</Button>
-          </form>
-        </CardContent>
-      </Card>
+  function openEditTarget(targetApp: TargetAppRecord) {
+    setEditingTarget(targetApp);
+  }
 
+  const editingDraft = editingTarget ? drafts[editingTarget.id] : null;
+
+  return (
+    <>
       <Card className="rounded-none border-border/60 bg-card/90 shadow-none">
-        <CardHeader>
-          <CardTitle>Current Targets</CardTitle>
-          <CardDescription>
-            Repositories available in the New Change Request form.
-          </CardDescription>
+        <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <GitBranch className="h-4 w-4" />
+              Repository Targets
+            </CardTitle>
+            <CardDescription>
+              Repositories and default environments available to change requests.
+            </CardDescription>
+          </div>
+          <Button type="button" onClick={() => setIsAddTargetOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Add target
+          </Button>
         </CardHeader>
         <CardContent className="grid gap-3">
           {error ? (
@@ -1288,111 +1557,264 @@ function RepositorySetup({
               {error}
             </div>
           ) : null}
-          {targetApps.length ? (
-            targetApps.map((targetApp) => {
-              const environments = targetEnvironments.filter(
-                (environment) => environment.targetAppId === targetApp.id,
-              );
-              const defaultEnvironment =
-                environments.find((environment) => environment.isDefaultForAgent) ??
-                environments[0];
-              const draft = drafts[targetApp.id] ?? {
-                name: targetApp.name,
-                repoUrl: targetApp.repoUrl ?? "",
-                defaultBranch: defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
-                description: targetApp.description ?? "",
-                agentEnabled: targetApp.agentEnabled,
-                defaultEnvironmentId: defaultEnvironment?.id ?? "",
-              };
-              return (
-                <div
-                  key={targetApp.id}
-                  className="grid gap-4 rounded-xl border border-border bg-background/70 p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold">{draft.name || targetApp.name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {draft.repoUrl || "No repo URL"}
-                      </p>
-                    </div>
-                    <Badge variant={draft.agentEnabled ? "secondary" : "muted"}>
-                      {draft.agentEnabled ? "Active" : "Inactive"}
-                    </Badge>
-                  </div>
+          <div className="rounded-none border border-border/70">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Target</TableHead>
+                  <TableHead>Repo</TableHead>
+                  <TableHead>Branch</TableHead>
+                  <TableHead>Environments</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {targetApps.map((targetApp) => {
+                  const environments = targetEnvironments.filter(
+                    (environment) => environment.targetAppId === targetApp.id,
+                  );
+                  const defaultEnvironment =
+                    environments.find(
+                      (environment) => environment.isDefaultForAgent,
+                    ) ?? environments[0];
+                  const writableCount = environments.filter(
+                    (environment) => environment.agentWritable,
+                  ).length;
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor={`target-name-${targetApp.id}`}>Name</Label>
-                      <Input
-                        id={`target-name-${targetApp.id}`}
-                        value={draft.name}
-                        onChange={(event) => updateDraft(targetApp.id, { name: event.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`target-branch-${targetApp.id}`}>Target Branch</Label>
-                      <Input
-                        id={`target-branch-${targetApp.id}`}
-                        value={draft.defaultBranch}
-                        onChange={(event) => updateDraft(targetApp.id, { defaultBranch: event.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label htmlFor={`target-repo-${targetApp.id}`}>GitHub Repo URL</Label>
-                      <Input
-                        id={`target-repo-${targetApp.id}`}
-                        value={draft.repoUrl}
-                        onChange={(event) => updateDraft(targetApp.id, { repoUrl: event.target.value })}
-                        placeholder="https://github.com/org/repo.git"
-                      />
-                    </div>
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label htmlFor={`target-description-${targetApp.id}`}>Description</Label>
-                      <Textarea
-                        id={`target-description-${targetApp.id}`}
-                        value={draft.description}
-                        onChange={(event) => updateDraft(targetApp.id, { description: event.target.value })}
-                        placeholder="What this target repo represents."
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-3">
-                    <label className="inline-flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        checked={draft.agentEnabled}
-                        onChange={(event) => updateDraft(targetApp.id, { agentEnabled: event.target.checked })}
-                        className="h-4 w-4 accent-primary"
-                      />
-                      Available for new requests
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">
-                        {defaultEnvironment ? "default env ready" : "no default env"}
-                      </Badge>
-                      <Button
-                        type="button"
-                        onClick={() => saveTarget(targetApp)}
-                        disabled={isPending && savingTargetId === targetApp.id}
-                      >
-                        {draft.agentEnabled ? <Save className="h-4 w-4" /> : <Power className="h-4 w-4" />}
-                        Save target
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          ) : (
-            <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              No repository targets configured.
-            </div>
-          )}
+                  return (
+                    <TableRow key={targetApp.id}>
+                      <TableCell>
+                        <div className="font-medium">{targetApp.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {targetApp.slug}
+                        </div>
+                      </TableCell>
+                      <TableCell className="max-w-[280px] truncate text-muted-foreground">
+                        {targetApp.repoUrl ?? "No repo URL"}
+                      </TableCell>
+                      <TableCell>
+                        {defaultEnvironment?.branch ??
+                          targetApp.defaultBranch ??
+                          "main"}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">
+                            <Boxes className="mr-1 h-3 w-3" />
+                            {environments.length}
+                          </Badge>
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            {writableCount ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                            ) : (
+                              <ShieldAlert className="h-3.5 w-3.5 text-amber-700" />
+                            )}
+                            {writableCount} writable
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={targetApp.agentEnabled ? "secondary" : "muted"}
+                        >
+                          {targetApp.agentEnabled ? "Active" : "Inactive"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex justify-end">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEditTarget(targetApp)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                {!targetApps.length ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      className="h-24 text-center text-muted-foreground"
+                    >
+                      No repository targets configured.
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
-    </section>
+
+      <Dialog open={isAddTargetOpen} onOpenChange={setIsAddTargetOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add repository target</DialogTitle>
+            <DialogDescription>
+              Create one Codex target. Change request branches start from the target branch.
+            </DialogDescription>
+          </DialogHeader>
+          <form action="/admin/target-apps" method="post" className="grid gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-target-name">Name</Label>
+              <Input id="new-target-name" name="name" placeholder="DAOhaus Admin" required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-target-repo">GitHub Repo URL</Label>
+              <Input
+                id="new-target-repo"
+                name="repoUrl"
+                placeholder="https://github.com/HausDAO/daohaus-admin.git"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-target-branch">Target Branch</Label>
+              <Input id="new-target-branch" name="defaultBranch" defaultValue="main" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-target-description">Description</Label>
+              <Textarea
+                id="new-target-description"
+                name="description"
+                placeholder="What this target repo represents."
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAddTargetOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit">
+                <Plus className="h-4 w-4" />
+                Create target
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(editingTarget)}
+        onOpenChange={(open) => {
+          if (!open) setEditingTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit repository target</DialogTitle>
+            <DialogDescription>
+              {editingTarget?.name ?? "Repository target"}
+            </DialogDescription>
+          </DialogHeader>
+          {editingTarget && editingDraft ? (
+            <div className="grid gap-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor={`target-name-${editingTarget.id}`}>Name</Label>
+                  <Input
+                    id={`target-name-${editingTarget.id}`}
+                    value={editingDraft.name}
+                    onChange={(event) =>
+                      updateDraft(editingTarget.id, { name: event.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`target-branch-${editingTarget.id}`}>
+                    Target Branch
+                  </Label>
+                  <Input
+                    id={`target-branch-${editingTarget.id}`}
+                    value={editingDraft.defaultBranch}
+                    onChange={(event) =>
+                      updateDraft(editingTarget.id, {
+                        defaultBranch: event.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor={`target-repo-${editingTarget.id}`}>
+                    GitHub Repo URL
+                  </Label>
+                  <Input
+                    id={`target-repo-${editingTarget.id}`}
+                    value={editingDraft.repoUrl}
+                    onChange={(event) =>
+                      updateDraft(editingTarget.id, { repoUrl: event.target.value })
+                    }
+                    placeholder="https://github.com/org/repo.git"
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor={`target-description-${editingTarget.id}`}>
+                    Description
+                  </Label>
+                  <Textarea
+                    id={`target-description-${editingTarget.id}`}
+                    value={editingDraft.description}
+                    onChange={(event) =>
+                      updateDraft(editingTarget.id, {
+                        description: event.target.value,
+                      })
+                    }
+                    placeholder="What this target repo represents."
+                  />
+                </div>
+              </div>
+              <label className="inline-flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={editingDraft.agentEnabled}
+                  onChange={(event) =>
+                    updateDraft(editingTarget.id, {
+                      agentEnabled: event.target.checked,
+                    })
+                  }
+                  className="h-4 w-4 accent-primary"
+                />
+                Available for new requests
+              </label>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditingTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => (editingTarget ? saveTarget(editingTarget) : null)}
+              disabled={
+                !editingTarget ||
+                (isPending && savingTargetId === editingTarget.id)
+              }
+            >
+              {editingDraft?.agentEnabled ? (
+                <Save className="h-4 w-4" />
+              ) : (
+                <Power className="h-4 w-4" />
+              )}
+              Save target
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -1417,35 +1839,32 @@ export function AdminSettingsWorkspace({
 
   return (
     <div className="grid gap-4">
-      <div className="px-5 py-4 md:px-6">
+      <section className="px-5 py-4 md:px-6">
         <SetupStatus setup={setup} />
-      </div>
-      <div className="border-t border-border/60 px-5 py-4 md:px-6">
-        <BrandingSettings branding={branding} onBrandingChange={onBrandingChange} />
-      </div>
-      <div className="border-t border-border/60 px-5 py-4 md:px-6">
+      </section>
+      <section className="grid gap-4 border-t border-border/60 px-5 py-4 md:px-6">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">
+            Admin Configuration
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Instance identity, access policy, repository targets, and members.
+          </p>
+        </div>
+        <BrandingSettings
+          branding={branding}
+          onBrandingChange={onBrandingChange}
+        />
         <SourceAdapterPolicySettings />
-      </div>
-      <div className="border-t border-border/60 px-5 py-4 md:px-6">
-        <EnvironmentInstructions />
-      </div>
-      <div className="border-t border-border/60 px-5 py-4 md:px-6">
         <RepositorySetup
           targetApps={targetApps}
           targetEnvironments={targetEnvironments}
         />
-      </div>
-      <div className="border-t border-border/60 px-5 py-4 md:px-6">
         <MembersAndRoles canManageUsers={canManageUsers} />
-      </div>
-      <div className="border-t border-border/60 px-5 py-4 md:px-6">
-        <ReposWorkspace
-          targetApps={targetApps}
-          targetEnvironments={targetEnvironments}
-          activeCount={0}
-          closedCount={0}
-        />
-      </div>
+      </section>
+      <section className="border-t border-border/60 px-5 py-4 md:px-6">
+        <EnvironmentInstructions />
+      </section>
     </div>
   );
 }
