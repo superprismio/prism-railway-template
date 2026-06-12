@@ -64,6 +64,9 @@ export default async function Page() {
                 <Button asChild className="holographic-shimmer-hover">
                   <Link href="/admin">Open admin board</Link>
                 </Button>
+                <Button asChild variant="secondary">
+                  <Link href="/docs">Read user docs</Link>
+                </Button>
                 <Button asChild variant="outline">
                   <a
                     href="https://docs.railway.com/templates/create"

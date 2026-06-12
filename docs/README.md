@@ -2,6 +2,17 @@
 
 This directory is organized by audience and lifecycle.
 
+## User Docs
+
+End-user and operator documentation:
+
+- [Prism User Docs](user/README.md)
+- [Create And Run Your First Change Request](user/tutorials/first-change-request.md)
+- [Use Memory Explorer](user/how-to/use-memory-explorer.md)
+- [Understand The Railway Template Services](user/concepts/railway-template-services.md)
+
+The site service renders these docs at `/docs`.
+
 ## Architecture
 
 Design notes and system direction:
@@ -21,7 +32,9 @@ Design notes and system direction:
 
 Feature-specific behavior and UI notes:
 
+- [Agent Run Queue And Concurrency](features/agent-run-queue-concurrency.md)
 - [Change Request Flow](features/change-request-flow.md)
+- [Prism Console Job Cancel](features/console-job-cancel.md)
 - [Custom Skills](features/custom-skills.md)
 - [Discord Voice Plan](features/discord-voice-plan.md)
 - [Discord Access Policy Checklist](features/discord-access-policy-checklist.md)
