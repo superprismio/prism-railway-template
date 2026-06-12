@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
-import { Activity } from "lucide-react";
+import Link from "next/link";
+import { Activity, BookOpen } from "lucide-react";
 
 import { ThemeToggle } from "@/components/shared/theme-toggle";
+import { Button } from "@/components/ui/button";
 
 export function AdminHeader({
   actions,
@@ -47,6 +49,12 @@ export function AdminHeader({
 
         <div className="flex items-center gap-2">
           {actions}
+          <Button asChild variant="outline">
+            <Link href="/docs">
+              <BookOpen className="h-4 w-4" />
+              <span className="hidden sm:inline">Docs</span>
+            </Link>
+          </Button>
           <ThemeToggle />
         </div>
       </div>
