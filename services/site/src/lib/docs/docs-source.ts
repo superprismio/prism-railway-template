@@ -3,9 +3,13 @@ import path from "node:path";
 
 import matter from "gray-matter";
 
-const repoRoot = path.resolve(process.cwd(), "../..");
-export const docsRoot = path.join(repoRoot, "docs", "user");
-export const docsAssetsRoot = path.join(docsRoot, "assets");
+const docsRootCandidates = [
+  process.env.PRISM_USER_DOCS_ROOT,
+  path.resolve(process.cwd(), "docs", "user"),
+  path.resolve(process.cwd(), "..", "docs", "user"),
+  path.resolve(process.cwd(), "..", "..", "docs", "user"),
+  path.resolve(process.cwd(), "..", "..", "..", "docs", "user"),
+].filter((candidate): candidate is string => Boolean(candidate));
 
 export type DocPage = {
   content: string;
@@ -25,7 +29,11 @@ function isInside(parent: string, candidate: string) {
   return Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
-function slugToFilePath(slug: string[]) {
+function docsAssetsRoot(docsRoot: string) {
+  return path.join(docsRoot, "assets");
+}
+
+function slugToFilePath(docsRoot: string, slug: string[]) {
   const cleanSlug = slug.filter(Boolean);
   const relativePath =
     cleanSlug.length === 0 ? "README.md" : `${cleanSlug.join("/")}.md`;
@@ -55,43 +63,47 @@ function titleFromSlug(slug: string[]) {
 }
 
 export async function getDocPage(slug: string[]): Promise<DocPage | null> {
-  const filePath = slugToFilePath(slug);
-  if (!filePath) {
-    return null;
+  for (const docsRoot of docsRootCandidates) {
+    const filePath = slugToFilePath(docsRoot, slug);
+    if (!filePath) {
+      continue;
+    }
+
+    try {
+      const raw = await readFile(filePath, "utf8");
+      const parsed = matter(raw);
+
+      return {
+        content: parsed.content,
+        description:
+          typeof parsed.data.description === "string"
+            ? parsed.data.description
+            : undefined,
+        filePath,
+        slug,
+        title:
+          typeof parsed.data.title === "string"
+            ? parsed.data.title
+            : titleFromMarkdown(parsed.content, titleFromSlug(slug)),
+      };
+    } catch {
+      continue;
+    }
   }
 
-  try {
-    const raw = await readFile(filePath, "utf8");
-    const parsed = matter(raw);
-
-    return {
-      content: parsed.content,
-      description:
-        typeof parsed.data.description === "string"
-          ? parsed.data.description
-          : undefined,
-      filePath,
-      slug,
-      title:
-        typeof parsed.data.title === "string"
-          ? parsed.data.title
-          : titleFromMarkdown(parsed.content, titleFromSlug(slug)),
-    };
-  } catch {
-    return null;
-  }
+  return null;
 }
 
-async function listMarkdownFiles(dir: string): Promise<string[]> {
+async function listMarkdownFiles(dir: string, assetsRoot: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
   const files = await Promise.all(
     entries.map(async (entry) => {
       const entryPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (entryPath === docsAssetsRoot) {
+        if (entryPath === assetsRoot) {
           return [];
         }
-        return listMarkdownFiles(entryPath);
+        return listMarkdownFiles(entryPath, assetsRoot);
       }
       if (entry.isFile() && entry.name.endsWith(".md")) {
         return [entryPath];
@@ -104,18 +116,22 @@ async function listMarkdownFiles(dir: string): Promise<string[]> {
 }
 
 export async function getDocSlugs() {
-  try {
-    const files = await listMarkdownFiles(docsRoot);
-    return files.map((file) => {
-      const relative = path.relative(docsRoot, file).replace(/\\/g, "/");
-      if (relative === "README.md") {
-        return [];
-      }
-      return relative.replace(/\.md$/, "").split("/");
-    });
-  } catch {
-    return [[]];
+  for (const docsRoot of docsRootCandidates) {
+    try {
+      const files = await listMarkdownFiles(docsRoot, docsAssetsRoot(docsRoot));
+      return files.map((file) => {
+        const relative = path.relative(docsRoot, file).replace(/\\/g, "/");
+        if (relative === "README.md") {
+          return [];
+        }
+        return relative.replace(/\.md$/, "").split("/");
+      });
+    } catch {
+      continue;
+    }
   }
+
+  return [[]];
 }
 
 export async function getDocNav(): Promise<DocNavItem[]> {
@@ -140,18 +156,23 @@ export async function getDocNav(): Promise<DocNavItem[]> {
 }
 
 export async function getDocAsset(pathSegments: string[]) {
-  const assetPath = path.resolve(docsAssetsRoot, ...pathSegments);
-  if (!isInside(docsAssetsRoot, assetPath)) {
-    return null;
+  for (const docsRoot of docsRootCandidates) {
+    const assetsRoot = docsAssetsRoot(docsRoot);
+    const assetPath = path.resolve(assetsRoot, ...pathSegments);
+    if (!isInside(assetsRoot, assetPath)) {
+      continue;
+    }
+
+    try {
+      const assetStat = await stat(assetPath);
+      if (!assetStat.isFile()) {
+        continue;
+      }
+      return assetPath;
+    } catch {
+      continue;
+    }
   }
 
-  try {
-    const assetStat = await stat(assetPath);
-    if (!assetStat.isFile()) {
-      return null;
-    }
-    return assetPath;
-  } catch {
-    return null;
-  }
+  return null;
 }
