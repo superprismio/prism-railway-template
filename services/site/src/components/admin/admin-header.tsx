@@ -50,8 +50,8 @@ export function AdminHeader({
         <div className="flex items-center gap-2">
           {actions}
           <Button asChild variant="outline">
-            <Link href="/docs">
-              <BookOpen className="h-4 w-4" />
+            <Link href="/docs" aria-label="Open docs">
+              <BookOpen className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">Docs</span>
             </Link>
           </Button>

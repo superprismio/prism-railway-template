@@ -19,7 +19,9 @@ function resolveMarkdownUrl(href: string, slug: string[]) {
     return href;
   }
 
-  const [pathname, suffix = ""] = href.split(/(?=[?#])/);
+  const suffixStart = href.search(/[?#]/);
+  const pathname = suffixStart === -1 ? href : href.slice(0, suffixStart);
+  const suffix = suffixStart === -1 ? "" : href.slice(suffixStart);
   const currentDir = slug.length === 0 ? "." : slug.slice(0, -1).join("/");
   const resolved = path.posix.normalize(path.posix.join(currentDir, pathname));
 

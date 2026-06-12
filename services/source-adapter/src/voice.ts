@@ -1660,6 +1660,7 @@ export class DiscordVoiceManager {
       mergedTranscript,
       transcriptJsonPath,
       transcriptMarkdownPath,
+      skippedChunks,
     };
   }
 

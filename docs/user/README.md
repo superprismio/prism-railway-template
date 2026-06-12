@@ -16,14 +16,7 @@ The site service renders this section at `/docs`.
 - [Use Memory Explorer](how-to/use-memory-explorer.md)
 - [Understand the Railway template services](concepts/railway-template-services.md)
 
-## Draft Source Material
-
-The first tutorial was drafted from the Refactory walkthrough video segment:
-
-- Source video: `/home/dekanjbrown/Videos/prism/refactory/change-request-2.mp4`
-- Source subtitles: `/home/dekanjbrown/Videos/prism/refactory/change-request-2.srt`
-- Memory video: `/home/dekanjbrown/Videos/prism/refactory/memory-3.mp4`
-- Railway template video: `/home/dekanjbrown/Videos/prism/refactory/railway-template-4.mp4`
+## Editorial Notes
 
 The current screenshots are suitable for internal drafting. Before publishing
 public docs, replace any screenshot that includes test data, browser clutter, or
