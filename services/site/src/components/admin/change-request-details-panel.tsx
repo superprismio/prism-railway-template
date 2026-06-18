@@ -385,6 +385,17 @@ function latestAgentRunTraceEntry(run: AgentRunRecord | null) {
 function describeAgentRunStage(run: AgentRunRecord | null) {
   if (!run) return "No active agent run";
 
+  if (run.status === "queued") {
+    const parts = [`Queued in ${run.lane} lane`];
+    if (typeof run.queuePosition === "number" && run.queuePosition > 0) {
+      parts.push(`position ${run.queuePosition}`);
+    }
+    if (run.queueReason) {
+      parts.push(run.queueReason);
+    }
+    return parts.join(" · ");
+  }
+
   const traceEntry = latestAgentRunTraceEntry(run);
   if (traceEntry) {
     return `${traceEntry.kind}: ${traceEntry.message}`;
@@ -395,9 +406,7 @@ function describeAgentRunStage(run: AgentRunRecord | null) {
     return `Working on branch ${branchName}`;
   }
 
-  return run.status === "queued"
-    ? "Queued and waiting for the runtime worker"
-    : "Agent run started and waiting for runtime updates";
+  return "Agent run started and waiting for runtime updates";
 }
 
 type ResponseJobTraceEntry = {
@@ -765,7 +774,7 @@ export function RequestDetailsPanel({
     [executions],
   );
   const activeRunElapsed = formatDurationFrom(
-    activeAgentRun?.startedAt ?? activeAgentRun?.createdAt ?? null,
+    activeAgentRun?.startedAt ?? activeAgentRun?.claimedAt ?? activeAgentRun?.queuedAt ?? activeAgentRun?.createdAt ?? null,
     liveNowMs,
   );
   const activeAgentRunStage = describeAgentRunStage(activeAgentRun);
@@ -1985,7 +1994,13 @@ export function RequestDetailsPanel({
                       <LoaderCircle className="h-4 w-4 animate-spin" />
                       <span className="font-medium">Agent run {activeAgentRun.status}</span>
                     </div>
-                    <Badge variant="outline">{activeAgentRun.kind}</Badge>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <Badge variant="outline">{activeAgentRun.kind}</Badge>
+                      <Badge variant="secondary">{activeAgentRun.lane}</Badge>
+                      {activeAgentRun.status === "queued" && activeAgentRun.queuePosition ? (
+                        <Badge variant="outline">position {activeAgentRun.queuePosition}</Badge>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="mt-3 space-y-2">
                     <p className="leading-6">{activeAgentRunStage}</p>
@@ -1993,6 +2008,11 @@ export function RequestDetailsPanel({
                       {activeAgentRun.workflowStepKey ? (
                         <div>Step: {activeAgentRun.workflowStepKey}</div>
                       ) : null}
+                      <div>Lane: {activeAgentRun.lane}</div>
+                      <div>Priority: {activeAgentRun.priority}</div>
+                      {activeAgentRun.queueReason ? <div>Reason: {activeAgentRun.queueReason}</div> : null}
+                      {activeAgentRun.queuedAt ? <div>Queued: {isoLabel(activeAgentRun.queuedAt)}</div> : null}
+                      {activeAgentRun.claimedAt ? <div>Claimed: {isoLabel(activeAgentRun.claimedAt)}</div> : null}
                       {activeRunElapsed ? <div>Elapsed: {activeRunElapsed}</div> : null}
                       <div>Run: {activeAgentRun.id}</div>
                       {activeAgentRunBranchName ? (
@@ -2283,8 +2303,12 @@ export function RequestDetailsPanel({
                               {run.status}
                             </Badge>
                             <Badge variant="outline">{run.kind}</Badge>
+                            <Badge variant="secondary">{run.lane}</Badge>
                             {run.workflowStepKey ? (
                               <Badge variant="secondary">{run.workflowStepKey}</Badge>
+                            ) : null}
+                            {run.status === "queued" && run.queuePosition ? (
+                              <Badge variant="outline">position {run.queuePosition}</Badge>
                             ) : null}
                             <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                               agent run
@@ -2301,6 +2325,9 @@ export function RequestDetailsPanel({
                         ) : null}
                         <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
                           <div>Run: {run.id}</div>
+                          <div>Lane: {run.lane}</div>
+                          <div>Priority: {run.priority}</div>
+                          {run.queueReason ? <div>Queue reason: {run.queueReason}</div> : null}
                           {run.idempotencyKey ? <div>Key: {run.idempotencyKey}</div> : null}
                           {branchName ? (
                             <div>
@@ -2346,6 +2373,9 @@ export function RequestDetailsPanel({
                               </a>
                             </div>
                           ) : null}
+                          {run.queuedAt ? <div>Queued: {isoLabel(run.queuedAt)}</div> : null}
+                          {run.claimedAt ? <div>Claimed: {isoLabel(run.claimedAt)}</div> : null}
+                          {run.leaseExpiresAt ? <div>Lease expires: {isoLabel(run.leaseExpiresAt)}</div> : null}
                           {run.startedAt ? <div>Started: {isoLabel(run.startedAt)}</div> : null}
                           {run.finishedAt ? <div>Finished: {isoLabel(run.finishedAt)}</div> : null}
                         </div>

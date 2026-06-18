@@ -105,6 +105,8 @@ export type AgentRunRecord = {
   id: string
   kind: string
   status: string
+  lane: string
+  priority: number
   idempotencyKey: string | null
   requestId: string | null
   workflowRunId: string | null
@@ -117,6 +119,11 @@ export type AgentRunRecord = {
   result: Record<string, unknown>
   trace: Array<Record<string, unknown>>
   errorMessage: string | null
+  queuedAt: string
+  claimedAt: string | null
+  leaseExpiresAt: string | null
+  queueReason: string | null
+  queuePosition: number | null
   startedAt: string | null
   finishedAt: string | null
   createdAt: string
