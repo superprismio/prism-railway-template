@@ -1,11 +1,16 @@
 import type { ChangeRequestRecord } from "@/lib/app-core"
 import {
+  claimNextQueuedAgentRun,
+  countRunningAgentRuns,
   createAgentRun,
   ensureWorkflowRunForRequest,
+  expireStaleRunningAgentRuns,
   findActiveAgentRunByIdempotencyKey,
+  getChangeRequest,
   getAgentRun,
   getWorkflowByKey,
   updateAgentRun,
+  type AgentRunRecord,
 } from "@/lib/app-core"
 import { handleResponsePost } from "@/lib/response-route-handler"
 
@@ -74,37 +79,146 @@ function defaultBaseUrl() {
   return "http://127.0.0.1"
 }
 
-async function executeQueuedWorkflowAgentRun(agentRunId: string, input: EnqueueWorkflowAgentRunInput) {
+function readPositiveInteger(value: unknown, fallback: number) {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) && numberValue > 0 ? Math.trunc(numberValue) : fallback
+}
+
+function workflowConcurrency() {
+  return readPositiveInteger(process.env.PRISM_AGENT_RUN_WORKFLOW_CONCURRENCY, 2)
+}
+
+function globalConcurrency() {
+  return readPositiveInteger(process.env.PRISM_AGENT_RUN_GLOBAL_CONCURRENCY, 3)
+}
+
+function leaseSeconds() {
+  return readPositiveInteger(process.env.PRISM_AGENT_RUN_LEASE_SECONDS, 1800)
+}
+
+function workflowRunPriority(request: ChangeRequestRecord) {
+  const priority = request.priority.trim().toLowerCase()
+  if (priority === "urgent") return 90
+  if (priority === "high") return 70
+  if (priority === "low") return 30
+  return 50
+}
+
+function workflowAgentRunInput(run: AgentRunRecord) {
+  return isRecord(run.input) ? run.input : {}
+}
+
+function workflowAgentRunPrompt(run: AgentRunRecord) {
+  const input = workflowAgentRunInput(run)
+  return typeof input.prompt === "string" && input.prompt.trim() ? input.prompt : null
+}
+
+function workflowAgentRunString(input: Record<string, unknown>, key: string) {
+  const value = input[key]
+  return typeof value === "string" ? value : null
+}
+
+function workflowAgentRunStringArray(input: Record<string, unknown>, key: string) {
+  const value = input[key]
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : []
+}
+
+async function executeClaimedWorkflowAgentRun(agentRun: AgentRunRecord) {
+  const input = workflowAgentRunInput(agentRun)
+  const requestId = agentRun.requestId
+  const request = requestId ? getChangeRequest(requestId) : null
+  const prompt = workflowAgentRunPrompt(agentRun)
+  if (!request || !prompt) {
+    updateAgentRun(agentRun.id, {
+      status: "failed",
+      errorMessage: request ? "WORKFLOW_AGENT_RUN_PROMPT_MISSING" : "WORKFLOW_AGENT_RUN_REQUEST_MISSING",
+      leaseExpiresAt: null,
+      queueReason: null,
+      finishedAt: new Date().toISOString(),
+    })
+    return
+  }
+
   try {
     const response = await handleResponsePost(
-      new Request(new URL("/agent/responses", input.baseUrl?.trim() || defaultBaseUrl()), {
+      new Request(new URL("/agent/responses", workflowAgentRunString(input, "baseUrl")?.trim() || defaultBaseUrl()), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          input: [{ role: "user", content: input.prompt }],
-          linked_change_request_id: input.request.id,
-          workflow_action: input.workflowAction ?? null,
+          input: [{ role: "user", content: prompt }],
+          linked_change_request_id: request.id,
+          workflow_action: workflowAgentRunString(input, "workflowAction"),
           auto_continue_until_gate: input.autoContinueUntilGate === true,
-          requested_skills: input.requestedSkills ?? [],
-          agent_run_id: agentRunId,
+          requested_skills: workflowAgentRunStringArray(input, "requestedSkills"),
+          agent_run_id: agentRun.id,
         }),
       }),
       async () => ({ ok: true as const }),
     )
     if (!response.ok) {
       const text = await response.text().catch(() => "")
-      updateAgentRun(agentRunId, {
+      updateAgentRun(agentRun.id, {
         status: "failed",
         errorMessage: text || `HTTP ${response.status}`,
+        leaseExpiresAt: null,
+        queueReason: null,
         finishedAt: new Date().toISOString(),
       })
     }
   } catch (error) {
-    updateAgentRun(agentRunId, {
+    updateAgentRun(agentRun.id, {
       status: "failed",
       errorMessage: error instanceof Error ? error.message : "WORKFLOW_AGENT_RUN_FAILED",
+      leaseExpiresAt: null,
+      queueReason: null,
       finishedAt: new Date().toISOString(),
     })
+  }
+}
+
+let dispatcherScheduled = false
+let dispatcherRunning = false
+
+export function wakeWorkflowAgentRunDispatcher() {
+  if (dispatcherScheduled) {
+    return
+  }
+  dispatcherScheduled = true
+  setTimeout(() => {
+    dispatcherScheduled = false
+    void dispatchWorkflowAgentRuns()
+  }, 0)
+}
+
+async function dispatchWorkflowAgentRuns() {
+  if (dispatcherRunning) {
+    wakeWorkflowAgentRunDispatcher()
+    return
+  }
+  dispatcherRunning = true
+  try {
+    expireStaleRunningAgentRuns()
+
+    while (
+      countRunningAgentRuns() < globalConcurrency() &&
+      countRunningAgentRuns({ lane: "workflow" }) < workflowConcurrency()
+    ) {
+      const agentRun = claimNextQueuedAgentRun({
+        lane: "workflow",
+        leaseSeconds: leaseSeconds(),
+      })
+      if (!agentRun) {
+        break
+      }
+
+      void executeClaimedWorkflowAgentRun(agentRun).finally(() => {
+        wakeWorkflowAgentRunDispatcher()
+      })
+    }
+  } finally {
+    dispatcherRunning = false
   }
 }
 
@@ -157,6 +271,8 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
   const agentRun = createAgentRun({
     kind: "workflow_step",
     status: "queued",
+    lane: "workflow",
+    priority: workflowRunPriority(input.request),
     idempotencyKey,
     requestId: input.request.id,
     workflowRunId: workflowRun.id,
@@ -167,12 +283,14 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
       workflowAction: input.workflowAction ?? null,
       autoContinueUntilGate: input.autoContinueUntilGate === true,
       requestedSkills: input.requestedSkills ?? [],
+      baseUrl: input.baseUrl ?? null,
     },
+    queueReason: "Waiting for workflow lane capacity.",
   })
   if (!agentRun) {
     return { queued: false, reason: "AGENT_RUN_CREATE_FAILED", status: 500 }
   }
 
-  void executeQueuedWorkflowAgentRun(agentRun.id, input)
+  wakeWorkflowAgentRunDispatcher()
   return { queued: true, status: 202, agentRun }
 }

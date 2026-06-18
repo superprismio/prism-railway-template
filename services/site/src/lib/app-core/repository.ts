@@ -493,6 +493,8 @@ export interface AgentRunRecord {
   id: string;
   kind: string;
   status: string;
+  lane: string;
+  priority: number;
   idempotencyKey: string | null;
   requestId: string | null;
   workflowRunId: string | null;
@@ -505,6 +507,11 @@ export interface AgentRunRecord {
   result: Record<string, unknown>;
   trace: Array<Record<string, unknown>>;
   errorMessage: string | null;
+  queuedAt: string;
+  claimedAt: string | null;
+  leaseExpiresAt: string | null;
+  queueReason: string | null;
+  queuePosition: number | null;
   startedAt: string | null;
   finishedAt: string | null;
   createdAt: string;
@@ -530,6 +537,8 @@ export interface UpdateAgentResponseJobInput {
 export interface CreateAgentRunInput {
   kind: string;
   status?: string;
+  lane?: string;
+  priority?: number;
   idempotencyKey?: string | null;
   requestId?: string | null;
   workflowRunId?: string | null;
@@ -542,6 +551,10 @@ export interface CreateAgentRunInput {
   result?: Record<string, unknown>;
   trace?: Array<Record<string, unknown>>;
   errorMessage?: string | null;
+  queuedAt?: string | null;
+  claimedAt?: string | null;
+  leaseExpiresAt?: string | null;
+  queueReason?: string | null;
   startedAt?: string | null;
   finishedAt?: string | null;
 }
@@ -549,6 +562,8 @@ export interface CreateAgentRunInput {
 export interface UpdateAgentRunInput {
   kind?: string;
   status?: string;
+  lane?: string;
+  priority?: number;
   idempotencyKey?: string | null;
   requestId?: string | null;
   workflowRunId?: string | null;
@@ -561,6 +576,10 @@ export interface UpdateAgentRunInput {
   result?: Record<string, unknown>;
   trace?: Array<Record<string, unknown>>;
   errorMessage?: string | null;
+  queuedAt?: string | null;
+  claimedAt?: string | null;
+  leaseExpiresAt?: string | null;
+  queueReason?: string | null;
   startedAt?: string | null;
   finishedAt?: string | null;
 }
@@ -1121,6 +1140,8 @@ interface AgentRunRow {
   id: string;
   kind: string;
   status: string;
+  lane?: string | null;
+  priority?: number | null;
   idempotency_key: string | null;
   request_id: string | null;
   workflow_run_id: string | null;
@@ -1133,6 +1154,10 @@ interface AgentRunRow {
   result_json: string;
   trace_json: string;
   error_message: string | null;
+  queued_at?: string | null;
+  claimed_at?: string | null;
+  lease_expires_at?: string | null;
+  queue_reason?: string | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
@@ -1411,6 +1436,37 @@ function normalizeHandle(handle: string) {
 
 function normalizeText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeAgentRunLane(value: unknown, fallback = 'workflow') {
+  const lane = normalizeText(value);
+  return lane === 'interactive' || lane === 'workflow' || lane === 'background' ? lane : fallback;
+}
+
+function inferAgentRunLane(input: { kind?: unknown; source?: unknown; lane?: unknown }) {
+  const explicitLane = normalizeAgentRunLane(input.lane, '');
+  if (explicitLane) return explicitLane;
+
+  const kind = normalizeText(input.kind);
+  const source = normalizeText(input.source);
+  if (kind === 'console' || source === 'admin-console') return 'interactive';
+  if (kind === 'task' || kind === 'background') return 'background';
+  return 'workflow';
+}
+
+function normalizeAgentRunPriority(value: unknown, fallback: number) {
+  const priority = Number(value);
+  return Number.isFinite(priority) ? Math.trunc(priority) : fallback;
+}
+
+function defaultAgentRunPriority(lane: string) {
+  if (lane === 'interactive') return 100;
+  if (lane === 'background') return 10;
+  return 50;
+}
+
+function addSecondsIso(now: Date, seconds: number) {
+  return new Date(now.getTime() + seconds * 1000).toISOString();
 }
 
 function normalizeExternalRefUrl(value: unknown) {
@@ -1777,11 +1833,50 @@ function parseAgentResponseJobRow(row: {
   } satisfies AgentResponseJobRecord;
 }
 
-function mapAgentRunRow(row: AgentRunRow): AgentRunRecord {
+function mapAgentRunRowsWithQueuePositions(rows: AgentRunRow[]) {
+  const queuedLanes = Array.from(new Set(
+    rows
+      .filter((row) => row.status === 'queued')
+      .map((row) => inferAgentRunLane({ lane: row.lane, kind: row.kind, source: row.source })),
+  ));
+  const positions = new Map<string, number>();
+  if (queuedLanes.length) {
+    const placeholders = queuedLanes.map(() => '?').join(', ');
+    const queuedRows = getDb()
+      .prepare(
+        `SELECT id, lane
+         FROM agent_runs
+         WHERE status = 'queued'
+           AND lane IN (${placeholders})
+         ORDER BY lane ASC, priority DESC, COALESCE(queued_at, created_at) ASC, created_at ASC, id ASC`,
+      )
+      .all(...queuedLanes) as Array<{ id: string; lane: string }>;
+    let currentLane = '';
+    let lanePosition = 0;
+    queuedRows.forEach((row) => {
+      if (row.lane !== currentLane) {
+        currentLane = row.lane;
+        lanePosition = 0;
+      }
+      lanePosition += 1;
+      positions.set(row.id, lanePosition);
+    });
+  }
+  return rows.map((row) => mapAgentRunRow(row, {
+    queuePosition: row.status === 'queued' ? positions.get(row.id) ?? null : null,
+  }));
+}
+
+function mapAgentRunRow(row: AgentRunRow, input: { queuePosition?: number | null } = {}): AgentRunRecord {
+  const lane = inferAgentRunLane({ lane: row.lane, kind: row.kind, source: row.source });
+  const queuedAt = row.queued_at ?? row.created_at;
+  const priority = normalizeAgentRunPriority(row.priority, defaultAgentRunPriority(lane));
   return {
     id: row.id,
     kind: row.kind,
     status: row.status,
+    lane,
+    priority,
     idempotencyKey: row.idempotency_key,
     requestId: row.request_id,
     workflowRunId: row.workflow_run_id,
@@ -1794,6 +1889,13 @@ function mapAgentRunRow(row: AgentRunRow): AgentRunRecord {
     result: parseJsonValue<Record<string, unknown>>(row.result_json, {}),
     trace: parseJsonValue<Array<Record<string, unknown>>>(row.trace_json, []),
     errorMessage: row.error_message,
+    queuedAt,
+    claimedAt: row.claimed_at ?? null,
+    leaseExpiresAt: row.lease_expires_at ?? null,
+    queueReason: row.queue_reason ?? null,
+    queuePosition: row.status === 'queued'
+      ? input.queuePosition ?? computeAgentRunQueuePosition({ id: row.id, lane, priority, queuedAt, createdAt: row.created_at })
+      : null,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     createdAt: row.created_at,
@@ -4543,18 +4645,26 @@ export function updateAgentResponseJob(id: string, input: UpdateAgentResponseJob
 export function createAgentRun(input: CreateAgentRunInput) {
   const id = randomUUID();
   const now = new Date().toISOString();
+  const kind = normalizeText(input.kind) || 'console';
+  const source = normalizeText(input.source) || 'site';
+  const lane = inferAgentRunLane({ lane: input.lane, kind, source });
+  const priority = normalizeAgentRunPriority(input.priority, defaultAgentRunPriority(lane));
+  const queuedAt = normalizeText(input.queuedAt) || now;
   getDb()
     .prepare(
       `INSERT INTO agent_runs (
-         id, kind, status, idempotency_key, request_id, workflow_run_id, workflow_step_key,
+         id, kind, status, lane, priority, idempotency_key, request_id, workflow_run_id, workflow_step_key,
          task_key, hook_key, session_id, source, input_json, result_json, trace_json,
-         error_message, started_at, finished_at, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         error_message, queued_at, claimed_at, lease_expires_at, queue_reason,
+         started_at, finished_at, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
-      normalizeText(input.kind) || 'console',
+      kind,
       normalizeText(input.status) || 'queued',
+      lane,
+      priority,
       normalizeText(input.idempotencyKey) || null,
       normalizeText(input.requestId) || null,
       normalizeText(input.workflowRunId) || null,
@@ -4562,11 +4672,15 @@ export function createAgentRun(input: CreateAgentRunInput) {
       normalizeText(input.taskKey) || null,
       normalizeText(input.hookKey) || null,
       normalizeText(input.sessionId) || null,
-      normalizeText(input.source) || 'site',
+      source,
       JSON.stringify(input.input ?? {}),
       JSON.stringify(input.result ?? {}),
       JSON.stringify(input.trace ?? []),
       normalizeText(input.errorMessage) || null,
+      queuedAt,
+      normalizeText(input.claimedAt) || null,
+      normalizeText(input.leaseExpiresAt) || null,
+      normalizeText(input.queueReason) || null,
       normalizeText(input.startedAt) || null,
       normalizeText(input.finishedAt) || null,
       now,
@@ -4591,6 +4705,8 @@ export function updateAgentRun(id: string, input: UpdateAgentRunInput) {
       `UPDATE agent_runs
        SET kind = @kind,
            status = @status,
+           lane = @lane,
+           priority = @priority,
            idempotency_key = @idempotencyKey,
            request_id = @requestId,
            workflow_run_id = @workflowRunId,
@@ -4603,6 +4719,10 @@ export function updateAgentRun(id: string, input: UpdateAgentRunInput) {
            result_json = @resultJson,
            trace_json = @traceJson,
            error_message = @errorMessage,
+           queued_at = @queuedAt,
+           claimed_at = @claimedAt,
+           lease_expires_at = @leaseExpiresAt,
+           queue_reason = @queueReason,
            started_at = @startedAt,
            finished_at = @finishedAt,
            updated_at = @updatedAt
@@ -4612,6 +4732,10 @@ export function updateAgentRun(id: string, input: UpdateAgentRunInput) {
       id,
       kind: input.kind === undefined ? current.kind : normalizeText(input.kind) || current.kind,
       status: input.status === undefined ? current.status : normalizeText(input.status) || current.status,
+      lane: input.lane === undefined ? current.lane : normalizeAgentRunLane(input.lane, current.lane),
+      priority: input.priority === undefined
+        ? current.priority
+        : normalizeAgentRunPriority(input.priority, current.priority),
       idempotencyKey:
         input.idempotencyKey === undefined ? current.idempotencyKey : normalizeText(input.idempotencyKey) || null,
       requestId: input.requestId === undefined ? current.requestId : normalizeText(input.requestId) || null,
@@ -4627,6 +4751,12 @@ export function updateAgentRun(id: string, input: UpdateAgentRunInput) {
       resultJson: input.result === undefined ? JSON.stringify(current.result) : JSON.stringify(input.result),
       traceJson: input.trace === undefined ? JSON.stringify(current.trace) : JSON.stringify(input.trace),
       errorMessage: input.errorMessage === undefined ? current.errorMessage : normalizeText(input.errorMessage) || null,
+      queuedAt: input.queuedAt === undefined ? current.queuedAt : normalizeText(input.queuedAt) || current.queuedAt,
+      claimedAt: input.claimedAt === undefined ? current.claimedAt : normalizeText(input.claimedAt) || null,
+      leaseExpiresAt:
+        input.leaseExpiresAt === undefined ? current.leaseExpiresAt : normalizeText(input.leaseExpiresAt) || null,
+      queueReason:
+        input.queueReason === undefined ? current.queueReason : normalizeText(input.queueReason) || null,
       startedAt: input.startedAt === undefined ? current.startedAt : normalizeText(input.startedAt) || null,
       finishedAt: input.finishedAt === undefined ? current.finishedAt : normalizeText(input.finishedAt) || null,
       updatedAt: now,
@@ -4640,6 +4770,7 @@ export function listAgentRuns(input: {
   requestId?: string | null;
   taskKey?: string | null;
   hookKey?: string | null;
+  lane?: string | null;
   limit?: number;
 } = {}) {
   const limit = Math.max(1, Math.min(Number(input.limit ?? 50), 200));
@@ -4650,6 +4781,7 @@ export function listAgentRuns(input: {
   const requestId = normalizeText(input.requestId);
   const taskKey = normalizeText(input.taskKey);
   const hookKey = normalizeText(input.hookKey);
+  const lane = normalizeAgentRunLane(input.lane, '');
   if (kind) {
     filters.push('kind = ?');
     params.push(kind);
@@ -4670,11 +4802,136 @@ export function listAgentRuns(input: {
     filters.push('hook_key = ?');
     params.push(hookKey);
   }
+  if (lane) {
+    filters.push('lane = ?');
+    params.push(lane);
+  }
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const rows = getDb()
     .prepare(`SELECT * FROM agent_runs ${where} ORDER BY created_at DESC LIMIT ?`)
     .all(...params, limit) as AgentRunRow[];
-  return rows.map(mapAgentRunRow);
+  return mapAgentRunRowsWithQueuePositions(rows);
+}
+
+export function computeAgentRunQueuePosition(input: {
+  id: string;
+  lane: string;
+  priority: number;
+  queuedAt: string;
+  createdAt: string;
+}) {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM agent_runs
+       WHERE status = 'queued'
+         AND lane = @lane
+         AND id != @id
+         AND (
+           priority > @priority
+           OR (priority = @priority AND COALESCE(queued_at, created_at) < @queuedAt)
+           OR (
+             priority = @priority
+             AND COALESCE(queued_at, created_at) = @queuedAt
+             AND created_at < @createdAt
+           )
+           OR (
+             priority = @priority
+             AND COALESCE(queued_at, created_at) = @queuedAt
+             AND created_at = @createdAt
+             AND id < @id
+           )
+         )`,
+    )
+    .get({
+      id: input.id,
+      lane: normalizeAgentRunLane(input.lane),
+      priority: input.priority,
+      queuedAt: input.queuedAt,
+      createdAt: input.createdAt,
+    }) as { count: number } | undefined;
+  return Number(row?.count ?? 0) + 1;
+}
+
+export function countRunningAgentRuns(input: { lane?: string | null } = {}) {
+  const lane = normalizeAgentRunLane(input.lane, '');
+  const row = getDb()
+    .prepare(`SELECT COUNT(*) AS count FROM agent_runs WHERE status = 'running'${lane ? ' AND lane = ?' : ''}`)
+    .get(...(lane ? [lane] : [])) as { count: number } | undefined;
+  return Number(row?.count ?? 0);
+}
+
+export function expireStaleRunningAgentRuns(input: {
+  now?: string;
+  reason?: string;
+} = {}) {
+  const now = input.now ?? new Date().toISOString();
+  const reason = input.reason ?? 'Agent run lease expired before completion.';
+  const rows = getDb()
+    .prepare(
+      `SELECT *
+       FROM agent_runs
+       WHERE status = 'running'
+         AND lease_expires_at IS NOT NULL
+         AND lease_expires_at <= ?`,
+    )
+    .all(now) as AgentRunRow[];
+
+  return rows.map((row) => updateAgentRun(row.id, {
+    status: 'failed',
+    errorMessage: reason,
+    leaseExpiresAt: null,
+    queueReason: null,
+    finishedAt: now,
+  })).filter((run): run is AgentRunRecord => Boolean(run));
+}
+
+export function claimNextQueuedAgentRun(input: {
+  lane: 'interactive' | 'workflow' | 'background';
+  leaseSeconds: number;
+  now?: Date;
+}) {
+  const lane = normalizeAgentRunLane(input.lane);
+  const now = input.now ?? new Date();
+  const nowIso = now.toISOString();
+  const leaseExpiresAt = addSecondsIso(now, input.leaseSeconds);
+
+  const claimTransaction = getDb().transaction(() => {
+    const candidate = getDb()
+      .prepare(
+        `SELECT *
+         FROM agent_runs
+         WHERE status = 'queued'
+           AND lane = ?
+         ORDER BY priority DESC, COALESCE(queued_at, created_at) ASC, created_at ASC, id ASC
+         LIMIT 1`,
+      )
+      .get(lane) as AgentRunRow | undefined;
+    if (!candidate) {
+      return null;
+    }
+
+    const result = getDb()
+      .prepare(
+        `UPDATE agent_runs
+         SET status = 'running',
+             claimed_at = @claimedAt,
+             lease_expires_at = @leaseExpiresAt,
+             queue_reason = NULL,
+             started_at = COALESCE(started_at, @claimedAt),
+             updated_at = @claimedAt
+         WHERE id = @id
+           AND status = 'queued'`,
+      )
+      .run({
+        id: candidate.id,
+        claimedAt: nowIso,
+        leaseExpiresAt,
+      });
+    return result.changes === 1 ? getAgentRun(candidate.id) : null;
+  });
+
+  return claimTransaction();
 }
 
 export function findActiveAgentRunByIdempotencyKey(idempotencyKey: string) {
@@ -4709,7 +4966,7 @@ export function listActiveAgentRunsForRequest(requestId: string) {
        ORDER BY created_at DESC`,
     )
     .all(id) as AgentRunRow[];
-  return rows.map(mapAgentRunRow);
+  return mapAgentRunRowsWithQueuePositions(rows);
 }
 
 export function cancelActiveAgentRunsForRequest(input: {
