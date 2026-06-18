@@ -1833,7 +1833,41 @@ function parseAgentResponseJobRow(row: {
   } satisfies AgentResponseJobRecord;
 }
 
-function mapAgentRunRow(row: AgentRunRow): AgentRunRecord {
+function mapAgentRunRowsWithQueuePositions(rows: AgentRunRow[]) {
+  const queuedLanes = Array.from(new Set(
+    rows
+      .filter((row) => row.status === 'queued')
+      .map((row) => inferAgentRunLane({ lane: row.lane, kind: row.kind, source: row.source })),
+  ));
+  const positions = new Map<string, number>();
+  if (queuedLanes.length) {
+    const placeholders = queuedLanes.map(() => '?').join(', ');
+    const queuedRows = getDb()
+      .prepare(
+        `SELECT id, lane
+         FROM agent_runs
+         WHERE status = 'queued'
+           AND lane IN (${placeholders})
+         ORDER BY lane ASC, priority DESC, COALESCE(queued_at, created_at) ASC, created_at ASC, id ASC`,
+      )
+      .all(...queuedLanes) as Array<{ id: string; lane: string }>;
+    let currentLane = '';
+    let lanePosition = 0;
+    queuedRows.forEach((row) => {
+      if (row.lane !== currentLane) {
+        currentLane = row.lane;
+        lanePosition = 0;
+      }
+      lanePosition += 1;
+      positions.set(row.id, lanePosition);
+    });
+  }
+  return rows.map((row) => mapAgentRunRow(row, {
+    queuePosition: row.status === 'queued' ? positions.get(row.id) ?? null : null,
+  }));
+}
+
+function mapAgentRunRow(row: AgentRunRow, input: { queuePosition?: number | null } = {}): AgentRunRecord {
   const lane = inferAgentRunLane({ lane: row.lane, kind: row.kind, source: row.source });
   const queuedAt = row.queued_at ?? row.created_at;
   const priority = normalizeAgentRunPriority(row.priority, defaultAgentRunPriority(lane));
@@ -1860,7 +1894,7 @@ function mapAgentRunRow(row: AgentRunRow): AgentRunRecord {
     leaseExpiresAt: row.lease_expires_at ?? null,
     queueReason: row.queue_reason ?? null,
     queuePosition: row.status === 'queued'
-      ? computeAgentRunQueuePosition({ id: row.id, lane, priority, queuedAt })
+      ? input.queuePosition ?? computeAgentRunQueuePosition({ id: row.id, lane, priority, queuedAt, createdAt: row.created_at })
       : null,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
@@ -4776,7 +4810,7 @@ export function listAgentRuns(input: {
   const rows = getDb()
     .prepare(`SELECT * FROM agent_runs ${where} ORDER BY created_at DESC LIMIT ?`)
     .all(...params, limit) as AgentRunRow[];
-  return rows.map(mapAgentRunRow);
+  return mapAgentRunRowsWithQueuePositions(rows);
 }
 
 export function computeAgentRunQueuePosition(input: {
@@ -4784,6 +4818,7 @@ export function computeAgentRunQueuePosition(input: {
   lane: string;
   priority: number;
   queuedAt: string;
+  createdAt: string;
 }) {
   const row = getDb()
     .prepare(
@@ -4795,6 +4830,17 @@ export function computeAgentRunQueuePosition(input: {
          AND (
            priority > @priority
            OR (priority = @priority AND COALESCE(queued_at, created_at) < @queuedAt)
+           OR (
+             priority = @priority
+             AND COALESCE(queued_at, created_at) = @queuedAt
+             AND created_at < @createdAt
+           )
+           OR (
+             priority = @priority
+             AND COALESCE(queued_at, created_at) = @queuedAt
+             AND created_at = @createdAt
+             AND id < @id
+           )
          )`,
     )
     .get({
@@ -4802,6 +4848,7 @@ export function computeAgentRunQueuePosition(input: {
       lane: normalizeAgentRunLane(input.lane),
       priority: input.priority,
       queuedAt: input.queuedAt,
+      createdAt: input.createdAt,
     }) as { count: number } | undefined;
   return Number(row?.count ?? 0) + 1;
 }
@@ -4856,7 +4903,7 @@ export function claimNextQueuedAgentRun(input: {
          FROM agent_runs
          WHERE status = 'queued'
            AND lane = ?
-         ORDER BY priority DESC, COALESCE(queued_at, created_at) ASC, created_at ASC
+         ORDER BY priority DESC, COALESCE(queued_at, created_at) ASC, created_at ASC, id ASC
          LIMIT 1`,
       )
       .get(lane) as AgentRunRow | undefined;
@@ -4919,7 +4966,7 @@ export function listActiveAgentRunsForRequest(requestId: string) {
        ORDER BY created_at DESC`,
     )
     .all(id) as AgentRunRow[];
-  return rows.map(mapAgentRunRow);
+  return mapAgentRunRowsWithQueuePositions(rows);
 }
 
 export function cancelActiveAgentRunsForRequest(input: {

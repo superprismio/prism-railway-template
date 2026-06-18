@@ -135,6 +135,7 @@ async function executeClaimedWorkflowAgentRun(agentRun: AgentRunRecord) {
       status: "failed",
       errorMessage: request ? "WORKFLOW_AGENT_RUN_PROMPT_MISSING" : "WORKFLOW_AGENT_RUN_REQUEST_MISSING",
       leaseExpiresAt: null,
+      queueReason: null,
       finishedAt: new Date().toISOString(),
     })
     return
@@ -162,6 +163,7 @@ async function executeClaimedWorkflowAgentRun(agentRun: AgentRunRecord) {
         status: "failed",
         errorMessage: text || `HTTP ${response.status}`,
         leaseExpiresAt: null,
+        queueReason: null,
         finishedAt: new Date().toISOString(),
       })
     }
@@ -170,6 +172,7 @@ async function executeClaimedWorkflowAgentRun(agentRun: AgentRunRecord) {
       status: "failed",
       errorMessage: error instanceof Error ? error.message : "WORKFLOW_AGENT_RUN_FAILED",
       leaseExpiresAt: null,
+      queueReason: null,
       finishedAt: new Date().toISOString(),
     })
   }
