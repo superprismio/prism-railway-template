@@ -681,6 +681,8 @@ function completeWorkflowAgentStep(input: {
       }),
       trace: Array.isArray(input.runtimeResponse.trace) ? input.runtimeResponse.trace : [],
       errorMessage: null,
+      leaseExpiresAt: null,
+      queueReason: null,
       finishedAt: new Date().toISOString(),
     })
   }
@@ -1569,6 +1571,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
               }),
               trace: failureTrace,
               errorMessage: continuationMessage,
+              leaseExpiresAt: null,
+              queueReason: null,
               finishedAt: new Date().toISOString(),
             })
           }
@@ -1657,6 +1661,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           }),
           trace: failureTrace,
           errorMessage: message,
+          leaseExpiresAt: null,
+          queueReason: null,
           finishedAt: new Date().toISOString(),
         })
       }

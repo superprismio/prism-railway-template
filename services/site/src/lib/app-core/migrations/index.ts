@@ -21,6 +21,7 @@ import { agentRunsMigration } from './021_agent_runs';
 import { runLinksMigration } from './022_run_links';
 import { requestArtifactRunLinksMigration } from './023_request_artifact_run_links';
 import { requestHumanHoursEstimateMigration } from './024_request_human_hours_estimate';
+import { agentRunQueueFieldsMigration } from './025_agent_run_queue_fields';
 
 export interface Migration {
   name: string;
@@ -51,4 +52,5 @@ export const migrations: Migration[] = [
   runLinksMigration,
   requestArtifactRunLinksMigration,
   requestHumanHoursEstimateMigration,
+  agentRunQueueFieldsMigration,
 ];

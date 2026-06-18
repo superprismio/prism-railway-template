@@ -2,7 +2,13 @@
 
 ## Status
 
-Planned / future.
+Partially implemented.
+
+The first implementation slice adds durable queue metadata to `agent_runs`,
+classifies existing run sources into lanes, and dispatches workflow-lane runs
+through a site-service dispatcher with lane/global concurrency limits. Prism
+Console and background runs are classified into lanes, but their execution paths
+are not yet moved behind the dispatcher.
 
 ## Problem
 
@@ -128,6 +134,8 @@ All model-backed work creates an `agent_run` with `status: "queued"`.
 The enqueue route should not directly call Codex Runtime or `handleResponsePost`
 for workflow jobs. It should only create the durable run and nudge the dispatcher.
 
+Implemented for workflow request auto-start and workflow continue routes.
+
 ### Dispatch
 
 A dispatcher claims queued runs when capacity is available:
@@ -143,6 +151,9 @@ A dispatcher claims queued runs when capacity is available:
 The first slice can run the dispatcher in the site service if the deployment is
 single-replica. If multiple site replicas are expected, claiming must be atomic
 and safe across processes.
+
+The current implementation runs in the site service and atomically claims queued
+workflow runs by updating `agent_runs.status` from `queued` to `running`.
 
 ### Recovery
 
@@ -242,22 +253,22 @@ Read routes should include queue metadata for active runs:
 
 ## Implementation Checklist
 
-- [ ] Add `lane`, `priority`, `queued_at`, `claimed_at`,
+- [x] Add `lane`, `priority`, `queued_at`, `claimed_at`,
       `lease_expires_at`, and `queue_reason` to `agent_runs`.
-- [ ] Add repository helpers to compute queue position and claim the next run.
-- [ ] Replace in-process workflow enqueue execution with durable enqueue plus
+- [x] Add repository helpers to compute queue position and claim the next run.
+- [x] Replace in-process workflow enqueue execution with durable enqueue plus
       dispatcher wakeup.
-- [ ] Add dispatcher loop in site service or a dedicated runner process.
-- [ ] Add lane/global concurrency env config with conservative defaults.
-- [ ] Classify existing run sources into `interactive`, `workflow`, and
+- [x] Add dispatcher loop in site service or a dedicated runner process.
+- [x] Add lane/global concurrency env config with conservative defaults.
+- [x] Classify existing run sources into `interactive`, `workflow`, and
       `background`.
-- [ ] Update request create/continue routes to return queued run metadata.
+- [x] Update request create/continue routes to return queued run metadata.
 - [ ] Update Prism Console chat to show interactive queue state when saturated.
 - [ ] Update request list/detail UI to show queued workflow runs and queue
       position.
 - [ ] Update task-runner and hook run views to show linked agent run queue
       state.
-- [ ] Add stale running-run recovery.
+- [x] Add stale running-run recovery.
 - [ ] Add validation for fan-out workflow creating many child requests.
 - [ ] Add validation that interactive chat can run while workflow runs are
       queued.
