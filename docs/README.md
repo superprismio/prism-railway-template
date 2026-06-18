@@ -47,6 +47,7 @@ Feature-specific behavior and UI notes:
 Setup, deployment, and runtime operations:
 
 - [Codex Runtime Auth](operations/codex-runtime-auth.md)
+- [Codex Runtime Image Generation Pin](operations/codex-runtime-image-generation-pin.md)
 - [Agent API Contract](operations/agent-api-contract.md)
 - [Local VPS Deployment](operations/local-vps-deployment.md)
 - [Railway Env Checklist](operations/railway-env-checklist.md)
