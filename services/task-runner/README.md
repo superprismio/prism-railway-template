@@ -47,6 +47,7 @@ The built-in task defaults are seeded into `site` on startup and on scheduler po
 - `discord-sync`: disabled, `0 * * * *`
 - `memory-run`: disabled, `45 * * * *`
 - `knowledge-source-sync`: disabled, `15 * * * *`
+- `skill-source-sync`: disabled, `20 * * * *`
 - `knowledge-run`: disabled, `55 * * * *`
 
 After seeding, `site` DB values are the scheduler source of truth. The runner refreshes task rows on each poll.
@@ -222,6 +223,18 @@ The runner calls:
 - header: `X-Prism-Api-Key`
 
 The Prism Memory endpoint checks each configured GitHub source remote branch head and only syncs sources whose head differs from `last_synced_commit`.
+
+### Skill source sync
+
+- `APP_API_BASE_URL=http://site.railway.internal:4010`
+- `APP_API_SERVICE_TOKEN=...`
+
+The runner calls:
+
+- `POST /agent/skill-sources/sync`
+- header: `X-Service-Token`
+
+The site endpoint syncs enabled GitHub-backed skill sources into the site data volume, validates each `SKILL.md`, and exposes successful source-backed skills through `/agent/skills`.
 
 ## Validation approach
 

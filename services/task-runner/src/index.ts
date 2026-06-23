@@ -1416,6 +1416,25 @@ function buildBuiltInTasks(): BuiltInTask[] {
         return postJson(baseUrl, "/ops/knowledge/sources/sync", headers);
       },
     },
+    {
+      key: "skill-source-sync",
+      name: "Prism skill source sync",
+      defaultEnabled: false,
+      defaultCron: "20 * * * *",
+      enabled: false,
+      cron: "20 * * * *",
+      taskType: "builtin",
+      outputConfig: {},
+      run: async () => {
+        const baseUrl = requireBaseUrl("APP_API_BASE_URL", appApiBaseUrl() ?? "");
+        const token = appApiServiceToken();
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers["X-Service-Token"] = token;
+        }
+        return postJson(baseUrl, "/agent/skill-sources/sync", headers);
+      },
+    },
   ];
 }
 

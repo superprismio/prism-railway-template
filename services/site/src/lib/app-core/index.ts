@@ -3,6 +3,18 @@ export { getDb, closeDb, runMigrations } from './db';
 export { getAdminBoardSnapshot, getAdminSetupStatus } from './admin-read';
 export { buildTargetEnvironmentDeployPlan, type TargetEnvironmentDeployPlan } from './deploy-adapters';
 export { buildHostedSkillArchive, deleteCustomSkill, listHostedSkills, readHostedSkillMarkdown, upsertCustomSkill, type HostedSkillSummary } from './hosted-skills';
+export {
+  deleteSkillSource,
+  getSkillSource,
+  listHostedSkillSourceRoots,
+  listSkillSources,
+  listSyncedSkillSourceRoots,
+  syncSkillSource,
+  syncSkillSources,
+  upsertSkillSource,
+  type SkillSourceRecord,
+  type UpsertSkillSourceInput,
+} from './skill-sources';
 export { readSiteContent, writeSiteContent, normalizeSiteContent, type SiteContent } from './site-content';
 export {
   defaultSourceAdapterPolicy,

@@ -2,7 +2,13 @@
 
 ## Status
 
-Planned / future.
+Partially implemented.
+
+The first slice implements GitHub-backed skill sources only. Prism can register
+an HTTPS GitHub repo, sync a configured `skills/` path into the site data
+volume, validate `SKILL.md` files, expose synced skills through the existing
+skill list/read/download routes, and run sync manually or through a separate
+`skill-source-sync` task. Workflow sources remain planned.
 
 This captures a follow-up idea after testing the first generation of Prism
 instance skills and workflows. The immediate use case is the Raid Guild skill
@@ -303,15 +309,15 @@ Operators should be able to:
 
 ## Implementation Plan
 
-1. Add persistent content-source configuration and sync status.
-2. Implement GitHub sync service for read-only skill sources.
-3. Merge synced skill cache into `listHostedSkills`, `readHostedSkillMarkdown`,
+1. [x] Add persistent content-source configuration and sync status.
+2. [x] Implement GitHub sync service for read-only skill sources.
+3. [x] Merge synced skill cache into `listHostedSkills`, `readHostedSkillMarkdown`,
    and skill archive downloads.
-4. Add admin UI for skill sources and manual sync.
-5. Add workflow-source sync with strict manifest/file validation.
-6. Merge validated source workflows into workflow listing and lookup.
-7. Add admin UI for workflow sources, validation errors, and enablement.
-8. Add scheduled sync through the task runner.
+4. [x] Add admin UI for skill sources and manual sync.
+5. [ ] Add workflow-source sync with strict manifest/file validation.
+6. [ ] Merge validated source workflows into workflow listing and lookup.
+7. [ ] Add admin UI for workflow sources, validation errors, and enablement.
+8. [x] Add scheduled skill-source sync through the task runner.
 
 ## Open Questions
 
