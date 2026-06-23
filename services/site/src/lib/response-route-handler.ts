@@ -830,9 +830,11 @@ function startWorkflowAgentStep(input: {
   action?: string | null
   autoContinued?: boolean
 }) {
-  if (input.agentRunId && !getAgentRun(input.agentRunId)) {
+  const existingAgentRun = input.agentRunId ? getAgentRun(input.agentRunId) : null
+  if (input.agentRunId && !existingAgentRun) {
     return null
   }
+  const startedAt = new Date().toISOString()
 
   updateChangeRequest(input.requestId, {
     workflowStepKey: input.stepKey,
@@ -864,7 +866,8 @@ function startWorkflowAgentStep(input: {
         workflowStepKey: input.stepKey,
         sessionId: input.sessionId,
         source: "site",
-        startedAt: new Date().toISOString(),
+        claimedAt: existingAgentRun?.claimedAt ?? startedAt,
+        startedAt,
       }) ?? getAgentRun(input.agentRunId)
     : createAgentRun({
         kind: "workflow_step",
@@ -881,7 +884,8 @@ function startWorkflowAgentStep(input: {
           action: input.action ?? null,
           autoContinued: input.autoContinued === true,
         },
-        startedAt: new Date().toISOString(),
+        claimedAt: startedAt,
+        startedAt,
       })
   return agentRun?.id ?? null
 }
