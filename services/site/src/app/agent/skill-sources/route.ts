@@ -5,7 +5,11 @@ import { parseString, requireServiceAccess } from "@/lib/internal-service"
 
 function parseBoolean(value: unknown, fallback = true) {
   if (typeof value === "boolean") return value
-  if (typeof value === "string") return new Set(["1", "true", "yes", "on"]).has(value.trim().toLowerCase())
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase()
+    if (new Set(["1", "true", "yes", "on"]).has(normalized)) return true
+    if (new Set(["0", "false", "no", "off"]).has(normalized)) return false
+  }
   return fallback
 }
 

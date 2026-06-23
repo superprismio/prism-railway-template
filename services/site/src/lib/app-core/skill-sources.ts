@@ -162,12 +162,17 @@ function runGit(args: string[], cwd?: string) {
 function skillNameFromMarkdown(content: string) {
   const lines = content.split(/\r?\n/);
   let inFrontmatter = false;
+  let frontmatterStarted = false;
   for (const line of lines) {
     const trimmed = line.trim();
     if (trimmed === '---') {
       if (inFrontmatter) {
+        break;
+      }
+      if (frontmatterStarted) {
         return null;
       }
+      frontmatterStarted = true;
       inFrontmatter = true;
       continue;
     }
@@ -180,6 +185,10 @@ function skillNameFromMarkdown(content: string) {
     }
   }
   return null;
+}
+
+function shouldCopySkillPath(sourcePath: string) {
+  return !sourcePath.split(path.sep).includes('.git');
 }
 
 function validateAndStageSkills(source: SkillSourceRecord, checkoutRoot: string) {
@@ -229,7 +238,7 @@ function validateAndStageSkills(source: SkillSourceRecord, checkoutRoot: string)
     fs.cpSync(skillDir, path.join(stageRoot, skillName), {
       recursive: true,
       force: true,
-      filter: (sourcePath) => !sourcePath.includes(`${path.sep}.git${path.sep}`),
+      filter: shouldCopySkillPath,
     });
     skillCount += 1;
   }
@@ -378,6 +387,7 @@ export function syncSkillSource(key: string) {
     const checkout = checkoutPath(source.key);
     fs.mkdirSync(basePath, { recursive: true });
     if (fs.existsSync(path.join(checkout, '.git'))) {
+      runGit(['remote', 'set-url', 'origin', source.repoUrl], checkout);
       runGit(['fetch', '--depth', '1', 'origin', source.branch], checkout);
       runGit(['checkout', '--force', 'FETCH_HEAD'], checkout);
     } else {
