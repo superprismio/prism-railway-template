@@ -94,6 +94,8 @@ PRISM_AGENT_RUN_TARGET_APP_CONCURRENCY=1
 PRISM_AGENT_RUN_WORKFLOW_KEY_CONCURRENCY=1
 PRISM_AGENT_RUN_MAX_QUEUE_AGE_MINUTES=1440
 PRISM_AGENT_RUN_LEASE_SECONDS=1800
+PRISM_AGENT_RUN_DISPATCHER_INTERVAL_MS=10000
+PRISM_AGENT_RUN_STALE_UNLEASED_SECONDS=3600
 ```
 
 ## Data Model
@@ -154,6 +156,9 @@ and safe across processes.
 
 The current implementation runs in the site service and atomically claims queued
 workflow runs by updating `agent_runs.status` from `queued` to `running`.
+The site starts a lightweight dispatcher heartbeat at startup so queued workflow
+runs are retried even if the original enqueue wake-up was missed. Cancellation
+also wakes the dispatcher because it may free workflow lane capacity.
 
 ### Recovery
 
@@ -161,6 +166,8 @@ On startup or periodic sweep:
 
 - leave `queued` runs queued,
 - mark stale `running` runs as failed or expired when `leaseExpiresAt` is past,
+- mark old `running` runs without a lease as failed after
+  `PRISM_AGENT_RUN_STALE_UNLEASED_SECONDS`,
 - avoid automatically rerunning non-idempotent steps unless the run input and
   idempotency key make that safe.
 

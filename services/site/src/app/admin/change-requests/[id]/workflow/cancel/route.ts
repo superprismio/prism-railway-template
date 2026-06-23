@@ -15,6 +15,7 @@ import {
 } from "@/lib/app-core"
 import { adminFetch } from "@/lib/admin"
 import { parseString, readRouteParam, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
+import { wakeWorkflowAgentRunDispatcher } from "@/lib/workflow-agent-run-queue"
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -91,6 +92,7 @@ export async function POST(request: Request, context: RouteContext) {
     requestId: changeRequest.id,
     reason: operatorNote,
   })
+  wakeWorkflowAgentRunDispatcher()
   const workflowRun = getWorkflowRunForRequest(changeRequest.id)
   updateChangeRequest(changeRequest.id, {
     workflowStepKey: terminalStepKey,

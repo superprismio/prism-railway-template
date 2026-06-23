@@ -199,6 +199,15 @@ function workflowStepRunIdempotencyKey(input: {
   return `workflow:${input.requestId}:${input.workflowRunId}:${input.stepKey}:${actionKey}`
 }
 
+function workflowAgentRunLeaseSeconds() {
+  const numberValue = Number(process.env.PRISM_AGENT_RUN_LEASE_SECONDS)
+  return Number.isFinite(numberValue) && numberValue > 0 ? Math.trunc(numberValue) : 1800
+}
+
+function addSecondsIso(date: Date, seconds: number) {
+  return new Date(date.getTime() + seconds * 1000).toISOString()
+}
+
 function agentRunResultString(run: ReturnType<typeof getAgentRun> | null, key: string) {
   const value = run?.result?.[key]
   return typeof value === "string" && value.trim() ? value.trim() : null
@@ -937,6 +946,7 @@ function startWorkflowAgentStep(input: {
     return null
   }
   const startedAt = new Date().toISOString()
+  const leaseExpiresAt = addSecondsIso(new Date(startedAt), workflowAgentRunLeaseSeconds())
 
   updateChangeRequest(input.requestId, {
     workflowStepKey: input.stepKey,
@@ -969,6 +979,7 @@ function startWorkflowAgentStep(input: {
         sessionId: input.sessionId,
         source: "site",
         claimedAt: existingAgentRun?.claimedAt ?? startedAt,
+        leaseExpiresAt,
         startedAt,
       }) ?? getAgentRun(input.agentRunId)
     : createAgentRun({
@@ -987,6 +998,7 @@ function startWorkflowAgentStep(input: {
           autoContinued: input.autoContinued === true,
         },
         claimedAt: startedAt,
+        leaseExpiresAt,
         startedAt,
       })
   return agentRun?.id ?? null

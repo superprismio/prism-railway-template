@@ -4972,18 +4972,31 @@ export function countRunningAgentRuns(input: { lane?: string | null } = {}) {
 export function expireStaleRunningAgentRuns(input: {
   now?: string;
   reason?: string;
+  staleUnleasedSeconds?: number;
 } = {}) {
   const now = input.now ?? new Date().toISOString();
   const reason = input.reason ?? 'Agent run lease expired before completion.';
+  const staleUnleasedSeconds = Number(input.staleUnleasedSeconds);
+  const staleUnleasedCutoff =
+    Number.isFinite(staleUnleasedSeconds) && staleUnleasedSeconds > 0
+      ? addSecondsIso(new Date(now), -Math.trunc(staleUnleasedSeconds))
+      : null;
   const rows = getDb()
     .prepare(
       `SELECT *
        FROM agent_runs
        WHERE status = 'running'
-         AND lease_expires_at IS NOT NULL
-         AND lease_expires_at <= ?`,
+         AND (
+           (lease_expires_at IS NOT NULL AND lease_expires_at <= @now)
+           OR (
+             @staleUnleasedCutoff IS NOT NULL
+             AND lease_expires_at IS NULL
+             AND COALESCE(claimed_at, started_at) IS NOT NULL
+             AND COALESCE(claimed_at, started_at) <= @staleUnleasedCutoff
+           )
+         )`,
     )
-    .all(now) as AgentRunRow[];
+    .all({ now, staleUnleasedCutoff }) as AgentRunRow[];
 
   return rows.map((row) => updateAgentRun(row.id, {
     status: 'failed',
