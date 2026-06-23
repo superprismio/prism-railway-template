@@ -7,8 +7,9 @@ Partially implemented.
 The first slice implements GitHub-backed skill sources only. Prism can register
 an HTTPS GitHub repo, sync a configured `skills/` path into the site data
 volume, validate `SKILL.md` files, expose synced skills through the existing
-skill list/read/download routes, and run sync manually or through a separate
-`skill-source-sync` task. Workflow sources remain planned.
+skill list/read/download routes, display them in a Source Skills UI tab, and run
+sync manually or through a separate `skill-source-sync` task. Workflow sources
+and task template sources remain planned.
 
 This captures a follow-up idea after testing the first generation of Prism
 instance skills and workflows. The immediate use case is the Raid Guild skill
@@ -319,11 +320,102 @@ Operators should be able to:
 7. [ ] Add admin UI for workflow sources, validation errors, and enablement.
 8. [x] Add scheduled skill-source sync through the task runner.
 
+## Potential Next Slices
+
+### Slice 2: Workflow Source Proposals
+
+Workflow sources should be a separate PR after skill source sync has been tested
+against a real instance.
+
+Recommended behavior:
+
+- sync `workflows/` from an enabled GitHub source,
+- validate each `manifest.proposal.json`, `workflow.md`, and referenced step
+  file,
+- show synced workflow recipes as read-only source proposals,
+- do not auto-enable new or changed source workflows,
+- require an explicit admin action to import/promote a proposal into an active
+  instance workflow,
+- record source repo, branch, path, commit SHA, and validation errors.
+
+Workflow validation should check:
+
+- manifest parses,
+- manifest key matches directory name,
+- entrypoint exists,
+- every `workflowPath` and `instructionPath` exists inside the workflow
+  directory,
+- no path escapes the workflow directory,
+- `next` and route targets exist,
+- step keys are unique,
+- requested skills exist or are unresolved with a visible warning,
+- auto-run/auto-continue behavior is explicit.
+
+Suggested UI:
+
+```txt
+Workflows
+  Instance Workflows
+  Source Workflow Proposals
+  Built-In Workflows
+```
+
+### Slice 3: Task Template Sources
+
+Task sources should come after workflow sources. Tasks are higher risk because
+they can run on schedules, deliver output, trigger workflows, and call Codex
+Runtime.
+
+Recommended behavior:
+
+- sync task templates as disabled proposals,
+- require explicit local enablement,
+- require schedule review,
+- require destination/output delivery review,
+- require requested skill and workflow references to resolve,
+- never auto-enable synced task templates.
+
+Task templates should probably live under a distinct path:
+
+```txt
+tasks/
+  daily-brief/
+    task.proposal.json
+    prompt.md
+```
+
+The first task-source implementation should focus on reviewable imports, not
+automatic scheduled execution.
+
+### Slice 4: Shared Content Source Abstraction
+
+After skills and workflows prove the model, the code can converge on a shared
+content-source abstraction:
+
+```txt
+kind = skills | workflows | tasks
+provider = github
+```
+
+Even then, operational tasks should remain separate:
+
+```txt
+knowledge-source-sync
+skill-source-sync
+workflow-source-sync
+task-template-source-sync
+```
+
+Separate tasks keep ownership, auth, scheduling, and failure modes clear.
+
 ## Open Questions
 
-- Should skill and workflow sources share one table or use separate tables?
+- Should skill and workflow sources share one table after the workflow slice, or
+  should the current skill-specific table remain separate?
 - Should source-backed workflows be imported into the `workflows` table or read
   from a synced cache at runtime?
 - Should instance custom content be allowed to override GitHub-backed content?
 - Should sync happen on a schedule, webhook, manual action, or all three?
 - Should GitHub-backed workflows require a human gate before first enablement?
+- Should source-backed task templates be allowed to update existing disabled
+  task rows, or should every update require re-import?
