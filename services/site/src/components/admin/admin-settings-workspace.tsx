@@ -116,6 +116,15 @@ type SourceAdapterPolicySettings = {
 
 type SettingsView = "status" | "config" | "docs";
 
+type RepositoryTargetDraft = {
+  name: string;
+  repoUrl: string;
+  defaultBranch: string;
+  description: string;
+  agentEnabled: boolean;
+  defaultEnvironmentId: string;
+};
+
 const settingsViewOptions: Array<{
   value: SettingsView;
   label: string;
@@ -1447,97 +1456,53 @@ function RepositorySetup({
   targetApps: TargetAppRecord[];
   targetEnvironments: TargetEnvironmentRecord[];
 }) {
-  const [drafts, setDrafts] = useState(() =>
-    Object.fromEntries(
-      targetApps.map((targetApp) => {
-        const environments = targetEnvironments.filter(
-          (environment) => environment.targetAppId === targetApp.id,
-        );
-        const defaultEnvironment =
-          environments.find((environment) => environment.isDefaultForAgent) ??
-          environments[0];
-
-        return [
-          targetApp.id,
-          {
-            name: targetApp.name,
-            repoUrl: targetApp.repoUrl ?? "",
-            defaultBranch:
-              defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
-            description: targetApp.description ?? "",
-            agentEnabled: targetApp.agentEnabled,
-            defaultEnvironmentId: defaultEnvironment?.id ?? "",
-          },
-        ];
-      }),
-    ),
-  );
   const [error, setError] = useState<string | null>(null);
   const [savingTargetId, setSavingTargetId] = useState<string | null>(null);
   const [isAddTargetOpen, setIsAddTargetOpen] = useState(false);
   const [editingTarget, setEditingTarget] = useState<TargetAppRecord | null>(
     null,
   );
+  const [editingDraft, setEditingDraft] =
+    useState<RepositoryTargetDraft | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    setDrafts(
-      Object.fromEntries(
-        targetApps.map((targetApp) => {
-          const environments = targetEnvironments.filter(
-            (environment) => environment.targetAppId === targetApp.id,
-          );
-          const defaultEnvironment =
-            environments.find((environment) => environment.isDefaultForAgent) ??
-            environments[0];
-
-          return [
-            targetApp.id,
-            {
-              name: targetApp.name,
-              repoUrl: targetApp.repoUrl ?? "",
-              defaultBranch:
-                defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
-              description: targetApp.description ?? "",
-              agentEnabled: targetApp.agentEnabled,
-              defaultEnvironmentId: defaultEnvironment?.id ?? "",
-            },
-          ];
-        }),
-      ),
+  function buildTargetDraft(targetApp: TargetAppRecord): RepositoryTargetDraft {
+    const environments = targetEnvironments.filter(
+      (environment) => environment.targetAppId === targetApp.id,
     );
-  }, [targetApps, targetEnvironments]);
+    const defaultEnvironment =
+      environments.find((environment) => environment.isDefaultForAgent) ??
+      environments[0];
 
-  function updateDraft(
-    targetAppId: string,
-    patch: Partial<{
-      name: string;
-      repoUrl: string;
-      defaultBranch: string;
-      description: string;
-      agentEnabled: boolean;
-      defaultEnvironmentId: string;
-    }>,
-  ) {
-    setDrafts((current) => ({
-      ...current,
-      [targetAppId]: Object.assign(
-        {
-          name: "",
-          repoUrl: "",
-          defaultBranch: "main",
-          description: "",
-          agentEnabled: true,
-          defaultEnvironmentId: "",
-        },
-        current[targetAppId],
-        patch,
-      ),
-    }));
+    return {
+      name: targetApp.name,
+      repoUrl: targetApp.repoUrl ?? "",
+      defaultBranch:
+        defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
+      description: targetApp.description ?? "",
+      agentEnabled: targetApp.agentEnabled,
+      defaultEnvironmentId: defaultEnvironment?.id ?? "",
+    };
+  }
+
+  function updateEditingDraft(patch: Partial<RepositoryTargetDraft>) {
+    setEditingDraft((current) =>
+      current
+        ? {
+            ...current,
+            ...patch,
+          }
+        : current,
+    );
+  }
+
+  function closeEditTarget() {
+    setEditingTarget(null);
+    setEditingDraft(null);
   }
 
   function saveTarget(targetApp: TargetAppRecord) {
-    const draft = drafts[targetApp.id];
+    const draft = editingDraft;
     if (!draft) return;
     const name = draft.name.trim();
     const defaultBranch = draft.defaultBranch.trim();
@@ -1615,10 +1580,10 @@ function RepositorySetup({
 
   function openEditTarget(targetApp: TargetAppRecord) {
     setError(null);
+    setSavingTargetId(null);
+    setEditingDraft(buildTargetDraft(targetApp));
     setEditingTarget(targetApp);
   }
-
-  const editingDraft = editingTarget ? drafts[editingTarget.id] : null;
 
   return (
     <>
@@ -1808,7 +1773,7 @@ function RepositorySetup({
       <Dialog
         open={Boolean(editingTarget)}
         onOpenChange={(open) => {
-          if (!open) setEditingTarget(null);
+          if (!open) closeEditTarget();
         }}
       >
         <DialogContent className="max-w-2xl">
@@ -1834,7 +1799,7 @@ function RepositorySetup({
                     id={`target-name-${editingTarget.id}`}
                     value={editingDraft.name}
                     onChange={(event) =>
-                      updateDraft(editingTarget.id, {
+                      updateEditingDraft({
                         name: event.target.value,
                       })
                     }
@@ -1848,7 +1813,7 @@ function RepositorySetup({
                     id={`target-branch-${editingTarget.id}`}
                     value={editingDraft.defaultBranch}
                     onChange={(event) =>
-                      updateDraft(editingTarget.id, {
+                      updateEditingDraft({
                         defaultBranch: event.target.value,
                       })
                     }
@@ -1862,7 +1827,7 @@ function RepositorySetup({
                     id={`target-repo-${editingTarget.id}`}
                     value={editingDraft.repoUrl}
                     onChange={(event) =>
-                      updateDraft(editingTarget.id, {
+                      updateEditingDraft({
                         repoUrl: event.target.value,
                       })
                     }
@@ -1877,7 +1842,7 @@ function RepositorySetup({
                     id={`target-description-${editingTarget.id}`}
                     value={editingDraft.description}
                     onChange={(event) =>
-                      updateDraft(editingTarget.id, {
+                      updateEditingDraft({
                         description: event.target.value,
                       })
                     }
@@ -1890,7 +1855,7 @@ function RepositorySetup({
                   type="checkbox"
                   checked={editingDraft.agentEnabled}
                   onChange={(event) =>
-                    updateDraft(editingTarget.id, {
+                    updateEditingDraft({
                       agentEnabled: event.target.checked,
                     })
                   }
@@ -1904,7 +1869,7 @@ function RepositorySetup({
             <Button
               type="button"
               variant="outline"
-              onClick={() => setEditingTarget(null)}
+              onClick={closeEditTarget}
             >
               Cancel
             </Button>
@@ -1913,6 +1878,7 @@ function RepositorySetup({
               onClick={() => (editingTarget ? saveTarget(editingTarget) : null)}
               disabled={
                 !editingTarget ||
+                !editingDraft ||
                 (isPending && savingTargetId === editingTarget.id)
               }
             >
