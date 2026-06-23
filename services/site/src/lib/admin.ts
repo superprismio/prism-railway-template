@@ -64,6 +64,16 @@ export type ChangeRequestRecord = {
   targetEnvironmentName: string | null
   currentWorkflowStepKey: string | null
   workflowRunStatus: string | null
+  workflowAttention: {
+    status: "blocked" | "needs_attention"
+    summary: string | null
+    suggestedFix: string | null
+    blockers: Array<Record<string, unknown>>
+    agentRunId: string
+    workflowRunId: string | null
+    workflowStepKey: string | null
+    createdAt: string
+  } | null
   triageSummary: string | null
   estimatedHumanHours: number | null
   acceptanceCriteria: unknown[]

@@ -523,6 +523,7 @@ export function RequestDetailsPanel({
   const currentWorkflowSteps = useMemo(() => workflowSteps(workflow), [workflow]);
   const [currentWorkflowStepKey, setCurrentWorkflowStepKey] = useState(request.currentWorkflowStepKey);
   const [workflowRunStatus, setWorkflowRunStatus] = useState(request.workflowRunStatus);
+  const [workflowAttention, setWorkflowAttention] = useState(request.workflowAttention);
   const currentWorkflowStep = useMemo(
     () => workflowStepForKey(currentWorkflowStepKey, currentWorkflowSteps).step,
     [currentWorkflowStepKey, currentWorkflowSteps],
@@ -561,6 +562,7 @@ export function RequestDetailsPanel({
   const [reopenStepKey, setReopenStepKey] = useState("");
   const [reopenComment, setReopenComment] = useState("");
   const [cancelComment, setCancelComment] = useState("Cancel this workflow and close the request.");
+  const [overrideComment, setOverrideComment] = useState("");
   const [threadError, setThreadError] = useState<string | null>(null);
   const [executions, setExecutions] = useState<ChangeRequestExecutionRecord[]>(
     [],
@@ -580,6 +582,7 @@ export function RequestDetailsPanel({
   const [isCommentPending, startCommentTransition] = useTransition();
   const [isCommandPending, startCommandTransition] = useTransition();
   const [isReopenPending, startReopenTransition] = useTransition();
+  const [isOverridePending, startOverrideTransition] = useTransition();
   const [isArtifactUploadPending, startArtifactUploadTransition] = useTransition();
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
   const [activeWorkflowJobId, setActiveWorkflowJobId] = useState<string | null>(null);
@@ -589,6 +592,7 @@ export function RequestDetailsPanel({
   useEffect(() => {
     setCurrentWorkflowStepKey(request.currentWorkflowStepKey);
     setWorkflowRunStatus(request.workflowRunStatus);
+    setWorkflowAttention(request.workflowAttention);
     setTriageSummary(request.triageSummary ?? "");
     setAgentRecommendation(request.agentRecommendation ?? "");
     setManualWorkflowStepKey(request.currentWorkflowStepKey ?? "");
@@ -598,6 +602,7 @@ export function RequestDetailsPanel({
     request.currentWorkflowStepKey,
     request.id,
     request.triageSummary,
+    request.workflowAttention,
     request.workflowRunStatus,
   ]);
 
@@ -743,6 +748,7 @@ export function RequestDetailsPanel({
         if (requestPayload.changeRequest) {
           setCurrentWorkflowStepKey(requestPayload.changeRequest.currentWorkflowStepKey);
           setWorkflowRunStatus(requestPayload.changeRequest.workflowRunStatus);
+          setWorkflowAttention(requestPayload.changeRequest.workflowAttention);
           setTriageSummary(requestPayload.changeRequest.triageSummary ?? "");
           setAgentRecommendation(requestPayload.changeRequest.agentRecommendation ?? "");
           setManualWorkflowStepKey(requestPayload.changeRequest.currentWorkflowStepKey ?? "");
@@ -814,14 +820,7 @@ export function RequestDetailsPanel({
       agentRuns.find((run) => run.status === "queued" || run.status === "running") ?? null,
     [agentRuns],
   );
-  const latestAttentionOutcomeRun = useMemo(
-    () =>
-      agentRuns.find((run) =>
-        workflowOutcomeNeedsAttention(workflowOutcomeFromRun(run)),
-      ) ?? null,
-    [agentRuns],
-  );
-  const latestAttentionOutcome = workflowOutcomeFromRun(latestAttentionOutcomeRun);
+  const latestAttentionOutcome = workflowAttention;
   const legacyOnlyExecutions = useMemo(
     () => executions.filter((execution) => !executionAgentRunId(execution)),
     [executions],
@@ -1435,6 +1434,48 @@ export function RequestDetailsPanel({
     });
   }
 
+  function handleOverrideAttention() {
+    if (!workflowAttention || !overrideComment.trim()) return;
+    setThreadError(null);
+    startOverrideTransition(async () => {
+      try {
+        const response = await fetch(
+          `/admin/change-requests/${request.id}/workflow/blockers/override`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              comment: overrideComment.trim(),
+              blockerKeys: workflowAttention.blockers
+                .map((blocker) => blockerText(blocker, "key"))
+                .filter((key): key is string => Boolean(key)),
+            }),
+          },
+        );
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          error?: string;
+          changeRequest?: ChangeRequestRecord;
+        };
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "Could not override blocker");
+        }
+        setOverrideComment("");
+        setWorkflowAttention(payload.changeRequest?.workflowAttention ?? null);
+        if (payload.changeRequest) {
+          setCurrentWorkflowStepKey(payload.changeRequest.currentWorkflowStepKey);
+          setWorkflowRunStatus(payload.changeRequest.workflowRunStatus);
+        }
+        await refreshExecutions();
+        await refreshWorkflowEvents();
+      } catch (error) {
+        setThreadError(error instanceof Error ? error.message : "Could not override blocker");
+      }
+    });
+  }
+
   function handleOpenCancelWorkflowDialog() {
     setCancelComment((current) => current || "Cancel this workflow and close the request.");
     setIsCancelDialogOpen(true);
@@ -1582,17 +1623,15 @@ export function RequestDetailsPanel({
                   <Badge variant="outline" className="border-amber-500/70 text-amber-950">
                     {workflowOutcomeLabel(latestAttentionOutcome)}
                   </Badge>
-                  {latestAttentionOutcomeRun?.workflowStepKey ? (
+                  {latestAttentionOutcome.workflowStepKey ? (
                     <span className="font-medium">
-                      {latestAttentionOutcomeRun.workflowStepKey}
+                      {latestAttentionOutcome.workflowStepKey}
                     </span>
                   ) : null}
                 </div>
-                {latestAttentionOutcomeRun ? (
-                  <span className="text-xs text-amber-900/75">
-                    Run {latestAttentionOutcomeRun.id}
-                  </span>
-                ) : null}
+                <span className="text-xs text-amber-900/75">
+                  Run {latestAttentionOutcome.agentRunId}
+                </span>
               </div>
               {latestAttentionOutcome.summary ? (
                 <p className="mt-3 leading-6">{latestAttentionOutcome.summary}</p>
@@ -1633,6 +1672,34 @@ export function RequestDetailsPanel({
                       </div>
                     );
                   })}
+                </div>
+              ) : null}
+              {canRunWorkflowActions ? (
+                <div className="mt-3 space-y-2">
+                  <Label htmlFor="workflow-attention-override">
+                    Override comment
+                  </Label>
+                  <Textarea
+                    id="workflow-attention-override"
+                    value={overrideComment}
+                    onChange={(event) => setOverrideComment(event.target.value)}
+                    placeholder="Explain why it is safe to continue or how you resolved this blocker."
+                    className="min-h-[76px] border-amber-300 bg-amber-50/40"
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleOverrideAttention}
+                      disabled={isOverridePending || !overrideComment.trim()}
+                      className="border-amber-500/70 text-amber-950 hover:bg-amber-100"
+                    >
+                      Continue anyway
+                    </Button>
+                    <span className="text-xs text-amber-900/75">
+                      This records an audit event and clears the current attention state.
+                    </span>
+                  </div>
                 </div>
               ) : null}
             </div>

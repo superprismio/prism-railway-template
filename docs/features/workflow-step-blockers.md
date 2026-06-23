@@ -8,8 +8,11 @@ The first implementation parses a fenced `workflow-outcome` JSON block from
 agent responses, stores the normalized outcome on `agent_runs.result`, keeps the
 workflow on the current step for `blocked` and `needs_attention`, emits
 `agent.blocked` or `agent.needs_attention`, stops auto-continue, and shows an
-amber attention panel in the request details UI. Operator override and dedicated
-blocker lifecycle storage remain future work.
+amber attention panel in the request details UI. A follow-up slice adds
+request-level unresolved attention projection, request-list badges/counts, and
+an operator override action that requires a comment and records an
+`operator.blocker_overridden` event. Dedicated blocker lifecycle storage remains
+future work.
 
 This spec captures the follow-up from auditing a long media workflow where an
 agent step could detect a real blocker, create blocker artifacts, and still be
@@ -344,7 +347,6 @@ Current marker format:
 
 ## Later Slices
 
-- Add blocker override UI and audit events.
 - Add a dedicated workflow blockers table.
 - Add manifest-declared blocker policies.
 - Add request list filtering by blocker state.

@@ -333,6 +333,7 @@ export interface ChangeRequestRecord {
   targetEnvironmentName: string | null;
   currentWorkflowStepKey: string | null;
   workflowRunStatus: string | null;
+  workflowAttention: WorkflowAttentionRecord | null;
   triageSummary: string | null;
   estimatedHumanHours: number | null;
   acceptanceCriteria: unknown[];
@@ -347,6 +348,17 @@ export interface ChangeRequestRecord {
   approvedForWorkAt: string | null;
   completedAt: string | null;
   closedAt: string | null;
+}
+
+export interface WorkflowAttentionRecord {
+  status: 'blocked' | 'needs_attention';
+  summary: string | null;
+  suggestedFix: string | null;
+  blockers: Array<Record<string, unknown>>;
+  agentRunId: string;
+  workflowRunId: string | null;
+  workflowStepKey: string | null;
+  createdAt: string;
 }
 
 export interface ChangeRequestExecutionRecord {
@@ -1686,6 +1698,7 @@ function parseTrackedChangeRequestRow(row: {
     targetEnvironmentName: row.target_environment_name,
     currentWorkflowStepKey: row.current_workflow_step_key ?? null,
     workflowRunStatus: row.workflow_run_status ?? null,
+    workflowAttention: null,
     triageSummary: row.triage_summary,
     estimatedHumanHours: row.estimated_human_hours,
     acceptanceCriteria: parseJsonValue<unknown[]>(row.acceptance_criteria_json, []),
@@ -1900,6 +1913,101 @@ function mapAgentRunRow(row: AgentRunRow, input: { queuePosition?: number | null
     finishedAt: row.finished_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function normalizeWorkflowAttentionStatus(value: unknown): 'blocked' | 'needs_attention' | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase().replace(/-/g, '_');
+  return normalized === 'blocked' || normalized === 'needs_attention' ? normalized : null;
+}
+
+function workflowAttentionFromRun(run: AgentRunRecord): WorkflowAttentionRecord | null {
+  const rawOutcome = run.result.workflowOutcome;
+  if (!rawOutcome || typeof rawOutcome !== 'object' || Array.isArray(rawOutcome)) {
+    return null;
+  }
+  const outcome = rawOutcome as Record<string, unknown>;
+  const status = normalizeWorkflowAttentionStatus(outcome.status);
+  if (!status) return null;
+  const suggestedFix =
+    normalizeText(outcome.suggestedFix) ||
+    normalizeText(outcome.suggested_fix) ||
+    null;
+  return {
+    status,
+    summary: normalizeText(outcome.summary) || null,
+    suggestedFix,
+    blockers: Array.isArray(outcome.blockers)
+      ? outcome.blockers.filter((entry): entry is Record<string, unknown> =>
+          Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry),
+        )
+      : [],
+    agentRunId: run.id,
+    workflowRunId: run.workflowRunId,
+    workflowStepKey: run.workflowStepKey,
+    createdAt: run.finishedAt ?? run.updatedAt,
+  };
+}
+
+function workflowAttentionBlockerKeys(attention: WorkflowAttentionRecord) {
+  return attention.blockers
+    .map((blocker) => normalizeText(blocker.key))
+    .filter((key): key is string => Boolean(key));
+}
+
+function workflowAttentionResolved(attention: WorkflowAttentionRecord, events: WorkflowEventRecord[]) {
+  const blockerKeys = new Set(workflowAttentionBlockerKeys(attention));
+  return events.some((event) => {
+    if (event.eventType !== 'operator.blocker_overridden' && event.eventType !== 'operator.attention_resolved') {
+      return false;
+    }
+    if (event.createdAt < attention.createdAt) {
+      return false;
+    }
+    const agentRunId = normalizeText(event.payload.agentRunId);
+    if (agentRunId && agentRunId === attention.agentRunId) {
+      return true;
+    }
+    const payloadKeys = Array.isArray(event.payload.blockerKeys)
+      ? event.payload.blockerKeys.map(normalizeText).filter((key): key is string => Boolean(key))
+      : [];
+    return payloadKeys.some((key) => blockerKeys.has(key));
+  });
+}
+
+export function getWorkflowAttentionForRequest(requestId: string): WorkflowAttentionRecord | null {
+  const agentRuns = listAgentRuns({ requestId, limit: 100 });
+  const events = listWorkflowEventsForRequest(requestId, 200);
+  const currentStepKey = getWorkflowRunForRequest(requestId)?.currentStepKey ?? null;
+  const clearedStepKeys = new Set<string>();
+  for (const run of agentRuns) {
+    const attention = workflowAttentionFromRun(run);
+    if (attention?.workflowStepKey && currentStepKey && attention.workflowStepKey !== currentStepKey) {
+      continue;
+    }
+    if (attention?.workflowStepKey && clearedStepKeys.has(attention.workflowStepKey)) {
+      continue;
+    }
+    if (attention && !workflowAttentionResolved(attention, events)) {
+      return attention;
+    }
+    if (
+      !attention &&
+      run.status === 'succeeded' &&
+      run.workflowStepKey &&
+      run.result.workflowOutcome == null
+    ) {
+      clearedStepKeys.add(run.workflowStepKey);
+    }
+  }
+  return null;
+}
+
+function withWorkflowAttention<T extends ChangeRequestRecord>(request: T): T {
+  return {
+    ...request,
+    workflowAttention: getWorkflowAttentionForRequest(request.id),
   };
 }
 
@@ -3564,7 +3672,7 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     closed_at: string | null;
   }>;
 
-  return rows.map(parseTrackedChangeRequestRow);
+  return rows.map(parseTrackedChangeRequestRow).map(withWorkflowAttention);
 }
 
 export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) {
@@ -3675,7 +3783,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
       }
     | undefined;
 
-  return row ? parseTrackedChangeRequestRow(row) : null;
+  return row ? withWorkflowAttention(parseTrackedChangeRequestRow(row)) : null;
 }
 
 export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {}) {
@@ -3753,7 +3861,7 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
   params.push(...activeAgentRunStatuses);
 
   const row = getDb().prepare(sql).get(...params) as Parameters<typeof parseTrackedChangeRequestRow>[0] | undefined;
-  return row ? parseTrackedChangeRequestRow(row) : null;
+  return row ? withWorkflowAttention(parseTrackedChangeRequestRow(row)) : null;
 }
 
 export function getChangeRequest(changeRequestId: string) {
@@ -3834,7 +3942,7 @@ export function getChangeRequest(changeRequestId: string) {
       }
     | undefined;
 
-  return row ? parseTrackedChangeRequestRow(row) : null;
+  return row ? withWorkflowAttention(parseTrackedChangeRequestRow(row)) : null;
 }
 
 export function getChangeRequestByNumber(requestNumber: number) {
