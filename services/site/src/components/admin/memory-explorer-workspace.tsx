@@ -921,13 +921,25 @@ export function MemoryExplorerWorkspace({
                     <Badge variant="outline">{selectedArtifact.category}</Badge>
                     <Badge variant="outline">{selectedArtifact.source ?? "unknown"}</Badge>
                   </div>
-                  {selectedArtifact.url ? (
-                    <Button asChild variant="outline">
-                      <a href={selectedArtifact.url} target="_blank" rel="noreferrer">
-                        <ExternalLink className="h-4 w-4" />
-                        Source
-                      </a>
-                    </Button>
+                  {selectedArtifact.view_url || selectedArtifact.url ? (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedArtifact.view_url ? (
+                        <Button asChild variant="outline">
+                          <a href={selectedArtifact.view_url} target="_blank" rel="noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                            Memory View
+                          </a>
+                        </Button>
+                      ) : null}
+                      {selectedArtifact.url ? (
+                        <Button asChild variant="outline">
+                          <a href={selectedArtifact.url} target="_blank" rel="noreferrer">
+                            <ExternalLink className="h-4 w-4" />
+                            Source
+                          </a>
+                        </Button>
+                      ) : null}
+                    </div>
                   ) : null}
                   <div>
                     <p className="mb-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
