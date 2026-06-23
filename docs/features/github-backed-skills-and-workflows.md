@@ -185,6 +185,10 @@ Sync behavior:
 5. Record `lastSyncedAt`, `lastCommitSha`, counts, and validation errors.
 6. Leave the last successful synced cache in place if a later sync fails.
 
+The site runtime image must include `git` because the first implementation uses
+local `git clone`/`fetch` commands for sync. On Railway Railpack deploys, this is
+declared in `services/site/railpack.json` with `deploy.aptPackages`.
+
 ## Merge Order
 
 Skills should be listed in this order:
