@@ -172,6 +172,8 @@ Request row:
 
 - show `Queued`, `Running`, `Waiting for review`, `Blocked`, or `Closed` from
   the latest active run and workflow state.
+- `Blocked` and `Needs attention` workflow semantics are tracked separately in
+  [Workflow Step Blockers And Attention States](workflow-step-blockers.md).
 
 Request detail header:
 
