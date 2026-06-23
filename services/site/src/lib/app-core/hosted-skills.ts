@@ -7,9 +7,14 @@ export interface HostedSkillSummary {
   name: string;
   path: string;
   description: string | null;
-  source: 'site' | 'custom';
-  kind: 'built-in' | 'custom';
+  source: 'site' | 'source' | 'custom';
+  kind: 'built-in' | 'source' | 'custom';
   readOnly: boolean;
+  sourceKey?: string | null;
+  sourceName?: string | null;
+  repoUrl?: string | null;
+  branch?: string | null;
+  commitSha?: string | null;
 }
 
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
@@ -79,6 +84,11 @@ function listSkillsFromRoot(
     repoRoot: string;
     source: HostedSkillSummary['source'];
     kind: HostedSkillSummary['kind'];
+    sourceKey?: string | null;
+    sourceName?: string | null;
+    repoUrl?: string | null;
+    branch?: string | null;
+    commitSha?: string | null;
   },
 ) : HostedSkillSummary[] {
   const { repoRoot, source, kind } = options;
@@ -103,37 +113,83 @@ function listSkillsFromRoot(
         source,
         kind,
         readOnly: true,
+        sourceKey: options.sourceKey ?? null,
+        sourceName: options.sourceName ?? null,
+        repoUrl: options.repoUrl ?? null,
+        branch: options.branch ?? null,
+        commitSha: options.commitSha ?? null,
       } satisfies HostedSkillSummary;
     })
     .filter(isHostedSkillSummary)
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-export function listHostedSkills(repoRoot: string, customSkillsRoot?: string) {
+export function listHostedSkills(
+  repoRoot: string,
+  customSkillsRoot?: string,
+  sourceSkillRoots: Array<{
+    rootPath: string;
+    sourceKey: string;
+    sourceName: string;
+    repoUrl: string;
+    branch: string;
+    commitSha: string | null;
+  }> = [],
+) {
   const builtIns = listSkillsFromRoot(getHostedSkillsRoot(repoRoot), {
     repoRoot,
     source: 'site',
     kind: 'built-in',
   });
   const builtInNames = new Set(builtIns.map((skill) => skill.name));
+  const sourceSkills: HostedSkillSummary[] = [];
+  const seenSourceNames = new Set<string>();
+  for (const sourceRoot of sourceSkillRoots) {
+    for (const skill of listSkillsFromRoot(sourceRoot.rootPath, {
+      repoRoot,
+      source: 'source',
+      kind: 'source',
+      sourceKey: sourceRoot.sourceKey,
+      sourceName: sourceRoot.sourceName,
+      repoUrl: sourceRoot.repoUrl,
+      branch: sourceRoot.branch,
+      commitSha: sourceRoot.commitSha,
+    })) {
+      if (builtInNames.has(skill.name) || seenSourceNames.has(skill.name)) {
+        continue;
+      }
+      seenSourceNames.add(skill.name);
+      sourceSkills.push(skill);
+    }
+  }
+  const reservedNames = new Set([...builtInNames, ...seenSourceNames]);
   const custom = customSkillsRoot
     ? listSkillsFromRoot(customSkillsRoot, {
         repoRoot,
         source: 'custom',
         kind: 'custom',
-      }).filter((skill) => !builtInNames.has(skill.name))
+      }).filter((skill) => !reservedNames.has(skill.name))
     : [];
 
-  return [...builtIns, ...custom].sort((left, right) => left.name.localeCompare(right.name));
+  return [...builtIns, ...sourceSkills, ...custom].sort((left, right) => left.name.localeCompare(right.name));
 }
 
-export function resolveHostedSkillDirectory(repoRoot: string, skillName: string, customSkillsRoot?: string) {
+export function resolveHostedSkillDirectory(
+  repoRoot: string,
+  skillName: string,
+  customSkillsRoot?: string,
+  sourceSkillRoots: Array<{ rootPath: string }> = [],
+) {
   const normalizedSkillName = skillName.trim();
   if (!SKILL_NAME_PATTERN.test(normalizedSkillName)) {
     return null;
   }
 
-  const roots = [getHostedSkillsRoot(repoRoot), ...(customSkillsRoot ? [customSkillsRoot] : [])];
+  const roots = [
+    getHostedSkillsRoot(repoRoot),
+    ...sourceSkillRoots.map((entry) => entry.rootPath),
+    ...(customSkillsRoot ? [customSkillsRoot] : []),
+  ];
   for (const rootPath of roots) {
     const skillDir = ensureDirectoryPath(path.join(rootPath, normalizedSkillName), rootPath);
     const skillFilePath = path.join(skillDir, 'SKILL.md');
@@ -223,16 +279,26 @@ export function deleteCustomSkill(customSkillsRoot: string, skillName: string) {
   return skill;
 }
 
-export function readHostedSkillMarkdown(repoRoot: string, skillName: string, customSkillsRoot?: string) {
-  const skillDir = resolveHostedSkillDirectory(repoRoot, skillName, customSkillsRoot);
+export function readHostedSkillMarkdown(
+  repoRoot: string,
+  skillName: string,
+  customSkillsRoot?: string,
+  sourceSkillRoots: Array<{ rootPath: string }> = [],
+) {
+  const skillDir = resolveHostedSkillDirectory(repoRoot, skillName, customSkillsRoot, sourceSkillRoots);
   if (!skillDir) {
     return null;
   }
   return fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
 }
 
-export function buildHostedSkillArchive(repoRoot: string, skillName: string, customSkillsRoot?: string) {
-  const skillDir = resolveHostedSkillDirectory(repoRoot, skillName, customSkillsRoot);
+export function buildHostedSkillArchive(
+  repoRoot: string,
+  skillName: string,
+  customSkillsRoot?: string,
+  sourceSkillRoots: Array<{ rootPath: string }> = [],
+) {
+  const skillDir = resolveHostedSkillDirectory(repoRoot, skillName, customSkillsRoot, sourceSkillRoots);
   if (!skillDir) {
     return null;
   }

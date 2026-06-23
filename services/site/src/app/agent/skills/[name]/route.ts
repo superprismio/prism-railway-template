@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 
-import { deleteCustomSkill, listHostedSkills, loadConfig } from "@/lib/app-core"
+import { deleteCustomSkill, listHostedSkillSourceRoots, listHostedSkills, loadConfig } from "@/lib/app-core"
 import { requireServiceAccess } from "@/lib/internal-service"
 import { readRouteParam } from "@/lib/local-admin-api"
 
@@ -17,12 +17,12 @@ export async function DELETE(_request: Request, context: RouteContext) {
   const { name } = await context.params
   const config = loadConfig()
   const skillName = readRouteParam(name)
-  const existing = listHostedSkills(config.repoRoot, config.customSkillsRoot).find((skill) => skill.name === skillName)
+  const existing = listHostedSkills(config.repoRoot, config.customSkillsRoot, listHostedSkillSourceRoots()).find((skill) => skill.name === skillName)
   if (!existing) {
     return NextResponse.json({ ok: false, error: "Skill not found" }, { status: 404 })
   }
   if (existing.kind !== "custom") {
-    return NextResponse.json({ ok: false, error: "Built-in skills cannot be deleted" }, { status: 409 })
+    return NextResponse.json({ ok: false, error: "Only instance custom skills can be deleted" }, { status: 409 })
   }
 
   const skill = deleteCustomSkill(config.customSkillsRoot, skillName)

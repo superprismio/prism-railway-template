@@ -11,20 +11,48 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 type SkillRecord = {
   name: string;
   path: string;
   description: string | null;
-  source: "site" | "custom";
-  kind: "built-in" | "custom";
+  source: "site" | "source" | "custom";
+  kind: "built-in" | "source" | "custom";
   readOnly: boolean;
+  sourceKey?: string | null;
+  sourceName?: string | null;
+  repoUrl?: string | null;
+  branch?: string | null;
+  commitSha?: string | null;
+};
+
+type SkillSourceRecord = {
+  key: string;
+  name: string;
+  provider: "github";
+  repoUrl: string;
+  branch: string;
+  sourcePath: string;
+  enabled: boolean;
+  lastSyncedAt: string | null;
+  lastCommitSha: string | null;
+  lastError: string | null;
+  lastSkillCount: number;
 };
 
 type SkillsPayload = {
   ok?: boolean;
   skills?: SkillRecord[];
+  error?: string;
+};
+
+type SkillSourcesPayload = {
+  ok?: boolean;
+  sources?: SkillSourceRecord[];
+  source?: SkillSourceRecord;
   error?: string;
 };
 
@@ -40,29 +68,51 @@ type DeleteSkillPayload = {
   error?: string;
 };
 
-type SkillsView = "custom" | "built-in";
+type SkillsView = "custom" | "source" | "built-in";
 
 function sourceLabel(source: SkillRecord["source"]) {
   if (source === "custom") return "site volume";
+  if (source === "source") return "GitHub source";
   return "site";
+}
+
+function shortSha(value: string | null | undefined) {
+  return value ? value.slice(0, 8) : null;
 }
 
 export function SkillsWorkspace() {
   const [skills, setSkills] = useState<SkillRecord[]>([]);
+  const [sources, setSources] = useState<SkillSourceRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<SkillRecord | null>(null);
   const [selectedContent, setSelectedContent] = useState<string>("");
   const [isViewing, setIsViewing] = useState(false);
   const [activeView, setActiveView] = useState<SkillsView>("custom");
+  const [sourceForm, setSourceForm] = useState({
+    key: "",
+    name: "",
+    repoUrl: "",
+    branch: "main",
+    sourcePath: "skills",
+  });
   const [isRefreshing, startRefresh] = useTransition();
+  const [isSavingSource, startSavingSource] = useTransition();
 
   async function loadSkills() {
-    const response = await fetch("/admin/skills", { cache: "no-store" });
-    const payload = (await response.json()) as SkillsPayload;
-    if (!response.ok || !payload.ok || !Array.isArray(payload.skills)) {
-      throw new Error(payload.error || "Could not load skills");
+    const [skillsResponse, sourcesResponse] = await Promise.all([
+      fetch("/admin/skills", { cache: "no-store" }),
+      fetch("/admin/skill-sources", { cache: "no-store" }),
+    ]);
+    const skillsPayload = (await skillsResponse.json()) as SkillsPayload;
+    if (!skillsResponse.ok || !skillsPayload.ok || !Array.isArray(skillsPayload.skills)) {
+      throw new Error(skillsPayload.error || "Could not load skills");
     }
-    setSkills(payload.skills);
+    const sourcesPayload = (await sourcesResponse.json()) as SkillSourcesPayload;
+    if (!sourcesResponse.ok || !sourcesPayload.ok || !Array.isArray(sourcesPayload.sources)) {
+      throw new Error(sourcesPayload.error || "Could not load skill sources");
+    }
+    setSkills(skillsPayload.skills);
+    setSources(sourcesPayload.sources);
     setError(null);
   }
 
@@ -140,6 +190,81 @@ export function SkillsWorkspace() {
     }
   }
 
+  function saveSource() {
+    setError(null);
+    startSavingSource(async () => {
+      try {
+        const response = await fetch("/admin/skill-sources", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(sourceForm),
+        });
+        const payload = (await response.json().catch(() => ({}))) as SkillSourcesPayload;
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "Could not save skill source");
+        }
+        setSourceForm({ key: "", name: "", repoUrl: "", branch: "main", sourcePath: "skills" });
+        await loadSkills();
+      } catch (nextError) {
+        setError(nextError instanceof Error ? nextError.message : "Could not save skill source");
+      }
+    });
+  }
+
+  function syncSource(source: SkillSourceRecord) {
+    setError(null);
+    startRefresh(async () => {
+      try {
+        const response = await fetch(`/admin/skill-sources/${encodeURIComponent(source.key)}/sync`, {
+          method: "POST",
+        });
+        const payload = (await response.json().catch(() => ({}))) as SkillSourcesPayload;
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "Could not sync skill source");
+        }
+        await loadSkills();
+      } catch (nextError) {
+        setError(nextError instanceof Error ? nextError.message : "Could not sync skill source");
+      }
+    });
+  }
+
+  function syncAllSources() {
+    setError(null);
+    startRefresh(async () => {
+      try {
+        const response = await fetch("/admin/skill-sources/sync", { method: "POST" });
+        const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!response.ok && response.status !== 207) {
+          throw new Error(payload.error || "Could not sync skill sources");
+        }
+        await loadSkills();
+      } catch (nextError) {
+        setError(nextError instanceof Error ? nextError.message : "Could not sync skill sources");
+      }
+    });
+  }
+
+  function deleteSource(source: SkillSourceRecord) {
+    const confirmed = window.confirm(`Delete skill source "${source.key}"?`);
+    if (!confirmed) return;
+    setError(null);
+    startRefresh(async () => {
+      try {
+        const response = await fetch(`/admin/skill-sources/${encodeURIComponent(source.key)}`, {
+          method: "DELETE",
+        });
+        const payload = (await response.json().catch(() => ({}))) as SkillSourcesPayload;
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "Could not delete skill source");
+        }
+        await loadSkills();
+      } catch (nextError) {
+        setError(nextError instanceof Error ? nextError.message : "Could not delete skill source");
+      }
+    });
+  }
+
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,6 +275,7 @@ export function SkillsWorkspace() {
       total: skills.length,
       builtIn: skills.filter((skill) => skill.kind === "built-in").length,
       custom: skills.filter((skill) => skill.kind === "custom").length,
+      source: skills.filter((skill) => skill.kind === "source").length,
     }),
     [skills],
   );
@@ -161,12 +287,17 @@ export function SkillsWorkspace() {
     () => skills.filter((skill) => skill.kind === "built-in"),
     [skills],
   );
+  const sourceSkills = useMemo(
+    () => skills.filter((skill) => skill.kind === "source"),
+    [skills],
+  );
   const viewOptions: Array<{
     value: SkillsView;
     label: string;
     count: number;
   }> = [
     { value: "custom", label: "Custom Skills", count: customSkills.length },
+    { value: "source", label: "Source Skills", count: sourceSkills.length },
     {
       value: "built-in",
       label: "Built-In Skills",
@@ -188,6 +319,7 @@ export function SkillsWorkspace() {
               {skill.kind}
             </Badge>
             <Badge variant="outline">{sourceLabel(skill.source)}</Badge>
+            {skill.sourceKey ? <Badge variant="secondary">{skill.sourceKey}</Badge> : null}
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
             {skill.description || "No description found."}
@@ -195,6 +327,14 @@ export function SkillsWorkspace() {
         </div>
         <div className="min-w-0 self-center text-xs text-muted-foreground">
           <p className="truncate">{skill.path}</p>
+          {skill.repoUrl ? <p className="mt-1 truncate">{skill.repoUrl}</p> : null}
+          {skill.branch || skill.commitSha ? (
+            <p className="mt-1 truncate">
+              {skill.branch ? `branch ${skill.branch}` : null}
+              {skill.branch && skill.commitSha ? " · " : null}
+              {skill.commitSha ? `commit ${shortSha(skill.commitSha)}` : null}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
@@ -226,7 +366,7 @@ export function SkillsWorkspace() {
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Skills</h1>
           <p className="text-sm text-muted-foreground">
-            View built-in and instance custom Codex skills available to Prism.
+            View built-in, GitHub source, and instance custom Codex skills available to Prism.
           </p>
         </div>
         <Button
@@ -243,7 +383,7 @@ export function SkillsWorkspace() {
       </div>
 
       <section className="grid gap-5 px-5 md:px-6">
-        <section className="grid gap-3 md:grid-cols-3">
+        <section className="grid gap-3 md:grid-cols-4">
           <div className="border border-border/70 bg-background p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
               Skills
@@ -258,10 +398,120 @@ export function SkillsWorkspace() {
           </div>
           <div className="border border-border/70 bg-background p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+              Source
+            </p>
+            <p className="mt-2 text-3xl font-semibold">{counts.source}</p>
+          </div>
+          <div className="border border-border/70 bg-background p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
               Custom
             </p>
             <p className="mt-2 text-3xl font-semibold">{counts.custom}</p>
           </div>
+        </section>
+
+        <section className="grid gap-3 border border-border/70 bg-background p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-semibold">Skill Sources</h2>
+              <p className="text-sm text-muted-foreground">
+                Register read-only GitHub repositories that publish skills under a path.
+              </p>
+            </div>
+            <Button type="button" variant="outline" onClick={syncAllSources} disabled={isRefreshing || !sources.length}>
+              <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              Sync All
+            </Button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_120px_120px_auto]">
+            <div className="grid gap-1">
+              <Label htmlFor="skill-source-key">Key</Label>
+              <Input
+                id="skill-source-key"
+                value={sourceForm.key}
+                onChange={(event) => setSourceForm((current) => ({ ...current, key: event.target.value }))}
+                placeholder="raid-guild-agent-skills"
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="skill-source-name">Name</Label>
+              <Input
+                id="skill-source-name"
+                value={sourceForm.name}
+                onChange={(event) => setSourceForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Raid Guild Agent Skills"
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="skill-source-repo">Repository</Label>
+              <Input
+                id="skill-source-repo"
+                value={sourceForm.repoUrl}
+                onChange={(event) => setSourceForm((current) => ({ ...current, repoUrl: event.target.value }))}
+                placeholder="https://github.com/raid-guild/agent-skills.git"
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="skill-source-branch">Branch</Label>
+              <Input
+                id="skill-source-branch"
+                value={sourceForm.branch}
+                onChange={(event) => setSourceForm((current) => ({ ...current, branch: event.target.value }))}
+              />
+            </div>
+            <div className="grid gap-1">
+              <Label htmlFor="skill-source-path">Path</Label>
+              <Input
+                id="skill-source-path"
+                value={sourceForm.sourcePath}
+                onChange={(event) => setSourceForm((current) => ({ ...current, sourcePath: event.target.value }))}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button type="button" onClick={saveSource} disabled={isSavingSource}>
+                Save
+              </Button>
+            </div>
+          </div>
+          {sources.length ? (
+            <div className="grid gap-2">
+              {sources.map((source) => (
+                <div key={source.key} className="flex flex-wrap items-center justify-between gap-3 border border-border/60 px-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{source.name}</span>
+                      <Badge variant={source.enabled ? "secondary" : "outline"}>{source.enabled ? "enabled" : "disabled"}</Badge>
+                      <Badge variant="outline">{source.lastSkillCount} skills</Badge>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                      {source.repoUrl} · {source.branch} · {source.sourcePath}
+                      {source.lastCommitSha ? ` · ${shortSha(source.lastCommitSha)}` : ""}
+                    </p>
+                    {source.lastSyncedAt ? (
+                      <p className="mt-1 text-xs text-muted-foreground">Last synced {source.lastSyncedAt}</p>
+                    ) : null}
+                    {source.lastError ? (
+                      <p className="mt-1 text-xs text-destructive">{source.lastError}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" variant="outline" onClick={() => syncSource(source)} disabled={isRefreshing}>
+                      <RefreshCw className="h-4 w-4" />
+                      Sync
+                    </Button>
+                    <Button type="button" variant="destructive" onClick={() => deleteSource(source)} disabled={isRefreshing}>
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="border border-border/70 bg-muted/20 px-4 py-4 text-sm text-muted-foreground">
+              No skill sources registered.
+            </div>
+          )}
         </section>
 
         <div className="inline-flex h-auto flex-wrap bg-transparent p-0">
@@ -301,6 +551,17 @@ export function SkillsWorkspace() {
             {!customSkills.length && !error ? (
               <div className="border border-border/70 bg-background px-4 py-6 text-sm text-muted-foreground">
                 No custom skills discovered.
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
+        {activeView === "source" ? (
+          <section className="grid gap-3">
+            {sourceSkills.map(renderSkill)}
+            {!sourceSkills.length && !error ? (
+              <div className="border border-border/70 bg-background px-4 py-6 text-sm text-muted-foreground">
+                No source skills discovered.
               </div>
             ) : null}
           </section>

@@ -248,6 +248,8 @@ function taskDescription(key: string) {
   if (key === "knowledge-run") return "Refreshes Prism Knowledge artifacts.";
   if (key === "knowledge-source-sync")
     return "Checks configured GitHub knowledge sources and syncs changed branches.";
+  if (key === "skill-source-sync")
+    return "Syncs configured GitHub skill sources into the site skill catalog.";
   return "Scheduled task";
 }
 
