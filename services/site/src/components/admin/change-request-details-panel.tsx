@@ -348,6 +348,51 @@ function agentRunResultString(run: AgentRunRecord | null, key: string) {
   return stringValue(run?.result?.[key]);
 }
 
+type WorkflowOutcome = {
+  status: "blocked" | "needs_attention" | "completed";
+  summary: string | null;
+  suggestedFix: string | null;
+  blockers: Array<Record<string, unknown>>;
+};
+
+function workflowOutcomeFromRun(run: AgentRunRecord | null): WorkflowOutcome | null {
+  const value = run?.result?.workflowOutcome;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const rawStatus = stringValue(record.status)?.replace(/-/g, "_");
+  if (
+    rawStatus !== "blocked" &&
+    rawStatus !== "needs_attention" &&
+    rawStatus !== "completed"
+  ) {
+    return null;
+  }
+  return {
+    status: rawStatus,
+    summary: stringValue(record.summary),
+    suggestedFix:
+      stringValue(record.suggestedFix) ?? stringValue(record.suggested_fix),
+    blockers: Array.isArray(record.blockers)
+      ? record.blockers.filter(
+          (blocker): blocker is Record<string, unknown> =>
+            Boolean(blocker) && typeof blocker === "object" && !Array.isArray(blocker),
+        )
+      : [],
+  };
+}
+
+function workflowOutcomeNeedsAttention(outcome: WorkflowOutcome | null) {
+  return outcome?.status === "blocked" || outcome?.status === "needs_attention";
+}
+
+function workflowOutcomeLabel(outcome: WorkflowOutcome) {
+  return outcome.status === "blocked" ? "Blocked" : "Needs attention";
+}
+
+function blockerText(blocker: Record<string, unknown>, key: string) {
+  return stringValue(blocker[key]);
+}
+
 function agentRunBranchUrl(run: AgentRunRecord | null) {
   return agentRunResultString(run, "branchUrl");
 }
@@ -769,6 +814,14 @@ export function RequestDetailsPanel({
       agentRuns.find((run) => run.status === "queued" || run.status === "running") ?? null,
     [agentRuns],
   );
+  const latestAttentionOutcomeRun = useMemo(
+    () =>
+      agentRuns.find((run) =>
+        workflowOutcomeNeedsAttention(workflowOutcomeFromRun(run)),
+      ) ?? null,
+    [agentRuns],
+  );
+  const latestAttentionOutcome = workflowOutcomeFromRun(latestAttentionOutcomeRun);
   const legacyOnlyExecutions = useMemo(
     () => executions.filter((execution) => !executionAgentRunId(execution)),
     [executions],
@@ -1518,6 +1571,68 @@ export function RequestDetailsPanel({
                       {entry.message}
                     </div>
                   ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {latestAttentionOutcome ? (
+            <div className="rounded-none border border-amber-400/70 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="border-amber-500/70 text-amber-950">
+                    {workflowOutcomeLabel(latestAttentionOutcome)}
+                  </Badge>
+                  {latestAttentionOutcomeRun?.workflowStepKey ? (
+                    <span className="font-medium">
+                      {latestAttentionOutcomeRun.workflowStepKey}
+                    </span>
+                  ) : null}
+                </div>
+                {latestAttentionOutcomeRun ? (
+                  <span className="text-xs text-amber-900/75">
+                    Run {latestAttentionOutcomeRun.id}
+                  </span>
+                ) : null}
+              </div>
+              {latestAttentionOutcome.summary ? (
+                <p className="mt-3 leading-6">{latestAttentionOutcome.summary}</p>
+              ) : null}
+              {latestAttentionOutcome.suggestedFix ? (
+                <p className="mt-2 leading-6">
+                  <span className="font-medium">Suggested fix:</span>{" "}
+                  {latestAttentionOutcome.suggestedFix}
+                </p>
+              ) : null}
+              {latestAttentionOutcome.blockers.length ? (
+                <div className="mt-3 space-y-2">
+                  {latestAttentionOutcome.blockers.map((blocker, index) => {
+                    const key = blockerText(blocker, "key") ?? `blocker-${index + 1}`;
+                    const severity = blockerText(blocker, "severity");
+                    const reason = blockerText(blocker, "reason");
+                    const suggestedFix =
+                      blockerText(blocker, "suggestedFix") ?? blockerText(blocker, "suggested_fix");
+                    return (
+                      <div
+                        key={`${key}-${index}`}
+                        className="rounded-none border border-amber-300/70 bg-amber-100/60 px-3 py-2"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">{key}</span>
+                          {severity ? (
+                            <Badge variant="outline" className="border-amber-500/70 text-amber-950">
+                              {severity}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {reason ? <p className="mt-1 leading-6">{reason}</p> : null}
+                        {suggestedFix ? (
+                          <p className="mt-1 leading-6">
+                            <span className="font-medium">Fix:</span> {suggestedFix}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : null}
             </div>
@@ -2283,6 +2398,7 @@ export function RequestDetailsPanel({
                         agentRunResultString(run, "commitSha") ??
                         agentRunResultString(run, "headCommitSha");
                       const deployUrl = agentRunDeployUrl(run, targetEnvironment);
+                      const workflowOutcome = workflowOutcomeFromRun(run);
 
                       return (
                         <div
@@ -2310,6 +2426,11 @@ export function RequestDetailsPanel({
                             {run.status === "queued" && run.queuePosition ? (
                               <Badge variant="outline">position {run.queuePosition}</Badge>
                             ) : null}
+                            {workflowOutcomeNeedsAttention(workflowOutcome) && workflowOutcome ? (
+                              <Badge variant="outline" className="border-amber-500/70 text-amber-700">
+                                {workflowOutcomeLabel(workflowOutcome)}
+                              </Badge>
+                            ) : null}
                             <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                               agent run
                             </span>
@@ -2321,6 +2442,20 @@ export function RequestDetailsPanel({
                         {run.errorMessage ? (
                           <div className="mt-3 rounded-none border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
                             {run.errorMessage}
+                          </div>
+                        ) : null}
+                        {workflowOutcomeNeedsAttention(workflowOutcome) && workflowOutcome ? (
+                          <div className="mt-3 rounded-none border border-amber-400/70 bg-amber-50/80 px-3 py-2 text-amber-950">
+                            <div className="font-medium">{workflowOutcomeLabel(workflowOutcome)}</div>
+                            {workflowOutcome.summary ? (
+                              <p className="mt-1 whitespace-pre-wrap leading-6">{workflowOutcome.summary}</p>
+                            ) : null}
+                            {workflowOutcome.suggestedFix ? (
+                              <p className="mt-1 whitespace-pre-wrap leading-6">
+                                <span className="font-medium">Suggested fix:</span>{" "}
+                                {workflowOutcome.suggestedFix}
+                              </p>
+                            ) : null}
                           </div>
                         ) : null}
                         <div className="mt-3 grid gap-2 text-xs text-muted-foreground">

@@ -126,6 +126,15 @@ type RuntimeError = Error & {
   trace?: RuntimeTraceEntry[]
 }
 
+type WorkflowOutcomeStatus = "completed" | "blocked" | "needs_attention"
+
+type WorkflowOutcome = {
+  status: WorkflowOutcomeStatus
+  summary: string | null
+  suggestedFix: string | null
+  blockers: Array<Record<string, unknown>>
+}
+
 function parseResponseInputMessages(input: unknown) {
   if (!Array.isArray(input)) {
     return [] as ResponseInputMessage[]
@@ -233,6 +242,66 @@ function describeRuntimeFetchFailure(error: unknown) {
   }
 
   return error.message || "fetch failed"
+}
+
+function normalizeWorkflowOutcomeStatus(value: unknown): WorkflowOutcomeStatus | null {
+  if (typeof value !== "string") return null
+  const normalized = value.trim().toLowerCase().replace(/-/g, "_")
+  if (normalized === "completed" || normalized === "blocked" || normalized === "needs_attention") {
+    return normalized
+  }
+  return null
+}
+
+function normalizeWorkflowOutcome(value: unknown): WorkflowOutcome | null {
+  if (!isRecord(value)) return null
+  const source = isRecord(value.workflowOutcome) ? value.workflowOutcome : value
+  const status = normalizeWorkflowOutcomeStatus(source.status)
+  if (!status) return null
+  const summary = typeof source.summary === "string" && source.summary.trim() ? source.summary.trim() : null
+  const suggestedFix =
+    typeof source.suggestedFix === "string" && source.suggestedFix.trim()
+      ? source.suggestedFix.trim()
+      : typeof source.suggested_fix === "string" && source.suggested_fix.trim()
+        ? source.suggested_fix.trim()
+        : null
+  const blockers = Array.isArray(source.blockers)
+    ? source.blockers.filter(isRecord).map((blocker) => ({ ...blocker }))
+    : []
+  return {
+    status,
+    summary,
+    suggestedFix,
+    blockers,
+  }
+}
+
+function parseWorkflowOutcomeFromResponseText(responseText: string) {
+  const fencePattern = /```(?:workflow-outcome|workflow_outcome)\s*([\s\S]*?)```/gi
+  for (const match of responseText.matchAll(fencePattern)) {
+    const rawJson = match[1]?.trim()
+    if (!rawJson) continue
+    try {
+      const parsed = JSON.parse(rawJson) as unknown
+      const outcome = normalizeWorkflowOutcome(parsed)
+      if (outcome) return outcome
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+function workflowOutcomeStopsAutoContinue(outcome: WorkflowOutcome | null | undefined) {
+  return outcome?.status === "blocked" || outcome?.status === "needs_attention"
+}
+
+function workflowOutcomeInstruction() {
+  return [
+    "If this step is blocked or needs operator attention, include a fenced workflow outcome JSON block in your final response.",
+    'Use this exact fence: ```workflow-outcome {"status":"blocked","summary":"...","suggestedFix":"...","blockers":[{"key":"stable-key","severity":"hard","reason":"...","suggestedFix":"...","canOverride":true}]} ```.',
+    "Use status `needs_attention` for operator review/warnings and `blocked` when the workflow must not advance. If the step is complete, omit the block.",
+  ].join(" ")
 }
 
 function sleep(ms: number) {
@@ -559,6 +628,7 @@ function workflowAgentRunResult(input: {
   workflowRunId: string
   workflowStepKey: string
   sessionId: string
+  workflowOutcome?: WorkflowOutcome | null
   autoContinued?: boolean
   ignored?: boolean
   reason?: string | null
@@ -579,6 +649,7 @@ function workflowAgentRunResult(input: {
     baseCommitSha: input.runtimeResponse.baseCommitSha ?? null,
     headCommitSha: input.runtimeResponse.commitSha ?? null,
     branchUrl: input.runtimeResponse.branchUrl ?? null,
+    workflowOutcome: input.workflowOutcome ?? null,
     gitPushSucceeded: gitPushState.gitPushSucceeded,
     gitPushError: gitPushState.gitPushError,
     ignored: input.ignored === true,
@@ -640,6 +711,9 @@ function completeWorkflowAgentStep(input: {
 }) {
   const agentRunId = input.agentRunId ?? null
   const agentRun = agentRunId ? getAgentRun(agentRunId) : null
+  const workflowOutcome = parseWorkflowOutcomeFromResponseText(input.responseText)
+  const shouldStopForOutcome =
+    workflowOutcome?.status === "blocked" || workflowOutcome?.status === "needs_attention"
   if (isStoppedAgentRunStatus(agentRun?.status)) {
     if (agentRunId) {
       updateAgentRun(agentRunId, {
@@ -677,6 +751,7 @@ function completeWorkflowAgentStep(input: {
         workflowRunId: input.workflowRunId,
         workflowStepKey: input.stepKey,
         sessionId: input.sessionId,
+        workflowOutcome,
         autoContinued: input.autoContinued,
       }),
       trace: Array.isArray(input.runtimeResponse.trace) ? input.runtimeResponse.trace : [],
@@ -699,6 +774,7 @@ function completeWorkflowAgentStep(input: {
           workflowRunId: input.workflowRunId,
           workflowStepKey: input.stepKey,
           sessionId: input.sessionId,
+          workflowOutcome,
           autoContinued: input.autoContinued,
           ignored: true,
           reason: "workflow_moved",
@@ -719,6 +795,32 @@ function completeWorkflowAgentStep(input: {
       },
     })
     return false
+  }
+
+  if (shouldStopForOutcome && workflowOutcome) {
+    createWorkflowEvent({
+      workflowRunId: input.workflowRunId,
+      requestId: input.requestId,
+      stepKey: input.stepKey,
+      eventType: workflowOutcome.status === "blocked" ? "agent.blocked" : "agent.needs_attention",
+      actorType: "codex",
+      note: workflowOutcome.summary ?? undefined,
+      payload: {
+        agentRunId,
+        autoContinued: input.autoContinued === true,
+        workflowOutcome,
+      },
+    })
+    updateChangeRequest(input.requestId, {
+      workflowStepKey: input.stepKey,
+    })
+    updateWorkflowRun({
+      requestId: input.requestId,
+      currentStepKey: input.stepKey,
+      status: "active",
+      completedAt: null,
+    })
+    return input.stepKey
   }
 
   createWorkflowEvent({
@@ -1301,6 +1403,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                 : "This response is linked to a tracked request workflow step.",
               runnableStepKey ? `Current workflow step: ${runnableStepKey}.` : null,
               activeAgentRunId ? `Current agent run id: ${activeAgentRunId}. When creating request artifacts for this step, include this as agent_run_id.` : null,
+              workflowOutcomeInstruction(),
               isCheckpointWorkflowStep(runnableWorkflowStep)
                 ? [
                     "This workflow step is a checkpoint. Check external state and durable artifacts without starting duplicate work.",
@@ -1320,6 +1423,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     if (!responseText) {
       return NextResponse.json({ ok: false, error: "CODEX_RUNTIME_EMPTY_RESPONSE" }, { status: 502 })
     }
+    const workflowOutcome = parseWorkflowOutcomeFromResponseText(responseText)
 
     const updatedSession = updateAgentSession(session.id, {
       title: session.title ?? latestUserMessage.content.slice(0, 80),
@@ -1371,6 +1475,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     const autoContinuedSteps: string[] = []
     if (
       autoContinueUntilGate &&
+      !workflowOutcomeStopsAutoContinue(workflowOutcome) &&
       activeLinkedChangeRequestId &&
       linkedChangeRequest &&
       linkedWorkflowRun &&
@@ -1490,6 +1595,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                   : "This response is linked to a tracked request workflow step.",
                 `Current workflow step: ${continuationStepKey}.`,
                 continuationAgentRunId ? `Current agent run id: ${continuationAgentRunId}. When creating request artifacts for this step, include this as agent_run_id.` : null,
+                workflowOutcomeInstruction(),
                 continuationNextStepKey ? `When this step is complete, advance the workflow run to ${continuationNextStepKey}.` : null,
                 `To read prior workflow artifact bodies, call GET /agent/change-board/requests/by-number/${latestRequest.requestNumber}/artifacts with x-service-token. Filter by name or kind when useful.`,
                 "Auto-continue is enabled; the site will run the next agent step until the workflow reaches a gate, checkpoint, or terminal step.",
@@ -1502,6 +1608,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           if (!continuationText) {
             throw new Error("CODEX_RUNTIME_EMPTY_RESPONSE")
           }
+          const continuationOutcome = parseWorkflowOutcomeFromResponseText(continuationText)
 
           continuationThreadId = continuationResponse.thread_id ?? continuationThreadId
           updateAgentSession(session.id, {
@@ -1543,6 +1650,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             agentRunId: continuationAgentRunId,
           })
           if (!completedContinuationStepKey) {
+            break
+          }
+          if (workflowOutcomeStopsAutoContinue(continuationOutcome)) {
             break
           }
 

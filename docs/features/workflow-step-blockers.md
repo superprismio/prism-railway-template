@@ -2,7 +2,14 @@
 
 ## Status
 
-Future feature.
+Partially implemented.
+
+The first implementation parses a fenced `workflow-outcome` JSON block from
+agent responses, stores the normalized outcome on `agent_runs.result`, keeps the
+workflow on the current step for `blocked` and `needs_attention`, emits
+`agent.blocked` or `agent.needs_attention`, stops auto-continue, and shows an
+amber attention panel in the request details UI. Operator override and dedicated
+blocker lifecycle storage remain future work.
 
 This spec captures the follow-up from auditing a long media workflow where an
 agent step could detect a real blocker, create blocker artifacts, and still be
@@ -307,13 +314,33 @@ Codex Runtime should continue to use `/agent/*` with service auth.
 ## First Slice
 
 1. Define a `workflowOutcome` shape and parser in the site response handler.
-2. Let agents include the outcome in structured response metadata or a fenced
-   JSON block with a stable marker.
+2. Let agents include the outcome in a fenced JSON block with a stable marker.
 3. Keep the workflow on the current step for `blocked` and `needs_attention`.
 4. Stop auto-continue when an attention outcome is present.
 5. Store the outcome on `agent_runs.result`.
 6. Emit `agent.blocked` or `agent.needs_attention`.
 7. Show the latest outcome in request details.
+
+Current marker format:
+
+````markdown
+```workflow-outcome
+{
+  "status": "blocked",
+  "summary": "Rendered video output URL is missing or not fetchable.",
+  "suggestedFix": "Check the render job, confirm S3 upload completed, then rerun this step.",
+  "blockers": [
+    {
+      "key": "render-output-url",
+      "severity": "hard",
+      "reason": "No fetchable final video URL was found.",
+      "suggestedFix": "Regenerate a public or presigned GET URL.",
+      "canOverride": true
+    }
+  ]
+}
+```
+````
 
 ## Later Slices
 
