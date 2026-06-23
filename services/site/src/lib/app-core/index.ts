@@ -92,6 +92,7 @@ export {
   getTaskScriptByKey,
   getTaskRun,
   getWorkflowByKey,
+  getWorkflowAttentionForRequest,
   getWorkflowRun,
   getWorkflowRunForRequest,
   getPasswordLoginUserByEmail,

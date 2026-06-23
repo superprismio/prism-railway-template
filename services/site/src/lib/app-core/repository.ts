@@ -333,6 +333,7 @@ export interface ChangeRequestRecord {
   targetEnvironmentName: string | null;
   currentWorkflowStepKey: string | null;
   workflowRunStatus: string | null;
+  workflowAttention: WorkflowAttentionRecord | null;
   triageSummary: string | null;
   estimatedHumanHours: number | null;
   acceptanceCriteria: unknown[];
@@ -347,6 +348,17 @@ export interface ChangeRequestRecord {
   approvedForWorkAt: string | null;
   completedAt: string | null;
   closedAt: string | null;
+}
+
+export interface WorkflowAttentionRecord {
+  status: 'blocked' | 'needs_attention';
+  summary: string | null;
+  suggestedFix: string | null;
+  blockers: Array<Record<string, unknown>>;
+  agentRunId: string;
+  workflowRunId: string | null;
+  workflowStepKey: string | null;
+  createdAt: string;
 }
 
 export interface ChangeRequestExecutionRecord {
@@ -1686,6 +1698,7 @@ function parseTrackedChangeRequestRow(row: {
     targetEnvironmentName: row.target_environment_name,
     currentWorkflowStepKey: row.current_workflow_step_key ?? null,
     workflowRunStatus: row.workflow_run_status ?? null,
+    workflowAttention: null,
     triageSummary: row.triage_summary,
     estimatedHumanHours: row.estimated_human_hours,
     acceptanceCriteria: parseJsonValue<unknown[]>(row.acceptance_criteria_json, []),
@@ -1867,7 +1880,7 @@ function mapAgentRunRowsWithQueuePositions(rows: AgentRunRow[]) {
   }));
 }
 
-function mapAgentRunRow(row: AgentRunRow, input: { queuePosition?: number | null } = {}): AgentRunRecord {
+function mapAgentRunRow(row: AgentRunRow, input: { queuePosition?: number | null; computeQueuePosition?: boolean } = {}): AgentRunRecord {
   const lane = inferAgentRunLane({ lane: row.lane, kind: row.kind, source: row.source });
   const queuedAt = row.queued_at ?? row.created_at;
   const priority = normalizeAgentRunPriority(row.priority, defaultAgentRunPriority(lane));
@@ -1894,12 +1907,193 @@ function mapAgentRunRow(row: AgentRunRow, input: { queuePosition?: number | null
     leaseExpiresAt: row.lease_expires_at ?? null,
     queueReason: row.queue_reason ?? null,
     queuePosition: row.status === 'queued'
-      ? input.queuePosition ?? computeAgentRunQueuePosition({ id: row.id, lane, priority, queuedAt, createdAt: row.created_at })
+      ? input.computeQueuePosition === false
+        ? input.queuePosition ?? null
+        : input.queuePosition ?? computeAgentRunQueuePosition({ id: row.id, lane, priority, queuedAt, createdAt: row.created_at })
       : null,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function normalizeWorkflowOutcomeStatus(value: unknown): 'blocked' | 'needs_attention' | 'completed' | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase().replace(/-/g, '_');
+  return normalized === 'blocked' || normalized === 'needs_attention' || normalized === 'completed' ? normalized : null;
+}
+
+function normalizeWorkflowAttentionStatus(value: unknown): 'blocked' | 'needs_attention' | null {
+  const normalized = normalizeWorkflowOutcomeStatus(value);
+  return normalized === 'blocked' || normalized === 'needs_attention' ? normalized : null;
+}
+
+function workflowOutcomeStatusFromRun(run: AgentRunRecord) {
+  const rawOutcome = run.result.workflowOutcome;
+  if (!rawOutcome || typeof rawOutcome !== 'object' || Array.isArray(rawOutcome)) {
+    return null;
+  }
+  return normalizeWorkflowOutcomeStatus((rawOutcome as Record<string, unknown>).status);
+}
+
+function workflowAttentionFromRun(run: AgentRunRecord): WorkflowAttentionRecord | null {
+  const rawOutcome = run.result.workflowOutcome;
+  if (!rawOutcome || typeof rawOutcome !== 'object' || Array.isArray(rawOutcome)) {
+    return null;
+  }
+  const outcome = rawOutcome as Record<string, unknown>;
+  const status = normalizeWorkflowAttentionStatus(outcome.status);
+  if (!status) return null;
+  const suggestedFix =
+    normalizeText(outcome.suggestedFix) ||
+    normalizeText(outcome.suggested_fix) ||
+    null;
+  return {
+    status,
+    summary: normalizeText(outcome.summary) || null,
+    suggestedFix,
+    blockers: Array.isArray(outcome.blockers)
+      ? outcome.blockers.filter((entry): entry is Record<string, unknown> =>
+          Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry),
+        )
+      : [],
+    agentRunId: run.id,
+    workflowRunId: run.workflowRunId,
+    workflowStepKey: run.workflowStepKey,
+    createdAt: run.finishedAt ?? run.updatedAt,
+  };
+}
+
+function workflowAttentionBlockerKeys(attention: WorkflowAttentionRecord) {
+  return attention.blockers
+    .map((blocker) => normalizeText(blocker.key))
+    .filter((key): key is string => Boolean(key));
+}
+
+function workflowAttentionResolved(attention: WorkflowAttentionRecord, events: WorkflowEventRecord[]) {
+  const blockerKeys = new Set(workflowAttentionBlockerKeys(attention));
+  return events.some((event) => {
+    if (event.eventType !== 'operator.blocker_overridden' && event.eventType !== 'operator.attention_resolved') {
+      return false;
+    }
+    if (event.createdAt < attention.createdAt) {
+      return false;
+    }
+    const agentRunId = normalizeText(event.payload.agentRunId);
+    if (agentRunId && agentRunId === attention.agentRunId) {
+      return true;
+    }
+    const payloadKeys = Array.isArray(event.payload.blockerKeys)
+      ? event.payload.blockerKeys.map(normalizeText).filter((key): key is string => Boolean(key))
+      : [];
+    return payloadKeys.some((key) => blockerKeys.has(key));
+  });
+}
+
+function workflowAttentionForRequestData(input: {
+  agentRuns: AgentRunRecord[];
+  events: WorkflowEventRecord[];
+  currentStepKey: string | null;
+}) {
+  const clearedStepKeys = new Set<string>();
+  for (const run of input.agentRuns) {
+    const attention = workflowAttentionFromRun(run);
+    if (attention?.workflowStepKey && input.currentStepKey && attention.workflowStepKey !== input.currentStepKey) {
+      continue;
+    }
+    if (attention?.workflowStepKey && clearedStepKeys.has(attention.workflowStepKey)) {
+      continue;
+    }
+    if (attention && !workflowAttentionResolved(attention, input.events)) {
+      return attention;
+    }
+    if (
+      !attention &&
+      run.status === 'succeeded' &&
+      run.workflowStepKey &&
+      (run.result.workflowOutcome == null || workflowOutcomeStatusFromRun(run) === 'completed')
+    ) {
+      clearedStepKeys.add(run.workflowStepKey);
+    }
+  }
+  return null;
+}
+
+export function getWorkflowAttentionForRequest(requestId: string): WorkflowAttentionRecord | null {
+  return workflowAttentionForRequestData({
+    agentRuns: listAgentRuns({ requestId, limit: 100 }),
+    events: listWorkflowEventsForRequest(requestId, 200),
+    currentStepKey: getWorkflowRunForRequest(requestId)?.currentStepKey ?? null,
+  });
+}
+
+function listWorkflowAttentionForRequests(requests: ChangeRequestRecord[]) {
+  const requestIds = requests.map((request) => request.id).filter(Boolean);
+  const attentionByRequestId = new Map<string, WorkflowAttentionRecord | null>();
+  for (const request of requests) {
+    attentionByRequestId.set(request.id, null);
+  }
+  if (!requestIds.length) {
+    return attentionByRequestId;
+  }
+
+  const placeholders = requestIds.map(() => '?').join(', ');
+  const agentRunRows = getDb()
+    .prepare(
+      `SELECT *
+       FROM (
+         SELECT ar.*, ROW_NUMBER() OVER (PARTITION BY ar.request_id ORDER BY ar.created_at DESC) AS row_number
+         FROM agent_runs ar
+         WHERE ar.request_id IN (${placeholders})
+       )
+       WHERE row_number <= 100
+       ORDER BY request_id ASC, created_at DESC`,
+    )
+    .all(...requestIds) as AgentRunRow[];
+  const eventRows = getDb()
+    .prepare(
+      `SELECT *
+       FROM (
+         SELECT we.*, ROW_NUMBER() OVER (PARTITION BY we.request_id ORDER BY we.created_at DESC) AS row_number
+         FROM workflow_events we
+         WHERE we.request_id IN (${placeholders})
+       )
+       WHERE row_number <= 200
+       ORDER BY request_id ASC, created_at DESC`,
+    )
+    .all(...requestIds) as WorkflowEventRow[];
+
+  const agentRunsByRequestId = new Map<string, AgentRunRecord[]>();
+  for (const row of agentRunRows) {
+    if (!row.request_id) continue;
+    const runs = agentRunsByRequestId.get(row.request_id) ?? [];
+    runs.push(mapAgentRunRow(row, { queuePosition: null, computeQueuePosition: false }));
+    agentRunsByRequestId.set(row.request_id, runs);
+  }
+
+  const eventsByRequestId = new Map<string, WorkflowEventRecord[]>();
+  for (const row of eventRows) {
+    const events = eventsByRequestId.get(row.request_id) ?? [];
+    events.push(mapWorkflowEventRow(row));
+    eventsByRequestId.set(row.request_id, events);
+  }
+
+  for (const request of requests) {
+    attentionByRequestId.set(request.id, workflowAttentionForRequestData({
+      agentRuns: agentRunsByRequestId.get(request.id) ?? [],
+      events: eventsByRequestId.get(request.id) ?? [],
+      currentStepKey: request.currentWorkflowStepKey,
+    }));
+  }
+
+  return attentionByRequestId;
+}
+
+function withWorkflowAttention<T extends ChangeRequestRecord>(request: T, attention?: WorkflowAttentionRecord | null): T {
+  return {
+    ...request,
+    workflowAttention: attention === undefined ? getWorkflowAttentionForRequest(request.id) : attention,
   };
 }
 
@@ -3564,7 +3758,9 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     closed_at: string | null;
   }>;
 
-  return rows.map(parseTrackedChangeRequestRow);
+  const requests = rows.map(parseTrackedChangeRequestRow);
+  const attentionByRequestId = listWorkflowAttentionForRequests(requests);
+  return requests.map((request) => withWorkflowAttention(request, attentionByRequestId.get(request.id) ?? null));
 }
 
 export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) {
@@ -3675,7 +3871,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
       }
     | undefined;
 
-  return row ? parseTrackedChangeRequestRow(row) : null;
+  return row ? withWorkflowAttention(parseTrackedChangeRequestRow(row)) : null;
 }
 
 export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {}) {
@@ -3753,7 +3949,7 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
   params.push(...activeAgentRunStatuses);
 
   const row = getDb().prepare(sql).get(...params) as Parameters<typeof parseTrackedChangeRequestRow>[0] | undefined;
-  return row ? parseTrackedChangeRequestRow(row) : null;
+  return row ? withWorkflowAttention(parseTrackedChangeRequestRow(row)) : null;
 }
 
 export function getChangeRequest(changeRequestId: string) {
@@ -3834,7 +4030,7 @@ export function getChangeRequest(changeRequestId: string) {
       }
     | undefined;
 
-  return row ? parseTrackedChangeRequestRow(row) : null;
+  return row ? withWorkflowAttention(parseTrackedChangeRequestRow(row)) : null;
 }
 
 export function getChangeRequestByNumber(requestNumber: number) {
@@ -4864,18 +5060,31 @@ export function countRunningAgentRuns(input: { lane?: string | null } = {}) {
 export function expireStaleRunningAgentRuns(input: {
   now?: string;
   reason?: string;
+  staleUnleasedSeconds?: number;
 } = {}) {
   const now = input.now ?? new Date().toISOString();
   const reason = input.reason ?? 'Agent run lease expired before completion.';
+  const staleUnleasedSeconds = Number(input.staleUnleasedSeconds);
+  const staleUnleasedCutoff =
+    Number.isFinite(staleUnleasedSeconds) && staleUnleasedSeconds > 0
+      ? addSecondsIso(new Date(now), -Math.trunc(staleUnleasedSeconds))
+      : null;
   const rows = getDb()
     .prepare(
       `SELECT *
        FROM agent_runs
        WHERE status = 'running'
-         AND lease_expires_at IS NOT NULL
-         AND lease_expires_at <= ?`,
+         AND (
+           (lease_expires_at IS NOT NULL AND lease_expires_at <= @now)
+           OR (
+             @staleUnleasedCutoff IS NOT NULL
+             AND lease_expires_at IS NULL
+             AND COALESCE(claimed_at, started_at) IS NOT NULL
+             AND COALESCE(claimed_at, started_at) <= @staleUnleasedCutoff
+           )
+         )`,
     )
-    .all(now) as AgentRunRow[];
+    .all({ now, staleUnleasedCutoff }) as AgentRunRow[];
 
   return rows.map((row) => updateAgentRun(row.id, {
     status: 'failed',

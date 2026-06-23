@@ -96,6 +96,14 @@ function leaseSeconds() {
   return readPositiveInteger(process.env.PRISM_AGENT_RUN_LEASE_SECONDS, 1800)
 }
 
+function staleUnleasedSeconds() {
+  return readPositiveInteger(process.env.PRISM_AGENT_RUN_STALE_UNLEASED_SECONDS, leaseSeconds() * 2)
+}
+
+function dispatcherIntervalMs() {
+  return readPositiveInteger(process.env.PRISM_AGENT_RUN_DISPATCHER_INTERVAL_MS, 10_000)
+}
+
 function workflowRunPriority(request: ChangeRequestRecord) {
   const priority = request.priority.trim().toLowerCase()
   if (priority === "urgent") return 90
@@ -180,6 +188,7 @@ async function executeClaimedWorkflowAgentRun(agentRun: AgentRunRecord) {
 
 let dispatcherScheduled = false
 let dispatcherRunning = false
+let dispatcherHeartbeat: ReturnType<typeof setInterval> | null = null
 
 export function wakeWorkflowAgentRunDispatcher() {
   if (dispatcherScheduled) {
@@ -192,6 +201,17 @@ export function wakeWorkflowAgentRunDispatcher() {
   }, 0)
 }
 
+export function startWorkflowAgentRunDispatcher() {
+  wakeWorkflowAgentRunDispatcher()
+  if (dispatcherHeartbeat) {
+    return
+  }
+  dispatcherHeartbeat = setInterval(() => {
+    wakeWorkflowAgentRunDispatcher()
+  }, dispatcherIntervalMs())
+  dispatcherHeartbeat.unref?.()
+}
+
 async function dispatchWorkflowAgentRuns() {
   if (dispatcherRunning) {
     wakeWorkflowAgentRunDispatcher()
@@ -199,7 +219,9 @@ async function dispatchWorkflowAgentRuns() {
   }
   dispatcherRunning = true
   try {
-    expireStaleRunningAgentRuns()
+    expireStaleRunningAgentRuns({
+      staleUnleasedSeconds: staleUnleasedSeconds(),
+    })
 
     while (
       countRunningAgentRuns() < globalConcurrency() &&

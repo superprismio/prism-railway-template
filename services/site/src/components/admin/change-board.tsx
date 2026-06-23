@@ -194,6 +194,9 @@ export function ChangeBoard({
   const runningCount = data.changeRequests.filter(
     (request) => request.workflowRunStatus === "running",
   ).length;
+  const attentionCount = data.changeRequests.filter(
+    (request) => Boolean(request.workflowAttention),
+  ).length;
 
   const selectedRequest = useMemo(
     () =>
@@ -713,6 +716,12 @@ export function ChangeBoard({
                       Closed
                     </p>
                     <p className="mt-2 text-3xl font-semibold">{closedCount}</p>
+                  </div>
+                  <div className="rounded-2xl border border-amber-400/70 bg-amber-50/80 p-4 text-amber-950">
+                    <p className="text-xs uppercase tracking-[0.16em] text-amber-900/75">
+                      Needs Attention
+                    </p>
+                    <p className="mt-2 text-3xl font-semibold">{attentionCount}</p>
                   </div>
                   <div className="rounded-2xl border border-border/70 bg-background/80 p-4">
                     <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">

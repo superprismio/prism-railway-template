@@ -3,6 +3,6 @@ export async function register() {
     return;
   }
 
-  const { wakeWorkflowAgentRunDispatcher } = await import("@/lib/workflow-agent-run-queue");
-  wakeWorkflowAgentRunDispatcher();
+  const { startWorkflowAgentRunDispatcher } = await import("@/lib/workflow-agent-run-queue");
+  startWorkflowAgentRunDispatcher();
 }

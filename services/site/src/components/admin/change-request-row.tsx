@@ -44,6 +44,7 @@ export function ChangeRequestRow({
     targetEnvironment?.branch ?? targetApp?.defaultBranch ?? "No branch";
   const isRunning = request.workflowRunStatus === "running";
   const isCanceled = request.workflowRunStatus === "canceled";
+  const workflowAttention = request.workflowAttention;
   const estimatedHumanHoursLabel = humanHoursLabel(request.estimatedHumanHours);
 
   return (
@@ -72,6 +73,11 @@ export function ChangeRequestRow({
             </Badge>
           ) : null}
           {isCanceled ? <Badge variant="destructive">canceled</Badge> : null}
+          {workflowAttention ? (
+            <Badge variant="outline" className="border-amber-500/70 text-amber-700">
+              {workflowAttention.status === "blocked" ? "Blocked" : "Needs attention"}
+            </Badge>
+          ) : null}
           <Badge variant={priorityVariant(request.priority)}>
             {request.priority}
           </Badge>

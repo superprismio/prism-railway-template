@@ -348,6 +348,51 @@ function agentRunResultString(run: AgentRunRecord | null, key: string) {
   return stringValue(run?.result?.[key]);
 }
 
+type WorkflowOutcome = {
+  status: "blocked" | "needs_attention" | "completed";
+  summary: string | null;
+  suggestedFix: string | null;
+  blockers: Array<Record<string, unknown>>;
+};
+
+function workflowOutcomeFromRun(run: AgentRunRecord | null): WorkflowOutcome | null {
+  const value = run?.result?.workflowOutcome;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const rawStatus = stringValue(record.status)?.replace(/-/g, "_");
+  if (
+    rawStatus !== "blocked" &&
+    rawStatus !== "needs_attention" &&
+    rawStatus !== "completed"
+  ) {
+    return null;
+  }
+  return {
+    status: rawStatus,
+    summary: stringValue(record.summary),
+    suggestedFix:
+      stringValue(record.suggestedFix) ?? stringValue(record.suggested_fix),
+    blockers: Array.isArray(record.blockers)
+      ? record.blockers.filter(
+          (blocker): blocker is Record<string, unknown> =>
+            Boolean(blocker) && typeof blocker === "object" && !Array.isArray(blocker),
+        )
+      : [],
+  };
+}
+
+function workflowOutcomeNeedsAttention(outcome: WorkflowOutcome | null) {
+  return outcome?.status === "blocked" || outcome?.status === "needs_attention";
+}
+
+function workflowOutcomeLabel(outcome: WorkflowOutcome) {
+  return outcome.status === "blocked" ? "Blocked" : "Needs attention";
+}
+
+function blockerText(blocker: Record<string, unknown>, key: string) {
+  return stringValue(blocker[key]);
+}
+
 function agentRunBranchUrl(run: AgentRunRecord | null) {
   return agentRunResultString(run, "branchUrl");
 }
@@ -478,6 +523,7 @@ export function RequestDetailsPanel({
   const currentWorkflowSteps = useMemo(() => workflowSteps(workflow), [workflow]);
   const [currentWorkflowStepKey, setCurrentWorkflowStepKey] = useState(request.currentWorkflowStepKey);
   const [workflowRunStatus, setWorkflowRunStatus] = useState(request.workflowRunStatus);
+  const [workflowAttention, setWorkflowAttention] = useState(request.workflowAttention);
   const currentWorkflowStep = useMemo(
     () => workflowStepForKey(currentWorkflowStepKey, currentWorkflowSteps).step,
     [currentWorkflowStepKey, currentWorkflowSteps],
@@ -516,6 +562,7 @@ export function RequestDetailsPanel({
   const [reopenStepKey, setReopenStepKey] = useState("");
   const [reopenComment, setReopenComment] = useState("");
   const [cancelComment, setCancelComment] = useState("Cancel this workflow and close the request.");
+  const [overrideComment, setOverrideComment] = useState("");
   const [threadError, setThreadError] = useState<string | null>(null);
   const [executions, setExecutions] = useState<ChangeRequestExecutionRecord[]>(
     [],
@@ -535,6 +582,7 @@ export function RequestDetailsPanel({
   const [isCommentPending, startCommentTransition] = useTransition();
   const [isCommandPending, startCommandTransition] = useTransition();
   const [isReopenPending, startReopenTransition] = useTransition();
+  const [isOverridePending, startOverrideTransition] = useTransition();
   const [isArtifactUploadPending, startArtifactUploadTransition] = useTransition();
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
   const [activeWorkflowJobId, setActiveWorkflowJobId] = useState<string | null>(null);
@@ -544,6 +592,7 @@ export function RequestDetailsPanel({
   useEffect(() => {
     setCurrentWorkflowStepKey(request.currentWorkflowStepKey);
     setWorkflowRunStatus(request.workflowRunStatus);
+    setWorkflowAttention(request.workflowAttention);
     setTriageSummary(request.triageSummary ?? "");
     setAgentRecommendation(request.agentRecommendation ?? "");
     setManualWorkflowStepKey(request.currentWorkflowStepKey ?? "");
@@ -553,6 +602,7 @@ export function RequestDetailsPanel({
     request.currentWorkflowStepKey,
     request.id,
     request.triageSummary,
+    request.workflowAttention,
     request.workflowRunStatus,
   ]);
 
@@ -698,6 +748,7 @@ export function RequestDetailsPanel({
         if (requestPayload.changeRequest) {
           setCurrentWorkflowStepKey(requestPayload.changeRequest.currentWorkflowStepKey);
           setWorkflowRunStatus(requestPayload.changeRequest.workflowRunStatus);
+          setWorkflowAttention(requestPayload.changeRequest.workflowAttention);
           setTriageSummary(requestPayload.changeRequest.triageSummary ?? "");
           setAgentRecommendation(requestPayload.changeRequest.agentRecommendation ?? "");
           setManualWorkflowStepKey(requestPayload.changeRequest.currentWorkflowStepKey ?? "");
@@ -769,6 +820,7 @@ export function RequestDetailsPanel({
       agentRuns.find((run) => run.status === "queued" || run.status === "running") ?? null,
     [agentRuns],
   );
+  const latestAttentionOutcome = workflowAttention;
   const legacyOnlyExecutions = useMemo(
     () => executions.filter((execution) => !executionAgentRunId(execution)),
     [executions],
@@ -1382,6 +1434,48 @@ export function RequestDetailsPanel({
     });
   }
 
+  function handleOverrideAttention() {
+    if (!workflowAttention || !overrideComment.trim()) return;
+    setThreadError(null);
+    startOverrideTransition(async () => {
+      try {
+        const response = await fetch(
+          `/admin/change-requests/${request.id}/workflow/blockers/override`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              comment: overrideComment.trim(),
+              blockerKeys: workflowAttention.blockers
+                .map((blocker) => blockerText(blocker, "key"))
+                .filter((key): key is string => Boolean(key)),
+            }),
+          },
+        );
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          error?: string;
+          changeRequest?: ChangeRequestRecord;
+        };
+        if (!response.ok || payload.ok === false) {
+          throw new Error(payload.error || "Could not override blocker");
+        }
+        setOverrideComment("");
+        setWorkflowAttention(payload.changeRequest?.workflowAttention ?? null);
+        if (payload.changeRequest) {
+          setCurrentWorkflowStepKey(payload.changeRequest.currentWorkflowStepKey);
+          setWorkflowRunStatus(payload.changeRequest.workflowRunStatus);
+        }
+        await refreshExecutions();
+        await refreshWorkflowEvents();
+      } catch (error) {
+        setThreadError(error instanceof Error ? error.message : "Could not override blocker");
+      }
+    });
+  }
+
   function handleOpenCancelWorkflowDialog() {
     setCancelComment((current) => current || "Cancel this workflow and close the request.");
     setIsCancelDialogOpen(true);
@@ -1518,6 +1612,94 @@ export function RequestDetailsPanel({
                       {entry.message}
                     </div>
                   ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {latestAttentionOutcome ? (
+            <div className="rounded-none border border-amber-400/70 bg-amber-50/90 px-4 py-3 text-sm text-amber-950">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="border-amber-500/70 text-amber-950">
+                    {workflowOutcomeLabel(latestAttentionOutcome)}
+                  </Badge>
+                  {latestAttentionOutcome.workflowStepKey ? (
+                    <span className="font-medium">
+                      {latestAttentionOutcome.workflowStepKey}
+                    </span>
+                  ) : null}
+                </div>
+                <span className="text-xs text-amber-900/75">
+                  Run {latestAttentionOutcome.agentRunId}
+                </span>
+              </div>
+              {latestAttentionOutcome.summary ? (
+                <p className="mt-3 leading-6">{latestAttentionOutcome.summary}</p>
+              ) : null}
+              {latestAttentionOutcome.suggestedFix ? (
+                <p className="mt-2 leading-6">
+                  <span className="font-medium">Suggested fix:</span>{" "}
+                  {latestAttentionOutcome.suggestedFix}
+                </p>
+              ) : null}
+              {latestAttentionOutcome.blockers.length ? (
+                <div className="mt-3 space-y-2">
+                  {latestAttentionOutcome.blockers.map((blocker, index) => {
+                    const key = blockerText(blocker, "key") ?? `blocker-${index + 1}`;
+                    const severity = blockerText(blocker, "severity");
+                    const reason = blockerText(blocker, "reason");
+                    const suggestedFix =
+                      blockerText(blocker, "suggestedFix") ?? blockerText(blocker, "suggested_fix");
+                    return (
+                      <div
+                        key={`${key}-${index}`}
+                        className="rounded-none border border-amber-300/70 bg-amber-100/60 px-3 py-2"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">{key}</span>
+                          {severity ? (
+                            <Badge variant="outline" className="border-amber-500/70 text-amber-950">
+                              {severity}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        {reason ? <p className="mt-1 leading-6">{reason}</p> : null}
+                        {suggestedFix ? (
+                          <p className="mt-1 leading-6">
+                            <span className="font-medium">Fix:</span> {suggestedFix}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {canRunWorkflowActions ? (
+                <div className="mt-3 space-y-2">
+                  <Label htmlFor="workflow-attention-override">
+                    Override comment
+                  </Label>
+                  <Textarea
+                    id="workflow-attention-override"
+                    value={overrideComment}
+                    onChange={(event) => setOverrideComment(event.target.value)}
+                    placeholder="Explain why it is safe to continue or how you resolved this blocker."
+                    className="min-h-[76px] border-amber-300 bg-amber-50/40"
+                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleOverrideAttention}
+                      disabled={isOverridePending || !overrideComment.trim()}
+                      className="border-amber-500/70 text-amber-950 hover:bg-amber-100"
+                    >
+                      Continue anyway
+                    </Button>
+                    <span className="text-xs text-amber-900/75">
+                      This records an audit event and clears the current attention state.
+                    </span>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -2283,6 +2465,7 @@ export function RequestDetailsPanel({
                         agentRunResultString(run, "commitSha") ??
                         agentRunResultString(run, "headCommitSha");
                       const deployUrl = agentRunDeployUrl(run, targetEnvironment);
+                      const workflowOutcome = workflowOutcomeFromRun(run);
 
                       return (
                         <div
@@ -2310,6 +2493,11 @@ export function RequestDetailsPanel({
                             {run.status === "queued" && run.queuePosition ? (
                               <Badge variant="outline">position {run.queuePosition}</Badge>
                             ) : null}
+                            {workflowOutcomeNeedsAttention(workflowOutcome) && workflowOutcome ? (
+                              <Badge variant="outline" className="border-amber-500/70 text-amber-700">
+                                {workflowOutcomeLabel(workflowOutcome)}
+                              </Badge>
+                            ) : null}
                             <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
                               agent run
                             </span>
@@ -2321,6 +2509,20 @@ export function RequestDetailsPanel({
                         {run.errorMessage ? (
                           <div className="mt-3 rounded-none border border-destructive/30 bg-destructive/5 px-3 py-2 text-destructive">
                             {run.errorMessage}
+                          </div>
+                        ) : null}
+                        {workflowOutcomeNeedsAttention(workflowOutcome) && workflowOutcome ? (
+                          <div className="mt-3 rounded-none border border-amber-400/70 bg-amber-50/80 px-3 py-2 text-amber-950">
+                            <div className="font-medium">{workflowOutcomeLabel(workflowOutcome)}</div>
+                            {workflowOutcome.summary ? (
+                              <p className="mt-1 whitespace-pre-wrap leading-6">{workflowOutcome.summary}</p>
+                            ) : null}
+                            {workflowOutcome.suggestedFix ? (
+                              <p className="mt-1 whitespace-pre-wrap leading-6">
+                                <span className="font-medium">Suggested fix:</span>{" "}
+                                {workflowOutcome.suggestedFix}
+                              </p>
+                            ) : null}
                           </div>
                         ) : null}
                         <div className="mt-3 grid gap-2 text-xs text-muted-foreground">
