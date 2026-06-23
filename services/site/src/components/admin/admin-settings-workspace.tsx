@@ -1440,6 +1440,37 @@ function MembersAndRoles({ canManageUsers }: { canManageUsers: boolean }) {
   );
 }
 
+type TargetDraft = {
+  name: string;
+  repoUrl: string;
+  defaultBranch: string;
+  description: string;
+  agentEnabled: boolean;
+  defaultEnvironmentId: string;
+};
+
+function buildTargetDraft(
+  targetApp: TargetAppRecord,
+  targetEnvironments: TargetEnvironmentRecord[],
+): TargetDraft {
+  const environments = targetEnvironments.filter(
+    (environment) => environment.targetAppId === targetApp.id,
+  );
+  const defaultEnvironment =
+    environments.find((environment) => environment.isDefaultForAgent) ??
+    environments[0];
+
+  return {
+    name: targetApp.name,
+    repoUrl: targetApp.repoUrl ?? "",
+    defaultBranch:
+      defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
+    description: targetApp.description ?? "",
+    agentEnabled: targetApp.agentEnabled,
+    defaultEnvironmentId: defaultEnvironment?.id ?? "",
+  };
+}
+
 function RepositorySetup({
   targetApps,
   targetEnvironments,
@@ -1447,29 +1478,12 @@ function RepositorySetup({
   targetApps: TargetAppRecord[];
   targetEnvironments: TargetEnvironmentRecord[];
 }) {
-  const [drafts, setDrafts] = useState(() =>
+  const [drafts, setDrafts] = useState<Record<string, TargetDraft>>(() =>
     Object.fromEntries(
-      targetApps.map((targetApp) => {
-        const environments = targetEnvironments.filter(
-          (environment) => environment.targetAppId === targetApp.id,
-        );
-        const defaultEnvironment =
-          environments.find((environment) => environment.isDefaultForAgent) ??
-          environments[0];
-
-        return [
-          targetApp.id,
-          {
-            name: targetApp.name,
-            repoUrl: targetApp.repoUrl ?? "",
-            defaultBranch:
-              defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
-            description: targetApp.description ?? "",
-            agentEnabled: targetApp.agentEnabled,
-            defaultEnvironmentId: defaultEnvironment?.id ?? "",
-          },
-        ];
-      }),
+      targetApps.map((targetApp) => [
+        targetApp.id,
+        buildTargetDraft(targetApp, targetEnvironments),
+      ]),
     ),
   );
   const [error, setError] = useState<string | null>(null);
@@ -1481,32 +1495,17 @@ function RepositorySetup({
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    setDrafts(
+    setDrafts((current) =>
       Object.fromEntries(
-        targetApps.map((targetApp) => {
-          const environments = targetEnvironments.filter(
-            (environment) => environment.targetAppId === targetApp.id,
-          );
-          const defaultEnvironment =
-            environments.find((environment) => environment.isDefaultForAgent) ??
-            environments[0];
-
-          return [
-            targetApp.id,
-            {
-              name: targetApp.name,
-              repoUrl: targetApp.repoUrl ?? "",
-              defaultBranch:
-                defaultEnvironment?.branch ?? targetApp.defaultBranch ?? "main",
-              description: targetApp.description ?? "",
-              agentEnabled: targetApp.agentEnabled,
-              defaultEnvironmentId: defaultEnvironment?.id ?? "",
-            },
-          ];
-        }),
+        targetApps.map((targetApp) => [
+          targetApp.id,
+          editingTarget?.id === targetApp.id && current[targetApp.id]
+            ? current[targetApp.id]
+            : buildTargetDraft(targetApp, targetEnvironments),
+        ]),
       ),
     );
-  }, [targetApps, targetEnvironments]);
+  }, [editingTarget?.id, targetApps, targetEnvironments]);
 
   function updateDraft(
     targetAppId: string,
@@ -1615,7 +1614,25 @@ function RepositorySetup({
 
   function openEditTarget(targetApp: TargetAppRecord) {
     setError(null);
+    setDrafts((current) => ({
+      ...current,
+      [targetApp.id]: buildTargetDraft(targetApp, targetEnvironments),
+    }));
     setEditingTarget(targetApp);
+  }
+
+  function closeEditTarget() {
+    if (editingTarget) {
+      const currentTarget =
+        targetApps.find((targetApp) => targetApp.id === editingTarget.id) ??
+        editingTarget;
+
+      setDrafts((current) => ({
+        ...current,
+        [editingTarget.id]: buildTargetDraft(currentTarget, targetEnvironments),
+      }));
+    }
+    setEditingTarget(null);
   }
 
   const editingDraft = editingTarget ? drafts[editingTarget.id] : null;
@@ -1808,7 +1825,7 @@ function RepositorySetup({
       <Dialog
         open={Boolean(editingTarget)}
         onOpenChange={(open) => {
-          if (!open) setEditingTarget(null);
+          if (!open) closeEditTarget();
         }}
       >
         <DialogContent className="max-w-2xl">
@@ -1904,7 +1921,7 @@ function RepositorySetup({
             <Button
               type="button"
               variant="outline"
-              onClick={() => setEditingTarget(null)}
+              onClick={closeEditTarget}
             >
               Cancel
             </Button>
