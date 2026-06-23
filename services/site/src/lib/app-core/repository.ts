@@ -1880,7 +1880,7 @@ function mapAgentRunRowsWithQueuePositions(rows: AgentRunRow[]) {
   }));
 }
 
-function mapAgentRunRow(row: AgentRunRow, input: { queuePosition?: number | null } = {}): AgentRunRecord {
+function mapAgentRunRow(row: AgentRunRow, input: { queuePosition?: number | null; computeQueuePosition?: boolean } = {}): AgentRunRecord {
   const lane = inferAgentRunLane({ lane: row.lane, kind: row.kind, source: row.source });
   const queuedAt = row.queued_at ?? row.created_at;
   const priority = normalizeAgentRunPriority(row.priority, defaultAgentRunPriority(lane));
@@ -1907,7 +1907,9 @@ function mapAgentRunRow(row: AgentRunRow, input: { queuePosition?: number | null
     leaseExpiresAt: row.lease_expires_at ?? null,
     queueReason: row.queue_reason ?? null,
     queuePosition: row.status === 'queued'
-      ? input.queuePosition ?? computeAgentRunQueuePosition({ id: row.id, lane, priority, queuedAt, createdAt: row.created_at })
+      ? input.computeQueuePosition === false
+        ? input.queuePosition ?? null
+        : input.queuePosition ?? computeAgentRunQueuePosition({ id: row.id, lane, priority, queuedAt, createdAt: row.created_at })
       : null,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
@@ -1916,10 +1918,23 @@ function mapAgentRunRow(row: AgentRunRow, input: { queuePosition?: number | null
   };
 }
 
-function normalizeWorkflowAttentionStatus(value: unknown): 'blocked' | 'needs_attention' | null {
+function normalizeWorkflowOutcomeStatus(value: unknown): 'blocked' | 'needs_attention' | 'completed' | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().toLowerCase().replace(/-/g, '_');
+  return normalized === 'blocked' || normalized === 'needs_attention' || normalized === 'completed' ? normalized : null;
+}
+
+function normalizeWorkflowAttentionStatus(value: unknown): 'blocked' | 'needs_attention' | null {
+  const normalized = normalizeWorkflowOutcomeStatus(value);
   return normalized === 'blocked' || normalized === 'needs_attention' ? normalized : null;
+}
+
+function workflowOutcomeStatusFromRun(run: AgentRunRecord) {
+  const rawOutcome = run.result.workflowOutcome;
+  if (!rawOutcome || typeof rawOutcome !== 'object' || Array.isArray(rawOutcome)) {
+    return null;
+  }
+  return normalizeWorkflowOutcomeStatus((rawOutcome as Record<string, unknown>).status);
 }
 
 function workflowAttentionFromRun(run: AgentRunRecord): WorkflowAttentionRecord | null {
@@ -1976,27 +1991,28 @@ function workflowAttentionResolved(attention: WorkflowAttentionRecord, events: W
   });
 }
 
-export function getWorkflowAttentionForRequest(requestId: string): WorkflowAttentionRecord | null {
-  const agentRuns = listAgentRuns({ requestId, limit: 100 });
-  const events = listWorkflowEventsForRequest(requestId, 200);
-  const currentStepKey = getWorkflowRunForRequest(requestId)?.currentStepKey ?? null;
+function workflowAttentionForRequestData(input: {
+  agentRuns: AgentRunRecord[];
+  events: WorkflowEventRecord[];
+  currentStepKey: string | null;
+}) {
   const clearedStepKeys = new Set<string>();
-  for (const run of agentRuns) {
+  for (const run of input.agentRuns) {
     const attention = workflowAttentionFromRun(run);
-    if (attention?.workflowStepKey && currentStepKey && attention.workflowStepKey !== currentStepKey) {
+    if (attention?.workflowStepKey && input.currentStepKey && attention.workflowStepKey !== input.currentStepKey) {
       continue;
     }
     if (attention?.workflowStepKey && clearedStepKeys.has(attention.workflowStepKey)) {
       continue;
     }
-    if (attention && !workflowAttentionResolved(attention, events)) {
+    if (attention && !workflowAttentionResolved(attention, input.events)) {
       return attention;
     }
     if (
       !attention &&
       run.status === 'succeeded' &&
       run.workflowStepKey &&
-      run.result.workflowOutcome == null
+      (run.result.workflowOutcome == null || workflowOutcomeStatusFromRun(run) === 'completed')
     ) {
       clearedStepKeys.add(run.workflowStepKey);
     }
@@ -2004,10 +2020,80 @@ export function getWorkflowAttentionForRequest(requestId: string): WorkflowAtten
   return null;
 }
 
-function withWorkflowAttention<T extends ChangeRequestRecord>(request: T): T {
+export function getWorkflowAttentionForRequest(requestId: string): WorkflowAttentionRecord | null {
+  return workflowAttentionForRequestData({
+    agentRuns: listAgentRuns({ requestId, limit: 100 }),
+    events: listWorkflowEventsForRequest(requestId, 200),
+    currentStepKey: getWorkflowRunForRequest(requestId)?.currentStepKey ?? null,
+  });
+}
+
+function listWorkflowAttentionForRequests(requests: ChangeRequestRecord[]) {
+  const requestIds = requests.map((request) => request.id).filter(Boolean);
+  const attentionByRequestId = new Map<string, WorkflowAttentionRecord | null>();
+  for (const request of requests) {
+    attentionByRequestId.set(request.id, null);
+  }
+  if (!requestIds.length) {
+    return attentionByRequestId;
+  }
+
+  const placeholders = requestIds.map(() => '?').join(', ');
+  const agentRunRows = getDb()
+    .prepare(
+      `SELECT *
+       FROM (
+         SELECT ar.*, ROW_NUMBER() OVER (PARTITION BY ar.request_id ORDER BY ar.created_at DESC) AS row_number
+         FROM agent_runs ar
+         WHERE ar.request_id IN (${placeholders})
+       )
+       WHERE row_number <= 100
+       ORDER BY request_id ASC, created_at DESC`,
+    )
+    .all(...requestIds) as AgentRunRow[];
+  const eventRows = getDb()
+    .prepare(
+      `SELECT *
+       FROM (
+         SELECT we.*, ROW_NUMBER() OVER (PARTITION BY we.request_id ORDER BY we.created_at DESC) AS row_number
+         FROM workflow_events we
+         WHERE we.request_id IN (${placeholders})
+       )
+       WHERE row_number <= 200
+       ORDER BY request_id ASC, created_at DESC`,
+    )
+    .all(...requestIds) as WorkflowEventRow[];
+
+  const agentRunsByRequestId = new Map<string, AgentRunRecord[]>();
+  for (const row of agentRunRows) {
+    if (!row.request_id) continue;
+    const runs = agentRunsByRequestId.get(row.request_id) ?? [];
+    runs.push(mapAgentRunRow(row, { queuePosition: null, computeQueuePosition: false }));
+    agentRunsByRequestId.set(row.request_id, runs);
+  }
+
+  const eventsByRequestId = new Map<string, WorkflowEventRecord[]>();
+  for (const row of eventRows) {
+    const events = eventsByRequestId.get(row.request_id) ?? [];
+    events.push(mapWorkflowEventRow(row));
+    eventsByRequestId.set(row.request_id, events);
+  }
+
+  for (const request of requests) {
+    attentionByRequestId.set(request.id, workflowAttentionForRequestData({
+      agentRuns: agentRunsByRequestId.get(request.id) ?? [],
+      events: eventsByRequestId.get(request.id) ?? [],
+      currentStepKey: request.currentWorkflowStepKey,
+    }));
+  }
+
+  return attentionByRequestId;
+}
+
+function withWorkflowAttention<T extends ChangeRequestRecord>(request: T, attention?: WorkflowAttentionRecord | null): T {
   return {
     ...request,
-    workflowAttention: getWorkflowAttentionForRequest(request.id),
+    workflowAttention: attention === undefined ? getWorkflowAttentionForRequest(request.id) : attention,
   };
 }
 
@@ -3672,7 +3758,9 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     closed_at: string | null;
   }>;
 
-  return rows.map(parseTrackedChangeRequestRow).map(withWorkflowAttention);
+  const requests = rows.map(parseTrackedChangeRequestRow);
+  const attentionByRequestId = listWorkflowAttentionForRequests(requests);
+  return requests.map((request) => withWorkflowAttention(request, attentionByRequestId.get(request.id) ?? null));
 }
 
 export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) {

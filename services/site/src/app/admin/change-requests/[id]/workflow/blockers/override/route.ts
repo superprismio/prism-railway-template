@@ -20,6 +20,18 @@ function stringArray(value: unknown) {
     : []
 }
 
+function blockerKey(blocker: Record<string, unknown>) {
+  return parseString(blocker.key)
+}
+
+function blockerSeverity(blocker: Record<string, unknown>) {
+  return parseString(blocker.severity)?.toLowerCase().replace(/-/g, "_") ?? null
+}
+
+function blockerCanOverride(blocker: Record<string, unknown>) {
+  return blocker.canOverride !== false && blocker.can_override !== false && blockerSeverity(blocker) !== "non_overridable"
+}
+
 export async function POST(request: Request, context: RouteContext) {
   let payload: unknown = null
 
@@ -79,8 +91,19 @@ export async function POST(request: Request, context: RouteContext) {
   const resolvedBlockerKeys = blockerKeys.length
     ? blockerKeys
     : attention.blockers
-      .map((blocker: Record<string, unknown>) => parseString(blocker.key))
+      .map(blockerKey)
       .filter((key): key is string => Boolean(key))
+  const nonOverridableBlocker = attention.blockers.find((blocker) => !blockerCanOverride(blocker))
+  if (nonOverridableBlocker) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "BLOCKER_NOT_OVERRIDABLE",
+        blockerKey: blockerKey(nonOverridableBlocker),
+      },
+      { status: 409 },
+    )
+  }
 
   const event = createWorkflowEvent({
     workflowRunId,
