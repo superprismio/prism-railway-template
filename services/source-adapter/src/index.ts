@@ -2298,6 +2298,123 @@ function cleanPrompt(message: Message, botUserId: string): string {
   return message.content.replace(new RegExp(`<@!?${botUserId}>`, "g"), "").trim();
 }
 
+function cleanDiscordMessageContent(message: Message, botUserId?: string): string {
+  const content = botUserId ? cleanPrompt(message, botUserId) : message.content.trim();
+  return truncateText(content || "[no text content]", 2_000);
+}
+
+function summarizeDiscordContextMessage(message: Message, kind: string, botUserId?: string): DiscordContextMessage {
+  const attachments = [...message.attachments.values()].slice(0, 5).map((attachment) => ({
+    id: attachment.id,
+    filename: attachment.name ?? attachment.id,
+    contentType: attachment.contentType ?? null,
+    size: attachment.size ?? null,
+    url: attachment.url ?? null,
+  }));
+  const summary: DiscordContextMessage = {
+    kind,
+    id: message.id,
+    channelId: message.channel.id,
+    authorId: message.author.id,
+    authorName: message.member?.displayName ?? message.author.displayName ?? message.author.username,
+    authorBot: message.author.bot,
+    content: cleanDiscordMessageContent(message, botUserId),
+    createdAt: message.createdAt.toISOString(),
+    url: message.url,
+  };
+  if (attachments.length) {
+    summary.attachments = attachments;
+  }
+  return summary;
+}
+
+async function fetchReferencedMessage(message: Message): Promise<Message | null> {
+  if (!message.reference?.messageId || typeof message.fetchReference !== "function") {
+    return null;
+  }
+  return await message.fetchReference().catch(() => null);
+}
+
+async function fetchThreadStarterMessage(channel: TextBasedChannel): Promise<Message | null> {
+  if (!channel.isThread() || !("fetchStarterMessage" in channel) || typeof channel.fetchStarterMessage !== "function") {
+    return null;
+  }
+  return await channel.fetchStarterMessage().catch(() => null);
+}
+
+function sameDiscordMessage(left: DiscordContextMessage | undefined, right: DiscordContextMessage | undefined): boolean {
+  return Boolean(left && right && left.id === right.id && left.channelId === right.channelId);
+}
+
+async function collectDiscordPromptContext(message: Message, botUserId: string): Promise<DiscordPromptContext | null> {
+  const context: DiscordPromptContext = {};
+  const fetchErrors: string[] = [];
+
+  try {
+    const replyTo = await fetchReferencedMessage(message);
+    if (replyTo) {
+      context.replyTo = summarizeDiscordContextMessage(replyTo, "reply_to", botUserId);
+    }
+  } catch (error) {
+    fetchErrors.push(`reply_to:${describeError(error)}`);
+  }
+
+  try {
+    const starter = await fetchThreadStarterMessage(message.channel);
+    if (starter && starter.id !== message.id) {
+      const threadStarter = summarizeDiscordContextMessage(starter, "thread_starter", botUserId);
+      if (!sameDiscordMessage(context.replyTo, threadStarter)) {
+        context.threadStarter = threadStarter;
+      }
+      const starterReplyTo = await fetchReferencedMessage(starter);
+      if (starterReplyTo) {
+        const summarizedStarterReply = summarizeDiscordContextMessage(starterReplyTo, "thread_starter_reply_to", botUserId);
+        if (!sameDiscordMessage(context.replyTo, summarizedStarterReply) && !sameDiscordMessage(context.threadStarter, summarizedStarterReply)) {
+          context.threadStarterReplyTo = summarizedStarterReply;
+        }
+      }
+    }
+  } catch (error) {
+    fetchErrors.push(`thread_starter:${describeError(error)}`);
+  }
+
+  if (fetchErrors.length) {
+    context.fetchErrors = fetchErrors.slice(0, 5);
+  }
+  return Object.keys(context).length ? context : null;
+}
+
+function formatDiscordContextMessage(label: string, message: DiscordContextMessage | undefined): string[] {
+  if (!message) {
+    return [];
+  }
+  const attachmentCount = Array.isArray(message.attachments) ? message.attachments.length : 0;
+  return [
+    `${label}:`,
+    `- Author: ${message.authorName}${message.authorBot ? " (bot)" : ""}`,
+    `- Created: ${message.createdAt}`,
+    `- URL: ${message.url}`,
+    `- Content: ${message.content}`,
+    attachmentCount ? `- Attachments: ${attachmentCount}` : null,
+  ].filter((line): line is string => Boolean(line));
+}
+
+function buildDiscordRuntimePrompt(prompt: string, context: DiscordPromptContext | null): string {
+  if (!context) {
+    return prompt;
+  }
+  const lines = [
+    "Discord context for this turn:",
+    ...formatDiscordContextMessage("Message being replied to", context.replyTo),
+    ...formatDiscordContextMessage("Thread starter", context.threadStarter),
+    ...formatDiscordContextMessage("Message the thread starter replied to", context.threadStarterReplyTo),
+    "",
+    "User message:",
+    prompt,
+  ];
+  return lines.join("\n");
+}
+
 function roleIdsFromMessage(message: Message): string[] {
   return message.member?.roles.cache.map((role) => role.id) ?? [];
 }
@@ -2441,8 +2558,27 @@ type DiscordPromptTransport = {
   authorRoleIds: string[];
   userSourceMessageId: string | null;
   createdAt: string;
+  context: DiscordPromptContext | null;
   sendTyping?: () => Promise<void>;
   sendAssistantMessage: (content: string) => Promise<{ sourceMessageId: string | null }>;
+};
+
+type DiscordContextMessage = JsonObject & {
+  id: string;
+  channelId: string;
+  authorId: string;
+  authorName: string;
+  authorBot: boolean;
+  content: string;
+  createdAt: string;
+  url: string;
+};
+
+type DiscordPromptContext = JsonObject & {
+  replyTo?: DiscordContextMessage;
+  threadStarter?: DiscordContextMessage;
+  threadStarterReplyTo?: DiscordContextMessage;
+  fetchErrors?: string[];
 };
 
 function discordSourceAttachmentInstructions(): string {
@@ -2551,6 +2687,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
       transport: "discord",
       channelName: transport.channelName,
       threadName: transport.threadName,
+      discordContext: transport.context,
       accessPolicy,
     },
     lastMessageAt: transport.createdAt,
@@ -2566,6 +2703,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
       authorId: transport.authorId,
       authorName: transport.authorName,
       authorRoleIds: transport.authorRoleIds,
+      discordContext: transport.context,
       accessPolicy,
     },
     createdAt: transport.createdAt,
@@ -2592,8 +2730,9 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
   const runAndSendCodexReply = async () => {
     const stopTyping = startTypingHeartbeat(transport.sendTyping);
     try {
+      const runtimePrompt = buildDiscordRuntimePrompt(prompt, transport.context);
       const result = await codexRuntimeRequest({
-        prompt,
+        prompt: runtimePrompt,
         sessionId: String(session.id),
         codexThreadId,
         recentHistory,
@@ -2604,6 +2743,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
           discordThreadId: transport.threadId,
           discordAuthorId: transport.authorId,
           discordAuthorRoleIds: transport.authorRoleIds,
+          discordContext: transport.context,
           discordAccessPolicy: accessPolicy,
           policyInstructions:
             accessPolicy.mode === "readonly"
@@ -2741,6 +2881,7 @@ async function handleDiscordChatMessage(message: Message): Promise<void> {
   if (!channelId) {
     return;
   }
+  const context = await collectDiscordPromptContext(message, bridgeClient.user.id);
   console.log("[discord-adapter] handling mention prompt", {
     guildId: message.guildId,
     messageId: message.id,
@@ -2762,6 +2903,7 @@ async function handleDiscordChatMessage(message: Message): Promise<void> {
       authorRoleIds: roleIdsFromMessage(message),
       userSourceMessageId: message.id,
       createdAt: message.createdAt.toISOString(),
+      context,
       sendTyping:
         "sendTyping" in targetChannel && typeof targetChannel.sendTyping === "function"
           ? async () => {
@@ -3395,6 +3537,7 @@ async function handleSlashPrompt(interaction: ChatInputCommandInteraction, promp
     authorRoleIds: roleIdsFromInteraction(interaction),
     userSourceMessageId: interaction.id,
     createdAt: interaction.createdAt.toISOString(),
+    context: null,
     sendTyping: async () => {},
     sendAssistantMessage: async (content) => {
       const parts = splitDiscordMessage(content);
