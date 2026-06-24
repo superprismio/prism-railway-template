@@ -192,6 +192,53 @@ function copyAllowedSearchParams(
   return output
 }
 
+const safeEncodedProxyPathSegmentPattern = /^[A-Za-z0-9._~!$&'()*+,;=:@%-]+$/
+const safeDecodedProxyPathSegmentPattern = /^[A-Za-z0-9._~!$&'()*+,;=:@-]+$/
+
+function validatePrismMemoryProxyPath(path: string) {
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    return "Prism Memory proxy path must be absolute"
+  }
+
+  if (/[?#\\\u0000-\u001F\u007F]/.test(path)) {
+    return "Prism Memory proxy path contains invalid characters"
+  }
+
+  const segments = path.split("/")
+  for (let index = 1; index < segments.length; index += 1) {
+    const segment = segments[index]
+    if (!segment) {
+      return "Prism Memory proxy path contains an empty segment"
+    }
+
+    if (!safeEncodedProxyPathSegmentPattern.test(segment)) {
+      return "Prism Memory proxy path contains invalid characters"
+    }
+
+    let decodedSegment: string
+    try {
+      decodedSegment = decodeURIComponent(segment)
+    } catch {
+      return "Prism Memory proxy path contains invalid percent-encoding"
+    }
+
+    if (decodedSegment === "." || decodedSegment === "..") {
+      return "Prism Memory proxy path cannot contain dot segments"
+    }
+
+    if (
+      decodedSegment.includes("/") ||
+      decodedSegment.includes("\\") ||
+      /[\u0000-\u001F\u007F]/.test(decodedSegment) ||
+      !safeDecodedProxyPathSegmentPattern.test(decodedSegment)
+    ) {
+      return "Prism Memory proxy path contains invalid characters"
+    }
+  }
+
+  return null
+}
+
 export async function proxyPrismMemoryJson(
   path: string,
   incomingSearchParams: URLSearchParams,
@@ -219,6 +266,14 @@ export async function proxyPrismMemoryJson(
     return NextResponse.json(
       { ok: false, error: "PRISM_API_READ_KEY or PRISM_API_KEY is not configured" },
       { status: 500 },
+    )
+  }
+
+  const invalidPathError = validatePrismMemoryProxyPath(path)
+  if (invalidPathError) {
+    return NextResponse.json(
+      { ok: false, error: invalidPathError },
+      { status: 400 },
     )
   }
 
