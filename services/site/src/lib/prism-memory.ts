@@ -19,6 +19,8 @@ export type PrismArtifactSummary = {
   participant_count?: number | null
   content_length: number
   preview: string
+  view_url?: string | null
+  doc_url?: string | null
 }
 
 export type PrismArtifactDetail = PrismArtifactSummary & {
@@ -129,6 +131,157 @@ function prismMemoryReadKey() {
   ).trim()
 }
 
+function recordValue(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null
+}
+
+function slugFromKnowledgeViewUrl(value: unknown) {
+  const raw = stringValue(value)
+  if (!raw) return null
+
+  let pathname = raw
+  try {
+    pathname = new URL(raw).pathname
+  } catch {
+    // Relative paths are expected from Prism Memory and do not need URL parsing.
+  }
+
+  const marker = "/knowledge/view/"
+  const markerIndex = pathname.indexOf(marker)
+  if (markerIndex < 0) return null
+
+  const slug = normalizeKnowledgeSlug(
+    pathname.slice(markerIndex + marker.length),
+  )
+  return slug || null
+}
+
+function slugFromKnowledgeDocArtifactId(value: unknown) {
+  const id = stringValue(value)
+  if (!id?.startsWith("knowledge-doc--")) return null
+  return (
+    id
+      .slice("knowledge-doc--".length)
+      .replace(/~/g, "/")
+      .replace(/^\/+|\/+$/g, "") || null
+  )
+}
+
+function slugFromKnowledgeDocPath(value: unknown) {
+  const path = stringValue(value)
+  if (!path) return null
+
+  const marker = "knowledge/kb/docs/"
+  const markerIndex = path.indexOf(marker)
+  if (markerIndex < 0) return null
+
+  return path
+    .slice(markerIndex + marker.length)
+    .replace(/\.md$/i, "")
+    .replace(/^\/+|\/+$/g, "") || null
+}
+
+function decodeSlugSegment(segment: string) {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return segment
+  }
+}
+
+function decodeProxyPathSegment(segment: string) {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return null
+  }
+}
+
+function isSafePrismMemoryProxyPath(path: string) {
+  if (
+    !path.startsWith("/") ||
+    path.startsWith("//") ||
+    /[\u0000-\u001f\u007f\\?#]/.test(path)
+  ) {
+    return false
+  }
+
+  const segments = path.split("/")
+  return segments.every((segment, index) => {
+    if (!segment) return index === 0
+
+    const decoded = decodeProxyPathSegment(segment)
+    return Boolean(
+      decoded &&
+      decoded !== "." &&
+      decoded !== ".." &&
+      !decoded.includes("/") &&
+      !decoded.includes("\\"),
+    )
+  })
+}
+
+function normalizeKnowledgeSlug(slug: string) {
+  return slug
+    .replace(/^\/+|\/+$/g, "")
+    .split("/")
+    .map(decodeSlugSegment)
+    .join("/")
+}
+
+function encodeKnowledgeSlug(slug: string) {
+  return slug
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/")
+}
+
+function artifactKnowledgeViewSlug(artifact: PrismArtifactDetail) {
+  const payload = recordValue(artifact.payload)
+  const metadata = recordValue(payload?.metadata)
+
+  const linkedSlug = [
+    artifact.view_url,
+    artifact.doc_url,
+    payload?.view_url,
+    payload?.doc_url,
+    payload?.url,
+    metadata?.view_url,
+    metadata?.doc_url,
+    metadata?.url,
+  ]
+    .map(slugFromKnowledgeViewUrl)
+    .find(Boolean)
+  if (linkedSlug) return linkedSlug
+
+  const isKnowledgeDoc =
+    artifact.category === "knowledge" &&
+    artifact.status === "processed" &&
+    artifact.type === "knowledge_doc"
+  if (!isKnowledgeDoc) return null
+
+  return (
+    stringValue(payload?.slug) ||
+    stringValue(metadata?.slug) ||
+    slugFromKnowledgeDocArtifactId(artifact.id) ||
+    slugFromKnowledgeDocPath(artifact.path)
+  )
+}
+
+export function withAdminMemoryArtifactViewUrl(artifact: PrismArtifactDetail) {
+  const slug = artifactKnowledgeViewSlug(artifact)
+  return {
+    ...artifact,
+    view_url: slug ? `/admin/memory/view/${encodeKnowledgeSlug(slug)}` : null,
+  }
+}
+
 function useLocalAppApi() {
   return process.env.SITE_USE_LOCAL_APP_API?.trim() === "true"
 }
@@ -192,7 +345,7 @@ function copyAllowedSearchParams(
   return output
 }
 
-export async function proxyPrismMemoryJson(
+export async function proxyPrismMemoryResponse(
   path: string,
   incomingSearchParams: URLSearchParams,
   allowedParams: string[] = [],
@@ -219,6 +372,13 @@ export async function proxyPrismMemoryJson(
     return NextResponse.json(
       { ok: false, error: "PRISM_API_READ_KEY or PRISM_API_KEY is not configured" },
       { status: 500 },
+    )
+  }
+
+  if (!isSafePrismMemoryProxyPath(path)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid Prism Memory proxy path" },
+      { status: 400 },
     )
   }
 
@@ -253,4 +413,12 @@ export async function proxyPrismMemoryJson(
       { status: 502 },
     )
   }
+}
+
+export async function proxyPrismMemoryJson(
+  path: string,
+  incomingSearchParams: URLSearchParams,
+  allowedParams: string[] = [],
+) {
+  return proxyPrismMemoryResponse(path, incomingSearchParams, allowedParams)
 }
