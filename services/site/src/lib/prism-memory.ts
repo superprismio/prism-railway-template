@@ -147,6 +147,38 @@ function decodeSlugSegment(segment: string) {
   }
 }
 
+function decodeProxyPathSegment(segment: string) {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return null
+  }
+}
+
+function isSafePrismMemoryProxyPath(path: string) {
+  if (
+    !path.startsWith("/") ||
+    path.startsWith("//") ||
+    /[\u0000-\u001f\u007f\\?#]/.test(path)
+  ) {
+    return false
+  }
+
+  const segments = path.split("/")
+  return segments.every((segment, index) => {
+    if (!segment) return index === 0
+
+    const decoded = decodeProxyPathSegment(segment)
+    return Boolean(
+      decoded &&
+      decoded !== "." &&
+      decoded !== ".." &&
+      !decoded.includes("/") &&
+      !decoded.includes("\\"),
+    )
+  })
+}
+
 function normalizeKnowledgeSlug(slug: string) {
   return slug
     .replace(/^\/+|\/+$/g, "")
@@ -292,6 +324,13 @@ export async function proxyPrismMemoryResponse(
     return NextResponse.json(
       { ok: false, error: "PRISM_API_READ_KEY or PRISM_API_KEY is not configured" },
       { status: 500 },
+    )
+  }
+
+  if (!isSafePrismMemoryProxyPath(path)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid Prism Memory proxy path" },
+      { status: 400 },
     )
   }
 
