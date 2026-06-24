@@ -2300,7 +2300,7 @@ function cleanPrompt(message: Message, botUserId: string): string {
 
 function cleanDiscordMessageContent(message: Message, botUserId?: string): string {
   const content = botUserId ? cleanPrompt(message, botUserId) : message.content.trim();
-  return truncateText(content || "[no text content]", 2_000);
+  return truncateText(content || "[no text content]", DISCORD_MESSAGE_MAX_LENGTH);
 }
 
 function summarizeDiscordContextMessage(message: Message, kind: string, botUserId?: string): DiscordContextMessage {
@@ -2332,14 +2332,14 @@ async function fetchReferencedMessage(message: Message): Promise<Message | null>
   if (!message.reference?.messageId || typeof message.fetchReference !== "function") {
     return null;
   }
-  return await message.fetchReference().catch(() => null);
+  return await message.fetchReference();
 }
 
 async function fetchThreadStarterMessage(channel: TextBasedChannel): Promise<Message | null> {
   if (!channel.isThread() || !("fetchStarterMessage" in channel) || typeof channel.fetchStarterMessage !== "function") {
     return null;
   }
-  return await channel.fetchStarterMessage().catch(() => null);
+  return await channel.fetchStarterMessage();
 }
 
 function sameDiscordMessage(left: DiscordContextMessage | undefined, right: DiscordContextMessage | undefined): boolean {
