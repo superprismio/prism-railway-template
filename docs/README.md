@@ -38,6 +38,7 @@ Feature-specific behavior and UI notes:
 - [Custom Skills](features/custom-skills.md)
 - [Discord Voice Plan](features/discord-voice-plan.md)
 - [Discord Access Policy Checklist](features/discord-access-policy-checklist.md)
+- [Email Adapter](features/email-output-adapter.md)
 - [Member Roles](features/member-roles.md)
 - [Memory Explorer UI](features/memory-explorer-ui.md)
 - [Prism Stack Landing Page](features/prism-stack-landing-page.md)
