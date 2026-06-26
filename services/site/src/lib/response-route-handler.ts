@@ -31,6 +31,7 @@ import {
 
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
+import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 
 type RouteAccessCheck = () => Promise<{ ok: true } | { ok: false; error: string; status: number }>
 
@@ -194,9 +195,11 @@ function workflowStepRunIdempotencyKey(input: {
   workflowRunId: string
   stepKey: string
   action?: string | null
+  loopIterationKey?: string | null
 }) {
   const actionKey = input.action && input.action.trim() ? input.action.trim() : "run"
-  return `workflow:${input.requestId}:${input.workflowRunId}:${input.stepKey}:${actionKey}`
+  const loopKey = input.loopIterationKey && input.loopIterationKey.trim() ? `:${input.loopIterationKey.trim()}` : ""
+  return `workflow:${input.requestId}:${input.workflowRunId}:${input.stepKey}:${actionKey}${loopKey}`
 }
 
 function workflowAgentRunLeaseSeconds() {
@@ -873,6 +876,16 @@ function completeWorkflowAgentStep(input: {
       },
     })
   }
+  if (!shouldStayOnStep && nextStep && isLoopWorkflowStep(nextStep)) {
+    const resolved = resolveControlFlowSteps({
+      requestId: input.requestId,
+      workflowRunId: input.workflowRunId,
+      steps: input.linkedWorkflowSteps,
+      step: nextStep,
+      autoContinued: input.autoContinued,
+    })
+    return resolved.step ? stepKey(resolved.step) : nextStepKey
+  }
   return nextStepKey
 }
 
@@ -1144,11 +1157,38 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         workflowKey: linkedChangeRequest.workflowKey,
       })
     : null
-  const currentWorkflowStep =
+  let currentWorkflowStep =
     linkedWorkflowRun
       ? findStepByKey(linkedWorkflowSteps, linkedWorkflowRun.currentStepKey) ??
         findStepByKey(linkedWorkflowSteps, typeof linkedWorkflow?.definition?.entrypoint === "string" ? linkedWorkflow.definition.entrypoint : null)
       : null
+  if (
+    activeLinkedChangeRequestId &&
+    linkedWorkflowRun &&
+    currentWorkflowStep &&
+    isLoopWorkflowStep(currentWorkflowStep)
+  ) {
+    const resolved = resolveControlFlowSteps({
+      requestId: activeLinkedChangeRequestId,
+      workflowRunId: linkedWorkflowRun.id,
+      steps: linkedWorkflowSteps,
+      step: currentWorkflowStep,
+    })
+    currentWorkflowStep = resolved.step
+    if (resolved.stopped) {
+      const loopError = "error" in resolved && typeof resolved.error === "string"
+        ? resolved.error
+        : "WORKFLOW_LOOP_STOPPED"
+      return NextResponse.json(
+        {
+          ok: false,
+          error: loopError,
+          currentWorkflowStepKey: currentWorkflowStep ? stepKey(currentWorkflowStep) : null,
+        },
+        { status: 409 },
+      )
+    }
+  }
   if (currentWorkflowStep && workflowAction && stepType(currentWorkflowStep) !== "gate") {
     return NextResponse.json(
       {
@@ -1310,6 +1350,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       workflowRunId: linkedWorkflowRun.id,
       stepKey: runnableStepKey,
       action: workflowAction,
+      loopIterationKey: loopIterationKeyForRequest({
+        requestId: activeLinkedChangeRequestId,
+      }),
     })
     const existingAgentRun = findActiveAgentRunByIdempotencyKey(idempotencyKey)
     if (existingAgentRun && existingAgentRun.id !== providedAgentRunId) {
@@ -1484,6 +1527,14 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       }
     }
 
+    const workflowRunAfterInitialStep =
+      activeLinkedChangeRequestId && linkedWorkflowRun
+        ? getWorkflowRunForRequest(activeLinkedChangeRequestId)
+        : null
+    const nextAutoContinueStep =
+      workflowRunAfterInitialStep
+        ? findStepByKey(linkedWorkflowSteps, workflowRunAfterInitialStep.currentStepKey)
+        : nextWorkflowStepAfterRun
     const autoContinuedSteps: string[] = []
     if (
       autoContinueUntilGate &&
@@ -1491,10 +1542,10 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       activeLinkedChangeRequestId &&
       linkedChangeRequest &&
       linkedWorkflowRun &&
-      nextWorkflowStepAfterRun &&
-      stepType(nextWorkflowStepAfterRun) === "agent"
+      nextAutoContinueStep &&
+      stepType(nextAutoContinueStep) === "agent"
     ) {
-      let continuationStep: Record<string, unknown> | null = nextWorkflowStepAfterRun
+      let continuationStep: Record<string, unknown> | null = nextAutoContinueStep
       let continuationThreadId =
         runtimeResponse.thread_id ??
         (typeof session.meta?.codexThreadId === "string" ? session.meta.codexThreadId : null)
@@ -1531,6 +1582,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           workflowRunId: latestRun.id,
           stepKey: continuationStepKey,
           action: null,
+          loopIterationKey: loopIterationKeyForRequest({
+            requestId: activeLinkedChangeRequestId,
+          }),
         })
         if (findActiveAgentRunByIdempotencyKey(continuationIdempotencyKey)) {
           break
@@ -1674,9 +1728,14 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             { role: "user", content: continuationPrompt },
             { role: "assistant", content: continuationText },
           ].slice(-12)
+          const runAfterContinuation = getWorkflowRunForRequest(activeLinkedChangeRequestId)
+          const resolvedContinuationStep =
+            runAfterContinuation
+              ? findStepByKey(linkedWorkflowSteps, runAfterContinuation.currentStepKey)
+              : continuationNextStep
           continuationStep =
-            continuationNextStep && stepType(continuationNextStep) === "agent"
-              ? continuationNextStep
+            resolvedContinuationStep && stepType(resolvedContinuationStep) === "agent"
+              ? resolvedContinuationStep
               : null
         } catch (continuationError) {
           const continuationMessage =

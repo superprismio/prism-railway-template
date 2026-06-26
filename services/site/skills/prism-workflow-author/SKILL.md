@@ -169,6 +169,7 @@ Use it for:
 - step `type`
 - `instructionPath`
 - simple `next` or `routes` only when the UI/runtime needs deterministic routing
+- loop control fields for `type: "loop"` steps
 - shared `agentConfig`
 - deterministic delegation policy in `agentConfig.delegation`
 
@@ -241,6 +242,19 @@ Recommended manifest shape:
       "next": "review"
     },
     {
+      "key": "checklist-loop",
+      "label": "Checklist Loop",
+      "type": "loop",
+      "loop": {
+        "artifactName": "implementation-checklist.json",
+        "condition": "all_items_complete",
+        "target": "triage",
+        "maxIterations": 10,
+        "onMaxIterations": "review"
+      },
+      "next": "review"
+    },
+    {
       "key": "review",
       "label": "Review",
       "type": "gate",
@@ -288,13 +302,39 @@ Use these step types:
 - `agent`: Codex performs work for the step.
 - `gate`: a human decision is required.
 - `checkpoint`: a human-triggered agent check of external or long-running state. Use this for render status, PR reviews, deploy readiness, publication status, or other waits where an operator decides when to ask the agent to check. Checkpoints run their own instructions and stay on the checkpoint after the check; if ready, the agent should state which next step should run and why.
+- `loop`: deterministic control flow that reads a structured request artifact and routes back to a target step until an exit condition is met. Loop steps do not run Codex. Use loops when iteration needs workflow history and resumability; use one agent step when the iteration can remain inside a single run; use a gate when the decision is subjective.
 - `command`: a reviewed script or service command runs.
 - `handoff`: work moves to a channel, target, or person.
 - `subworkflow`: another workflow starts.
 - `wait`: the workflow pauses for time or an external signal.
 - `terminal`: the workflow is complete.
 
-Only add `command`, `handoff`, `subworkflow`, or `wait` when the current product can represent or safely ignore them. For early workflows, prefer `agent`, `gate`, `checkpoint`, and `terminal`.
+Only add `command`, `handoff`, `subworkflow`, or `wait` when the current product can represent or safely ignore them. For early workflows, prefer `agent`, `gate`, `checkpoint`, `loop`, and `terminal`.
+
+For checklist loops, use a JSON request artifact named in `loop.artifactName`.
+The first supported condition is `all_items_complete`, where every item must be
+`complete` or `skipped` before the loop exits through `next`.
+
+```json
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "admin-ui-empty-state",
+      "title": "Update admin UI empty state",
+      "status": "pending",
+      "notes": "Needs implementation"
+    }
+  ]
+}
+```
+
+Valid initial statuses are `pending`, `in_progress`, `complete`, `blocked`, and
+`skipped`. The step before the loop should update the checklist artifact. The
+loop target step should instruct the agent to pick the next incomplete item
+instead of redoing the full checklist. Always set `maxIterations`; route
+`onMaxIterations` to a gate or checkpoint when a human should decide whether to
+continue, revise the checklist, or skip ahead.
 
 ## Current Request Workflow
 

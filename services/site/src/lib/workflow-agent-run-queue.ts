@@ -13,6 +13,7 @@ import {
   type AgentRunRecord,
 } from "@/lib/app-core"
 import { handleResponsePost } from "@/lib/response-route-handler"
+import { loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 
 type EnqueueWorkflowAgentRunInput = {
   request: ChangeRequestRecord
@@ -70,9 +71,11 @@ function workflowStepRunIdempotencyKey(input: {
   workflowRunId: string
   stepKey: string
   action?: string | null
+  loopIterationKey?: string | null
 }) {
   const actionKey = input.action && input.action.trim() ? input.action.trim() : "run"
-  return `workflow:${input.requestId}:${input.workflowRunId}:${input.stepKey}:${actionKey}`
+  const loopKey = input.loopIterationKey && input.loopIterationKey.trim() ? `:${input.loopIterationKey.trim()}` : ""
+  return `workflow:${input.requestId}:${input.workflowRunId}:${input.stepKey}:${actionKey}${loopKey}`
 }
 
 function defaultBaseUrl() {
@@ -251,11 +254,26 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
     requestId: input.request.id,
     workflowKey: input.request.workflowKey,
   })
-  const currentStep =
+  let currentStep =
     findStepByKey(steps, workflowRun.currentStepKey) ??
     findStepByKey(steps, typeof workflow?.definition?.entrypoint === "string" ? workflow.definition.entrypoint : null)
   if (!currentStep) {
     return { queued: false, reason: "workflow_step_not_found", status: 409 }
+  }
+  if (stepType(currentStep) === "loop") {
+    const resolved = resolveControlFlowSteps({
+      requestId: input.request.id,
+      workflowRunId: workflowRun.id,
+      steps,
+      step: currentStep,
+    })
+    currentStep = resolved.step
+    if (!currentStep || resolved.stopped) {
+      const loopError = "error" in resolved && typeof resolved.error === "string"
+        ? resolved.error
+        : "WORKFLOW_LOOP_STOPPED"
+      return { queued: false, reason: loopError, status: 409 }
+    }
   }
   if (input.workflowAction && stepType(currentStep) !== "gate") {
     return { queued: false, reason: "WORKFLOW_ACTION_REQUIRES_GATE", status: 409 }
@@ -284,6 +302,9 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
     workflowRunId: workflowRun.id,
     stepKey: runnableStepKey,
     action: input.workflowAction ?? null,
+    loopIterationKey: loopIterationKeyForRequest({
+      requestId: input.request.id,
+    }),
   })
   const existing = findActiveAgentRunByIdempotencyKey(idempotencyKey)
   if (existing) {

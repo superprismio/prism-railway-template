@@ -105,6 +105,8 @@ function CommandCenter({
   const actionLabel =
     currentStep.type === "checkpoint"
       ? currentStep.resumeLabel ?? `Check ${currentStep.label}`
+      : currentStep.type === "loop"
+        ? currentStep.resumeLabel ?? `Evaluate ${currentStep.label}`
       : "Continue";
 
   return (
@@ -224,6 +226,8 @@ function CommandCenter({
                   ? "This workflow step is ready for an agent run."
                   : currentStep.type === "checkpoint"
                     ? "This workflow is paused until an operator checks external state."
+                  : currentStep.type === "loop"
+                    ? "This workflow is evaluating structured loop state."
                   : currentStep.type === "gate"
                     ? "This workflow step is waiting for a human decision."
                     : currentStep.type === "terminal"

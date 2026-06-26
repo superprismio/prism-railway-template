@@ -99,6 +99,9 @@ function stepDotClass(type: string) {
   if (type === "checkpoint") {
     return "border-border bg-muted/40 text-foreground";
   }
+  if (type === "loop") {
+    return "border-amber-500/70 bg-amber-500/10 text-amber-700";
+  }
   if (type === "agent") {
     return "border-primary/80 bg-primary/10 text-primary";
   }

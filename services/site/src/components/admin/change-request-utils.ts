@@ -157,6 +157,7 @@ export function priorityVariant(priority: string) {
 export function workflowStepVariant(step: WorkflowStep | null | undefined) {
   if (step?.type === "terminal") return "muted";
   if (step?.type === "gate") return "secondary";
+  if (step?.type === "loop") return "outline";
   if (step?.type === "checkpoint") return "outline";
   if (step?.type === "agent") return "default";
   return "outline";
