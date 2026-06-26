@@ -12,7 +12,8 @@ import {
   updateAgentRun,
   type AgentRunRecord,
 } from "@/lib/app-core"
-import { handleResponsePost, resolveControlFlowSteps } from "@/lib/response-route-handler"
+import { handleResponsePost } from "@/lib/response-route-handler"
+import { loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 
 type EnqueueWorkflowAgentRunInput = {
   request: ChangeRequestRecord
@@ -75,22 +76,6 @@ function workflowStepRunIdempotencyKey(input: {
   const actionKey = input.action && input.action.trim() ? input.action.trim() : "run"
   const loopKey = input.loopIterationKey && input.loopIterationKey.trim() ? `:${input.loopIterationKey.trim()}` : ""
   return `workflow:${input.requestId}:${input.workflowRunId}:${input.stepKey}:${actionKey}${loopKey}`
-}
-
-function workflowRunString(meta: Record<string, unknown> | null | undefined, key: string) {
-  const value = meta?.[key]
-  return typeof value === "string" && value.trim() ? value.trim() : null
-}
-
-function workflowRunNumber(meta: Record<string, unknown> | null | undefined, key: string) {
-  const value = Number(meta?.[key])
-  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : null
-}
-
-function loopIterationKeyFromMeta(meta: Record<string, unknown> | null | undefined) {
-  const loopStepKey = workflowRunString(meta, "lastLoopStepKey")
-  const iteration = workflowRunNumber(meta, "lastLoopIteration")
-  return loopStepKey && iteration ? `loop-${loopStepKey}-${iteration}` : null
 }
 
 function defaultBaseUrl() {
@@ -317,12 +302,9 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
     workflowRunId: workflowRun.id,
     stepKey: runnableStepKey,
     action: input.workflowAction ?? null,
-    loopIterationKey: loopIterationKeyFromMeta(
-      ensureWorkflowRunForRequest({
-        requestId: input.request.id,
-        workflowKey: input.request.workflowKey,
-      }).meta,
-    ),
+    loopIterationKey: loopIterationKeyForRequest({
+      requestId: input.request.id,
+    }),
   })
   const existing = findActiveAgentRunByIdempotencyKey(idempotencyKey)
   if (existing) {
