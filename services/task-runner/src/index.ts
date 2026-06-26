@@ -1043,7 +1043,7 @@ function workflowStepTypeFromPayload(payload: Record<string, unknown>, stepKey: 
   return typeof stepType === "string" && stepType.trim() ? stepType.trim() : null;
 }
 
-async function workflowRunnerCurrentStepIsAgent(requestDetail: Record<string, unknown>, fallbackWorkflowKey: string): Promise<boolean> {
+async function workflowRunnerCurrentStepCanContinue(requestDetail: Record<string, unknown>, fallbackWorkflowKey: string): Promise<boolean> {
   if (workflowRunStatusFromChangeRequest(requestDetail) === "completed") {
     return false;
   }
@@ -1059,7 +1059,8 @@ async function workflowRunnerCurrentStepIsAgent(requestDetail: Record<string, un
     return false;
   }
 
-  return (workflowStepTypeFromPayload(workflowPayload, stepKey) ?? "agent") === "agent";
+  const stepType = workflowStepTypeFromPayload(workflowPayload, stepKey) ?? "agent";
+  return stepType === "agent" || stepType === "loop";
 }
 
 function autoStartStarted(payload: Record<string, unknown>) {
@@ -1168,7 +1169,7 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
           if (workflowRunnerShouldStop(lastStatus, stopStatuses)) {
             break;
           }
-          if (!currentDetail || !(await workflowRunnerCurrentStepIsAgent(currentDetail, workflowKey))) {
+          if (!currentDetail || !(await workflowRunnerCurrentStepCanContinue(currentDetail, workflowKey))) {
             break;
           }
 

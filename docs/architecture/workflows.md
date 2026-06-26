@@ -212,6 +212,10 @@ Supported step types:
 - `checkpoint`: pause until an operator asks the agent to check external state. Checkpoints run their own markdown instructions and stay on the checkpoint after the check, so they work for long-running renders, PR review checks, deployment checks, and other “look before doing more” moments. If the checkpoint is ready to continue, the agent should say which next step should run and why.
 - `command`: run a reviewed script or service command.
 - `handoff`: move work to a channel, target, or person.
+- `loop`: planned control-flow step that evaluates structured workflow state,
+  such as a checklist artifact, and routes back to a target step until an exit
+  condition or safety cap is reached. See
+  [Workflow Loop Nodes](../features/workflow-loop-nodes.md).
 - `subworkflow`: start another workflow run.
 - `wait`: pause until an external signal, time, or status.
 - `terminal`: close the run.

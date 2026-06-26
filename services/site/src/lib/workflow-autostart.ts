@@ -69,14 +69,19 @@ export async function autoStartWorkflowRequest(
   if (!step || !key) {
     return { started: false, reason: "workflow_step_not_found" }
   }
-  if (stepType(step) !== "agent") {
+  const type = stepType(step)
+  if (type !== "agent" && type !== "loop") {
     return { started: false, reason: "current_step_is_not_agent" }
   }
 
   const prompt = [
-    `Run workflow step ${key} for request #${freshRequest.requestNumber}: ${freshRequest.title}.`,
+    type === "loop"
+      ? `Run the next runnable workflow step for request #${freshRequest.requestNumber}: ${freshRequest.title}. The site may resolve a control-flow step before this agent run starts.`
+      : `Run workflow step ${key} for request #${freshRequest.requestNumber}: ${freshRequest.title}.`,
     `Step label: ${stepLabel(step)}.`,
-    typeof step.instructionPath === "string" && step.instructionPath.trim()
+    type === "loop"
+      ? "Use the current workflow step instructions from runtime metadata after control-flow resolution."
+      : typeof step.instructionPath === "string" && step.instructionPath.trim()
       ? `Use the workflow step instructions at ${step.instructionPath.trim()}.`
       : "Use the current workflow step instructions from runtime metadata.",
     "Use the request context and thread history. Return a concise summary of what changed or what should happen next.",
