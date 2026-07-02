@@ -334,7 +334,7 @@ function readPositiveInteger(value: unknown, fallback: number) {
 }
 
 function maxAutoContinueSteps() {
-  return Math.min(readPositiveInteger(process.env.PRISM_WORKFLOW_MAX_AUTO_CONTINUE_STEPS, 1000), 10_000)
+  return Math.min(readPositiveInteger(process.env.PRISM_WORKFLOW_MAX_AUTO_CONTINUE_STEPS, 100), 100)
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
@@ -1139,10 +1139,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     : []
   const workflowAction = parseNullableString(body.workflow_action ?? body.workflowAction) ?? null
   const actorType = workflowActorType(request)
-  const autoContinueUntilGate =
-    body.auto_continue_until_gate === false || body.autoContinueUntilGate === false
-      ? false
-      : Boolean(activeLinkedChangeRequestId)
+  const autoContinueUntilGate = Boolean(activeLinkedChangeRequestId)
   const responseJobId = parseNullableString(body.response_job_id ?? body.responseJobId) ?? null
   const providedAgentRunId = parseNullableString(body.agent_run_id ?? body.agentRunId) ?? null
   if (providedAgentRunId && !getAgentRun(providedAgentRunId)) {

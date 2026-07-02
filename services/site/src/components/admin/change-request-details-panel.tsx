@@ -1310,7 +1310,6 @@ export function RequestDetailsPanel({
     prompt: string,
     session?: AgentThreadSession | null,
     workflowAction?: string,
-    autoContinueUntilGate = true,
   ) {
     const response = await fetch("/admin/console/jobs", {
       method: "POST",
@@ -1323,7 +1322,6 @@ export function RequestDetailsPanel({
         linked_change_request_id: request.id,
         linked_target_environment_id: request.targetEnvironmentId,
         workflow_action: workflowAction ?? null,
-        auto_continue_until_gate: autoContinueUntilGate,
         requested_skills: ["change-request-ops", "target-deploy-ops"],
       }),
     });
@@ -1428,7 +1426,7 @@ export function RequestDetailsPanel({
     setThreadError(null);
     startCommandTransition(async () => {
       try {
-        await runAgent(prompt, null, undefined, true);
+        await runAgent(prompt, null, undefined);
       } catch (error) {
         setThreadError(
           describeFetchError(error, "Could not continue agent"),
