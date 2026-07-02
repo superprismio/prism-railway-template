@@ -23,6 +23,7 @@ import { requestArtifactRunLinksMigration } from './023_request_artifact_run_lin
 import { requestHumanHoursEstimateMigration } from './024_request_human_hours_estimate';
 import { agentRunQueueFieldsMigration } from './025_agent_run_queue_fields';
 import { skillSourcesMigration } from './026_skill_sources';
+import { simpleChangeRequestReviewGateMigration } from './027_simple_change_request_review_gate';
 
 export interface Migration {
   name: string;
@@ -55,4 +56,5 @@ export const migrations: Migration[] = [
   requestHumanHoursEstimateMigration,
   agentRunQueueFieldsMigration,
   skillSourcesMigration,
+  simpleChangeRequestReviewGateMigration,
 ];
