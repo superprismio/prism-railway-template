@@ -83,8 +83,8 @@ export async function POST(request: Request) {
     }
     try {
       const parsed = new URL(url)
-      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-        return NextResponse.json({ ok: false, error: "http-post tasks require an http or https URL" }, { status: 400 })
+      if (parsed.protocol !== "https:") {
+        return NextResponse.json({ ok: false, error: "http-post tasks require an https URL" }, { status: 400 })
       }
     } catch {
       return NextResponse.json({ ok: false, error: "http-post tasks require a valid inputConfig.url" }, { status: 400 })

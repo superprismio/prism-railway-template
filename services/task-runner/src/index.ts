@@ -306,8 +306,8 @@ async function postJsonUrlRaw(
   const response = await fetchWithTimeout(url, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
       ...headers,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
   }, timeoutMs);
@@ -1014,7 +1014,7 @@ function stringHeadersFromConfig(config: Record<string, unknown>): Record<string
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
     const headerName = key.trim();
-    if (headerName && typeof value === "string") {
+    if (headerName && headerName.toLowerCase() !== "content-type" && typeof value === "string") {
       result[headerName] = interpolateEnvTemplate(value);
     }
   }
@@ -1095,7 +1095,7 @@ function buildHttpPostTask(siteTask: AppTask): RunnableTask | null {
   }
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    if (parsed.protocol !== "https:") {
       throw new Error(`Unsupported protocol: ${parsed.protocol}`);
     }
   } catch (error) {

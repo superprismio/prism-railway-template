@@ -118,8 +118,7 @@ HTTP POST task shape:
     "method": "POST",
     "url": "https://portal.raidguild.org/api/notifications/email/run",
     "headers": {
-      "Authorization": "Bearer ${PORTAL_TASK_SECRET}",
-      "Content-Type": "application/json"
+      "Authorization": "Bearer ${PORTAL_TASK_SECRET}"
     },
     "body": {
       "limit": 50
@@ -135,7 +134,7 @@ HTTP POST task shape:
 }
 ```
 
-For `http-post` tasks, the secret value must live in the task-runner service environment. Store a header template such as `Bearer ${PORTAL_TASK_SECRET}`, not the secret itself. The task logs timestamp, endpoint, HTTP status, parsed response result counts when present, and error body for non-2xx responses. Retries must be bounded; do not configure unbounded retry behavior.
+For `http-post` tasks, the secret value must live in the task-runner service environment. Store a header template such as `Bearer ${PORTAL_TASK_SECRET}`, not the secret itself. The runner only accepts HTTPS URLs and sets `Content-Type: application/json` itself. The task logs timestamp, endpoint, HTTP status, parsed response result counts when present, and error body for non-2xx responses. Retries must be bounded; do not configure unbounded retry behavior.
 
 Script runner task shape:
 

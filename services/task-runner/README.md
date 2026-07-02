@@ -72,7 +72,7 @@ The runner calls:
 ## HTTP POST tasks
 
 Deterministic HTTP POST tasks use `taskType=http-post` in the `site` DB. Use
-this for simple external cron jobs that should not invoke Codex Runtime.
+this for simple external HTTPS cron jobs that should not invoke Codex Runtime.
 
 Supported config:
 
@@ -86,8 +86,7 @@ Supported config:
     "method": "POST",
     "url": "https://portal.raidguild.org/api/notifications/email/run",
     "headers": {
-      "Authorization": "Bearer ${PORTAL_TASK_SECRET}",
-      "Content-Type": "application/json"
+      "Authorization": "Bearer ${PORTAL_TASK_SECRET}"
     },
     "body": {
       "limit": 50
@@ -101,9 +100,11 @@ Supported config:
 }
 ```
 
-The runner calls the configured URL with `Content-Type: application/json`.
-Header values may reference task-runner environment variables with
-`${ENV_NAME}`. The secret value is not stored in the task row.
+The runner only accepts `https:` URLs and always sends a JSON body with
+`Content-Type: application/json`. Custom headers may reference task-runner
+environment variables with `${ENV_NAME}`; configured `Content-Type` headers are
+ignored so the serialized body and content type stay aligned. The secret value
+is not stored in the task row.
 
 The job logs each attempt with timestamp, endpoint, HTTP status, parsed response
 result counts when present, and error body for non-2xx responses. Retries are
