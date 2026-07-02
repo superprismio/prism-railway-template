@@ -9,6 +9,7 @@ It replaces the fixed Railway cron workers by running built-in scheduled tasks:
 - Prism Knowledge source sync
 - Prism Knowledge run
 - Prism Doctor report
+- Portal email dispatch
 
 It also runs DB-authored prompt and workflow automations. Built-in task definitions, custom task configuration, and run history live in the `site` app DB.
 
@@ -29,6 +30,8 @@ Manual runs require `X-Task-Runner-Token` when `TASK_RUNNER_TOKEN` is configured
 - `APP_API_BASE_URL=http://site.railway.internal:3100`
 - `APP_API_SERVICE_TOKEN=${{site.INTERNAL_SERVICE_TOKEN}}`
 - `CODEX_RUNTIME_BASE_URL=http://codex-runtime.railway.internal:3030`
+- `PORTAL_EMAIL_DISPATCH_BASE_URL=https://portal.raidguild.org`
+- `PORTAL_AGENT_REGISTRATION_SECRET=<portal agent secret>`
 - `TASK_RUNNER_HTTP_TIMEOUT_MS=120000`
 - `TASK_RUNNER_LONG_RUNNING_HTTP_TIMEOUT_MS=960000`
 - `TASK_RUNNER_SCRIPT_TIMEOUT_MS=120000`
@@ -51,6 +54,7 @@ The built-in task defaults are seeded into `site` on startup and on scheduler po
 - `skill-source-sync`: disabled, `20 * * * *`
 - `knowledge-run`: disabled, `55 * * * *`
 - `prism-doctor`: disabled, `0 15 * * 1`
+- `portal-email-dispatch`: disabled, `*/5 * * * *`
 
 After seeding, `site` DB values are the scheduler source of truth. The runner refreshes task rows on each poll.
 
@@ -254,6 +258,27 @@ The task emits a report-only JSON body. It checks workflow structure for simple
 gate `next` flow, missing step links, and loop target/exit/max-iteration config,
 then warns when tasks or hooks reference workflows with findings. It does not
 mutate workflows, tasks, hooks, skills, requests, or instance config.
+
+### Portal email dispatch
+
+- `PORTAL_EMAIL_DISPATCH_BASE_URL=https://portal.raidguild.org`
+- `PORTAL_EMAIL_DISPATCH_PATH=/api/notifications/email/run`
+- `PORTAL_AGENT_REGISTRATION_SECRET=...`
+- `PORTAL_EMAIL_DISPATCH_LIMIT=50`
+- `PORTAL_EMAIL_DISPATCH_DRY_RUN=false`
+
+`AGENT_REGISTRATION_SECRET` is accepted as a fallback when
+`PORTAL_AGENT_REGISTRATION_SECRET` is not set.
+
+The runner calls:
+
+- `POST /api/notifications/email/run`
+- `Authorization: Bearer $PORTAL_AGENT_REGISTRATION_SECRET`
+- body: `{ "limit": 50, "dryRun": false }`
+
+The task is deterministic and does not invoke Codex Runtime. Keep it disabled
+until the Portal secret is configured in the task-runner environment. For
+verification, set `PORTAL_EMAIL_DISPATCH_DRY_RUN=true` and run the task manually.
 
 ## Validation approach
 

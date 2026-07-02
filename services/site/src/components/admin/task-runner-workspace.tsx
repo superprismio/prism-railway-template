@@ -252,6 +252,8 @@ function taskDescription(key: string) {
     return "Syncs configured GitHub skill sources into the site skill catalog.";
   if (key === "prism-doctor")
     return "Checks workflows, tasks, and hooks for structural drift without mutating content.";
+  if (key === "portal-email-dispatch")
+    return "Dispatches queued Portal email notifications through the Portal API.";
   return "Scheduled task";
 }
 

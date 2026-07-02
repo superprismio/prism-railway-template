@@ -215,6 +215,19 @@ function appApiServiceToken(): string {
   return (process.env.APP_API_SERVICE_TOKEN ?? process.env.INTERNAL_SERVICE_TOKEN ?? "").trim();
 }
 
+function portalEmailDispatchBaseUrl(): string {
+  return trimBaseUrl(process.env.PORTAL_EMAIL_DISPATCH_BASE_URL ?? "https://portal.raidguild.org");
+}
+
+function portalEmailDispatchPath(): string {
+  const path = (process.env.PORTAL_EMAIL_DISPATCH_PATH ?? "/api/notifications/email/run").trim();
+  return path || "/api/notifications/email/run";
+}
+
+function portalAgentRegistrationSecret(): string {
+  return (process.env.PORTAL_AGENT_REGISTRATION_SECRET ?? process.env.AGENT_REGISTRATION_SECRET ?? "").trim();
+}
+
 function codexRuntimeBaseUrl(): string {
   return trimBaseUrl(process.env.CODEX_RUNTIME_BASE_URL);
 }
@@ -1733,6 +1746,38 @@ function buildBuiltInTasks(): BuiltInTask[] {
       taskType: "builtin",
       outputConfig: {},
       run: runPrismDoctorTask,
+    },
+    {
+      key: "portal-email-dispatch",
+      name: "Portal email dispatch",
+      defaultEnabled: false,
+      defaultCron: "*/5 * * * *",
+      enabled: false,
+      cron: "*/5 * * * *",
+      taskType: "builtin",
+      outputConfig: {},
+      run: async () => {
+        const baseUrl = requireBaseUrl("PORTAL_EMAIL_DISPATCH_BASE_URL", portalEmailDispatchBaseUrl());
+        const secret = portalAgentRegistrationSecret();
+        if (!secret) {
+          throw new Error("PORTAL_AGENT_REGISTRATION_SECRET or AGENT_REGISTRATION_SECRET is required");
+        }
+        const limit = parseIntEnv("PORTAL_EMAIL_DISPATCH_LIMIT", 50, 1, 1_000);
+        const dryRun = parseBoolEnv("PORTAL_EMAIL_DISPATCH_DRY_RUN", false);
+        const result = await postJson(
+          baseUrl,
+          portalEmailDispatchPath(),
+          { Authorization: `Bearer ${secret}` },
+          { limit, dryRun },
+        );
+        result.metadata = {
+          ...(result.metadata ?? {}),
+          limit,
+          dryRun,
+          dispatchPath: portalEmailDispatchPath(),
+        };
+        return result;
+      },
     },
   ];
 }
