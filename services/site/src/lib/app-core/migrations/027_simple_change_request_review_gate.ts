@@ -73,14 +73,13 @@ const defaultChangeRequestWorkflow = {
 
 const escapedDefaultWorkflow = JSON.stringify(defaultChangeRequestWorkflow).replace(/'/g, "''");
 
-export const changeRequestPrReviewCheckpointMigration = {
-  name: '017_change_request_pr_review_checkpoint',
+export const simpleChangeRequestReviewGateMigration = {
+  name: '027_simple_change_request_review_gate',
   sql: `
     UPDATE workflows
     SET version = 3,
         definition_json = '${escapedDefaultWorkflow}',
         updated_at = datetime('now')
-    WHERE key = 'change-request-default'
-      AND system_default = 1;
+    WHERE key = 'change-request-default';
   `,
 };
