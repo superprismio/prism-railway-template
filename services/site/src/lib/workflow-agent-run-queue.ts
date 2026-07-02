@@ -146,6 +146,11 @@ function workflowAgentRunStringArray(input: Record<string, unknown>, key: string
     : []
 }
 
+function workflowAgentRunBoolean(input: Record<string, unknown>, key: string) {
+  const value = input[key]
+  return typeof value === "boolean" ? value : undefined
+}
+
 async function executeClaimedWorkflowAgentRun(agentRun: AgentRunRecord) {
   const input = workflowAgentRunInput(agentRun)
   const requestId = agentRun.requestId
@@ -171,7 +176,7 @@ async function executeClaimedWorkflowAgentRun(agentRun: AgentRunRecord) {
           input: [{ role: "user", content: prompt }],
           linked_change_request_id: request.id,
           workflow_action: workflowAgentRunString(input, "workflowAction"),
-          auto_continue_until_gate: input.autoContinueUntilGate === true,
+          auto_continue_until_gate: workflowAgentRunBoolean(input, "autoContinueUntilGate"),
           requested_skills: workflowAgentRunStringArray(input, "requestedSkills"),
           agent_run_id: agentRun.id,
         }),
@@ -401,7 +406,7 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
     input: {
       prompt: input.prompt,
       workflowAction: input.workflowAction ?? null,
-      autoContinueUntilGate: input.autoContinueUntilGate !== false,
+      autoContinueUntilGate: typeof input.autoContinueUntilGate === "boolean" ? input.autoContinueUntilGate : null,
       requestedSkills: input.requestedSkills ?? [],
       baseUrl: input.baseUrl ?? null,
     },

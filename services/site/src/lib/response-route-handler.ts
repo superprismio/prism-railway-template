@@ -334,7 +334,7 @@ function readPositiveInteger(value: unknown, fallback: number) {
 }
 
 function maxAutoContinueSteps() {
-  return readPositiveInteger(process.env.PRISM_WORKFLOW_MAX_AUTO_CONTINUE_STEPS, 1000)
+  return Math.min(readPositiveInteger(process.env.PRISM_WORKFLOW_MAX_AUTO_CONTINUE_STEPS, 1000), 10_000)
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
@@ -369,6 +369,15 @@ function stepType(step: Record<string, unknown>) {
 
 function findStepByKey(steps: Record<string, unknown>[], key: string | null | undefined) {
   return steps.find((step) => stepKey(step) === key) ?? null
+}
+
+function workflowActorType(request: Request) {
+  try {
+    const pathname = new URL(request.url).pathname
+    return pathname.startsWith("/admin/") ? "admin" : "agent"
+  } catch {
+    return "agent"
+  }
 }
 
 function nextStepForAction(steps: Record<string, unknown>[], step: Record<string, unknown>, action: string | null) {
@@ -906,6 +915,7 @@ function completeWorkflowGateStep(input: {
   fromStep: Record<string, unknown>
   toStep: Record<string, unknown>
   action: string
+  actorType: string
   note: string
 }) {
   const fromStepKey = stepKey(input.fromStep)
@@ -916,7 +926,7 @@ function completeWorkflowGateStep(input: {
     requestId: input.requestId,
     stepKey: fromStepKey,
     eventType: `gate.${input.action}`,
-    actorType: "admin",
+    actorType: input.actorType,
     note: input.note,
     payload: {
       fromStepKey,
@@ -1128,6 +1138,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     ? listRequestExternalRefs(activeLinkedChangeRequestId)
     : []
   const workflowAction = parseNullableString(body.workflow_action ?? body.workflowAction) ?? null
+  const actorType = workflowActorType(request)
   const autoContinueUntilGate =
     body.auto_continue_until_gate === false || body.autoContinueUntilGate === false
       ? false
@@ -1280,6 +1291,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       fromStep: currentWorkflowStep,
       toStep: runnableWorkflowStep,
       action: workflowAction || "continued",
+      actorType,
       note: latestUserMessage.content,
     })
     const updatedSession = updateAgentSession(session.id, {
@@ -1395,7 +1407,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         requestId: activeLinkedChangeRequestId,
         stepKey: stepKey(currentWorkflowStep),
         eventType: `gate.${workflowAction || "continued"}`,
-        actorType: "admin",
+        actorType,
         note: latestUserMessage.content,
           payload: {
             fromStepKey: stepKey(currentWorkflowStep),
