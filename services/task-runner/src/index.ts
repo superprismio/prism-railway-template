@@ -89,6 +89,18 @@ type WorkflowRunStepResult = {
   payload: Record<string, unknown>;
 };
 
+type DoctorFinding = {
+  check: string;
+  status: "failed" | "warning";
+  subjectType: "workflow" | "task" | "hook";
+  subjectKey: string;
+  stepKey?: string | null;
+  expected: string;
+  observed: string;
+  recommendation: string;
+  evidence?: Record<string, unknown>;
+};
+
 type SiteTaskScript = {
   key: string;
   runtime: string;
@@ -1063,6 +1075,282 @@ async function workflowRunnerCurrentStepCanContinue(requestDetail: Record<string
   return stepType === "agent" || stepType === "loop";
 }
 
+function workflowStepsFromRecord(workflow: Record<string, unknown>): Record<string, unknown>[] {
+  const definition = isRecord(workflow.definition) ? workflow.definition : {};
+  return Array.isArray(definition.steps)
+    ? definition.steps.filter((step): step is Record<string, unknown> => isRecord(step))
+    : [];
+}
+
+function workflowKeyFromRecord(workflow: Record<string, unknown>): string {
+  return typeof workflow.key === "string" && workflow.key.trim() ? workflow.key.trim() : "unknown-workflow";
+}
+
+function workflowStepKey(step: Record<string, unknown>): string {
+  return typeof step.key === "string" && step.key.trim() ? step.key.trim() : "unknown-step";
+}
+
+function workflowStepType(step: Record<string, unknown>): string {
+  return typeof step.type === "string" && step.type.trim() ? step.type.trim() : "agent";
+}
+
+function workflowStepNext(step: Record<string, unknown>): string | null {
+  return typeof step.next === "string" && step.next.trim() ? step.next.trim() : null;
+}
+
+function workflowStepRoutes(step: Record<string, unknown>): Record<string, unknown> {
+  return isRecord(step.routes) ? step.routes : {};
+}
+
+function workflowStepLoop(step: Record<string, unknown>): Record<string, unknown> {
+  return isRecord(step.loop) ? step.loop : {};
+}
+
+function workflowStepByKey(steps: Record<string, unknown>[], key: string | null): Record<string, unknown> | null {
+  return key ? steps.find((step) => workflowStepKey(step) === key) ?? null : null;
+}
+
+function doctorWorkflowFindings(workflow: Record<string, unknown>): DoctorFinding[] {
+  const workflowKey = workflowKeyFromRecord(workflow);
+  const steps = workflowStepsFromRecord(workflow);
+  const findings: DoctorFinding[] = [];
+
+  for (const step of steps) {
+    const stepKey = workflowStepKey(step);
+    const type = workflowStepType(step);
+    const next = workflowStepNext(step);
+    const routes = workflowStepRoutes(step);
+    const routeKeys = Object.keys(routes);
+
+    if (type === "terminal") {
+      continue;
+    }
+
+    if (type === "gate") {
+      if (!next) {
+        findings.push({
+          check: "gate-has-single-forward-next",
+          status: "failed",
+          subjectType: "workflow",
+          subjectKey: workflowKey,
+          stepKey,
+          expected: "Gate pauses and continues through one forward next step.",
+          observed: "Gate has no next step.",
+          recommendation: "Set next to the normal forward step and use explicit operator controls for send-back or cancel.",
+          evidence: { routes },
+        });
+      }
+      if (routeKeys.length > 0) {
+        findings.push({
+          check: "gate-does-not-use-route-map",
+          status: "failed",
+          subjectType: "workflow",
+          subjectKey: workflowKey,
+          stepKey,
+          expected: "Gate uses simple next flow.",
+          observed: `Gate defines route keys: ${routeKeys.join(", ")}.`,
+          recommendation: "Remove routes and keep only next for normal forward flow.",
+          evidence: { next, routes },
+        });
+      }
+      if (next && !workflowStepByKey(steps, next)) {
+        findings.push({
+          check: "gate-next-step-exists",
+          status: "failed",
+          subjectType: "workflow",
+          subjectKey: workflowKey,
+          stepKey,
+          expected: "Gate next points to an existing step.",
+          observed: `Missing next step: ${next}.`,
+          recommendation: "Update next to an existing step key.",
+          evidence: { next },
+        });
+      }
+      continue;
+    }
+
+    if (type === "loop") {
+      const loop = workflowStepLoop(step);
+      const target = typeof loop.target === "string" && loop.target.trim() ? loop.target.trim() : null;
+      const maxIterations = Number(loop.maxIterations);
+      if (!target || !next || !Number.isFinite(maxIterations) || maxIterations <= 0) {
+        findings.push({
+          check: "loop-has-target-exit-and-max-iterations",
+          status: "failed",
+          subjectType: "workflow",
+          subjectKey: workflowKey,
+          stepKey,
+          expected: "Loop has loop.target, next, and positive loop.maxIterations.",
+          observed: "Loop config is incomplete.",
+          recommendation: "Set loop.target, next, and a positive maxIterations value.",
+          evidence: { next, loop },
+        });
+      }
+      if (target && !workflowStepByKey(steps, target)) {
+        findings.push({
+          check: "loop-target-step-exists",
+          status: "failed",
+          subjectType: "workflow",
+          subjectKey: workflowKey,
+          stepKey,
+          expected: "Loop target points to an existing step.",
+          observed: `Missing loop target step: ${target}.`,
+          recommendation: "Update loop.target to an existing step key.",
+          evidence: { loop },
+        });
+      }
+      if (next && !workflowStepByKey(steps, next)) {
+        findings.push({
+          check: "loop-next-step-exists",
+          status: "failed",
+          subjectType: "workflow",
+          subjectKey: workflowKey,
+          stepKey,
+          expected: "Loop next points to an existing step.",
+          observed: `Missing next step: ${next}.`,
+          recommendation: "Update next to an existing step key.",
+          evidence: { next },
+        });
+      }
+      continue;
+    }
+
+    if (!next) {
+      findings.push({
+        check: "step-has-forward-next",
+        status: "failed",
+        subjectType: "workflow",
+        subjectKey: workflowKey,
+        stepKey,
+        expected: "Non-terminal non-loop steps have a forward next step.",
+        observed: `${type} step has no next step.`,
+        recommendation: "Set next to the normal forward step, or make this step terminal.",
+        evidence: { type },
+      });
+    } else if (!workflowStepByKey(steps, next)) {
+      findings.push({
+        check: "step-next-step-exists",
+        status: "failed",
+        subjectType: "workflow",
+        subjectKey: workflowKey,
+        stepKey,
+        expected: "Step next points to an existing step.",
+        observed: `Missing next step: ${next}.`,
+        recommendation: "Update next to an existing step key.",
+        evidence: { type, next },
+      });
+    }
+  }
+
+  return findings;
+}
+
+function doctorTaskWorkflowKey(task: Record<string, unknown>): string | null {
+  const inputConfig = isRecord(task.inputConfig) ? task.inputConfig : isRecord(task.input_config) ? task.input_config : {};
+  const workflowKey = inputConfig.workflowKey ?? inputConfig.workflow_key;
+  return typeof workflowKey === "string" && workflowKey.trim() ? workflowKey.trim() : null;
+}
+
+function doctorHookWorkflowKey(hook: Record<string, unknown>): string | null {
+  const workflowKey = hook.workflowKey ?? hook.workflow_key;
+  return typeof workflowKey === "string" && workflowKey.trim() ? workflowKey.trim() : null;
+}
+
+async function runPrismDoctorTask(): Promise<TaskRunResult> {
+  const startedAt = Date.now();
+  const workflowPayload = await appApiRequest("/agent/workflows", { method: "GET" }) ?? {};
+  const taskPayload = await appApiRequest("/agent/tasks", { method: "GET" }) ?? {};
+  const hookPayload = await appApiRequest("/agent/hooks", { method: "GET" }) ?? {};
+  const skillPayload = await appApiRequest("/agent/skills", { method: "GET" }) ?? {};
+  const workflows = Array.isArray(workflowPayload.workflows) ? workflowPayload.workflows.filter(isRecord) : [];
+  const tasks = Array.isArray(taskPayload.tasks) ? taskPayload.tasks.filter(isRecord) : [];
+  const hooks = Array.isArray(hookPayload.hooks) ? hookPayload.hooks.filter(isRecord) : [];
+  const skills = Array.isArray(skillPayload.skills) ? skillPayload.skills.filter(isRecord) : [];
+  const workflowFindings = workflows.flatMap(doctorWorkflowFindings);
+  const workflowsWithFindings = new Set(workflowFindings.map((finding) => finding.subjectKey));
+  const findings = [...workflowFindings];
+
+  for (const task of tasks) {
+    const taskKey = typeof task.key === "string" && task.key.trim() ? task.key.trim() : "unknown-task";
+    const workflowKey = doctorTaskWorkflowKey(task);
+    if (workflowKey && workflowsWithFindings.has(workflowKey)) {
+      findings.push({
+        check: "task-references-workflow-with-findings",
+        status: "warning",
+        subjectType: "task",
+        subjectKey: taskKey,
+        expected: "Tasks reference workflows that pass Doctor checks.",
+        observed: `Task references workflow with findings: ${workflowKey}.`,
+        recommendation: "Repair the referenced workflow before enabling or relying on this task.",
+        evidence: {
+          workflowKey,
+          enabled: task.enabled ?? null,
+          taskType: task.taskType ?? task.task_type ?? null,
+        },
+      });
+    }
+  }
+
+  for (const hook of hooks) {
+    const hookKey = typeof hook.key === "string" && hook.key.trim() ? hook.key.trim() : "unknown-hook";
+    const workflowKey = doctorHookWorkflowKey(hook);
+    if (workflowKey && workflowsWithFindings.has(workflowKey)) {
+      findings.push({
+        check: "hook-references-workflow-with-findings",
+        status: "warning",
+        subjectType: "hook",
+        subjectKey: hookKey,
+        expected: "Hooks reference workflows that pass Doctor checks.",
+        observed: `Hook references workflow with findings: ${workflowKey}.`,
+        recommendation: "Repair the referenced workflow before enabling or relying on this hook.",
+        evidence: {
+          workflowKey,
+          enabled: hook.enabled ?? null,
+          authMode: hook.authMode ?? hook.auth_mode ?? null,
+        },
+      });
+    }
+  }
+
+  const report = {
+    ok: true,
+    reportType: "prism-doctor",
+    generatedAt: nowIso(),
+    mode: "report-only",
+    summary: {
+      workflowsChecked: workflows.length,
+      tasksChecked: tasks.length,
+      hooksChecked: hooks.length,
+      skillsChecked: skills.length,
+      findings: findings.length,
+      failed: findings.filter((finding) => finding.status === "failed").length,
+      warnings: findings.filter((finding) => finding.status === "warning").length,
+      workflowFindingSubjects: workflowsWithFindings.size,
+      durationMs: Date.now() - startedAt,
+    },
+    findings,
+    repairPlan: {
+      automaticMutation: false,
+      recommendedNextStep: findings.length
+        ? "Review findings, make deliberate workflow/task/hook edits, then rerun Prism Doctor."
+        : "No repair needed.",
+    },
+  };
+
+  return {
+    ok: true,
+    status: 200,
+    url: "prism-doctor://site",
+    body: JSON.stringify(report, null, 2),
+    metadata: {
+      reportType: "prism-doctor",
+      findings: findings.length,
+      failed: report.summary.failed,
+      warnings: report.summary.warnings,
+    },
+  };
+}
+
 function autoStartStarted(payload: Record<string, unknown>) {
   return isRecord(payload.autoStart) && payload.autoStart.started === true;
 }
@@ -1434,6 +1722,17 @@ function buildBuiltInTasks(): BuiltInTask[] {
         }
         return postJson(baseUrl, "/agent/skill-sources/sync", headers);
       },
+    },
+    {
+      key: "prism-doctor",
+      name: "Prism Doctor",
+      defaultEnabled: false,
+      defaultCron: "0 15 * * 1",
+      enabled: false,
+      cron: "0 15 * * 1",
+      taskType: "builtin",
+      outputConfig: {},
+      run: runPrismDoctorTask,
     },
   ];
 }

@@ -250,6 +250,8 @@ function taskDescription(key: string) {
     return "Checks configured GitHub knowledge sources and syncs changed branches.";
   if (key === "skill-source-sync")
     return "Syncs configured GitHub skill sources into the site skill catalog.";
+  if (key === "prism-doctor")
+    return "Checks workflows, tasks, and hooks for structural drift without mutating content.";
   return "Scheduled task";
 }
 

@@ -8,6 +8,7 @@ It replaces the fixed Railway cron workers by running built-in scheduled tasks:
 - Prism Memory run
 - Prism Knowledge source sync
 - Prism Knowledge run
+- Prism Doctor report
 
 It also runs DB-authored prompt and workflow automations. Built-in task definitions, custom task configuration, and run history live in the `site` app DB.
 
@@ -49,6 +50,7 @@ The built-in task defaults are seeded into `site` on startup and on scheduler po
 - `knowledge-source-sync`: disabled, `15 * * * *`
 - `skill-source-sync`: disabled, `20 * * * *`
 - `knowledge-run`: disabled, `55 * * * *`
+- `prism-doctor`: disabled, `0 15 * * 1`
 
 After seeding, `site` DB values are the scheduler source of truth. The runner refreshes task rows on each poll.
 
@@ -164,7 +166,7 @@ Supported config:
 }
 ```
 
-The default behavior creates the request and immediately invokes the workflow with `auto_continue_until_gate=true`. The site service runs consecutive agent steps until the workflow reaches a gate, terminal state, failure, or its server-side continuation cap. `maxSteps` remains as a compatibility guard around repeated task-runner invocations; the usual value is `1`.
+The default behavior creates the request and immediately invokes the workflow. The site service runs consecutive agent steps until the workflow reaches a gate, checkpoint, terminal state, failure, or its server-side continuation guard. `maxSteps` remains as a compatibility guard around repeated task-runner invocations; the usual value is `1`.
 
 The runner calls:
 
@@ -235,6 +237,23 @@ The runner calls:
 - header: `X-Service-Token`
 
 The site endpoint syncs enabled GitHub-backed skill sources into the site data volume, validates each `SKILL.md`, and exposes successful source-backed skills through `/agent/skills`.
+
+### Prism Doctor
+
+- `APP_API_BASE_URL=http://site.railway.internal:4010`
+- `APP_API_SERVICE_TOKEN=...`
+
+The runner calls:
+
+- `GET /agent/workflows`
+- `GET /agent/tasks`
+- `GET /agent/hooks`
+- `GET /agent/skills`
+
+The task emits a report-only JSON body. It checks workflow structure for simple
+gate `next` flow, missing step links, and loop target/exit/max-iteration config,
+then warns when tasks or hooks reference workflows with findings. It does not
+mutate workflows, tasks, hooks, skills, requests, or instance config.
 
 ## Validation approach
 
