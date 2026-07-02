@@ -208,7 +208,7 @@ The schema is descriptive and intentionally narrow. The default request workflow
 Supported step types:
 
 - `agent`: call Codex Runtime with prompt, context, skills, and target metadata. Agent steps auto-continue until the workflow reaches a gate, checkpoint, or terminal step.
-- `gate`: wait for a human decision. Continuing a gate routes through the manifest using a workflow action such as `approved` or `changesRequested`.
+- `gate`: wait for a human decision. Continuing a gate records the decision context and moves to the gate's `next` step.
 - `checkpoint`: pause until an operator asks the agent to check external state. Checkpoints run their own markdown instructions and stay on the checkpoint after the check, so they work for long-running renders, PR review checks, deployment checks, and other “look before doing more” moments. If the checkpoint is ready to continue, the agent should say which next step should run and why.
 - `command`: run a reviewed script or service command.
 - `handoff`: move work to a channel, target, or person.
@@ -420,20 +420,19 @@ x-service-token: <internal-service-token>
       "content": "Run the current workflow step for request #3 using the request description and workflow step instructions."
     }
   ],
-  "linked_change_request_id": "<request-id>",
-  "workflow_action": null
+  "linked_change_request_id": "<request-id>"
 }
 ```
 
-For a gate step, set `workflow_action` to `approved`, `changesRequested`, or another route key defined by the workflow manifest. The route records workflow events and creates or reuses agent runs.
+For gate steps, omit `workflow_action`; continuing a gate records the event and moves to the gate's `next` step. The route records workflow events and creates or reuses agent runs.
 
 ## Agent Run Flow
 
 The workflow-aware request flow is:
 
-1. The admin UI sends `/admin/responses` with the operator prompt and optional `workflow_action`; service-token callers use `/agent/responses`.
+1. The admin UI sends `/admin/responses` with the operator prompt; service-token callers use `/agent/responses`.
 2. `site` loads the request, workflow definition, workflow run, current step, and step markdown.
-3. Gate actions are recorded as `workflow_events` and routed through the manifest.
+3. Gate continues are recorded as `workflow_events` and move through the manifest `next` flow.
 4. Agent steps merge workflow-level and step-level `agentConfig`.
 5. `site` calls `codex-runtime` with workflow metadata and the step instructions.
 6. The response, branch, commit, trace, and errors are recorded in `agent_runs.result` and `agent_runs.trace`.
@@ -441,9 +440,9 @@ The workflow-aware request flow is:
 
 `agent_runs` is the record of concrete Codex runs: branch, commit, response text, runtime trace, deploy URL, and run metadata. `workflow_events` is the higher-level workflow timeline. `change_request_executions` may appear in API payloads as `legacyExecutions` for old request history, but new workflow-step runs should not create mirrored execution rows.
 
-The admin UI uses one primary step action. It runs the current agent step, or checks the current checkpoint step, and automatically continues through following `agent` steps until the workflow reaches a `gate`, `checkpoint`, `terminal` step, failure, or the server-side continuation cap.
+The admin UI uses one primary step action. It runs the current agent step, continues a gate, or checks the current checkpoint step, and automatically continues through following `agent` steps until the workflow reaches a `gate`, `checkpoint`, `terminal` step, failure, or the emergency continuation guard.
 
-Gate actions such as approval or requested changes use the same run-until-gate behavior after routing, so a review approval can continue into the next agent step without extra button presses while still stopping at the next human decision or checkpoint.
+Gate continues use the same run-until-gate behavior, so an approval can continue into the next agent step without extra button presses while still stopping at the next human decision or checkpoint.
 
 ## Migrations
 
