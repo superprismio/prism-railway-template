@@ -3,6 +3,7 @@ import {
   claimNextQueuedAgentRun,
   countRunningAgentRuns,
   createAgentRun,
+  createWorkflowEvent,
   ensureWorkflowRunForRequest,
   expireStaleRunningAgentRuns,
   findActiveAgentRunByIdempotencyKey,
@@ -10,6 +11,8 @@ import {
   getAgentRun,
   getWorkflowByKey,
   updateAgentRun,
+  updateChangeRequest,
+  updateWorkflowRun,
   type AgentRunRecord,
 } from "@/lib/app-core"
 import { handleResponsePost } from "@/lib/response-route-handler"
@@ -19,7 +22,7 @@ type EnqueueWorkflowAgentRunInput = {
   request: ChangeRequestRecord
   prompt: string
   workflowAction?: string | null
-  autoContinueUntilGate?: boolean
+  advanceAttentionStep?: boolean
   requestedSkills?: string[]
   baseUrl?: string | null
 }
@@ -30,6 +33,8 @@ type EnqueueWorkflowAgentRunResult = {
   reason?: string
   status?: number
   agentRun?: ReturnType<typeof getAgentRun>
+  advanced?: boolean
+  advancedToStepKey?: string | null
   error?: string
 }
 
@@ -49,6 +54,10 @@ function stepKey(step: Record<string, unknown> | null | undefined) {
 
 function stepType(step: Record<string, unknown> | null | undefined) {
   return typeof step?.type === "string" && step.type.trim() ? step.type.trim() : "agent"
+}
+
+function isTerminalStep(step: Record<string, unknown> | null | undefined) {
+  return stepType(step) === "terminal"
 }
 
 function findStepByKey(steps: Record<string, unknown>[], key: string | null | undefined) {
@@ -161,7 +170,6 @@ async function executeClaimedWorkflowAgentRun(agentRun: AgentRunRecord) {
           input: [{ role: "user", content: prompt }],
           linked_change_request_id: request.id,
           workflow_action: workflowAgentRunString(input, "workflowAction"),
-          auto_continue_until_gate: input.autoContinueUntilGate === true,
           requested_skills: workflowAgentRunStringArray(input, "requestedSkills"),
           agent_run_id: agentRun.id,
         }),
@@ -278,12 +286,79 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
   if (input.workflowAction && stepType(currentStep) !== "gate") {
     return { queued: false, reason: "WORKFLOW_ACTION_REQUIRES_GATE", status: 409 }
   }
-  if (!input.workflowAction && stepType(currentStep) === "gate") {
-    return { queued: false, reason: "WORKFLOW_ACTION_REQUIRED", status: 409 }
+  if (
+    input.advanceAttentionStep === true &&
+    !input.workflowAction &&
+    input.request.workflowAttention &&
+    input.request.workflowAttention.workflowStepKey === stepKey(currentStep) &&
+    stepType(currentStep) !== "gate"
+  ) {
+    const nextStep = nextStepForAction(steps, currentStep, null)
+    const nextStepKey = stepKey(nextStep)
+    if (!nextStep || !nextStepKey) {
+      return { queued: false, reason: "workflow_next_step_not_found", status: 409 }
+    }
+    createWorkflowEvent({
+      workflowRunId: workflowRun.id,
+      requestId: input.request.id,
+      stepKey: stepKey(currentStep),
+      eventType: "operator.attention_resolved",
+      actorType: "agent",
+      note: input.prompt,
+      payload: {
+        agentRunId: input.request.workflowAttention.agentRunId,
+        blockerKeys: input.request.workflowAttention.blockers
+          .map((blocker) => typeof blocker.key === "string" ? blocker.key.trim() : "")
+          .filter((key) => key.length > 0),
+        fromStepKey: stepKey(currentStep),
+        toStepKey: nextStepKey,
+        workflowOutcomeStatus: input.request.workflowAttention.status,
+        workflowAction: "continue",
+      },
+    })
+    updateChangeRequest(input.request.id, {
+      workflowStepKey: nextStepKey,
+    })
+    updateWorkflowRun({
+      requestId: input.request.id,
+      currentStepKey: nextStepKey,
+      status: isTerminalStep(nextStep) ? "completed" : "active",
+      completedAt: isTerminalStep(nextStep) ? new Date().toISOString() : null,
+    })
+    createWorkflowEvent({
+      workflowRunId: workflowRun.id,
+      requestId: input.request.id,
+      stepKey: nextStepKey,
+      eventType: "workflow.step_changed",
+      actorType: "system",
+      payload: {
+        previousStepKey: stepKey(currentStep),
+        nextStepKey,
+        continuedFromAttention: true,
+      },
+    })
+    currentStep = nextStep
+    if (stepType(currentStep) === "loop") {
+      const resolved = resolveControlFlowSteps({
+        requestId: input.request.id,
+        workflowRunId: workflowRun.id,
+        steps,
+        step: currentStep,
+      })
+      currentStep = resolved.step
+      if (!currentStep || resolved.stopped) {
+        const loopError = "error" in resolved && typeof resolved.error === "string"
+          ? resolved.error
+          : "WORKFLOW_LOOP_STOPPED"
+        return { queued: false, reason: loopError, status: 409 }
+      }
+    }
+    if (stepType(currentStep) === "gate" || stepType(currentStep) === "checkpoint" || isTerminalStep(currentStep)) {
+      return { queued: true, status: 202, advanced: true, advancedToStepKey: stepKey(currentStep), agentRun: undefined }
+    }
   }
-
   const runnableStep = stepType(currentStep) === "gate"
-    ? nextStepForAction(steps, currentStep, input.workflowAction ?? "approved")
+    ? nextStepForAction(steps, currentStep, input.workflowAction ?? null)
     : currentStep
   const runnableStepKey = stepKey(runnableStep)
   if (!runnableStep || !runnableStepKey) {
@@ -324,7 +399,6 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
     input: {
       prompt: input.prompt,
       workflowAction: input.workflowAction ?? null,
-      autoContinueUntilGate: input.autoContinueUntilGate === true,
       requestedSkills: input.requestedSkills ?? [],
       baseUrl: input.baseUrl ?? null,
     },

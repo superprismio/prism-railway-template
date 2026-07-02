@@ -77,12 +77,11 @@ To run a request workflow step from another service, use the site response route
       "content": "Run the current workflow step using the request context and step instructions."
     }
   ],
-  "linked_change_request_id": "<request-id>",
-  "workflow_action": null
+  "linked_change_request_id": "<request-id>"
 }
 ```
 
-Send that body to `POST /agent/responses` with `x-service-token` service auth. For gate steps, set `workflow_action` to the route key, such as `approved` or `changesRequested`. For checkpoint steps, do not set `workflow_action`; run the checkpoint step itself.
+Send that body to `POST /agent/responses` with `x-service-token` service auth. For gate steps, do not set `workflow_action`; the gate records a continue event and moves to its `next` step. For checkpoint steps, do not set `workflow_action`; run the checkpoint step itself.
 
 Workflow steps should save durable files through the request artifact API instead of leaving important outputs only in chat text. Use artifacts for drafts, image prompts, generated images, publish packets, JSON plans, or any step output that future steps or humans should inspect.
 
@@ -168,7 +167,7 @@ Use it for:
 - step `label`
 - step `type`
 - `instructionPath`
-- simple `next` or `routes` only when the UI/runtime needs deterministic routing
+- simple `next` flow
 - loop control fields for `type: "loop"` steps
 - shared `agentConfig`
 - deterministic delegation policy in `agentConfig.delegation`
@@ -182,7 +181,7 @@ Do not add workflow-specific hacks for board status, terminal status, auto-advan
 - current step state through `workflow_runs.current_step_key`
 - request status projection for lists and badges
 - terminal run state
-- gate routing mechanics
+- gate continue mechanics
 - auto-continue behavior
 - agent-run and workflow event history
 
@@ -258,10 +257,7 @@ Recommended manifest shape:
       "key": "review",
       "label": "Review",
       "type": "gate",
-      "routes": {
-        "approved": "closed",
-        "changesRequested": "triage"
-      }
+      "next": "closed"
     },
     {
       "key": "closed",
@@ -351,7 +347,7 @@ When creating or changing a workflow:
 1. Use lowercase kebab-case workflow and step keys.
 2. Update `workflow.md`.
 3. Add or update each relevant `steps/<step-key>.md`.
-4. Update the manifest `steps[]` order and deterministic `next` / `routes`.
+4. Update the manifest `steps[]` order and deterministic `next` links.
 5. Keep agent instructions in markdown, not JSON.
 6. Keep state and approvals in DB-backed request/workflow records.
 7. Call out any required skills, scripts, env vars, or adapter capabilities.

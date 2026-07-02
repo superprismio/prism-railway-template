@@ -1310,7 +1310,6 @@ export function RequestDetailsPanel({
     prompt: string,
     session?: AgentThreadSession | null,
     workflowAction?: string,
-    autoContinueUntilGate = false,
   ) {
     const response = await fetch("/admin/console/jobs", {
       method: "POST",
@@ -1323,7 +1322,6 @@ export function RequestDetailsPanel({
         linked_change_request_id: request.id,
         linked_target_environment_id: request.targetEnvironmentId,
         workflow_action: workflowAction ?? null,
-        auto_continue_until_gate: autoContinueUntilGate,
         requested_skills: ["change-request-ops", "target-deploy-ops"],
       }),
     });
@@ -1419,17 +1417,16 @@ export function RequestDetailsPanel({
         ? `Most recent comment to consider: ${latestComment}`
         : "No new admin comment was provided; continue from the existing request context and thread history.",
       currentWorkflowStep.type === "gate"
-        ? "This step is a human gate. Treat comments as the gate decision and context, route through the workflow manifest, and continue if there is a next agent step."
+        ? "This step is a human gate. Treat comments as operator context, record the continue event, and move to the normal next workflow step if one exists."
         : currentWorkflowStep.type === "checkpoint"
           ? "This step is a checkpoint. Reconcile existing external state and durable artifacts before doing anything new. Do not start duplicate jobs. If the external state is still waiting, leave the request on this checkpoint and summarize what is pending. If it is ready for the next step, say which step should run next and why."
           : "Use the latest request context and comments, run the current workflow step, update the request state if appropriate, and leave a concise summary comment.",
     ].join("\n");
 
     setThreadError(null);
-    const workflowAction = currentWorkflowStep.type === "gate" ? "approved" : undefined;
     startCommandTransition(async () => {
       try {
-        await runAgent(prompt, null, workflowAction, true);
+        await runAgent(prompt, null, undefined);
       } catch (error) {
         setThreadError(
           describeFetchError(error, "Could not continue agent"),

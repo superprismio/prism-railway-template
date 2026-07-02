@@ -92,7 +92,6 @@ export async function autoStartWorkflowRequest(
       request: freshRequest,
       prompt,
       workflowAction: null,
-      autoContinueUntilGate: true,
       requestedSkills: options.requestedSkills ?? [],
       baseUrl: options.baseUrl,
     })

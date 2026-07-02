@@ -146,13 +146,11 @@ curl -fsSL \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
   "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/by-number/$REQUEST_NUMBER/workflow/continue" \
   -d '{
-    "comment": "'"$OPERATOR_COMMENT"'",
-    "workflowAction": "approved",
-    "autoContinueUntilGate": true
+    "comment": "'"$OPERATOR_COMMENT"'"
   }'
 ```
 
-Use this route when a user approves a gate or asks to move a request along from Discord or another non-browser surface. It uses the normal workflow runner; do not manually patch `currentWorkflowStepKey` to bypass gates. `workflowAction` defaults to `approved`. If the next step is an agent step and `autoContinueUntilGate` is true, the workflow continues until it reaches a gate, checkpoint, or terminal step.
+Use this route when a user approves a gate or asks to move a request along from Discord or another non-browser surface. It uses the normal workflow runner; do not manually patch `currentWorkflowStepKey` to bypass gates. Prefer simple `next` flow and do not send `workflowAction` for normal continues. The workflow continues through agent steps until it reaches a gate, checkpoint, terminal step, failure, or emergency continuation guard.
 
 Create request pattern:
 

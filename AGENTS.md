@@ -95,10 +95,10 @@ curl -fsSL \
   -H "content-type: application/json" \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
   "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/by-number/43/workflow/continue" \
-  -d '{"comment":"Operator approved this gate from Discord.","workflowAction":"approved","autoContinueUntilGate":true}'
+  -d '{"comment":"Operator approved this gate from Discord."}'
 ```
 
-For a human gate, `workflowAction` defaults to `approved`. The route records the gate event and uses the normal workflow runner so agent runs and auto-continue behavior stay in sync.
+The route records the continue event and uses the normal workflow runner so agent runs and auto-continue behavior stay in sync. Prefer simple `next` flow; do not send `workflowAction` for normal continues.
 
 For Prism Memory Discord bucket repair after `discord.category_to_bucket` changes, use Prism Memory ops auth and start with a dry-run:
 
