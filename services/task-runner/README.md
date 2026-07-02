@@ -10,7 +10,7 @@ It replaces the fixed Railway cron workers by running built-in scheduled tasks:
 - Prism Knowledge run
 - Prism Doctor report
 
-It also runs DB-authored prompt and workflow automations. Built-in task definitions, custom task configuration, and run history live in the `site` app DB.
+It also runs DB-authored prompt, HTTP, script, and workflow automations. Built-in task definitions, custom task configuration, and run history live in the `site` app DB.
 
 ## Endpoints
 
@@ -68,6 +68,48 @@ Supported config:
 The runner calls:
 
 - `POST /v1/responses` on `CODEX_RUNTIME_BASE_URL`
+
+## HTTP POST tasks
+
+Deterministic HTTP POST tasks use `taskType=http-post` in the `site` DB. Use
+this for simple external HTTPS cron jobs that should not invoke Codex Runtime.
+
+Supported config:
+
+```json
+{
+  "key": "portal-notification-email-dispatch",
+  "name": "Portal notification email dispatch",
+  "scheduleCron": "*/5 * * * *",
+  "taskType": "http-post",
+  "inputConfig": {
+    "method": "POST",
+    "url": "https://portal.raidguild.org/api/notifications/email/run",
+    "headers": {
+      "Authorization": "Bearer ${PORTAL_TASK_SECRET}"
+    },
+    "body": {
+      "limit": 50
+    },
+    "retry": {
+      "attempts": 3,
+      "backoff": "exponential"
+    },
+    "timeoutMs": 30000
+  }
+}
+```
+
+The runner only accepts `https:` URLs and always sends a JSON body with
+`Content-Type: application/json`. Custom headers may reference task-runner
+environment variables with `${ENV_NAME}`; configured `Content-Type` headers are
+ignored so the serialized body and content type stay aligned. The secret value
+is not stored in the task row.
+
+The job logs each attempt with timestamp, endpoint, HTTP status, parsed response
+result counts when present, and error body for non-2xx responses. Retries are
+bounded by `inputConfig.retry.attempts`; no task run retries forever. The task
+runner also prevents concurrent runs of the same task key.
 
 ## Script runner tasks
 

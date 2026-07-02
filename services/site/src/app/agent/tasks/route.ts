@@ -72,6 +72,25 @@ export async function POST(request: Request) {
     }
     normalizedInputConfig = { ...inputConfig, scriptKey }
   }
+  if (taskType === "http-post") {
+    const url = parseString(inputConfig.url)
+    const method = (parseString(inputConfig.method) || "POST").toUpperCase()
+    if (!url) {
+      return NextResponse.json({ ok: false, error: "http-post tasks require inputConfig.url" }, { status: 400 })
+    }
+    if (method !== "POST") {
+      return NextResponse.json({ ok: false, error: "http-post tasks currently support method POST only" }, { status: 400 })
+    }
+    try {
+      const parsed = new URL(url)
+      if (parsed.protocol !== "https:") {
+        return NextResponse.json({ ok: false, error: "http-post tasks require an https URL" }, { status: 400 })
+      }
+    } catch {
+      return NextResponse.json({ ok: false, error: "http-post tasks require a valid inputConfig.url" }, { status: 400 })
+    }
+    normalizedInputConfig = { ...inputConfig, method, url }
+  }
 
   const task = upsertTask({
     key,

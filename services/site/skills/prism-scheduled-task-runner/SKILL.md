@@ -27,10 +27,15 @@ Useful environment variables may include:
 - `PRISM_AGENT_SERVICE_TOKEN`
 - `APP_API_BASE_URL`
 - `APP_API_SERVICE_TOKEN`
+- `PORTAL_TASK_SECRET`
 - `COMMUNICATION_ADAPTER_BASE_URL`
 - `COMMUNICATION_ADAPTER_TOKEN`
 
 In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the site API is unavailable.
+
+Portal email queue dispatch should use a deterministic `http-post` task with
+key `portal-notification-email-dispatch`. Do not create a recurring
+`codex-prompt` task for five-minute email dispatch.
 
 If the stored task has `metadata.outputConfig.outputDestinations`, do not call the adapter directly. Return the final message body and let task-runner deliver it.
 

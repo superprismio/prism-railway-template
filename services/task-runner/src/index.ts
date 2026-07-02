@@ -276,24 +276,43 @@ async function postJson(
   timeoutMs = httpTimeoutMs(),
 ): Promise<TaskRunResult> {
   const url = `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+  return postJsonUrl(url, headers, body, timeoutMs);
+}
+
+async function postJsonUrl(
+  url: string,
+  headers: Record<string, string>,
+  body: Record<string, unknown> = {},
+  timeoutMs = httpTimeoutMs(),
+): Promise<TaskRunResult> {
+  const result = await postJsonUrlRaw(url, headers, body, timeoutMs);
+  if (result.status < 200 || result.status >= 300) {
+    throw new Error(`HTTP ${result.status} from ${url}: ${result.body.slice(0, 500)}`);
+  }
+  return {
+    ok: true,
+    status: result.status,
+    url,
+    body: result.body,
+  };
+}
+
+async function postJsonUrlRaw(
+  url: string,
+  headers: Record<string, string>,
+  body: Record<string, unknown> = {},
+  timeoutMs = httpTimeoutMs(),
+): Promise<{ status: number; body: string }> {
   const response = await fetchWithTimeout(url, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
       ...headers,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
   }, timeoutMs);
   const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} from ${url}: ${text.slice(0, 500)}`);
-  }
-  return {
-    ok: true,
-    status: response.status,
-    url,
-    body: text,
-  };
+  return { status: response.status, body: text };
 }
 
 async function postCodexRuntimeJson(
@@ -990,6 +1009,211 @@ function buildScriptRunnerTask(siteTask: AppTask): RunnableTask | null {
   };
 }
 
+function stringHeadersFromConfig(config: Record<string, unknown>): Record<string, string> {
+  const headers = recordFromConfig(config, "headers");
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    const headerName = key.trim();
+    if (headerName && headerName.toLowerCase() !== "content-type" && typeof value === "string") {
+      result[headerName] = interpolateEnvTemplate(value);
+    }
+  }
+  return result;
+}
+
+function interpolateEnvTemplate(value: string): string {
+  return value.replace(/\$\{([A-Z0-9_]+)\}/g, (_match, envName: string) => {
+    const envValue = (process.env[envName] ?? "").trim();
+    if (!envValue) {
+      throw new Error(`HTTP_POST_ENV_MISSING:${envName}`);
+    }
+    return envValue;
+  });
+}
+
+function bearerEnvFromHttpPostConfig(config: Record<string, unknown>): string {
+  const auth = recordFromConfig(config, "auth");
+  return (
+    stringFromConfig(auth, "bearerEnv")
+    || stringFromConfig(auth, "bearer_env")
+    || stringFromConfig(config, "bearerEnv")
+    || stringFromConfig(config, "bearer_env")
+  );
+}
+
+function httpPostRetryConfig(config: Record<string, unknown>): { attempts: number; backoff: string } {
+  const retry = recordFromConfig(config, "retry");
+  const attempts = Object.prototype.hasOwnProperty.call(retry, "attempts")
+    ? intFromConfig(retry, "attempts", 1, 1, 10)
+    : 1;
+  const backoff = stringFromConfig(retry, "backoff", "none").toLowerCase();
+  return { attempts, backoff };
+}
+
+function httpPostRetryDelayMs(attemptIndex: number, backoff: string): number {
+  if (backoff === "exponential") {
+    return Math.min(30_000, 1_000 * (2 ** Math.max(0, attemptIndex - 1)));
+  }
+  if (backoff === "linear") {
+    return Math.min(30_000, 1_000 * attemptIndex);
+  }
+  return 0;
+}
+
+function httpPostResultCounts(responseBody: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(responseBody) as unknown;
+    if (!isRecord(parsed)) {
+      return null;
+    }
+    const candidates = parsed.resultCounts ?? parsed.counts ?? parsed.results ?? parsed.summary;
+    if (isRecord(candidates)) {
+      return candidates;
+    }
+    const counts: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (/count|total|sent|failed|skipped|queued|dispatched/i.test(key) && (typeof value === "number" || typeof value === "string")) {
+        counts[key] = value;
+      }
+    }
+    return Object.keys(counts).length ? counts : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildHttpPostTask(siteTask: AppTask): RunnableTask | null {
+  const url = stringFromConfig(siteTask.inputConfig, "url");
+  if (!url) {
+    console.warn(JSON.stringify({ event: "task.http_post_missing_url", task: siteTask.key }));
+    return null;
+  }
+  const method = stringFromConfig(siteTask.inputConfig, "method", "POST").toUpperCase();
+  if (method !== "POST") {
+    console.warn(JSON.stringify({ event: "task.http_post_unsupported_method", task: siteTask.key, method }));
+    return null;
+  }
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") {
+      throw new Error(`Unsupported protocol: ${parsed.protocol}`);
+    }
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "task.http_post_invalid_url", task: siteTask.key, error: describeError(error) }));
+    return null;
+  }
+
+  const cron = (siteTask.scheduleCron ?? "").trim() || "0 * * * *";
+  const timeoutMs = Object.prototype.hasOwnProperty.call(siteTask.inputConfig, "timeoutMs")
+    ? intFromConfig(siteTask.inputConfig, "timeoutMs", httpTimeoutMs(), 1_000, 900_000)
+    : httpTimeoutMs();
+  const retry = httpPostRetryConfig(siteTask.inputConfig);
+
+  return {
+    key: siteTask.key,
+    name: siteTask.name,
+    taskType: "http-post",
+    defaultEnabled: false,
+    defaultCron: cron,
+    enabled: siteTask.enabled,
+    cron,
+    run: async () => {
+      const headers = stringHeadersFromConfig(siteTask.inputConfig);
+      const bearerEnv = bearerEnvFromHttpPostConfig(siteTask.inputConfig);
+      if (bearerEnv) {
+        const token = (process.env[bearerEnv] ?? "").trim();
+        if (!token) {
+          throw new Error(`HTTP_POST_BEARER_ENV_MISSING:${bearerEnv}`);
+        }
+        headers.Authorization = `Bearer ${token}`;
+      }
+      const body = recordFromConfig(siteTask.inputConfig, "body");
+      const startedAt = Date.now();
+      const attempts: Array<Record<string, unknown>> = [];
+      let lastError: string | null = null;
+      let lastStatus = 0;
+      let lastBody = "";
+
+      for (let attempt = 1; attempt <= retry.attempts; attempt += 1) {
+        const attemptStartedAt = nowIso();
+        try {
+          const response = await postJsonUrlRaw(url, headers, body, timeoutMs);
+          lastStatus = response.status;
+          lastBody = response.body;
+          const resultCounts = httpPostResultCounts(response.body);
+          const attemptLog = {
+            timestamp: attemptStartedAt,
+            endpoint: url,
+            method,
+            attempt,
+            status: response.status,
+            resultCounts,
+            errorBody: response.status >= 200 && response.status < 300 ? null : response.body.slice(0, 1_000),
+          };
+          attempts.push(attemptLog);
+          console.log(JSON.stringify({ event: "task.http_post_attempt", task: siteTask.key, ...attemptLog }));
+
+          if (response.status >= 200 && response.status < 300) {
+            return {
+              ok: true,
+              status: response.status,
+              url,
+              body: JSON.stringify({
+                ok: true,
+                timestamp: nowIso(),
+                endpoint: url,
+                method,
+                status: response.status,
+                resultCounts,
+                attempts,
+                durationMs: Date.now() - startedAt,
+              }),
+              metadata: {
+                taskType: "http-post",
+                timeoutMs,
+                retry,
+                bearerEnv: bearerEnv || null,
+                resultCounts,
+              },
+            };
+          }
+          lastError = `HTTP ${response.status} from ${url}: ${response.body.slice(0, 500)}`;
+        } catch (error) {
+          lastError = describeError(error);
+          const attemptLog = {
+            timestamp: attemptStartedAt,
+            endpoint: url,
+            method,
+            attempt,
+            status: null,
+            resultCounts: null,
+            errorBody: lastError,
+          };
+          attempts.push(attemptLog);
+          console.warn(JSON.stringify({ event: "task.http_post_attempt_failed", task: siteTask.key, ...attemptLog }));
+        }
+
+        const delayMs = attempt < retry.attempts ? httpPostRetryDelayMs(attempt, retry.backoff) : 0;
+        if (delayMs > 0) {
+          await sleep(delayMs);
+        }
+      }
+
+      throw new Error(JSON.stringify({
+        ok: false,
+        timestamp: nowIso(),
+        endpoint: url,
+        method,
+        status: lastStatus || null,
+        resultCounts: lastBody ? httpPostResultCounts(lastBody) : null,
+        errorBody: lastBody ? lastBody.slice(0, 1_000) : lastError,
+        attempts,
+      }));
+    },
+    outputConfig: siteTask.outputConfig,
+  };
+}
+
 function statusFromChangeRequest(payload: Record<string, unknown>): string | null {
   const changeRequest = payload.changeRequest;
   if (!isRecord(changeRequest)) {
@@ -1515,6 +1739,9 @@ function buildDynamicTask(siteTask: AppTask): RunnableTask | null {
   if (siteTask.taskType === "script-runner") {
     return buildScriptRunnerTask(siteTask);
   }
+  if (siteTask.taskType === "http-post") {
+    return buildHttpPostTask(siteTask);
+  }
   if (siteTask.taskType === "workflow-runner") {
     return buildWorkflowRunnerTask(siteTask);
   }
@@ -1547,7 +1774,7 @@ function syncDynamicTasks(runnableTasks: RunnableTask[], siteTasks: AppTask[]): 
 
   for (let index = runnableTasks.length - 1; index >= 0; index -= 1) {
     const task = runnableTasks[index];
-    if ((task.taskType === "codex-prompt" || task.taskType === "script-runner" || task.taskType === "workflow-runner") && !seen.has(task.key)) {
+    if ((task.taskType === "codex-prompt" || task.taskType === "script-runner" || task.taskType === "http-post" || task.taskType === "workflow-runner") && !seen.has(task.key)) {
       runnableTasks.splice(index, 1);
       state.delete(task.key);
     }
