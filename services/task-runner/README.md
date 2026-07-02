@@ -9,9 +9,8 @@ It replaces the fixed Railway cron workers by running built-in scheduled tasks:
 - Prism Knowledge source sync
 - Prism Knowledge run
 - Prism Doctor report
-- Portal email dispatch
 
-It also runs DB-authored prompt and workflow automations. Built-in task definitions, custom task configuration, and run history live in the `site` app DB.
+It also runs DB-authored prompt, HTTP, script, and workflow automations. Built-in task definitions, custom task configuration, and run history live in the `site` app DB.
 
 ## Endpoints
 
@@ -30,8 +29,6 @@ Manual runs require `X-Task-Runner-Token` when `TASK_RUNNER_TOKEN` is configured
 - `APP_API_BASE_URL=http://site.railway.internal:3100`
 - `APP_API_SERVICE_TOKEN=${{site.INTERNAL_SERVICE_TOKEN}}`
 - `CODEX_RUNTIME_BASE_URL=http://codex-runtime.railway.internal:3030`
-- `PORTAL_EMAIL_DISPATCH_BASE_URL=https://portal.raidguild.org`
-- `PORTAL_AGENT_REGISTRATION_SECRET=<portal agent secret>`
 - `TASK_RUNNER_HTTP_TIMEOUT_MS=120000`
 - `TASK_RUNNER_LONG_RUNNING_HTTP_TIMEOUT_MS=960000`
 - `TASK_RUNNER_SCRIPT_TIMEOUT_MS=120000`
@@ -54,7 +51,6 @@ The built-in task defaults are seeded into `site` on startup and on scheduler po
 - `skill-source-sync`: disabled, `20 * * * *`
 - `knowledge-run`: disabled, `55 * * * *`
 - `prism-doctor`: disabled, `0 15 * * 1`
-- `portal-email-dispatch`: disabled, `*/5 * * * *`
 
 After seeding, `site` DB values are the scheduler source of truth. The runner refreshes task rows on each poll.
 
@@ -72,6 +68,47 @@ Supported config:
 The runner calls:
 
 - `POST /v1/responses` on `CODEX_RUNTIME_BASE_URL`
+
+## HTTP POST tasks
+
+Deterministic HTTP POST tasks use `taskType=http-post` in the `site` DB. Use
+this for simple external cron jobs that should not invoke Codex Runtime.
+
+Supported config:
+
+```json
+{
+  "key": "portal-notification-email-dispatch",
+  "name": "Portal notification email dispatch",
+  "scheduleCron": "*/5 * * * *",
+  "taskType": "http-post",
+  "inputConfig": {
+    "method": "POST",
+    "url": "https://portal.raidguild.org/api/notifications/email/run",
+    "headers": {
+      "Authorization": "Bearer ${PORTAL_TASK_SECRET}",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "limit": 50
+    },
+    "retry": {
+      "attempts": 3,
+      "backoff": "exponential"
+    },
+    "timeoutMs": 30000
+  }
+}
+```
+
+The runner calls the configured URL with `Content-Type: application/json`.
+Header values may reference task-runner environment variables with
+`${ENV_NAME}`. The secret value is not stored in the task row.
+
+The job logs each attempt with timestamp, endpoint, HTTP status, parsed response
+result counts when present, and error body for non-2xx responses. Retries are
+bounded by `inputConfig.retry.attempts`; no task run retries forever. The task
+runner also prevents concurrent runs of the same task key.
 
 ## Script runner tasks
 
@@ -258,27 +295,6 @@ The task emits a report-only JSON body. It checks workflow structure for simple
 gate `next` flow, missing step links, and loop target/exit/max-iteration config,
 then warns when tasks or hooks reference workflows with findings. It does not
 mutate workflows, tasks, hooks, skills, requests, or instance config.
-
-### Portal email dispatch
-
-- `PORTAL_EMAIL_DISPATCH_BASE_URL=https://portal.raidguild.org`
-- `PORTAL_EMAIL_DISPATCH_PATH=/api/notifications/email/run`
-- `PORTAL_AGENT_REGISTRATION_SECRET=...`
-- `PORTAL_EMAIL_DISPATCH_LIMIT=50`
-- `PORTAL_EMAIL_DISPATCH_DRY_RUN=false`
-
-`AGENT_REGISTRATION_SECRET` is accepted as a fallback when
-`PORTAL_AGENT_REGISTRATION_SECRET` is not set.
-
-The runner calls:
-
-- `POST /api/notifications/email/run`
-- `Authorization: Bearer $PORTAL_AGENT_REGISTRATION_SECRET`
-- body: `{ "limit": 50, "dryRun": false }`
-
-The task is deterministic and does not invoke Codex Runtime. Keep it disabled
-until the Portal secret is configured in the task-runner environment. For
-verification, set `PORTAL_EMAIL_DISPATCH_DRY_RUN=true` and run the task manually.
 
 ## Validation approach
 

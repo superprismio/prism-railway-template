@@ -252,7 +252,7 @@ function taskDescription(key: string) {
     return "Syncs configured GitHub skill sources into the site skill catalog.";
   if (key === "prism-doctor")
     return "Checks workflows, tasks, and hooks for structural drift without mutating content.";
-  if (key === "portal-email-dispatch")
+  if (key === "portal-email-dispatch" || key === "portal-notification-email-dispatch")
     return "Dispatches queued Portal email notifications through the Portal API.";
   return "Scheduled task";
 }
@@ -266,6 +266,9 @@ function taskTypeBadge(taskType: string) {
   }
   if (taskType === "workflow-runner") {
     return <Badge variant="default">Workflow</Badge>;
+  }
+  if (taskType === "http-post") {
+    return <Badge variant="outline">HTTP</Badge>;
   }
   return <Badge variant="muted">{taskType || "task"}</Badge>;
 }

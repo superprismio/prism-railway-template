@@ -9,20 +9,21 @@ Task authoring rules:
 
 1. Prefer `taskType="codex-prompt"` for user-authored scheduled prompt tasks.
 2. Use `taskType="workflow-runner"` when the task should create a durable request and run it through a workflow.
-3. Use `taskType="script-runner"` for deterministic watchdogs, pollers, API checks, checkpoint updates, and other jobs that should avoid LLM calls by default.
-4. Store replayable natural-language instructions in `instructionConfig.prompt` for `codex-prompt` and `workflow-runner` tasks.
-5. Store optional skill names in `instructionConfig.requestedSkills`.
-6. Store schedule in `scheduleCron` using standard five-field cron syntax.
-7. Default new tasks to `enabled=false` unless the user explicitly asks to enable it after review.
-8. Do not store arbitrary JavaScript, Python, or shell code in the task row.
-9. If deterministic repeatable code is needed, create or verify a site-owned task script through `/agent/task-scripts` first, then reference it with `inputConfig.scriptKey` and structured `inputConfig.params`.
-10. Include required destination/config assumptions in `inputConfig` or `outputConfig`.
-11. If the user asks to send output to a destination such as Discord `#updates` or a Telegram group, resolve the destination during task creation when possible. Use `availableOutputDestinations` from session metadata first. Store resolved destinations in `outputConfig.outputDestinations`; do not leave channel matching for scheduled run time if the channel can be resolved now.
-12. A resolved output destination must include `adapter`, `type`, `id`, and `label`. If you only know the label, the destination is unresolved.
-13. If a requested destination cannot be resolved, create the task disabled and state that delivery is unresolved.
-14. When a task creates a request from an outside system, attach that source as a request external ref when the API is available. Examples: GitHub issue collector tasks attach the source issue, Discord support triage tasks attach the source message or thread, and publishing tasks attach the final CMS post.
-15. For `workflow-runner` tasks, include `inputConfig.request.estimatedHumanHours` when the request scope is predictable. Estimate the whole request, including expected human gates, review/approval time, coordination, and likely loopbacks. Choose one bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`.
-16. For Portal email queue dispatch, use the built-in `portal-email-dispatch` task. Do not create a recurring `codex-prompt` task for five-minute email dispatch.
+3. Use `taskType="http-post"` for simple deterministic HTTP POST cron jobs that should avoid LLM calls by default.
+4. Use `taskType="script-runner"` for deterministic watchdogs, pollers, API checks, checkpoint updates, and other jobs that need more logic than one HTTP POST.
+5. Store replayable natural-language instructions in `instructionConfig.prompt` for `codex-prompt` and `workflow-runner` tasks.
+6. Store optional skill names in `instructionConfig.requestedSkills`.
+7. Store schedule in `scheduleCron` using standard five-field cron syntax.
+8. Default new tasks to `enabled=false` unless the user explicitly asks to enable it after review.
+9. Do not store arbitrary JavaScript, Python, or shell code in the task row.
+10. If deterministic repeatable code is needed, create or verify a site-owned task script through `/agent/task-scripts` first, then reference it with `inputConfig.scriptKey` and structured `inputConfig.params`.
+11. Include required destination/config assumptions in `inputConfig` or `outputConfig`.
+12. If the user asks to send output to a destination such as Discord `#updates` or a Telegram group, resolve the destination during task creation when possible. Use `availableOutputDestinations` from session metadata first. Store resolved destinations in `outputConfig.outputDestinations`; do not leave channel matching for scheduled run time if the channel can be resolved now.
+13. A resolved output destination must include `adapter`, `type`, `id`, and `label`. If you only know the label, the destination is unresolved.
+14. If a requested destination cannot be resolved, create the task disabled and state that delivery is unresolved.
+15. When a task creates a request from an outside system, attach that source as a request external ref when the API is available. Examples: GitHub issue collector tasks attach the source issue, Discord support triage tasks attach the source message or thread, and publishing tasks attach the final CMS post.
+16. For `workflow-runner` tasks, include `inputConfig.request.estimatedHumanHours` when the request scope is predictable. Estimate the whole request, including expected human gates, review/approval time, coordination, and likely loopbacks. Choose one bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`.
+17. For Portal email queue dispatch, create an `http-post` task with key `portal-notification-email-dispatch`, schedule `*/5 * * * *`, method `POST`, URL `https://portal.raidguild.org/api/notifications/email/run`, `Authorization: Bearer ${PORTAL_TASK_SECRET}`, body `{ "limit": 50 }`, retry attempts `3`, exponential backoff, and `timeoutMs: 30000`. Do not create a recurring `codex-prompt` task for five-minute email dispatch.
 
 Workflow-runner request types must use one of: `bug`, `feature`, `issue`, `content`, `design`, `config`, or `ops`. Use `issue` for imported GitHub issues or issue-like support intake when the source item itself is the request.
 
@@ -100,6 +101,41 @@ Workflow runner task shape:
 ```
 
 Workflow-runner tasks create requests through `/agent/change-board/requests`. When `inputConfig.autoRun.enabled` is true, the created request should start automatically if the workflow entry step is an agent step. If the entry step is a gate or checkpoint, it waits for an operator decision/check.
+
+HTTP POST task shape:
+
+```json
+{
+  "key": "portal-notification-email-dispatch",
+  "name": "Portal notification email dispatch",
+  "description": "Dispatch queued Portal email notifications.",
+  "enabled": false,
+  "triggerType": "schedule",
+  "scheduleCron": "*/5 * * * *",
+  "timezone": "UTC",
+  "taskType": "http-post",
+  "inputConfig": {
+    "method": "POST",
+    "url": "https://portal.raidguild.org/api/notifications/email/run",
+    "headers": {
+      "Authorization": "Bearer ${PORTAL_TASK_SECRET}",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "limit": 50
+    },
+    "retry": {
+      "attempts": 3,
+      "backoff": "exponential"
+    },
+    "timeoutMs": 30000
+  },
+  "instructionConfig": {},
+  "outputConfig": {}
+}
+```
+
+For `http-post` tasks, the secret value must live in the task-runner service environment. Store a header template such as `Bearer ${PORTAL_TASK_SECRET}`, not the secret itself. The task logs timestamp, endpoint, HTTP status, parsed response result counts when present, and error body for non-2xx responses. Retries must be bounded; do not configure unbounded retry behavior.
 
 Script runner task shape:
 
