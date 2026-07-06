@@ -32,6 +32,7 @@ import {
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
 import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
+import { findStepByKey, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
 
 type RouteAccessCheck = () => Promise<{ ok: true } | { ok: false; error: string; status: number }>
 
@@ -354,23 +355,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
-function workflowSteps(definition: Record<string, unknown> | undefined) {
-  const raw = Array.isArray(definition?.steps) ? definition.steps : []
-  return raw.filter(isRecord).filter((step) => typeof step.key === "string" && step.key.trim())
-}
-
-function stepKey(step: Record<string, unknown>) {
-  return typeof step.key === "string" ? step.key.trim() : ""
-}
-
-function stepType(step: Record<string, unknown>) {
-  return typeof step.type === "string" && step.type.trim() ? step.type.trim() : "agent"
-}
-
-function findStepByKey(steps: Record<string, unknown>[], key: string | null | undefined) {
-  return steps.find((step) => stepKey(step) === key) ?? null
-}
-
 function workflowActorType(request: Request) {
   try {
     const pathname = new URL(request.url).pathname
@@ -378,17 +362,6 @@ function workflowActorType(request: Request) {
   } catch {
     return "agent"
   }
-}
-
-function nextStepForAction(steps: Record<string, unknown>[], step: Record<string, unknown>, action: string | null) {
-  if (action && isRecord(step.routes)) {
-    const routeValue = step.routes[action]
-    if (typeof routeValue === "string") {
-      return findStepByKey(steps, routeValue)
-    }
-  }
-  const next = typeof step.next === "string" ? step.next : null
-  return next ? findStepByKey(steps, next) : null
 }
 
 function readInstructionFile(instructionPath: unknown) {
@@ -869,7 +842,7 @@ function completeWorkflowAgentStep(input: {
   })
 
   const nextStep = input.nextStep
-  const nextStepKey = !shouldStayOnStep && nextStep ? stepKey(nextStep) : input.stepKey
+  const nextStepKey = !shouldStayOnStep && nextStep ? stepKey(nextStep) ?? input.stepKey : input.stepKey
   updateChangeRequest(input.requestId, {
     workflowStepKey: nextStepKey,
   })
@@ -918,8 +891,8 @@ function completeWorkflowGateStep(input: {
   actorType: string
   note: string
 }) {
-  const fromStepKey = stepKey(input.fromStep)
-  const toStepKey = stepKey(input.toStep)
+  const fromStepKey = stepKey(input.fromStep) ?? ""
+  const toStepKey = stepKey(input.toStep) ?? ""
 
   createWorkflowEvent({
     workflowRunId: input.workflowRunId,
