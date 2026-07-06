@@ -17,6 +17,7 @@ import {
 } from "@/lib/app-core"
 import { handleResponsePost } from "@/lib/response-route-handler"
 import { loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
+import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
 
 type EnqueueWorkflowAgentRunInput = {
   request: ChangeRequestRecord
@@ -42,37 +43,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
-function workflowSteps(definition: unknown) {
-  return isRecord(definition) && Array.isArray(definition.steps)
-    ? definition.steps.filter(isRecord).filter((step) => typeof step.key === "string" && step.key.trim())
-    : []
-}
-
-function stepKey(step: Record<string, unknown> | null | undefined) {
-  return typeof step?.key === "string" && step.key.trim() ? step.key.trim() : null
-}
-
-function stepType(step: Record<string, unknown> | null | undefined) {
-  return typeof step?.type === "string" && step.type.trim() ? step.type.trim() : "agent"
-}
-
 function isTerminalStep(step: Record<string, unknown> | null | undefined) {
   return stepType(step) === "terminal"
-}
-
-function findStepByKey(steps: Record<string, unknown>[], key: string | null | undefined) {
-  return steps.find((step) => stepKey(step) === key) ?? null
-}
-
-function nextStepForAction(steps: Record<string, unknown>[], step: Record<string, unknown>, action: string | null) {
-  if (action && isRecord(step.routes)) {
-    const routeValue = step.routes[action]
-    if (typeof routeValue === "string") {
-      return findStepByKey(steps, routeValue)
-    }
-  }
-  const next = typeof step.next === "string" ? step.next : null
-  return next ? findStepByKey(steps, next) : null
 }
 
 function workflowStepRunIdempotencyKey(input: {
@@ -365,6 +337,43 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
     return { queued: false, reason: "workflow_runnable_step_not_found", status: 409 }
   }
   const runnableStepType = stepType(runnableStep)
+  if (stepType(currentStep) === "gate" && runnableStepType === "terminal") {
+    const currentStepKey = stepKey(currentStep)
+    const action = gateEventAction(input.workflowAction)
+    createWorkflowEvent({
+      workflowRunId: workflowRun.id,
+      requestId: input.request.id,
+      stepKey: currentStepKey,
+      eventType: `gate.${action}`,
+      actorType: "agent",
+      note: input.prompt,
+      payload: {
+        fromStepKey: currentStepKey,
+        toStepKey: runnableStepKey,
+      },
+    })
+    updateChangeRequest(input.request.id, {
+      workflowStepKey: runnableStepKey,
+    })
+    updateWorkflowRun({
+      requestId: input.request.id,
+      currentStepKey: runnableStepKey,
+      status: "completed",
+      completedAt: new Date().toISOString(),
+    })
+    createWorkflowEvent({
+      workflowRunId: workflowRun.id,
+      requestId: input.request.id,
+      stepKey: runnableStepKey,
+      eventType: "workflow.step_changed",
+      actorType: "system",
+      payload: {
+        previousStepKey: currentStepKey,
+        nextStepKey: runnableStepKey,
+      },
+    })
+    return { queued: true, status: 202, advanced: true, advancedToStepKey: runnableStepKey, agentRun: undefined }
+  }
   if (runnableStepType === "terminal") {
     return { queued: false, reason: "WORKFLOW_ALREADY_TERMINAL", status: 409 }
   }
