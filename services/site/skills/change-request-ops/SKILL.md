@@ -82,6 +82,19 @@ The by-number artifact route includes text, markdown, and JSON bodies by default
 
 If a user asks whether artifacts were created for a request number, this endpoint is the first API to call. Do not claim the board is admin-password gated until the `/agent/.../by-number/...` routes have been tried with service-token auth.
 
+For external services that need to fetch binary artifacts directly, such as a Remotion renderer consuming MP3 files, mint signed URLs instead of sharing `/agent/.../content` URLs:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/$CHANGE_REQUEST_ID/artifacts/$ARTIFACT_ID/signed-url" \
+  -d '{"ttlSeconds":3600}'
+```
+
+The response includes `signedUrl`, `expiresAt`, and `expiresAtIso`. Signed URLs are short-lived and do not require the external service to know the Prism service token.
+
 When a user references a Discord message link with an attachment, use the high-level resolver so the agent does not need to manually extract ids:
 
 ```bash

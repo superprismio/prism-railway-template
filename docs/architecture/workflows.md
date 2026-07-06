@@ -354,6 +354,26 @@ GET /agent/change-board/requests/by-number/<request-number>/artifacts?kind=markd
 
 The by-number route returns artifact metadata plus text/json/markdown bodies as JSON. Binary bodies are omitted by default; pass `includeBinary=true` to receive base64 content.
 
+External artifact fetches should use signed URLs, not service-token routes. For
+example, Remotion render payloads that reference generated MP3 artifacts should
+include URLs minted through:
+
+```http
+POST /agent/change-board/requests/<request-id>/artifacts/<artifact-id>/signed-url
+Content-Type: application/json
+x-service-token: <internal-service-token>
+
+{
+  "ttlSeconds": 3600
+}
+```
+
+The response includes a `signedUrl` served from
+`/api/request-artifacts/<request-id>/<artifact-id>/content` with an expiry and
+signature. Renderers can fetch that URL without a Prism service token. Prep steps
+should refresh signed URLs before render submission if the previous payload has
+expired.
+
 ## Custom Workflow Registration
 
 Instance-authored workflows can live on the site volume:

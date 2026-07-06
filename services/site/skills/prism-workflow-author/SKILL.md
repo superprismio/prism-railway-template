@@ -133,6 +133,14 @@ GET /agent/change-board/requests/<request-id>/artifacts/<artifact-id>/content?fo
 
 The by-number route returns artifact metadata plus text/json/markdown bodies. Binary content is omitted by default unless `includeBinary=true` is passed.
 
+When an external renderer, browser, or third-party service must fetch a request artifact directly, do not put `/agent/.../artifacts/.../content` URLs in the payload. Those routes require the Prism service token. Mint a short-lived signed artifact URL instead:
+
+```http
+POST /agent/change-board/requests/<request-id>/artifacts/<artifact-id>/signed-url
+```
+
+The response includes `signedUrl` and `expiresAtIso`. Use signed URLs for Remotion audio inputs or other renderer-consumed media artifacts. Keep the canonical payload explicit about expiry, and rerun the prep step to refresh URLs when they expire.
+
 Use external refs for live records outside Prism. Do not store GitHub issues, GitHub pull requests, Discord messages, deployment URLs, CMS posts, or DAO proposal links only in comments or artifacts when they need later lookup or sync.
 
 ```json
