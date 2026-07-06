@@ -37,6 +37,7 @@ export function nextStepForAction(
 ) {
   const routes = isRecord(step.routes) ? step.routes : null
   const normalizedAction = action?.trim() || null
+  const next = typeof step.next === "string" ? step.next : null
   if (normalizedAction) {
     if (routes) {
       const routeValue = routes[normalizedAction]
@@ -49,6 +50,10 @@ export function nextStepForAction(
     }
   }
 
-  const next = typeof step.next === "string" ? step.next : null
-  return next ? findStepByKey(steps, next) : null
+  if (next) {
+    return findStepByKey(steps, next)
+  }
+
+  const legacyApprovedRoute = routes?.approved
+  return typeof legacyApprovedRoute === "string" ? findStepByKey(steps, legacyApprovedRoute) : null
 }
