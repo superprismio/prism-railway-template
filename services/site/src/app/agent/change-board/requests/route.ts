@@ -73,6 +73,7 @@ export async function POST(request: Request) {
   const workflow = getWorkflowByKey(workflowKey)
   const target = workflow?.definition?.target
   const allowTargetless = readBooleanBody(body.allowTargetless ?? body.allow_targetless)
+  const isTargetlessRequest = allowTargetless && !targetAppId
   const targetRequired = workflowKey === "change-request-default"
     || (isRecord(target) && target.required === true)
 
@@ -133,7 +134,7 @@ export async function POST(request: Request) {
     agentRecommendation: parseNullableString(body.agentRecommendation ?? body.agent_recommendation) ?? null,
   })
 
-  const autoStartRequested = !allowTargetless && body.autoStart !== false && body.auto_start !== false
+  const autoStartRequested = !isTargetlessRequest && body.autoStart !== false && body.auto_start !== false
   const rawRequestedSkills = body.requestedSkills ?? body.requested_skills
   const requestedSkills = Array.isArray(rawRequestedSkills)
     ? rawRequestedSkills

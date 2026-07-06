@@ -3726,6 +3726,8 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
   }
   if (input.openOnly) {
     conditions.push("COALESCE(wr.status, 'active') != 'completed'");
+    conditions.push('cr.completed_at IS NULL');
+    conditions.push('cr.closed_at IS NULL');
   }
   if (conditions.length) {
     sql += ` WHERE ${conditions.join(' AND ')}`;

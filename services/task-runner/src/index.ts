@@ -1539,7 +1539,7 @@ function doctorRepairSummary(report: {
     warningLines.length ? warningLines.join("\n") : "- None",
     "",
     "Recommended repair flow:",
-    "1. Read the attached `prism-doctor-report.json` and `prism-doctor-report.md` artifacts.",
+    "1. Read the attached stamped `prism-doctor-report-<timestamp>.json` and `prism-doctor-report-<timestamp>.md` artifacts.",
     "2. Repair the listed workflow/task/hook drift deliberately.",
     "3. Rerun Prism Doctor and confirm the failed finding count is zero.",
   ].join("\n");
