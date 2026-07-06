@@ -397,6 +397,22 @@ function blockerText(blocker: Record<string, unknown>, key: string) {
   return stringValue(blocker[key]);
 }
 
+function blockerSeverity(blocker: Record<string, unknown>) {
+  return blockerText(blocker, "severity")?.toLowerCase().replace(/-/g, "_") ?? null;
+}
+
+function blockerCanOverride(blocker: Record<string, unknown>) {
+  return (
+    blocker.canOverride !== false &&
+    blocker.can_override !== false &&
+    blockerSeverity(blocker) !== "non_overridable"
+  );
+}
+
+function workflowAttentionCanOverride(attention: WorkflowOutcome | null) {
+  return Boolean(attention && attention.blockers.every(blockerCanOverride));
+}
+
 function agentRunBranchUrl(run: AgentRunRecord | null) {
   return agentRunResultString(run, "branchUrl");
 }
@@ -825,6 +841,7 @@ export function RequestDetailsPanel({
     [agentRuns],
   );
   const latestAttentionOutcome = workflowAttention;
+  const latestAttentionCanOverride = workflowAttentionCanOverride(latestAttentionOutcome);
   const legacyOnlyExecutions = useMemo(
     () => executions.filter((execution) => !executionAgentRunId(execution)),
     [executions],
@@ -1675,7 +1692,7 @@ export function RequestDetailsPanel({
                   })}
                 </div>
               ) : null}
-              {canRunWorkflowActions ? (
+              {canRunWorkflowActions && latestAttentionCanOverride ? (
                 <div className="mt-3 space-y-2">
                   <Label htmlFor="workflow-attention-override">
                     Override comment
@@ -1702,6 +1719,12 @@ export function RequestDetailsPanel({
                     </span>
                   </div>
                 </div>
+              ) : canRunWorkflowActions ? (
+                <p className="mt-3 text-xs text-amber-900/75">
+                  This blocker cannot be overridden. Use the step selector to move the workflow
+                  back to the step named in the suggested fix, repair the missing output, then
+                  continue.
+                </p>
               ) : null}
             </div>
           ) : null}
