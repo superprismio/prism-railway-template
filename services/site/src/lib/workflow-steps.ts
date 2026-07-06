@@ -4,6 +4,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const normalGateContinueActions = new Set(["approve", "approved", "continue", "continued"])
 
+export function gateEventAction(action: string | null | undefined) {
+  const normalized = action?.trim() || null
+  if (!normalized || normalGateContinueActions.has(normalized.toLowerCase())) {
+    return "continued"
+  }
+  return normalized
+}
+
 export function workflowSteps(definition: unknown) {
   return isRecord(definition) && Array.isArray(definition.steps)
     ? definition.steps.filter(isRecord).filter((step) => typeof step.key === "string" && step.key.trim())

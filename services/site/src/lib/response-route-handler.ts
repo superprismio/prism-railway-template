@@ -32,7 +32,7 @@ import {
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
 import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
-import { findStepByKey, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
+import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
 
 type RouteAccessCheck = () => Promise<{ ok: true } | { ok: false; error: string; status: number }>
 
@@ -1260,7 +1260,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       workflowRunId: linkedWorkflowRun.id,
       fromStep: currentWorkflowStep,
       toStep: runnableWorkflowStep,
-      action: workflowAction || "continued",
+      action: gateEventAction(workflowAction),
       actorType,
       note: latestUserMessage.content,
     })
@@ -1283,7 +1283,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       meta: {
         transport: "site",
         workflowStepKey: runnableStepKey,
-        workflowAction: workflowAction || "continued",
+        workflowAction: gateEventAction(workflowAction),
       },
     })
     if (providedAgentRunId) {
@@ -1319,7 +1319,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       output_text: responseText,
       session_id: updatedSession?.id ?? session.id,
       metadata: {
-        workflow_action: workflowAction || "continued",
+        workflow_action: gateEventAction(workflowAction),
         workflow_step_key: runnableStepKey,
       },
       onProgress: recordRuntimeProgress,
@@ -1376,7 +1376,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         workflowRunId: linkedWorkflowRun.id,
         requestId: activeLinkedChangeRequestId,
         stepKey: stepKey(currentWorkflowStep),
-        eventType: `gate.${workflowAction || "continued"}`,
+        eventType: `gate.${gateEventAction(workflowAction)}`,
         actorType,
         note: latestUserMessage.content,
           payload: {

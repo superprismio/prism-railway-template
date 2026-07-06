@@ -17,7 +17,7 @@ import {
 } from "@/lib/app-core"
 import { handleResponsePost } from "@/lib/response-route-handler"
 import { loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
-import { findStepByKey, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
+import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
 
 type EnqueueWorkflowAgentRunInput = {
   request: ChangeRequestRecord
@@ -337,6 +337,43 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
     return { queued: false, reason: "workflow_runnable_step_not_found", status: 409 }
   }
   const runnableStepType = stepType(runnableStep)
+  if (stepType(currentStep) === "gate" && runnableStepType === "terminal") {
+    const currentStepKey = stepKey(currentStep)
+    const action = gateEventAction(input.workflowAction)
+    createWorkflowEvent({
+      workflowRunId: workflowRun.id,
+      requestId: input.request.id,
+      stepKey: currentStepKey,
+      eventType: `gate.${action}`,
+      actorType: "agent",
+      note: input.prompt,
+      payload: {
+        fromStepKey: currentStepKey,
+        toStepKey: runnableStepKey,
+      },
+    })
+    updateChangeRequest(input.request.id, {
+      workflowStepKey: runnableStepKey,
+    })
+    updateWorkflowRun({
+      requestId: input.request.id,
+      currentStepKey: runnableStepKey,
+      status: "completed",
+      completedAt: new Date().toISOString(),
+    })
+    createWorkflowEvent({
+      workflowRunId: workflowRun.id,
+      requestId: input.request.id,
+      stepKey: runnableStepKey,
+      eventType: "workflow.step_changed",
+      actorType: "system",
+      payload: {
+        previousStepKey: currentStepKey,
+        nextStepKey: runnableStepKey,
+      },
+    })
+    return { queued: true, status: 202, advanced: true, advancedToStepKey: runnableStepKey, agentRun: undefined }
+  }
   if (runnableStepType === "terminal") {
     return { queued: false, reason: "WORKFLOW_ALREADY_TERMINAL", status: 409 }
   }
