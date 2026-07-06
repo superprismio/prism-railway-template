@@ -426,6 +426,9 @@ export interface UpdateTargetEnvironmentInput {
 
 export interface ListChangeRequestsInput {
   targetAppId?: string;
+  source?: string;
+  openOnly?: boolean;
+  limit?: number;
 }
 
 export interface CreateChangeRequestInput {
@@ -3717,11 +3720,24 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     conditions.push('cr.target_app_id = ?');
     params.push(input.targetAppId);
   }
+  if (input.source) {
+    conditions.push('cr.source = ?');
+    params.push(input.source);
+  }
+  if (input.openOnly) {
+    conditions.push("COALESCE(wr.status, 'active') != 'completed'");
+    conditions.push('cr.completed_at IS NULL');
+    conditions.push('cr.closed_at IS NULL');
+  }
   if (conditions.length) {
     sql += ` WHERE ${conditions.join(' AND ')}`;
   }
 
   sql += ' ORDER BY cr.created_at DESC';
+  if (input.limit && Number.isFinite(input.limit) && input.limit > 0) {
+    sql += ' LIMIT ?';
+    params.push(String(Math.trunc(input.limit)));
+  }
 
   const rows = getDb().prepare(sql).all(...params) as Array<{
     id: string;

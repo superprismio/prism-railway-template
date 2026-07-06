@@ -1480,6 +1480,247 @@ function doctorHookWorkflowKey(hook: Record<string, unknown>): string | null {
   return typeof workflowKey === "string" && workflowKey.trim() ? workflowKey.trim() : null;
 }
 
+function doctorRepairRequestTitle() {
+  return "Repair Prism Doctor findings";
+}
+
+function doctorRepairWorkflowKey() {
+  return (process.env.PRISM_DOCTOR_REPAIR_WORKFLOW_KEY ?? "change-request-default").trim() || "change-request-default";
+}
+
+function doctorReportArtifactStamp(generatedAt: string) {
+  return generatedAt.replace(/[^0-9A-Za-z]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function doctorRepairSummary(report: {
+  generatedAt: string;
+  summary: {
+    workflowsChecked: number;
+    tasksChecked: number;
+    hooksChecked: number;
+    skillsChecked: number;
+    findings: number;
+    failed: number;
+    warnings: number;
+    workflowFindingSubjects: number;
+    durationMs: number;
+  };
+  findings: DoctorFinding[];
+}) {
+  const failedByWorkflow = new Map<string, number>();
+  const warningBySubject = new Map<string, number>();
+  for (const finding of report.findings) {
+    const key = `${finding.subjectType}:${finding.subjectKey}`;
+    if (finding.status === "failed") {
+      failedByWorkflow.set(finding.subjectKey, (failedByWorkflow.get(finding.subjectKey) ?? 0) + 1);
+    } else {
+      warningBySubject.set(key, (warningBySubject.get(key) ?? 0) + 1);
+    }
+  }
+
+  const failedLines = [...failedByWorkflow.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 20)
+    .map(([workflowKey, count]) => `- ${workflowKey}: ${count} failed check${count === 1 ? "" : "s"}`);
+  const warningLines = [...warningBySubject.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 10)
+    .map(([subject, count]) => `- ${subject}: ${count} warning${count === 1 ? "" : "s"}`);
+
+  return [
+    `Prism Doctor found ${report.summary.failed} failed check${report.summary.failed === 1 ? "" : "s"} and ${report.summary.warnings} warning${report.summary.warnings === 1 ? "" : "s"} at ${report.generatedAt}.`,
+    "",
+    `Checked ${report.summary.workflowsChecked} workflows, ${report.summary.tasksChecked} tasks, ${report.summary.hooksChecked} hooks, and ${report.summary.skillsChecked} skills.`,
+    "",
+    "Failed workflow subjects:",
+    failedLines.length ? failedLines.join("\n") : "- None",
+    "",
+    "Warnings:",
+    warningLines.length ? warningLines.join("\n") : "- None",
+    "",
+    "Recommended repair flow:",
+    "1. Read the attached stamped `prism-doctor-report-<timestamp>.json` and `prism-doctor-report-<timestamp>.md` artifacts.",
+    "2. Repair the listed workflow/task/hook drift deliberately.",
+    "3. Rerun Prism Doctor and confirm the failed finding count is zero.",
+  ].join("\n");
+}
+
+function doctorReportMarkdown(report: {
+  generatedAt: string;
+  summary: {
+    workflowsChecked: number;
+    tasksChecked: number;
+    hooksChecked: number;
+    skillsChecked: number;
+    findings: number;
+    failed: number;
+    warnings: number;
+    workflowFindingSubjects: number;
+    durationMs: number;
+  };
+  findings: DoctorFinding[];
+}) {
+  const findingLines = report.findings.map((finding) => {
+    const step = finding.stepKey ? ` step \`${finding.stepKey}\`` : "";
+    return [
+      `### ${finding.status.toUpperCase()}: ${finding.check}`,
+      "",
+      `- Subject: \`${finding.subjectType}:${finding.subjectKey}\`${step}`,
+      `- Expected: ${finding.expected}`,
+      `- Observed: ${finding.observed}`,
+      `- Recommendation: ${finding.recommendation}`,
+      finding.evidence ? `- Evidence: \`${JSON.stringify(finding.evidence)}\`` : null,
+    ].filter(Boolean).join("\n");
+  });
+
+  return [
+    "# Prism Doctor Report",
+    "",
+    `Generated: ${report.generatedAt}`,
+    "",
+    "## Summary",
+    "",
+    `- Workflows checked: ${report.summary.workflowsChecked}`,
+    `- Tasks checked: ${report.summary.tasksChecked}`,
+    `- Hooks checked: ${report.summary.hooksChecked}`,
+    `- Skills checked: ${report.summary.skillsChecked}`,
+    `- Findings: ${report.summary.findings}`,
+    `- Failed: ${report.summary.failed}`,
+    `- Warnings: ${report.summary.warnings}`,
+    `- Workflow subjects with findings: ${report.summary.workflowFindingSubjects}`,
+    `- Duration: ${report.summary.durationMs}ms`,
+    "",
+    "## Findings",
+    "",
+    findingLines.length ? findingLines.join("\n\n") : "No findings.",
+    "",
+  ].join("\n");
+}
+
+function doctorRequestRecord(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) && typeof value.id === "string" ? value : null;
+}
+
+async function attachDoctorReportArtifact(input: {
+  requestId: string;
+  name: string;
+  kind: string;
+  mimeType: string;
+  content: string;
+  generatedAt: string;
+}) {
+  return appApiRequest(`/agent/change-board/requests/${encodeURIComponent(input.requestId)}/artifacts`, {
+    method: "POST",
+    body: JSON.stringify({
+      kind: input.kind,
+      name: input.name,
+      mimeType: input.mimeType,
+      content: input.content,
+      encoding: "utf8",
+      createdBy: "prism-doctor",
+      metadata: {
+        reportType: "prism-doctor",
+        generatedAt: input.generatedAt,
+      },
+    }),
+  });
+}
+
+async function ensureDoctorRepairRequest(report: {
+  generatedAt: string;
+  summary: {
+    workflowsChecked: number;
+    tasksChecked: number;
+    hooksChecked: number;
+    skillsChecked: number;
+    findings: number;
+    failed: number;
+    warnings: number;
+    workflowFindingSubjects: number;
+    durationMs: number;
+  };
+  findings: DoctorFinding[];
+}) {
+  if (report.summary.failed <= 0) {
+    return null;
+  }
+
+  const summary = doctorRepairSummary(report);
+  const existingPayload = await appApiRequest(
+    "/agent/change-board/requests?source=prism-doctor&openOnly=true&limit=25",
+    { method: "GET" },
+  ) ?? {};
+  const existingRequests = Array.isArray(existingPayload.changeRequests)
+    ? existingPayload.changeRequests.filter(isRecord)
+    : [];
+  const existing = existingRequests.find((request) => request.title === doctorRepairRequestTitle()) ?? null;
+  const existingId = typeof existing?.id === "string" ? existing.id : null;
+  const request = existingId
+    ? doctorRequestRecord((await appApiRequest(`/agent/change-board/requests/${encodeURIComponent(existingId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          triageSummary: summary,
+          reviewNotes: `Latest Prism Doctor run: ${report.generatedAt}`,
+          agentRecommendation: "Repair failed Prism Doctor findings, then rerun Prism Doctor.",
+        }),
+      }) ?? {}).changeRequest)
+    : doctorRequestRecord((await appApiRequest("/agent/change-board/requests", {
+        method: "POST",
+        body: JSON.stringify({
+          title: doctorRepairRequestTitle(),
+          description: summary,
+          requestType: "ops",
+          priority: report.summary.failed > 0 ? "high" : "normal",
+          workflowKey: doctorRepairWorkflowKey(),
+          source: "prism-doctor",
+          triageSummary: summary,
+          agentRecommendation: "Repair failed Prism Doctor findings, then rerun Prism Doctor.",
+          estimatedHumanHours: 1,
+          autoStart: false,
+          allowTargetless: true,
+          acceptanceCriteria: [
+            "Prism Doctor has been rerun.",
+            "The rerun report has zero failed findings.",
+            "Any remaining warnings are documented or intentionally deferred.",
+          ],
+        }),
+      }) ?? {}).changeRequest);
+
+  if (!request || typeof request.id !== "string") {
+    throw new Error("PRISM_DOCTOR_REPAIR_REQUEST_CREATE_FAILED");
+  }
+
+  const stamp = doctorReportArtifactStamp(report.generatedAt);
+  const markdown = doctorReportMarkdown(report);
+  await attachDoctorReportArtifact({
+    requestId: request.id,
+    name: `prism-doctor-report-${stamp}.json`,
+    kind: "json",
+    mimeType: "application/json",
+    content: JSON.stringify(report, null, 2),
+    generatedAt: report.generatedAt,
+  });
+  await attachDoctorReportArtifact({
+    requestId: request.id,
+    name: `prism-doctor-report-${stamp}.md`,
+    kind: "markdown",
+    mimeType: "text/markdown",
+    content: markdown,
+    generatedAt: report.generatedAt,
+  });
+
+  return {
+    created: !existingId,
+    requestId: request.id,
+    requestNumber: typeof request.requestNumber === "number" ? request.requestNumber : null,
+    title: typeof request.title === "string" ? request.title : doctorRepairRequestTitle(),
+    artifacts: [
+      `prism-doctor-report-${stamp}.json`,
+      `prism-doctor-report-${stamp}.md`,
+    ],
+  };
+}
+
 async function runPrismDoctorTask(): Promise<TaskRunResult> {
   const startedAt = Date.now();
   const workflowPayload = await appApiRequest("/agent/workflows", { method: "GET" }) ?? {};
@@ -1536,11 +1777,34 @@ async function runPrismDoctorTask(): Promise<TaskRunResult> {
     }
   }
 
-  const report = {
+  const report: {
+    ok: boolean;
+    reportType: string;
+    generatedAt: string;
+    mode: string;
+    summary: {
+      workflowsChecked: number;
+      tasksChecked: number;
+      hooksChecked: number;
+      skillsChecked: number;
+      findings: number;
+      failed: number;
+      warnings: number;
+      workflowFindingSubjects: number;
+      durationMs: number;
+    };
+    findings: DoctorFinding[];
+    repairPlan: {
+      automaticMutation: boolean;
+      recommendedNextStep: string;
+      repairRequest?: Awaited<ReturnType<typeof ensureDoctorRepairRequest>>;
+      repairRequestError?: string;
+    };
+  } = {
     ok: true,
     reportType: "prism-doctor",
     generatedAt: nowIso(),
-    mode: "report-only",
+    mode: "report-and-repair-request",
     summary: {
       workflowsChecked: workflows.length,
       tasksChecked: tasks.length,
@@ -1560,6 +1824,15 @@ async function runPrismDoctorTask(): Promise<TaskRunResult> {
         : "No repair needed.",
     },
   };
+  try {
+    report.repairPlan.repairRequest = await ensureDoctorRepairRequest(report);
+  } catch (error) {
+    report.repairPlan.repairRequestError = describeError(error);
+    console.warn(JSON.stringify({
+      event: "prism_doctor.repair_request_failed",
+      error: report.repairPlan.repairRequestError,
+    }));
+  }
 
   return {
     ok: true,
@@ -1571,6 +1844,8 @@ async function runPrismDoctorTask(): Promise<TaskRunResult> {
       findings: findings.length,
       failed: report.summary.failed,
       warnings: report.summary.warnings,
+      repairRequest: report.repairPlan.repairRequest,
+      repairRequestError: report.repairPlan.repairRequestError,
     },
   };
 }
