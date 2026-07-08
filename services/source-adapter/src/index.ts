@@ -3387,12 +3387,12 @@ function voiceTranscriptionSetupMessage(): string {
   ].join("\n");
 }
 
-async function handleVoiceCommand(interaction: ChatInputCommandInteraction, action: "join" | "record" | "stoprecord" | "rollcall"): Promise<void> {
+async function handleVoiceCommand(interaction: ChatInputCommandInteraction, action: "join" | "record" | "stoprecord" | "recap" | "rollcall"): Promise<void> {
   if (!voiceManager) {
     await interaction.reply({ content: "Voice manager is not available in this runtime.", ephemeral: true });
     return;
   }
-  if ((action === "record" || action === "stoprecord") && !voiceTranscriptionConfigured()) {
+  if ((action === "record" || action === "stoprecord" || action === "recap") && !voiceTranscriptionConfigured()) {
     await interaction.reply({ content: voiceTranscriptionSetupMessage(), ephemeral: true });
     return;
   }
@@ -3414,6 +3414,10 @@ async function handleVoiceCommand(interaction: ChatInputCommandInteraction, acti
         publicContent = result.publicMessage ?? null;
         break;
       }
+      case "recap":
+        await interaction.editReply({ content: "Building a recap from the recording so far. This can take a minute." });
+        content = await voiceManager.recap(interaction, interaction.options.getString("prompt", false));
+        break;
       case "rollcall":
         content = await voiceManager.rollcall(interaction);
         break;
@@ -3508,19 +3512,9 @@ async function handleDiscordInteraction(interaction: Interaction): Promise<void>
     case "prism-stoprecord":
       await handleVoiceCommand(interaction, "stoprecord");
       return;
-    case "prism-recap": {
-      const steering = interaction.options.getString("prompt", false)?.trim();
-      await handleSlashPrompt(
-        interaction,
-        [
-          "Provide a concise recap for the latest relevant Prism recording transcript or meeting workflow for this Discord context.",
-          "Prefer artifacts from requests created by the `recording-transcript-completed` hook.",
-          "If no completed transcript is available, say what is missing and how to get one.",
-          steering ? `Operator steering: ${steering}` : null,
-        ].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n"),
-      );
+    case "prism-recap":
+      await handleVoiceCommand(interaction, "recap");
       return;
-    }
     case "prism-rollcall":
       await handleVoiceCommand(interaction, "rollcall");
       return;
