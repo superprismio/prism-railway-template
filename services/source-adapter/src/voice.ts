@@ -863,7 +863,11 @@ export class DiscordVoiceManager {
     if (!speaker.stream) {
       throw new Error(`Recovered speaker stream cannot be reused for live capture: ${userId}`);
     }
-    const pipelinePromise = pipeline(opusStream as any, oggStream as any, speaker.stream) as Promise<void>;
+    const pipelinePromise = (pipeline(opusStream as any, oggStream as any, speaker.stream) as Promise<void>).catch((error) => {
+      console.warn(
+        `[discord-adapter] speaker capture pipeline ended with error session=${session.sessionId} user=${userId}: ${this.describeError(error)}`,
+      );
+    });
     const activeStream: ActiveAudioStream = {
       userId,
       opusStream,
