@@ -315,8 +315,8 @@ Inputs:
 Artifacts:
 
 - `capture-manifest.json`
-- source chunk artifacts such as `chunks/chunk-0001.webm`
-- optional assembled `recording.webm`
+- transcript-ready capture chunk refs such as `chunks/chunk-0001.webm`
+- optional assembled `recording.webm` when retention policy allows it
 - `capture-metadata.json`
 - `operator-notes.md`
 - `transcripts/chunk-0001.json`
@@ -385,26 +385,42 @@ On finalize:
 The hook can create or advance a `media-ingest` request. For v1, memory ingest
 should remain review-gated and never automatic.
 
+### Capture Session Files Versus Request Artifacts
+
+For v1, raw browser chunks should be capture-session files first, not always
+first-class request artifacts. Rolling transcription needs the chunks to be
+visible to the media-ingest worker as each chunk closes, but operators do not
+need every raw media chunk cluttering the request artifact list.
+
+Recommended default:
+
+- store raw chunks under a capture session storage area
+- create request artifacts for `capture-manifest.json`, `capture-metadata.json`,
+  `operator-notes.md`, transcripts, summaries, and review outputs
+- include chunk refs in `capture-manifest.json`
+- optionally promote raw chunks or an assembled recording to artifacts only when
+  retention policy, debugging, or an operator request requires it
+
 ## Transcription Provider Constraints
 
 The first transcription target is expected to be hosted Whisper-compatible
-transcription, likely Venice AI if that remains the configured provider.
+transcription, likely Venice AI if that remains the configured provider. Venice
+AI explicitly accepts WebM, so browser WebM/Opus chunks can be sent directly when
+they are under the upload limit.
 
 Known planning constraints:
 
 - max single upload: 25 MB
 - rate limit: 60 requests per minute
-- likely accepted formats include common audio formats such as MP3, OGG, FLAC,
-  WAV, or provider-specific support for WebM
+- accepted format includes WebM
 
-Do not assume the browser capture format is accepted by the provider. The
-transcription worker should:
+The transcription worker should:
 
 1. read `capture-manifest.json`
 2. inspect chunk MIME type and byte size
-3. send WebM/Opus chunks directly only if the provider accepts them
-4. otherwise transcode with `ffmpeg` into provider-safe chunks, likely MP3 or
-   OGG/Opus
+3. send WebM/Opus chunks directly when they are under 25 MB
+4. use `ffmpeg` only when a chunk must be split, normalized, or converted for a
+   non-Venice provider
 5. enforce `< 25 MB` per upload after transcoding
 6. process sequentially or with low concurrency
 7. stitch transcript segments with offsets
@@ -443,8 +459,9 @@ PRISM_CAPTURE_HOOK_KEY=media-ingest
 PRISM_CAPTURE_ALLOWED_MODES=tab-audio,mic,screen-video
 PRISM_CAPTURE_DEFAULT_MEMORY_MODE=review
 PRISM_CAPTURE_LIVE_RECAP_ENABLED=false
+PRISM_CAPTURE_RAW_RETENTION=until-transcript
 PRISM_TRANSCRIBE_MAX_UPLOAD_BYTES=25000000
-PRISM_TRANSCRIBE_TARGET_FORMAT=mp3
+PRISM_TRANSCRIBE_TARGET_FORMAT=webm
 ```
 
 Later add a Settings UI panel for:
@@ -460,6 +477,7 @@ Later add a Settings UI panel for:
 - transcription max upload bytes and target format
 - diarization enabled/disabled
 - memory ingest behavior: never, review first, auto-ingest summaries
+- raw media retention: until transcript, configurable days, keep, or manual
 - consent/disclaimer text shown before recording
 - optional Portal publish defaults
 
@@ -475,6 +493,23 @@ The Capture UI should make recording state obvious:
 
 For public or community-facing outputs, route through the existing public-output
 safety and publishing workflows before sending or publishing.
+
+## Retention
+
+Default raw media retention should be temporary. Once transcript artifacts and
+summary artifacts exist and pass review, Prism should be allowed to delete raw
+capture chunks unless the workspace or operator explicitly chooses to keep them.
+
+Recommended default:
+
+```text
+raw media: keep until transcript is produced and reviewed
+transcripts/summaries/metadata: durable request artifacts
+memory ingest: review-gated
+```
+
+This keeps the valuable text artifacts durable while reducing long-term storage
+and privacy risk from raw meeting audio.
 
 ## First Slice
 
@@ -505,19 +540,27 @@ Target migration:
 This creates one shared pattern for Discord recorder output, browser captures,
 uploaded files, Telegram voice notes, and future Portal session recordings.
 
+## Current Decisions
+
+- Browser capture should default to WebM/Opus.
+- Venice AI accepts WebM, so direct upload should be the default when chunks are
+  under 25 MB.
+- Raw chunks should be capture-session files by default, with durable request
+  artifacts for manifests, transcripts, summaries, notes, and review outputs.
+- Rolling transcription needs closed chunks to be visible to the media-ingest
+  worker as they arrive.
+- Raw media retention should be temporary by default: keep raw chunks until
+  transcript/review unless configured otherwise.
+- Memory ingest should remain review-gated.
+
 ## Open Questions
 
-- Should capture chunks be stored as first-class request artifacts, or should
-  the capture session store raw chunks and create artifacts only for the
-  manifest, final recording, transcript, and summary?
-- Does Venice AI currently accept `audio/webm;codecs=opus`, or do we need
-  `ffmpeg` transcoding for every browser capture?
 - Which service should run `ffmpeg`: site, task-runner, codex-runtime, or a
-  future media worker?
+  future media worker? The existing comms/source adapter already uses ffmpeg for
+  native Discord recording, which is useful precedent, but the shared
+  media-ingest path may eventually deserve a media worker.
 - Should the first slice support rolling recap, or only design the chunk
   contract so rolling recap can be added without migration?
-- How should capture retention work for raw audio: forever, configurable days,
-  or delete raw chunks after transcript approval?
 - Should the request be created before capture starts, or can an admin record
   first and decide request linkage after stopping?
 - What is the minimum consent/disclaimer copy required for internal use?
