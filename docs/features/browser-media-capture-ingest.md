@@ -120,8 +120,39 @@ The first browser implementation should use native browser APIs:
 Browser capture requires an interactive user gesture and browser permission
 picker. A Discord slash command cannot start it directly.
 
-The browser flow should prefer chunked upload if recordings may exceed normal
-request body limits.
+The browser flow should use chunked upload from the start. Browser chunks are for
+capture reliability and upload safety; transcription chunks are provider-specific
+and may be derived later.
+
+Default capture settings:
+
+```text
+format preference: audio/webm;codecs=opus
+fallbacks: audio/ogg;codecs=opus, audio/mp4, audio/webm, browser default
+audioBitsPerSecond: 32000-64000
+upload chunk length: 300 seconds
+max recording length: 3600 seconds
+```
+
+At 32-64 kbps, a 5-minute WebM/Opus speech chunk should normally be far below a
+25 MB transcription upload limit. Still, the server should treat byte size as
+authoritative and rechunk/transcode when provider limits require it.
+
+Use browser capability detection before constructing the recorder:
+
+```ts
+const candidates = [
+  "audio/webm;codecs=opus",
+  "audio/ogg;codecs=opus",
+  "audio/mp4",
+  "audio/webm",
+];
+
+const mimeType = candidates.find((type) => MediaRecorder.isTypeSupported(type));
+```
+
+Persist the selected MIME type, bit rate, chunk duration, and capture source
+settings in `capture-metadata.json`.
 
 ## Slash Commands And Remote Triggers
 
@@ -141,6 +172,50 @@ The command can:
 - remind the admin that browser permission is required
 
 The admin still opens Prism Site and starts recording manually.
+
+## Live Rolling Recap
+
+Because capture chunks are uploaded while a session is still active, Prism can
+support a rolling recap mode for people who join late.
+
+This is not strict live transcription. It is chunk-latency transcription and
+summary:
+
+```text
+browser closes 5-minute audio chunk
+        |
+        v
+site stores chunk
+        |
+        v
+media-ingest transcribes closed chunk
+        |
+        v
+rolling transcript and rolling summary update
+        |
+        v
+operator or newcomer asks Prism for recap so far
+```
+
+For a one-hour meeting with 5-minute chunks, the recap is usually behind by one
+chunk plus transcription time. If a workspace wants lower latency, expose a
+"live recap" mode that uses shorter chunks, such as 60 seconds, at the cost of
+more artifacts and transcription calls.
+
+The recap response should include coverage:
+
+```text
+Recap so far:
+- topics covered
+- decisions made
+- open questions
+- action items
+
+Coverage: 00:00-25:00 transcribed. Latest chunk is still processing.
+```
+
+Speaker labels in rolling recap should be conservative. Use diarized labels like
+`Speaker 1` until the platform or an operator confirms real names.
 
 ## Headless Browser And Meeting Bots
 
@@ -239,9 +314,14 @@ Inputs:
 
 Artifacts:
 
-- `recording.webm` or source media file
+- `capture-manifest.json`
+- source chunk artifacts such as `chunks/chunk-0001.webm`
+- optional assembled `recording.webm`
 - `capture-metadata.json`
 - `operator-notes.md`
+- `transcripts/chunk-0001.json`
+- `rolling-transcript.json`
+- `rolling-summary.md`
 - `transcript.json`
 - `transcript.md`
 - `diarization.json` when available
@@ -254,7 +334,9 @@ Artifacts:
 Flow:
 
 ```text
-capture-upload
+capture-start
+  -> capture-chunk-upload
+  -> capture-finalize
   -> transcribe
   -> diarize optional
   -> summarize
@@ -264,6 +346,72 @@ capture-upload
 
 The review gate should decide whether raw transcript, cleaned transcript,
 summary, or none of the output goes to Prism Memory or Portal.
+
+### Hook Payloads
+
+Capture should trigger hooks rather than hard-wire transcription into the upload
+route.
+
+On chunk upload:
+
+```json
+{
+  "event": "capture.chunk_uploaded",
+  "captureId": "...",
+  "requestId": "...",
+  "chunkIndex": 4,
+  "artifactId": "...",
+  "durationSeconds": 300,
+  "mimeType": "audio/webm;codecs=opus",
+  "liveRecap": true
+}
+```
+
+On finalize:
+
+```json
+{
+  "event": "capture.finalized",
+  "source": "browser-capture",
+  "captureId": "...",
+  "requestId": "...",
+  "manifestArtifactId": "...",
+  "durationSeconds": 3600,
+  "audioOnly": true,
+  "memoryIngest": "review"
+}
+```
+
+The hook can create or advance a `media-ingest` request. For v1, memory ingest
+should remain review-gated and never automatic.
+
+## Transcription Provider Constraints
+
+The first transcription target is expected to be hosted Whisper-compatible
+transcription, likely Venice AI if that remains the configured provider.
+
+Known planning constraints:
+
+- max single upload: 25 MB
+- rate limit: 60 requests per minute
+- likely accepted formats include common audio formats such as MP3, OGG, FLAC,
+  WAV, or provider-specific support for WebM
+
+Do not assume the browser capture format is accepted by the provider. The
+transcription worker should:
+
+1. read `capture-manifest.json`
+2. inspect chunk MIME type and byte size
+3. send WebM/Opus chunks directly only if the provider accepts them
+4. otherwise transcode with `ffmpeg` into provider-safe chunks, likely MP3 or
+   OGG/Opus
+5. enforce `< 25 MB` per upload after transcoding
+6. process sequentially or with low concurrency
+7. stitch transcript segments with offsets
+
+With 5-minute capture chunks and speech bitrates around 32-64 kbps, most chunks
+should be small enough without additional splitting. The worker should still
+split by byte size if a chunk exceeds the provider limit.
 
 ## Speaker Metadata
 
@@ -288,19 +436,28 @@ Start with env-backed settings:
 PRISM_CAPTURE_ENABLED=true
 PRISM_CAPTURE_MAX_BYTES=...
 PRISM_CAPTURE_MAX_DURATION_SECONDS=...
+PRISM_CAPTURE_UPLOAD_CHUNK_SECONDS=300
+PRISM_CAPTURE_AUDIO_BITS_PER_SECOND=64000
 PRISM_CAPTURE_WORKFLOW_KEY=media-ingest
+PRISM_CAPTURE_HOOK_KEY=media-ingest
 PRISM_CAPTURE_ALLOWED_MODES=tab-audio,mic,screen-video
 PRISM_CAPTURE_DEFAULT_MEMORY_MODE=review
+PRISM_CAPTURE_LIVE_RECAP_ENABLED=false
+PRISM_TRANSCRIBE_MAX_UPLOAD_BYTES=25000000
+PRISM_TRANSCRIBE_TARGET_FORMAT=mp3
 ```
 
 Later add a Settings UI panel for:
 
 - enable/disable browser capture
 - max upload size and max duration
+- upload chunk length and low-latency recap mode
 - default media-ingest workflow key
+- default media-ingest hook key
 - default artifact retention policy
 - allowed capture modes
 - transcription provider defaults
+- transcription max upload bytes and target format
 - diarization enabled/disabled
 - memory ingest behavior: never, review first, auto-ingest summaries
 - consent/disclaimer text shown before recording
@@ -323,12 +480,14 @@ safety and publishing workflows before sending or publishing.
 
 1. Add `/capture` page behind admin session.
 2. Record tab/screen audio plus microphone with native browser APIs.
-3. Upload final `.webm` to Site as a request artifact.
-4. Save `capture-metadata.json` and `operator-notes.md`.
+3. Upload 5-minute WebM/Opus chunks to Site.
+4. Save `capture-manifest.json`, `capture-metadata.json`, and
+   `operator-notes.md`.
 5. Create or attach to a request.
-6. Trigger `media-ingest` workflow manually.
-7. Produce transcript and summary artifacts.
-8. Review before Prism Memory or Portal publication.
+6. Trigger a media-ingest hook on finalize.
+7. Transcribe chunks directly or transcode/rechunk under provider limits.
+8. Stitch transcript and produce summary artifacts.
+9. Review before Prism Memory or Portal publication.
 
 ## Migration From Adapter-Owned Transcription
 
@@ -345,3 +504,20 @@ Target migration:
 
 This creates one shared pattern for Discord recorder output, browser captures,
 uploaded files, Telegram voice notes, and future Portal session recordings.
+
+## Open Questions
+
+- Should capture chunks be stored as first-class request artifacts, or should
+  the capture session store raw chunks and create artifacts only for the
+  manifest, final recording, transcript, and summary?
+- Does Venice AI currently accept `audio/webm;codecs=opus`, or do we need
+  `ffmpeg` transcoding for every browser capture?
+- Which service should run `ffmpeg`: site, task-runner, codex-runtime, or a
+  future media worker?
+- Should the first slice support rolling recap, or only design the chunk
+  contract so rolling recap can be added without migration?
+- How should capture retention work for raw audio: forever, configurable days,
+  or delete raw chunks after transcript approval?
+- Should the request be created before capture starts, or can an admin record
+  first and decide request linkage after stopping?
+- What is the minimum consent/disclaimer copy required for internal use?
