@@ -27,6 +27,15 @@ export type CaptureTranscriptRecord = {
   error: string | null;
 };
 
+export type CaptureDispatchRecord = {
+  status: "pending" | "completed" | "failed";
+  destinationType: "prism-hook" | "external-http";
+  destination: string;
+  dispatchedAt: string | null;
+  result: unknown;
+  error: string | null;
+};
+
 export type CaptureManifest = {
   id: string;
   title: string;
@@ -43,6 +52,7 @@ export type CaptureManifest = {
   finalizedAt: string | null;
   chunks: CaptureChunkRecord[];
   transcript: CaptureTranscriptRecord | null;
+  dispatch: CaptureDispatchRecord | null;
   updatedAt: string;
 };
 
@@ -115,6 +125,20 @@ export async function getCaptureManifest(captureId: string) {
   }
 }
 
+export async function listCaptureManifests(limit = 50) {
+  const root = resolveCaptureStoragePath("sessions");
+  const entries = await fs.readdir(root, { withFileTypes: true }).catch(() => []);
+  const manifests = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => getCaptureManifest(entry.name)),
+  );
+  return manifests
+    .filter((manifest): manifest is CaptureManifest => Boolean(manifest))
+    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
+    .slice(0, Math.max(1, Math.min(Math.trunc(limit), 200)));
+}
+
 export async function writeCaptureManifest(manifest: CaptureManifest) {
   const resolved = resolveCaptureStoragePath(manifestStoragePath(manifest.id));
   await fs.mkdir(path.dirname(resolved), { recursive: true });
@@ -149,6 +173,7 @@ export async function createCaptureSession(input: {
     finalizedAt: null,
     chunks: [],
     transcript: null,
+    dispatch: null,
     updatedAt: now,
   };
   await writeCaptureManifest(manifest);
@@ -249,6 +274,27 @@ export async function markCaptureTranscriptPending(captureId: string) {
   return updated;
 }
 
+export async function readCaptureTranscriptFiles(captureId: string) {
+  const manifest = await getCaptureManifest(captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  const jsonPath = manifest.transcript?.transcriptJsonPath;
+  const markdownPath = manifest.transcript?.transcriptMarkdownPath;
+  if (!jsonPath || !markdownPath || manifest.transcript?.status !== "completed") {
+    throw new Error("CAPTURE_TRANSCRIPT_NOT_READY");
+  }
+  const [jsonContent, markdownContent] = await Promise.all([
+    fs.readFile(resolveCaptureStoragePath(jsonPath), "utf8"),
+    fs.readFile(resolveCaptureStoragePath(markdownPath), "utf8"),
+  ]);
+  return {
+    manifest,
+    json: JSON.parse(jsonContent) as unknown,
+    markdown: markdownContent,
+  };
+}
+
 export async function writeCaptureTranscriptFiles(input: {
   captureId: string;
   jsonContent: string;
@@ -308,6 +354,86 @@ export async function markCaptureTranscriptFailed(input: {
       generatedAt: manifest.transcript?.generatedAt ?? null,
       chunksTranscribed: manifest.transcript?.chunksTranscribed ?? 0,
       chunksSkipped: manifest.transcript?.chunksSkipped ?? 0,
+      error: input.error,
+    },
+    updatedAt: now,
+  };
+  await writeCaptureManifest(updated);
+  return updated;
+}
+
+export async function markCaptureDispatchPending(input: {
+  captureId: string;
+  destinationType: CaptureDispatchRecord["destinationType"];
+  destination: string;
+}) {
+  const manifest = await getCaptureManifest(input.captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  const now = new Date().toISOString();
+  const updated: CaptureManifest = {
+    ...manifest,
+    dispatch: {
+      status: "pending",
+      destinationType: input.destinationType,
+      destination: input.destination,
+      dispatchedAt: null,
+      result: null,
+      error: null,
+    },
+    updatedAt: now,
+  };
+  await writeCaptureManifest(updated);
+  return updated;
+}
+
+export async function markCaptureDispatchCompleted(input: {
+  captureId: string;
+  destinationType: CaptureDispatchRecord["destinationType"];
+  destination: string;
+  result: unknown;
+}) {
+  const manifest = await getCaptureManifest(input.captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  const now = new Date().toISOString();
+  const updated: CaptureManifest = {
+    ...manifest,
+    dispatch: {
+      status: "completed",
+      destinationType: input.destinationType,
+      destination: input.destination,
+      dispatchedAt: now,
+      result: input.result,
+      error: null,
+    },
+    updatedAt: now,
+  };
+  await writeCaptureManifest(updated);
+  return updated;
+}
+
+export async function markCaptureDispatchFailed(input: {
+  captureId: string;
+  destinationType: CaptureDispatchRecord["destinationType"];
+  destination: string;
+  error: string;
+}) {
+  const manifest = await getCaptureManifest(input.captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  const now = new Date().toISOString();
+  const updated: CaptureManifest = {
+    ...manifest,
+    dispatch: {
+      status: "failed",
+      destinationType: input.destinationType,
+      destination: input.destination,
+      dispatchedAt: manifest.dispatch?.dispatchedAt ?? null,
+      result: manifest.dispatch?.result ?? null,
       error: input.error,
     },
     updatedAt: now,

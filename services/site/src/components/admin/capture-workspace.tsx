@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, FileText, LoaderCircle, Mic, MonitorUp, Radio, Square } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileText, LoaderCircle, Mic, MonitorUp, Radio, Send, Square } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -17,8 +17,29 @@ type CapturePayload = {
   ok?: boolean;
   error?: string;
   capture?: CaptureManifest;
+  captures?: CaptureManifest[];
   manifest?: CaptureManifest;
   chunk?: CaptureChunkRecord;
+  settings?: CaptureDispatchSettings;
+  dispatch?: unknown;
+};
+
+type CaptureDispatchSettings = {
+  destinationType: "none" | "prism-hook" | "external-http";
+  prismHookKey: string | null;
+  externalUrl: string | null;
+  externalHeaderName: string | null;
+  externalHeaderValue: string | null;
+  autoDispatchOnTranscript: boolean;
+};
+
+const defaultDispatchSettings: CaptureDispatchSettings = {
+  destinationType: "none",
+  prismHookKey: null,
+  externalUrl: null,
+  externalHeaderName: null,
+  externalHeaderValue: null,
+  autoDispatchOnTranscript: false,
 };
 
 type ChunkUploadState = {
@@ -87,9 +108,13 @@ export function CaptureWorkspace() {
   const [chunkSeconds, setChunkSeconds] = useState(300);
   const [audioBitsPerSecond, setAudioBitsPerSecond] = useState(64000);
   const [capture, setCapture] = useState<CaptureManifest | null>(null);
+  const [captures, setCaptures] = useState<CaptureManifest[]>([]);
+  const [dispatchSettings, setDispatchSettings] = useState<CaptureDispatchSettings>(defaultDispatchSettings);
   const [chunks, setChunks] = useState<ChunkUploadState[]>([]);
   const [status, setStatus] = useState<"idle" | "starting" | "recording" | "stopping" | "finalized">("idle");
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isDispatching, setIsDispatching] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -118,6 +143,10 @@ export function CaptureWorkspace() {
   }, []);
 
   useEffect(() => {
+    void refreshCaptures();
+  }, []);
+
+  useEffect(() => {
     if (status !== "recording" || !startedAt) return;
     const intervalId = window.setInterval(() => {
       setElapsedMs(Date.now() - startedAt);
@@ -141,6 +170,49 @@ export function CaptureWorkspace() {
       const without = current.filter((chunk) => chunk.index !== next.index);
       return [...without, next].sort((left, right) => left.index - right.index);
     });
+  }
+
+  function updateCaptureState(next: CaptureManifest) {
+    setCapture(next);
+    setCaptures((current) => {
+      const without = current.filter((item) => item.id !== next.id);
+      return [next, ...without].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+    });
+  }
+
+  async function refreshCaptures() {
+    try {
+      const response = await fetch("/admin/captures?limit=25");
+      const payload = await parseJsonResponse(response);
+      if (payload.captures) {
+        setCaptures(payload.captures);
+      }
+      if (payload.settings) {
+        setDispatchSettings(payload.settings);
+      }
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : "Could not load captures.");
+    }
+  }
+
+  async function saveDispatchSettings() {
+    setIsSavingSettings(true);
+    setError(null);
+    try {
+      const response = await fetch("/admin/captures/settings", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(dispatchSettings),
+      });
+      const payload = await parseJsonResponse(response);
+      if (payload.settings) {
+        setDispatchSettings(payload.settings);
+      }
+    } catch (settingsError) {
+      setError(settingsError instanceof Error ? settingsError.message : "Could not save capture settings.");
+    } finally {
+      setIsSavingSettings(false);
+    }
   }
 
   async function uploadChunk(input: {
@@ -180,7 +252,7 @@ export function CaptureWorkspace() {
       });
       const payload = await parseJsonResponse(response);
       if (payload.manifest) {
-        setCapture(payload.manifest);
+        updateCaptureState(payload.manifest);
       }
       upsertChunkState({
         index: input.index,
@@ -272,7 +344,7 @@ export function CaptureWorkspace() {
 
       const captureId = createPayload.capture.id;
       captureIdRef.current = captureId;
-      setCapture(createPayload.capture);
+      updateCaptureState(createPayload.capture);
       chunkIndexRef.current = 0;
       uploadPromisesRef.current = [];
       const now = Date.now();
@@ -362,7 +434,7 @@ export function CaptureWorkspace() {
       });
       const payload = await parseJsonResponse(response);
       if (payload.capture) {
-        setCapture(payload.capture);
+        updateCaptureState(payload.capture);
       }
       setStatus("finalized");
     } catch (finalizeError) {
@@ -382,13 +454,46 @@ export function CaptureWorkspace() {
       });
       const payload = await parseJsonResponse(response);
       if (payload.capture) {
-        setCapture(payload.capture);
+        updateCaptureState(payload.capture);
       }
     } catch (transcribeError) {
       setError(transcribeError instanceof Error ? transcribeError.message : "Could not transcribe capture.");
     } finally {
       setIsTranscribing(false);
     }
+  }
+
+  async function dispatchCapture() {
+    const captureId = capture?.id ?? captureIdRef.current;
+    if (!captureId) return;
+    setError(null);
+    setIsDispatching(true);
+    try {
+      const response = await fetch(`/admin/captures/${captureId}/dispatch`, {
+        method: "POST",
+      });
+      const payload = await parseJsonResponse(response);
+      if (payload.capture) {
+        updateCaptureState(payload.capture);
+      }
+    } catch (dispatchError) {
+      setError(dispatchError instanceof Error ? dispatchError.message : "Could not dispatch capture transcript.");
+    } finally {
+      setIsDispatching(false);
+    }
+  }
+
+  function selectCapture(next: CaptureManifest) {
+    setCapture(next);
+    captureIdRef.current = next.id;
+    setStatus(next.status === "finalized" ? "finalized" : "idle");
+    setChunks(next.chunks.map((chunk) => ({
+      index: chunk.index,
+      status: "uploaded",
+      sizeBytes: chunk.sizeBytes,
+      durationMs: chunk.durationMs,
+      error: null,
+    })));
   }
 
   return (
@@ -533,6 +638,16 @@ export function CaptureWorkspace() {
                 Transcribe
               </Button>
             ) : null}
+            {capture?.transcript?.status === "completed" ? (
+              <Button type="button" variant="outline" onClick={dispatchCapture} disabled={isDispatching}>
+                {isDispatching ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                Dispatch
+              </Button>
+            ) : null}
           </div>
 
           <div className="border border-border/70 bg-background p-4">
@@ -573,6 +688,37 @@ export function CaptureWorkspace() {
                 ))
               ) : (
                 <p className="text-sm text-muted-foreground">No chunks uploaded yet.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="border border-border/70 bg-background p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Recent captures</p>
+                <p className="text-xs text-muted-foreground">{captures.length} sessions on the site volume</p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={refreshCaptures}>
+                Refresh
+              </Button>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {captures.length ? (
+                captures.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => selectCapture(item)}
+                    className="grid gap-1 border border-border/60 px-3 py-2 text-left text-sm hover:bg-muted/30"
+                  >
+                    <span className="truncate font-medium">{item.title}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(item.startedAt).toLocaleString()} · {item.chunks.length} chunks · transcript {item.transcript?.status ?? "not run"}
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No stored captures found.</p>
               )}
             </div>
           </div>
@@ -627,10 +773,100 @@ export function CaptureWorkspace() {
                     <p className="break-all text-xs text-destructive">{capture.transcript.error}</p>
                   </div>
                 ) : null}
+                {capture.dispatch ? (
+                  <div>
+                    <p className="text-muted-foreground">Dispatch</p>
+                    <p className="break-all text-xs">
+                      {capture.dispatch.status} · {capture.dispatch.destinationType} · {capture.dispatch.destination}
+                    </p>
+                    {capture.dispatch.error ? (
+                      <p className="break-all text-xs text-destructive">{capture.dispatch.error}</p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <p className="mt-2 text-sm text-muted-foreground">No active capture.</p>
             )}
+          </div>
+
+          <div className="border border-border/70 bg-background p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Post Hook</p>
+            <div className="mt-3 grid gap-3 text-sm">
+              <div className="grid gap-1.5">
+                <Label htmlFor="capture-dispatch-type">Destination</Label>
+                <select
+                  id="capture-dispatch-type"
+                  value={dispatchSettings.destinationType}
+                  onChange={(event) => setDispatchSettings((current) => ({
+                    ...current,
+                    destinationType: event.target.value as CaptureDispatchSettings["destinationType"],
+                  }))}
+                  className="border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="none">None</option>
+                  <option value="prism-hook">Prism hook</option>
+                  <option value="external-http">External HTTP</option>
+                </select>
+              </div>
+              {dispatchSettings.destinationType === "prism-hook" ? (
+                <div className="grid gap-1.5">
+                  <Label htmlFor="capture-hook-key">Hook key</Label>
+                  <Input
+                    id="capture-hook-key"
+                    value={dispatchSettings.prismHookKey ?? ""}
+                    onChange={(event) => setDispatchSettings((current) => ({ ...current, prismHookKey: event.target.value }))}
+                    placeholder="meeting-transcript-memory-ingest"
+                  />
+                </div>
+              ) : null}
+              {dispatchSettings.destinationType === "external-http" ? (
+                <>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="capture-external-url">URL</Label>
+                    <Input
+                      id="capture-external-url"
+                      value={dispatchSettings.externalUrl ?? ""}
+                      onChange={(event) => setDispatchSettings((current) => ({ ...current, externalUrl: event.target.value }))}
+                      placeholder="https://example.com/webhook"
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="capture-external-header-name">Header name</Label>
+                    <Input
+                      id="capture-external-header-name"
+                      value={dispatchSettings.externalHeaderName ?? ""}
+                      onChange={(event) => setDispatchSettings((current) => ({ ...current, externalHeaderName: event.target.value }))}
+                      placeholder="Authorization"
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="capture-external-header-value">Header value</Label>
+                    <Input
+                      id="capture-external-header-value"
+                      type="password"
+                      value={dispatchSettings.externalHeaderValue ?? ""}
+                      onChange={(event) => setDispatchSettings((current) => ({ ...current, externalHeaderValue: event.target.value }))}
+                      placeholder="Bearer ..."
+                    />
+                  </div>
+                </>
+              ) : null}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">Auto-dispatch after transcript</span>
+                <Switch
+                  checked={dispatchSettings.autoDispatchOnTranscript}
+                  onCheckedChange={(checked) => setDispatchSettings((current) => ({
+                    ...current,
+                    autoDispatchOnTranscript: checked,
+                  }))}
+                />
+              </div>
+              <Button type="button" variant="outline" onClick={saveDispatchSettings} disabled={isSavingSettings}>
+                {isSavingSettings ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null}
+                Save Hook Config
+              </Button>
+            </div>
           </div>
         </aside>
       </section>

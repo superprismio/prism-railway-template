@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createCaptureSession } from "@/lib/app-core";
+import { createCaptureSession, listCaptureManifests, readCaptureDispatchSettings } from "@/lib/app-core";
 import { requireCapabilityAccess } from "@/lib/admin-auth";
 
 function parseRecord(value: unknown) {
@@ -42,4 +42,19 @@ export async function POST(request: Request) {
   });
 
   return NextResponse.json({ ok: true, capture: manifest }, { status: 201 });
+}
+
+export async function GET(request: Request) {
+  const access = await requireCapabilityAccess("canRunAgent");
+  if (!access.ok) {
+    return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
+  }
+
+  const url = new URL(request.url);
+  const limit = Number.parseInt(url.searchParams.get("limit") ?? "50", 10);
+  const [captures, settings] = await Promise.all([
+    listCaptureManifests(Number.isFinite(limit) ? limit : 50),
+    readCaptureDispatchSettings(),
+  ]);
+  return NextResponse.json({ ok: true, captures, settings });
 }

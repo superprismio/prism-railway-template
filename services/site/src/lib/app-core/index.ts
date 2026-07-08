@@ -41,17 +41,30 @@ export {
   createCaptureSession,
   finalizeCaptureSession,
   getCaptureManifest,
+  listCaptureManifests,
+  markCaptureDispatchCompleted,
+  markCaptureDispatchFailed,
+  markCaptureDispatchPending,
   markCaptureTranscriptFailed,
   markCaptureTranscriptPending,
+  readCaptureTranscriptFiles,
   resolveCaptureStoragePath,
   writeCaptureChunk,
   writeCaptureManifest,
   writeCaptureTranscriptFiles,
   type CaptureChunkRecord,
+  type CaptureDispatchRecord,
   type CaptureManifest,
   type CaptureTranscriptRecord,
 } from './capture-storage';
 export { transcribeCaptureSession } from './capture-transcription';
+export {
+  defaultCaptureDispatchSettings,
+  normalizeCaptureDispatchSettings,
+  readCaptureDispatchSettings,
+  writeCaptureDispatchSettings,
+  type CaptureDispatchSettings,
+} from './capture-settings';
 export {
   buildTaskScriptStoragePath,
   deleteTaskScriptFile,
