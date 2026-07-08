@@ -48,6 +48,7 @@ export {
   markCaptureTranscriptFailed,
   markCaptureTranscriptPending,
   readCaptureTranscriptFiles,
+  readCaptureTranscriptFile,
   resolveCaptureStoragePath,
   writeCaptureChunk,
   writeCaptureManifest,

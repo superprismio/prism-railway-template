@@ -295,6 +295,18 @@ export async function readCaptureTranscriptFiles(captureId: string) {
   };
 }
 
+export async function readCaptureTranscriptFile(captureId: string, format: "markdown" | "json") {
+  const transcript = await readCaptureTranscriptFiles(captureId);
+  return {
+    manifest: transcript.manifest,
+    content: format === "json"
+      ? Buffer.from(`${JSON.stringify(transcript.json, null, 2)}\n`, "utf8")
+      : Buffer.from(transcript.markdown, "utf8"),
+    mimeType: format === "json" ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8",
+    filename: format === "json" ? "transcript.json" : "transcript.md",
+  };
+}
+
 export async function writeCaptureTranscriptFiles(input: {
   captureId: string;
   jsonContent: string;

@@ -763,8 +763,25 @@ export function CaptureWorkspace() {
                 ) : null}
                 {capture.transcript?.transcriptMarkdownPath ? (
                   <div>
-                    <p className="text-muted-foreground">Transcript path</p>
-                    <p className="break-all font-mono text-xs">{capture.transcript.transcriptMarkdownPath}</p>
+                    <p className="text-muted-foreground">Transcript</p>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <a
+                        href={`/admin/captures/${capture.id}/transcript`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs underline underline-offset-4"
+                      >
+                        Markdown
+                      </a>
+                      <a
+                        href={`/admin/captures/${capture.id}/transcript?format=json`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs underline underline-offset-4"
+                      >
+                        JSON
+                      </a>
+                    </div>
                   </div>
                 ) : null}
                 {capture.transcript?.error ? (
