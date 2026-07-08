@@ -3,6 +3,7 @@ import {
   markCaptureDispatchCompleted,
   markCaptureDispatchFailed,
   markCaptureDispatchPending,
+  readCaptureSummaryFiles,
   readCaptureTranscriptFiles,
   type CaptureManifest,
 } from "./capture-storage";
@@ -16,6 +17,10 @@ type CaptureDispatchPayload = {
     markdown: string;
     json: unknown;
   };
+  summary: {
+    markdown: string;
+    json: unknown;
+  } | null;
 };
 
 function redactedSettings(settings: CaptureDispatchSettings) {
@@ -31,13 +36,21 @@ function redactedSettings(settings: CaptureDispatchSettings) {
 
 async function buildDispatchPayload(captureId: string): Promise<CaptureDispatchPayload> {
   const transcript = await readCaptureTranscriptFiles(captureId);
+  const summary = await readCaptureSummaryFiles(captureId).catch((error) => {
+    if (error instanceof Error && error.message === "CAPTURE_SUMMARY_NOT_READY") return null;
+    throw error;
+  });
   return {
     event: "capture.transcript.completed",
-    capture: transcript.manifest,
+    capture: summary?.manifest ?? transcript.manifest,
     transcript: {
       markdown: transcript.markdown,
       json: transcript.json,
     },
+    summary: summary ? {
+      markdown: summary.markdown,
+      json: summary.json,
+    } : null,
   };
 }
 

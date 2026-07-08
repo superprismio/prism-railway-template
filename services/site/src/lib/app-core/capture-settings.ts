@@ -12,12 +12,12 @@ export type CaptureDispatchSettings = {
 };
 
 export const defaultCaptureDispatchSettings: CaptureDispatchSettings = {
-  destinationType: "none",
-  prismHookKey: null,
+  destinationType: "prism-hook",
+  prismHookKey: "recording-transcript-completed",
   externalUrl: null,
   externalHeaderName: null,
   externalHeaderValue: null,
-  autoDispatchOnTranscript: false,
+  autoDispatchOnTranscript: true,
 };
 
 function settingsPath() {

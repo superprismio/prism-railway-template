@@ -113,6 +113,7 @@ export function CaptureWorkspace() {
   const [chunks, setChunks] = useState<ChunkUploadState[]>([]);
   const [status, setStatus] = useState<"idle" | "starting" | "recording" | "stopping" | "finalized">("idle");
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const [isDispatching, setIsDispatching] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -512,6 +513,26 @@ export function CaptureWorkspace() {
     }
   }
 
+  async function summarizeCapture() {
+    const captureId = capture?.id ?? captureIdRef.current;
+    if (!captureId) return;
+    setError(null);
+    setIsSummarizing(true);
+    try {
+      const response = await fetch(`/admin/captures/${captureId}/summary`, {
+        method: "POST",
+      });
+      const payload = await parseJsonResponse(response);
+      if (payload.capture) {
+        updateCaptureState(payload.capture);
+      }
+    } catch (summaryError) {
+      setError(summaryError instanceof Error ? summaryError.message : "Could not summarize capture.");
+    } finally {
+      setIsSummarizing(false);
+    }
+  }
+
   function selectCapture(next: CaptureManifest) {
     setCapture(next);
     captureIdRef.current = next.id;
@@ -668,6 +689,16 @@ export function CaptureWorkspace() {
               </Button>
             ) : null}
             {capture?.transcript?.status === "completed" ? (
+              <Button type="button" variant="outline" onClick={summarizeCapture} disabled={isSummarizing}>
+                {isSummarizing ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4" />
+                )}
+                Summarize
+              </Button>
+            ) : null}
+            {capture?.transcript?.status === "completed" ? (
               <Button type="button" variant="outline" onClick={dispatchCapture} disabled={isDispatching}>
                 {isDispatching ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -742,7 +773,7 @@ export function CaptureWorkspace() {
                   >
                     <span className="truncate font-medium">{item.title}</span>
                     <span className="text-xs text-muted-foreground">
-                      {new Date(item.startedAt).toLocaleString()} · {item.chunks.length} chunks · transcript {item.transcript?.status ?? "not run"}
+                      {new Date(item.startedAt).toLocaleString()} · {item.chunks.length} chunks · transcript {item.transcript?.status ?? "not run"} · summary {item.summary?.status ?? "not run"}
                     </span>
                   </button>
                 ))
@@ -781,6 +812,10 @@ export function CaptureWorkspace() {
                   <span>{capture.transcript?.status ?? "not run"}</span>
                 </div>
                 <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Summary</span>
+                  <span>{capture.summary?.status ?? "not run"}</span>
+                </div>
+                <div className="flex justify-between gap-3">
                   <span className="text-muted-foreground">Started</span>
                   <span>{new Date(capture.startedAt).toLocaleTimeString()}</span>
                 </div>
@@ -817,6 +852,35 @@ export function CaptureWorkspace() {
                   <div>
                     <p className="text-muted-foreground">Transcript error</p>
                     <p className="break-all text-xs text-destructive">{capture.transcript.error}</p>
+                  </div>
+                ) : null}
+                {capture.summary?.summaryMarkdownPath ? (
+                  <div>
+                    <p className="text-muted-foreground">Summary</p>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <a
+                        href={`/admin/captures/${capture.id}/summary`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs underline underline-offset-4"
+                      >
+                        Markdown
+                      </a>
+                      <a
+                        href={`/admin/captures/${capture.id}/summary?format=json`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs underline underline-offset-4"
+                      >
+                        JSON
+                      </a>
+                    </div>
+                  </div>
+                ) : null}
+                {capture.summary?.error ? (
+                  <div>
+                    <p className="text-muted-foreground">Summary error</p>
+                    <p className="break-all text-xs text-destructive">{capture.summary.error}</p>
                   </div>
                 ) : null}
                 {capture.dispatch ? (
@@ -862,7 +926,7 @@ export function CaptureWorkspace() {
                     id="capture-hook-key"
                     value={dispatchSettings.prismHookKey ?? ""}
                     onChange={(event) => setDispatchSettings((current) => ({ ...current, prismHookKey: event.target.value }))}
-                    placeholder="meeting-transcript-memory-ingest"
+                    placeholder="recording-transcript-completed"
                   />
                 </div>
               ) : null}

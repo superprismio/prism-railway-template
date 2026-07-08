@@ -37,6 +37,7 @@ export {
 } from './request-artifact-storage';
 export {
   captureStorageRoot,
+  captureSummaryStoragePaths,
   captureTranscriptStoragePaths,
   createCaptureSession,
   finalizeCaptureSession,
@@ -45,20 +46,27 @@ export {
   markCaptureDispatchCompleted,
   markCaptureDispatchFailed,
   markCaptureDispatchPending,
+  markCaptureSummaryFailed,
+  markCaptureSummaryPending,
   markCaptureTranscriptFailed,
   markCaptureTranscriptPending,
+  readCaptureSummaryFiles,
+  readCaptureSummaryFile,
   readCaptureTranscriptFiles,
   readCaptureTranscriptFile,
   resolveCaptureStoragePath,
   writeCaptureChunk,
   writeCaptureManifest,
+  writeCaptureSummaryFiles,
   writeCaptureTranscriptFiles,
   type CaptureChunkRecord,
   type CaptureDispatchRecord,
   type CaptureManifest,
+  type CaptureSummaryRecord,
   type CaptureTranscriptRecord,
 } from './capture-storage';
 export { transcribeCaptureChunk, transcribeCaptureSession } from './capture-transcription';
+export { summarizeCaptureSession, type CaptureSummary } from './capture-summary';
 export {
   defaultCaptureDispatchSettings,
   normalizeCaptureDispatchSettings,

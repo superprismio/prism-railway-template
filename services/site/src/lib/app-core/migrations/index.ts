@@ -24,6 +24,7 @@ import { requestHumanHoursEstimateMigration } from './024_request_human_hours_es
 import { agentRunQueueFieldsMigration } from './025_agent_run_queue_fields';
 import { skillSourcesMigration } from './026_skill_sources';
 import { simpleChangeRequestReviewGateMigration } from './027_simple_change_request_review_gate';
+import { recordingTranscriptWorkflowMigration } from './028_recording_transcript_workflow';
 
 export interface Migration {
   name: string;
@@ -57,4 +58,5 @@ export const migrations: Migration[] = [
   agentRunQueueFieldsMigration,
   skillSourcesMigration,
   simpleChangeRequestReviewGateMigration,
+  recordingTranscriptWorkflowMigration,
 ];

@@ -221,6 +221,67 @@ Coverage: 00:00-25:00 transcribed. Latest chunk is still processing.
 Speaker labels in rolling recap should be conservative. Use diarized labels like
 `Speaker 1` until the platform or an operator confirms real names.
 
+## Default Summary Contract
+
+Use the current Discord-native meeting synthesis prompt as the default summary
+contract, but move ownership out of the source adapter. Browser capture and
+Discord-native recording should hand transcript artifacts to the same synthesis
+workflow shape.
+
+Default synthesis behavior:
+
+- act as a meeting synthesis assistant for Prism
+- return valid JSON only, with no markdown fences or commentary
+- summarize the transcript
+- extract action items, notable quotes, and tags
+- handle mixed transcript sources, including spoken segments and platform chat
+  messages
+- include meeting metadata in the prompt: title/name, source location, started
+  time, ended time, participants, and operator notes when available
+- cap direct transcript context to a bounded window, with long meetings handled
+  by rolling or hierarchical summaries
+
+Default JSON schema:
+
+```json
+{
+  "title": "descriptive title",
+  "tldr": "short summary",
+  "summary": "detailed summary",
+  "actionItems": [
+    {
+      "name": "string",
+      "description": "string",
+      "assignedTo": "string or null",
+      "dueDate": "YYYY-MM-DD or null",
+      "params": {}
+    }
+  ],
+  "notableQuotes": [
+    {
+      "author": "string",
+      "quote": "string",
+      "paraphrase": "string"
+    }
+  ],
+  "tags": ["tag-1", "tag-2", "tag-3"]
+}
+```
+
+Default markdown rendering should stay stable across browser and Discord
+recordings:
+
+- heading from `title`
+- session/source metadata
+- TL;DR
+- Summary
+- Action Items
+- Notable Quotes
+
+This contract is intentionally generic. Instance-specific steering should live
+in workflow config, hook payload fields, or workspace policy, not hard-coded in
+the recorder.
+
 ## Headless Browser And Meeting Bots
 
 A hosted headless browser is not the first-choice solution for Zoom, Meet, or
@@ -308,8 +369,9 @@ For v1, transcription and rolling summary should happen as part of the capture
 pipeline, not only inside a request workflow. The request workflow is better as
 the handoff/review layer after useful transcript artifacts already exist.
 
-Create a reusable hook, tentatively `media-ingest`, that accepts capture
-artifacts and creates or links a request workflow.
+Create a reusable hook, `recording-transcript-completed`, that accepts capture
+artifacts and creates or links a request workflow. The default workflow is
+`recording-transcript-review-publish`.
 
 Inputs:
 
@@ -351,7 +413,7 @@ capture-start
   -> update rolling transcript
   -> update rolling summary
   -> capture-finalize
-  -> trigger media-ingest hook
+  -> trigger recording-transcript-completed hook
   -> request review workflow
   -> memory-ingest / portal-publish / delivery
 ```
@@ -470,7 +532,7 @@ PRISM_CAPTURE_MAX_BYTES=...
 PRISM_CAPTURE_MAX_DURATION_SECONDS=...
 PRISM_CAPTURE_UPLOAD_CHUNK_SECONDS=300
 PRISM_CAPTURE_AUDIO_BITS_PER_SECOND=64000
-PRISM_CAPTURE_HOOK_KEY=media-ingest
+PRISM_CAPTURE_HOOK_KEY=recording-transcript-completed
 PRISM_CAPTURE_ALLOWED_MODES=tab-audio,mic,screen-video
 PRISM_CAPTURE_DEFAULT_MEMORY_MODE=review
 PRISM_CAPTURE_LIVE_RECAP_ENABLED=true
@@ -538,8 +600,8 @@ and privacy risk from raw meeting audio.
    `operator-notes.md`.
 6. Expose a "recap so far" view that reads rolling transcript and summary
    artifacts.
-7. Trigger a media-ingest hook on finalize with transcript and summary artifact
-   ids.
+7. Trigger `recording-transcript-completed` on finalize with transcript and
+   summary artifact ids.
 8. The hook creates or links a request workflow for review and downstream
    routing.
 9. Review before Prism Memory or Portal publication.
@@ -547,14 +609,15 @@ and privacy risk from raw meeting audio.
 ## Migration From Adapter-Owned Transcription
 
 Keep existing adapter-owned transcription/summary behavior during migration.
-Mark it as legacy once `media-ingest` can process the same audio artifacts.
+Mark it as legacy once `recording-transcript-completed` and the shared recording
+workflow can process the same transcript artifacts.
 
 Target migration:
 
 1. Adapter captures or fetches audio bytes.
 2. Adapter hands bytes or source URL to Site.
 3. Site stores capture/session files and kicks off the same capture pipeline or
-   media-ingest hook.
+   `recording-transcript-completed` hook.
 4. Capture pipeline produces transcript/summary artifacts.
 5. Adapter only delivers approved outputs back to source platforms.
 
@@ -573,8 +636,19 @@ uploaded files, Telegram voice notes, and future Portal session recordings.
 - Raw media retention should be temporary by default: keep raw chunks until
   transcript/review unless configured otherwise.
 - Memory ingest should remain review-gated.
-- Request linkage should happen through the media-ingest hook. Capture can run
-  first, then the hook creates or links the request with transcript artifacts.
+- Request linkage should happen through `recording-transcript-completed`.
+  Capture can run first, then the hook creates or links the request with
+  transcript artifacts.
+- Default summary generation should reuse the existing Discord-native synthesis
+  schema: title, TL;DR, summary, action items, notable quotes, and tags.
+- Recorder services should not own hard-coded recap steering. They should pass
+  source metadata, transcript artifacts, and optional operator notes into the
+  workflow.
+- The built-in hook key is `recording-transcript-completed`.
+- The built-in workflow key is `recording-transcript-review-publish`.
+- The built-in workflow is automated by default and has no operator gate. It
+  creates summary and downstream plan artifacts but does not publish to Prism
+  Memory, Portal, or outbound channels directly.
 - Consent/disclaimer copy is deferred for v1.
 
 ## Open Questions
