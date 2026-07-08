@@ -98,35 +98,29 @@ with kind `memory-ingest-plan` and include:
 - the reason it was not written
 - that raw transcript ingest is intentionally skipped by default
 
-Resolve Portal publishing when the payload includes Portal/session intent,
-Portal links, Discord scheduled event metadata, or workspace-specific Portal
-instructions.
+Create `downstream-publish-plan.json` with kind `downstream-publish-plan`.
 
-Preferred order:
+This template workflow should not call workspace-specific publishing systems.
+Instead, produce a generic handoff plan that an instance custom workflow, custom
+skill, or secondary hook can consume.
 
-1. Use an explicit Portal session id or URL from the payload.
-2. Match an existing Portal session by Discord scheduled event id.
-3. Match an existing recurring Portal session by scheduled event name, channel,
-   planned time window, or recurrence metadata.
-4. Create a Portal session only when payload/workspace policy allows automatic
-   creation.
-5. Otherwise create a plan artifact.
+Include:
 
-When publishing to Portal succeeds, create `portal-publish-result.json` with kind
-`portal-publish-result` and include the target session, artifacts attached, and
-links. Attach the meeting summary and structured summary JSON by default. Attach
-the raw transcript only when policy allows it or the payload explicitly requests
-it.
-
-When Portal publishing cannot be completed, create `portal-publish-plan.json`
-with kind `portal-publish-plan` and include:
-
-- whether Portal publishing is recommended
-- whether a new Portal session should be created
-- the matching evidence from Discord scheduled event or recurrence metadata
-- whether external notification is recommended
-- which transcript or summary artifacts should be shared
+- whether downstream publishing is recommended
+- candidate external session/resource ids and URLs from the payload
+- matching evidence from source event metadata, channel, title, and time window
+- whether a follow-up instance workflow or hook should run
+- which summary/transcript artifacts should be shared
 - what should remain private
+- whether raw transcript sharing is explicitly allowed
+- any source metadata that would help an instance-specific workflow reconcile
+  duplicates
+
+For Discord-native recordings, inspect `discord.scheduledEventID`,
+`discord.scheduledEvent`, `discord.channelID`, `discord.channelName`,
+`recording.startedAt`, and `recording.endedAt` and include those fields in the
+handoff plan. Do not assume a workspace-specific API, session model, recurrence
+model, or agenda creation capability exists in the template.
 
 ## Rules
 
@@ -138,8 +132,8 @@ with kind `portal-publish-plan` and include:
 - Do not promote the raw transcript to Prism Memory by default.
 - Do not send Discord, Telegram, or email notifications directly unless the
   payload or workspace policy explicitly enables delivery.
-- Portal behavior is instance-configurable. Use payload metadata and available
-  Portal tools instead of hard-coding RaidGuild-specific rules in the adapter.
+- Workspace-specific publishing behavior belongs in instance custom workflows,
+  skills, hooks, or adapters, not in this template workflow.
 - If the transcript is missing, empty, or unsafe to summarize, create
   `recording-synthesis-blocked.md` explaining the blocker and finish with a clear
   blocked summary.

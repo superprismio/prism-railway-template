@@ -26,6 +26,7 @@ import { skillSourcesMigration } from './026_skill_sources';
 import { simpleChangeRequestReviewGateMigration } from './027_simple_change_request_review_gate';
 import { recordingTranscriptWorkflowMigration } from './028_recording_transcript_workflow';
 import { recordingTranscriptPortalMemoryMigration } from './029_recording_transcript_portal_memory';
+import { recordingWorkflowDownstreamHandoffMigration } from './030_recording_workflow_downstream_handoff';
 
 export interface Migration {
   name: string;
@@ -61,4 +62,5 @@ export const migrations: Migration[] = [
   simpleChangeRequestReviewGateMigration,
   recordingTranscriptWorkflowMigration,
   recordingTranscriptPortalMemoryMigration,
+  recordingWorkflowDownstreamHandoffMigration,
 ];

@@ -8,8 +8,7 @@ The default flow is automated:
 - read the hook payload artifact
 - synthesize the transcript into durable meeting artifacts
 - promote the meeting summary to Prism Memory when the Memory write path is configured
-- resolve or prepare Portal session publishing from the recording context
-- prepare delivery artifacts or plans
+- prepare downstream publishing, delivery, and handoff artifacts or plans
 - close without an operator gate
 
 The recorder service owns capture and transcription. This workflow owns meeting
@@ -17,19 +16,28 @@ meaning, summary shape, and downstream publishing. Do not publish raw private
 transcripts directly unless the payload or workspace policy explicitly says that
 automatic publication is allowed.
 
-## Portal Session Contract
+## Downstream Handoff Contract
 
-When the payload includes Discord scheduled event metadata, Portal session links,
-or workspace-specific Portal instructions, use that context to resolve the target
-Portal session. Prefer attaching to an existing matching session. If the payload
-or workspace policy allows automatic creation and no match exists, create the
-Portal session and attach the durable summary artifacts. If Portal credentials,
-tools, or target context are missing, create a `portal-publish-plan.json`
-artifact that explains the intended match/create action.
+This template workflow should not know about workspace-specific publishing
+systems. Its job is to create durable recording artifacts and a generic
+downstream handoff that instance-specific workflows, skills, hooks, or adapters
+can consume.
 
-This workflow should support instance-specific Portal behavior through payload
-metadata and operator-editable workflow instructions. Do not hard-code a single
-community's Portal session rules into the adapter.
+When the payload includes external session/resource hints, scheduled event
+metadata, source links, or workspace policy flags, create a
+`downstream-publish-plan.json` artifact with:
+
+- candidate external session/resource identifiers and URLs from the payload
+- matching evidence from source event metadata, channel, title, and time window
+- summary/transcript artifacts recommended for downstream publication
+- whether raw transcript sharing is allowed or should stay private
+- whether a follow-up instance workflow or hook should be triggered
+
+If an instance has a custom post-recording workflow for publishing, recurrence,
+or agenda behavior, keep that behavior there or in an instance custom skill. The
+recording-complete hook can either point to this built-in for generic
+summary/Memory handling or continue pointing to the custom workflow when the
+instance needs workspace-specific actions in the same request.
 
 ## Memory Contract
 
