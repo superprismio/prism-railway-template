@@ -22,6 +22,7 @@ type CapturePayload = {
   chunk?: CaptureChunkRecord;
   settings?: CaptureDispatchSettings;
   dispatch?: unknown;
+  recap?: unknown;
 };
 
 type CaptureDispatchSettings = {
@@ -114,6 +115,7 @@ export function CaptureWorkspace() {
   const [status, setStatus] = useState<"idle" | "starting" | "recording" | "stopping" | "finalized">("idle");
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [isRecapping, setIsRecapping] = useState(false);
   const [isDispatching, setIsDispatching] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -137,6 +139,8 @@ export function CaptureWorkspace() {
   const failedCount = chunks.filter((chunk) => chunk.status === "failed").length;
   const totalBytes = chunks.reduce((sum, chunk) => sum + chunk.sizeBytes, 0);
   const uploadProgress = chunks.length ? Math.round((uploadedCount / chunks.length) * 100) : 0;
+  const hasTranscriptChunks = Boolean(capture?.transcript?.status === "completed")
+    || Boolean(capture?.chunks.some((chunk) => chunk.transcript?.status === "completed"));
 
   useEffect(() => {
     setIsBrowserReady(
@@ -533,6 +537,28 @@ export function CaptureWorkspace() {
     }
   }
 
+  async function recapCapture() {
+    const captureId = capture?.id ?? captureIdRef.current;
+    if (!captureId) return;
+    setError(null);
+    setIsRecapping(true);
+    try {
+      const response = await fetch(`/admin/captures/${captureId}/recap`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ steering: notes }),
+      });
+      const payload = await parseJsonResponse(response);
+      if (payload.capture) {
+        updateCaptureState(payload.capture);
+      }
+    } catch (recapError) {
+      setError(recapError instanceof Error ? recapError.message : "Could not create capture recap.");
+    } finally {
+      setIsRecapping(false);
+    }
+  }
+
   function selectCapture(next: CaptureManifest) {
     setCapture(next);
     captureIdRef.current = next.id;
@@ -698,6 +724,16 @@ export function CaptureWorkspace() {
                 Summarize
               </Button>
             ) : null}
+            {hasTranscriptChunks ? (
+              <Button type="button" variant="outline" onClick={recapCapture} disabled={isRecapping}>
+                {isRecapping ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4" />
+                )}
+                Recap
+              </Button>
+            ) : null}
             {capture?.transcript?.status === "completed" ? (
               <Button type="button" variant="outline" onClick={dispatchCapture} disabled={isDispatching}>
                 {isDispatching ? (
@@ -774,6 +810,7 @@ export function CaptureWorkspace() {
                     <span className="truncate font-medium">{item.title}</span>
                     <span className="text-xs text-muted-foreground">
                       {new Date(item.startedAt).toLocaleString()} · {item.chunks.length} chunks · transcript {item.transcript?.status ?? "not run"} · summary {item.summary?.status ?? "not run"}
+                      {item.recap?.status ? ` · recap ${item.recap.status}` : ""}
                     </span>
                   </button>
                 ))
@@ -814,6 +851,10 @@ export function CaptureWorkspace() {
                 <div className="flex justify-between gap-3">
                   <span className="text-muted-foreground">Summary</span>
                   <span>{capture.summary?.status ?? "not run"}</span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Recap</span>
+                  <span>{capture.recap?.status ?? "not run"}</span>
                 </div>
                 <div className="flex justify-between gap-3">
                   <span className="text-muted-foreground">Started</span>
@@ -881,6 +922,35 @@ export function CaptureWorkspace() {
                   <div>
                     <p className="text-muted-foreground">Summary error</p>
                     <p className="break-all text-xs text-destructive">{capture.summary.error}</p>
+                  </div>
+                ) : null}
+                {capture.recap?.recapMarkdownPath ? (
+                  <div>
+                    <p className="text-muted-foreground">Recap</p>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      <a
+                        href={`/admin/captures/${capture.id}/recap`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs underline underline-offset-4"
+                      >
+                        Markdown
+                      </a>
+                      <a
+                        href={`/admin/captures/${capture.id}/recap?format=json`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs underline underline-offset-4"
+                      >
+                        JSON
+                      </a>
+                    </div>
+                  </div>
+                ) : null}
+                {capture.recap?.error ? (
+                  <div>
+                    <p className="text-muted-foreground">Recap error</p>
+                    <p className="break-all text-xs text-destructive">{capture.recap.error}</p>
                   </div>
                 ) : null}
                 {capture.dispatch ? (

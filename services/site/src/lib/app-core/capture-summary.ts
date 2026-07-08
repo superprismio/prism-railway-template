@@ -75,10 +75,11 @@ function runtimeResponseText(payload: RuntimeResponsePayload | null | undefined)
       : "";
 }
 
-async function codexRuntimeRequest(input: {
+export async function codexRuntimeRequest(input: {
   prompt: string;
   captureId: string;
   metadata: Record<string, unknown>;
+  sessionId?: string;
 }) {
   const config = loadConfig();
   if (!config.codexRuntimeBaseUrl) {
@@ -87,7 +88,7 @@ async function codexRuntimeRequest(input: {
 
   const runtimeInput = {
     prompt: input.prompt,
-    sessionId: `capture-summary-${input.captureId}`,
+    sessionId: input.sessionId ?? `capture-summary-${input.captureId}`,
     codexThreadId: null,
     recentHistory: [],
     metadata: input.metadata,
@@ -159,7 +160,7 @@ async function codexRuntimeRequest(input: {
   return text;
 }
 
-function safeJsonParse(input: string) {
+export function safeJsonParse(input: string) {
   const cleaned = input
     .replace(/^\s*```(?:json)?\s*/i, "")
     .replace(/\s*```\s*$/i, "")

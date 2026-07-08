@@ -36,6 +36,16 @@ export type CaptureSummaryRecord = {
   error: string | null;
 };
 
+export type CaptureRecapRecord = {
+  status: "pending" | "completed" | "failed";
+  recapJsonPath: string | null;
+  recapMarkdownPath: string | null;
+  generatedAt: string | null;
+  transcriptGeneratedAt: string | null;
+  transcriptChunks: number;
+  error: string | null;
+};
+
 export type CaptureDispatchRecord = {
   status: "pending" | "completed" | "failed";
   destinationType: "prism-hook" | "external-http";
@@ -62,6 +72,7 @@ export type CaptureManifest = {
   chunks: CaptureChunkRecord[];
   transcript: CaptureTranscriptRecord | null;
   summary: CaptureSummaryRecord | null;
+  recap: CaptureRecapRecord | null;
   dispatch: CaptureDispatchRecord | null;
   updatedAt: string;
 };
@@ -140,6 +151,13 @@ export function captureSummaryStoragePaths(captureId: string) {
   };
 }
 
+export function captureRecapStoragePaths(captureId: string) {
+  return {
+    json: path.join(captureSessionStoragePath(captureId), "recaps", "latest.json"),
+    markdown: path.join(captureSessionStoragePath(captureId), "recaps", "latest.md"),
+  };
+}
+
 export async function getCaptureManifest(captureId: string) {
   try {
     const content = await fs.readFile(resolveCaptureStoragePath(manifestStoragePath(captureId)), "utf8");
@@ -148,6 +166,7 @@ export async function getCaptureManifest(captureId: string) {
       ? {
           ...parsed,
           summary: parsed.summary ?? null,
+          recap: parsed.recap ?? null,
           dispatch: parsed.dispatch ?? null,
           transcript: parsed.transcript ?? null,
           chunks: Array.isArray(parsed.chunks) ? parsed.chunks : [],
@@ -207,6 +226,7 @@ export async function createCaptureSession(input: {
     chunks: [],
     transcript: null,
     summary: null,
+    recap: null,
     dispatch: null,
     updatedAt: now,
   };
@@ -330,6 +350,29 @@ export async function markCaptureSummaryPending(captureId: string) {
   return updated;
 }
 
+export async function markCaptureRecapPending(captureId: string) {
+  const manifest = await getCaptureManifest(captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  const now = new Date().toISOString();
+  const updated: CaptureManifest = {
+    ...manifest,
+    recap: {
+      status: "pending",
+      recapJsonPath: null,
+      recapMarkdownPath: null,
+      generatedAt: null,
+      transcriptGeneratedAt: null,
+      transcriptChunks: 0,
+      error: null,
+    },
+    updatedAt: now,
+  };
+  await writeCaptureManifest(updated);
+  return updated;
+}
+
 export async function updateCaptureChunkTranscript(input: {
   captureId: string;
   chunkIndex: number;
@@ -420,6 +463,39 @@ export async function readCaptureSummaryFile(captureId: string, format: "markdow
   };
 }
 
+export async function readCaptureRecapFiles(captureId: string) {
+  const manifest = await getCaptureManifest(captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  const jsonPath = manifest.recap?.recapJsonPath;
+  const markdownPath = manifest.recap?.recapMarkdownPath;
+  if (!jsonPath || !markdownPath || manifest.recap?.status !== "completed") {
+    throw new Error("CAPTURE_RECAP_NOT_READY");
+  }
+  const [jsonContent, markdownContent] = await Promise.all([
+    fs.readFile(resolveCaptureStoragePath(jsonPath), "utf8"),
+    fs.readFile(resolveCaptureStoragePath(markdownPath), "utf8"),
+  ]);
+  return {
+    manifest,
+    json: JSON.parse(jsonContent) as unknown,
+    markdown: markdownContent,
+  };
+}
+
+export async function readCaptureRecapFile(captureId: string, format: "markdown" | "json") {
+  const recap = await readCaptureRecapFiles(captureId);
+  return {
+    manifest: recap.manifest,
+    content: format === "json"
+      ? Buffer.from(`${JSON.stringify(recap.json, null, 2)}\n`, "utf8")
+      : Buffer.from(recap.markdown, "utf8"),
+    mimeType: format === "json" ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8",
+    filename: format === "json" ? "recap.json" : "recap.md",
+  };
+}
+
 export async function writeCaptureTranscriptFiles(input: {
   captureId: string;
   jsonContent: string;
@@ -498,6 +574,47 @@ export async function writeCaptureSummaryFiles(input: {
   return updated;
 }
 
+export async function writeCaptureRecapFiles(input: {
+  captureId: string;
+  jsonContent: string;
+  markdownContent: string;
+  transcriptGeneratedAt: string | null;
+  transcriptChunks: number;
+}) {
+  const manifest = await getCaptureManifest(input.captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+
+  const paths = captureRecapStoragePaths(input.captureId);
+  const resolvedJson = resolveCaptureStoragePath(paths.json);
+  const resolvedMarkdown = resolveCaptureStoragePath(paths.markdown);
+  await fs.mkdir(path.dirname(resolvedJson), { recursive: true });
+  await fs.writeFile(resolvedJson, input.jsonContent.endsWith("\n") ? input.jsonContent : `${input.jsonContent}\n`, "utf8");
+  await fs.writeFile(
+    resolvedMarkdown,
+    input.markdownContent.endsWith("\n") ? input.markdownContent : `${input.markdownContent}\n`,
+    "utf8",
+  );
+
+  const now = new Date().toISOString();
+  const updated: CaptureManifest = {
+    ...manifest,
+    recap: {
+      status: "completed",
+      recapJsonPath: paths.json,
+      recapMarkdownPath: paths.markdown,
+      generatedAt: now,
+      transcriptGeneratedAt: input.transcriptGeneratedAt,
+      transcriptChunks: Math.max(0, Math.trunc(input.transcriptChunks)),
+      error: null,
+    },
+    updatedAt: now,
+  };
+  await writeCaptureManifest(updated);
+  return updated;
+}
+
 export async function writeCaptureChunkTranscriptFiles(input: {
   captureId: string;
   chunkIndex: number;
@@ -559,6 +676,32 @@ export async function markCaptureSummaryFailed(input: {
       summaryJsonPath: manifest.summary?.summaryJsonPath ?? null,
       summaryMarkdownPath: manifest.summary?.summaryMarkdownPath ?? null,
       generatedAt: manifest.summary?.generatedAt ?? null,
+      error: input.error,
+    },
+    updatedAt: now,
+  };
+  await writeCaptureManifest(updated);
+  return updated;
+}
+
+export async function markCaptureRecapFailed(input: {
+  captureId: string;
+  error: string;
+}) {
+  const manifest = await getCaptureManifest(input.captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  const now = new Date().toISOString();
+  const updated: CaptureManifest = {
+    ...manifest,
+    recap: {
+      status: "failed",
+      recapJsonPath: manifest.recap?.recapJsonPath ?? null,
+      recapMarkdownPath: manifest.recap?.recapMarkdownPath ?? null,
+      generatedAt: manifest.recap?.generatedAt ?? null,
+      transcriptGeneratedAt: manifest.recap?.transcriptGeneratedAt ?? null,
+      transcriptChunks: manifest.recap?.transcriptChunks ?? 0,
       error: input.error,
     },
     updatedAt: now,
