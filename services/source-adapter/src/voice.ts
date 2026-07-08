@@ -95,6 +95,7 @@ export type RecordingSessionMetadata = {
   channelId: string;
   guildId: string;
   scheduledEventId?: string | null;
+  scheduledEvent?: ScheduledEventMetadata | null;
   speakers: SpeakerMetadata[];
   participants: ParticipantPresence[];
   timingEvents?: VoiceTimingEvent[];
@@ -114,6 +115,18 @@ export type RecordingSessionMetadata = {
     prismMemoryTranscriptPath?: string;
     prismMemorySummaryPath?: string;
   };
+};
+
+type ScheduledEventMetadata = {
+  id: string;
+  name: string | null;
+  description: string | null;
+  status: string | number | null;
+  scheduledStartAt: string | null;
+  scheduledEndAt: string | null;
+  channelId: string | null;
+  entityType: string | number | null;
+  recurrenceRule: unknown | null;
 };
 
 export type StopRecordingResult = {
@@ -231,6 +244,7 @@ type RecordingSession = {
   channelId: string;
   channelName: string;
   scheduledEventId?: string | null;
+  scheduledEvent?: ScheduledEventMetadata | null;
   announcementChannel: TextBasedChannel | null;
   startedAt: number;
   rootDir: string;
@@ -255,6 +269,7 @@ type PersistedRecordingSession = {
   channelId: string;
   channelName: string;
   scheduledEventId?: string | null;
+  scheduledEvent?: ScheduledEventMetadata | null;
   startedAt: string;
   participants?: Array<{
     userId: string;
@@ -452,6 +467,7 @@ export class DiscordVoiceManager {
       channelId: session.channelId,
       channelName: session.channelName,
       scheduledEventId: session.scheduledEventId ?? null,
+      scheduledEvent: session.scheduledEvent ?? null,
       startedAt: isoTimestamp(session.startedAt),
       participants: [...session.participants.values()].map((participant) => ({
         userId: participant.userId,
@@ -553,7 +569,31 @@ export class DiscordVoiceManager {
     return state;
   }
 
-  private async resolveScheduledEventId(guild: Guild, channelId: string, atMs = Date.now()): Promise<string | null> {
+  private scheduledEventMetadata(event: {
+    id: string;
+    name?: string | null;
+    description?: string | null;
+    status?: string | number | null;
+    scheduledStartTimestamp?: number | null;
+    scheduledEndTimestamp?: number | null;
+    channelId?: string | null;
+    entityType?: string | number | null;
+    recurrenceRule?: unknown;
+  }): ScheduledEventMetadata {
+    return {
+      id: event.id,
+      name: event.name ?? null,
+      description: event.description ?? null,
+      status: event.status ?? null,
+      scheduledStartAt: event.scheduledStartTimestamp ? new Date(event.scheduledStartTimestamp).toISOString() : null,
+      scheduledEndAt: event.scheduledEndTimestamp ? new Date(event.scheduledEndTimestamp).toISOString() : null,
+      channelId: event.channelId ?? null,
+      entityType: event.entityType ?? null,
+      recurrenceRule: event.recurrenceRule ?? null,
+    };
+  }
+
+  private async resolveScheduledEvent(guild: Guild, channelId: string, atMs = Date.now()): Promise<ScheduledEventMetadata | null> {
     try {
       const scheduledEvents = await guild.scheduledEvents.fetch();
       const candidateEvents = [...scheduledEvents.values()]
@@ -576,7 +616,7 @@ export class DiscordVoiceManager {
         });
       const candidate = candidateEvents[0]?.event;
       if (candidate) {
-        return candidate.id;
+        return this.scheduledEventMetadata(candidate);
       }
       for (const event of scheduledEvents.values()) {
         if (event.channelId === channelId) {
@@ -626,12 +666,14 @@ export class DiscordVoiceManager {
     await fs.mkdir(flacDir, { recursive: true });
     await fs.mkdir(transcriptDir, { recursive: true });
 
+    const scheduledEvent = await this.resolveScheduledEvent(guild, channel.id);
     const session: RecordingSession = {
       sessionId,
       guildId: guild.id,
       channelId: channel.id,
       channelName: channel.name,
-      scheduledEventId: await this.resolveScheduledEventId(guild, channel.id),
+      scheduledEventId: scheduledEvent?.id ?? null,
+      scheduledEvent,
       announcementChannel: interaction.channel && interaction.channel.isSendable() ? interaction.channel : null,
       startedAt: Date.now(),
       rootDir,
@@ -992,6 +1034,7 @@ export class DiscordVoiceManager {
       channelId: candidate.channelId,
       channelName: candidate.channelName,
       scheduledEventId: candidate.scheduledEventId ?? null,
+      scheduledEvent: candidate.scheduledEvent ?? null,
       announcementChannel: null,
       startedAt: parseIsoDate(candidate.startedAt).getTime(),
       rootDir,
@@ -1463,6 +1506,7 @@ export class DiscordVoiceManager {
       channelId: session.channelId,
       guildId: session.guildId,
       scheduledEventId: session.scheduledEventId ?? null,
+      scheduledEvent: session.scheduledEvent ?? null,
       speakers,
       participants,
       timingEvents: session.timingEvents,
@@ -2348,6 +2392,7 @@ export class DiscordVoiceManager {
         threadID: null,
         messageID: null,
         scheduledEventID: metadata.scheduledEventId ?? null,
+        scheduledEvent: metadata.scheduledEvent ?? null,
         recordingStartedAt: startedAt,
         recordingEndedAt: endedAt,
       },

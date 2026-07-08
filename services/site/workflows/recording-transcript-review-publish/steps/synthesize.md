@@ -60,24 +60,70 @@ Use this schema:
 }
 ```
 
-Create `memory-ingest-plan.json` with kind `memory-ingest-plan`.
+Promote the summary to Prism Memory by default when the Memory write path is
+configured. Promote `meeting-summary.md`, not the raw transcript.
 
-Default to review-gated memory ingest:
+Use this Memory payload shape:
 
 ```json
 {
-  "mode": "review",
-  "recommendedArtifacts": ["meeting-summary.md"],
-  "avoidIngesting": ["raw private transcript unless explicitly approved"],
-  "rationale": "short rationale"
+  "source": "recording-transcript-workflow",
+  "type": "meeting_summary",
+  "bucket_hint": "meetings",
+  "content": "meeting-summary.md body",
+  "author": "Prism Recording Workflow",
+  "ts": "recording ended timestamp or current timestamp",
+  "metadata": {
+    "source_system": "browser-capture or discord-native or other",
+    "source_type": "meeting_summary",
+    "source_id": "recording/session id",
+    "request_id": "current request id if available",
+    "discord": "discord metadata if present",
+    "portal_session": "portal target/result if present",
+    "action_items": [],
+    "tags": [],
+    "visibility": "internal"
+  }
 }
 ```
 
-Create `portal-publish-plan.json` with kind `portal-publish-plan` when the
-payload includes Portal/session intent or links. Otherwise create
-`downstream-plan.json` with kind `downstream-plan` and include:
+Save `memory-ingest-result.json` with kind `memory-ingest-result` when the write
+succeeds. Include the Memory path and artifact URL when available.
+
+If Memory credentials or routes are unavailable, create `memory-ingest-plan.json`
+with kind `memory-ingest-plan` and include:
+
+- the exact summary artifact that should be promoted
+- the proposed Memory payload
+- the reason it was not written
+- that raw transcript ingest is intentionally skipped by default
+
+Resolve Portal publishing when the payload includes Portal/session intent,
+Portal links, Discord scheduled event metadata, or workspace-specific Portal
+instructions.
+
+Preferred order:
+
+1. Use an explicit Portal session id or URL from the payload.
+2. Match an existing Portal session by Discord scheduled event id.
+3. Match an existing recurring Portal session by scheduled event name, channel,
+   planned time window, or recurrence metadata.
+4. Create a Portal session only when payload/workspace policy allows automatic
+   creation.
+5. Otherwise create a plan artifact.
+
+When publishing to Portal succeeds, create `portal-publish-result.json` with kind
+`portal-publish-result` and include the target session, artifacts attached, and
+links. Attach the meeting summary and structured summary JSON by default. Attach
+the raw transcript only when policy allows it or the payload explicitly requests
+it.
+
+When Portal publishing cannot be completed, create `portal-publish-plan.json`
+with kind `portal-publish-plan` and include:
 
 - whether Portal publishing is recommended
+- whether a new Portal session should be created
+- the matching evidence from Discord scheduled event or recurrence metadata
 - whether external notification is recommended
 - which transcript or summary artifacts should be shared
 - what should remain private
@@ -89,8 +135,11 @@ payload includes Portal/session intent or links. Otherwise create
   or `Unknown` unless the payload gives confirmed names.
 - If a summary is already present in the payload, treat it as a draft. Correct it
   only with transcript evidence.
-- Do not publish to Prism Memory, Portal, Discord, Telegram, or email directly in
-  this default workflow.
+- Do not promote the raw transcript to Prism Memory by default.
+- Do not send Discord, Telegram, or email notifications directly unless the
+  payload or workspace policy explicitly enables delivery.
+- Portal behavior is instance-configurable. Use payload metadata and available
+  Portal tools instead of hard-coding RaidGuild-specific rules in the adapter.
 - If the transcript is missing, empty, or unsafe to summarize, create
   `recording-synthesis-blocked.md` explaining the blocker and finish with a clear
   blocked summary.

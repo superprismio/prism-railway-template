@@ -25,6 +25,7 @@ import { agentRunQueueFieldsMigration } from './025_agent_run_queue_fields';
 import { skillSourcesMigration } from './026_skill_sources';
 import { simpleChangeRequestReviewGateMigration } from './027_simple_change_request_review_gate';
 import { recordingTranscriptWorkflowMigration } from './028_recording_transcript_workflow';
+import { recordingTranscriptPortalMemoryMigration } from './029_recording_transcript_portal_memory';
 
 export interface Migration {
   name: string;
@@ -59,4 +60,5 @@ export const migrations: Migration[] = [
   skillSourcesMigration,
   simpleChangeRequestReviewGateMigration,
   recordingTranscriptWorkflowMigration,
+  recordingTranscriptPortalMemoryMigration,
 ];
