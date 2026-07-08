@@ -12,9 +12,9 @@ Meet, Microsoft Teams, browser tabs, livestreams, uploaded media, or future
 Portal session recordings.
 
 Add a Prism-owned browser capture and media-ingest flow that can record
-operator-selected browser media, store the recording as durable artifacts, and
-run a shared transcription, diarization, summary, review, and memory-ingest
-workflow.
+operator-selected browser media, store the recording as durable artifacts,
+produce rolling transcript and summary artifacts, and hand those artifacts to a
+hook that can create or link a request workflow.
 
 ## Core Idea
 
@@ -27,10 +27,13 @@ Admin opens Prism Site /capture
 browser records tab/screen audio, mic, optional video
         |
         v
-site stores recording + metadata as request artifacts
+site stores chunks, metadata, and transcript artifacts
         |
         v
-media-ingest workflow transcribes, summarizes, reviews, and routes output
+capture pipeline transcribes chunks and updates rolling summary artifacts
+        |
+        v
+media-ingest hook creates/links request workflow with transcript artifacts
         |
         +-- Prism Memory
         +-- request artifacts
@@ -38,8 +41,8 @@ media-ingest workflow transcribes, summarizes, reviews, and routes output
         +-- Discord/Telegram delivery when approved
 ```
 
-The browser recorder should be one capture source. The same media-ingest
-workflow should also handle Discord recorder output, uploaded audio/video files,
+The browser recorder should be one capture source. The same media-ingest hook
+contract should also handle Discord recorder output, uploaded audio/video files,
 Telegram voice notes, or future meeting bot recordings.
 
 ## Non-Goals
@@ -96,14 +99,15 @@ Metadata
 After stopping:
 
 ```text
-Recording saved
-- recording.webm
+Capture finalized
+- capture-manifest.json
 - capture-metadata.json
 - operator-notes.md
+- rolling-transcript.json
+- rolling-summary.md
 
-[Create media-ingest request]
-[Attach to existing request]
-[Start transcription]
+[Trigger media-ingest hook]
+[Attach/link request]
 ```
 
 ## Browser Capture Model
@@ -166,7 +170,7 @@ Example:
 
 The command can:
 
-- create a Prism request
+- optionally create or identify a Prism request
 - create a pending capture record
 - reply with a private/admin link to `/capture?request=<id>`
 - remind the admin that browser permission is required
@@ -298,17 +302,24 @@ Portal should consume approved outputs, not own raw capture in the first slice:
 Portal can later include a "Record session" button that deep-links into Prism
 Capture or calls Prism capture APIs behind the scenes.
 
-## Media-Ingest Workflow
+## Capture Pipeline And Media-Ingest Hook
 
-Create a reusable workflow, tentatively `media-ingest`, that accepts an audio or
-video artifact and produces durable downstream artifacts.
+For v1, transcription and rolling summary should happen as part of the capture
+pipeline, not only inside a request workflow. The request workflow is better as
+the handoff/review layer after useful transcript artifacts already exist.
+
+Create a reusable hook, tentatively `media-ingest`, that accepts capture
+artifacts and creates or links a request workflow.
 
 Inputs:
 
-- recording artifact id
+- capture id
+- capture manifest id
 - capture metadata
 - source platform and source ids when available
-- optional request id
+- transcript artifact ids
+- rolling summary artifact id
+- optional existing request id
 - operator notes
 - memory/Portal/publishing intent
 
@@ -336,11 +347,12 @@ Flow:
 ```text
 capture-start
   -> capture-chunk-upload
+  -> transcribe closed chunks
+  -> update rolling transcript
+  -> update rolling summary
   -> capture-finalize
-  -> transcribe
-  -> diarize optional
-  -> summarize
-  -> review
+  -> trigger media-ingest hook
+  -> request review workflow
   -> memory-ingest / portal-publish / delivery
 ```
 
@@ -350,7 +362,8 @@ summary, or none of the output goes to Prism Memory or Portal.
 ### Hook Payloads
 
 Capture should trigger hooks rather than hard-wire transcription into the upload
-route.
+route. Chunk uploads may trigger internal capture-pipeline work for rolling
+transcription, while finalization should trigger the external media-ingest hook.
 
 On chunk upload:
 
@@ -382,8 +395,9 @@ On finalize:
 }
 ```
 
-The hook can create or advance a `media-ingest` request. For v1, memory ingest
-should remain review-gated and never automatic.
+The hook should create a request when one is not already linked, or attach the
+capture transcript artifacts to an existing request when `requestId` is provided.
+For v1, memory ingest should remain review-gated and never automatic.
 
 ### Capture Session Files Versus Request Artifacts
 
@@ -424,6 +438,8 @@ The transcription worker should:
 5. enforce `< 25 MB` per upload after transcoding
 6. process sequentially or with low concurrency
 7. stitch transcript segments with offsets
+8. update rolling transcript and rolling summary artifacts while the capture is
+   active
 
 With 5-minute capture chunks and speech bitrates around 32-64 kbps, most chunks
 should be small enough without additional splitting. The worker should still
@@ -454,11 +470,10 @@ PRISM_CAPTURE_MAX_BYTES=...
 PRISM_CAPTURE_MAX_DURATION_SECONDS=...
 PRISM_CAPTURE_UPLOAD_CHUNK_SECONDS=300
 PRISM_CAPTURE_AUDIO_BITS_PER_SECOND=64000
-PRISM_CAPTURE_WORKFLOW_KEY=media-ingest
 PRISM_CAPTURE_HOOK_KEY=media-ingest
 PRISM_CAPTURE_ALLOWED_MODES=tab-audio,mic,screen-video
 PRISM_CAPTURE_DEFAULT_MEMORY_MODE=review
-PRISM_CAPTURE_LIVE_RECAP_ENABLED=false
+PRISM_CAPTURE_LIVE_RECAP_ENABLED=true
 PRISM_CAPTURE_RAW_RETENTION=until-transcript
 PRISM_TRANSCRIBE_MAX_UPLOAD_BYTES=25000000
 PRISM_TRANSCRIBE_TARGET_FORMAT=webm
@@ -469,7 +484,6 @@ Later add a Settings UI panel for:
 - enable/disable browser capture
 - max upload size and max duration
 - upload chunk length and low-latency recap mode
-- default media-ingest workflow key
 - default media-ingest hook key
 - default artifact retention policy
 - allowed capture modes
@@ -478,7 +492,7 @@ Later add a Settings UI panel for:
 - diarization enabled/disabled
 - memory ingest behavior: never, review first, auto-ingest summaries
 - raw media retention: until transcript, configurable days, keep, or manual
-- consent/disclaimer text shown before recording
+- consent/disclaimer text shown before recording, deferred for v1
 - optional Portal publish defaults
 
 ## Consent And Safety
@@ -488,11 +502,13 @@ The Capture UI should make recording state obvious:
 - visible recording timer
 - clear source labels
 - explicit stop button
-- pre-recording consent/disclaimer text
 - artifact visibility and retention note
 
 For public or community-facing outputs, route through the existing public-output
 safety and publishing workflows before sending or publishing.
+
+Consent/disclaimer copy is important, but it is deferred for the v1 validation
+slice.
 
 ## Retention
 
@@ -516,12 +532,16 @@ and privacy risk from raw meeting audio.
 1. Add `/capture` page behind admin session.
 2. Record tab/screen audio plus microphone with native browser APIs.
 3. Upload 5-minute WebM/Opus chunks to Site.
-4. Save `capture-manifest.json`, `capture-metadata.json`, and
+4. Transcribe closed chunks directly with Venice WebM upload.
+5. Save/update `capture-manifest.json`, `capture-metadata.json`,
+   `rolling-transcript.json`, `rolling-summary.md`, and
    `operator-notes.md`.
-5. Create or attach to a request.
-6. Trigger a media-ingest hook on finalize.
-7. Transcribe chunks directly or transcode/rechunk under provider limits.
-8. Stitch transcript and produce summary artifacts.
+6. Expose a "recap so far" view that reads rolling transcript and summary
+   artifacts.
+7. Trigger a media-ingest hook on finalize with transcript and summary artifact
+   ids.
+8. The hook creates or links a request workflow for review and downstream
+   routing.
 9. Review before Prism Memory or Portal publication.
 
 ## Migration From Adapter-Owned Transcription
@@ -533,8 +553,9 @@ Target migration:
 
 1. Adapter captures or fetches audio bytes.
 2. Adapter hands bytes or source URL to Site.
-3. Site stores request artifact and kicks off `media-ingest`.
-4. Workflow produces transcript/summary/review artifacts.
+3. Site stores capture/session files and kicks off the same capture pipeline or
+   media-ingest hook.
+4. Capture pipeline produces transcript/summary artifacts.
 5. Adapter only delivers approved outputs back to source platforms.
 
 This creates one shared pattern for Discord recorder output, browser captures,
@@ -548,10 +569,13 @@ uploaded files, Telegram voice notes, and future Portal session recordings.
 - Raw chunks should be capture-session files by default, with durable request
   artifacts for manifests, transcripts, summaries, notes, and review outputs.
 - Rolling transcription needs closed chunks to be visible to the media-ingest
-  worker as they arrive.
+  worker as they arrive. This is useful enough for v1 validation.
 - Raw media retention should be temporary by default: keep raw chunks until
   transcript/review unless configured otherwise.
 - Memory ingest should remain review-gated.
+- Request linkage should happen through the media-ingest hook. Capture can run
+  first, then the hook creates or links the request with transcript artifacts.
+- Consent/disclaimer copy is deferred for v1.
 
 ## Open Questions
 
@@ -559,8 +583,6 @@ uploaded files, Telegram voice notes, and future Portal session recordings.
   future media worker? The existing comms/source adapter already uses ffmpeg for
   native Discord recording, which is useful precedent, but the shared
   media-ingest path may eventually deserve a media worker.
-- Should the first slice support rolling recap, or only design the chunk
-  contract so rolling recap can be added without migration?
-- Should the request be created before capture starts, or can an admin record
-  first and decide request linkage after stopping?
-- What is the minimum consent/disclaimer copy required for internal use?
+- How should rolling summaries be compacted for long meetings: full transcript
+  in context, chunk summaries with a rolling global summary, or a hierarchical
+  summary tree?
