@@ -9,11 +9,14 @@ import {
 } from "react";
 import {
   Copy,
+  Edit3,
   ExternalLink,
   Play,
   RefreshCw,
+  Save,
   Trash2,
   Webhook,
+  X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +72,8 @@ export function HooksWorkspace() {
   const [hooks, setHooks] = useState<HookRecord[]>([]);
   const [runs, setRuns] = useState<HookRunRecord[]>([]);
   const [payloads, setPayloads] = useState<Record<string, string>>({});
+  const [editingHookKey, setEditingHookKey] = useState<string | null>(null);
+  const [configDrafts, setConfigDrafts] = useState<Record<string, { requestTemplate: string; autoRun: string }>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<HooksView>("custom");
@@ -172,6 +177,59 @@ export function HooksWorkspace() {
         );
       }
     });
+  }
+
+  function beginEditHook(hook: HookRecord) {
+    setEditingHookKey(hook.key);
+    setConfigDrafts((current) => ({
+      ...current,
+      [hook.key]: current[hook.key] ?? {
+        requestTemplate: JSON.stringify(hook.requestTemplate ?? {}, null, 2),
+        autoRun: JSON.stringify(hook.autoRun ?? {}, null, 2),
+      },
+    }));
+  }
+
+  function cancelEditHook(hook: HookRecord) {
+    setEditingHookKey(null);
+    setConfigDrafts((current) => {
+      const next = { ...current };
+      delete next[hook.key];
+      return next;
+    });
+  }
+
+  function updateConfigDraft(hook: HookRecord, field: "requestTemplate" | "autoRun", value: string) {
+    setConfigDrafts((current) => ({
+      ...current,
+      [hook.key]: {
+        requestTemplate: current[hook.key]?.requestTemplate ?? JSON.stringify(hook.requestTemplate ?? {}, null, 2),
+        autoRun: current[hook.key]?.autoRun ?? JSON.stringify(hook.autoRun ?? {}, null, 2),
+        [field]: value,
+      },
+    }));
+  }
+
+  function saveHookConfig(hook: HookRecord) {
+    const draft = configDrafts[hook.key];
+    if (!draft) return;
+    let requestTemplate: Record<string, unknown>;
+    let autoRun: Record<string, unknown>;
+    try {
+      const parsedRequestTemplate = JSON.parse(draft.requestTemplate) as unknown;
+      const parsedAutoRun = JSON.parse(draft.autoRun) as unknown;
+      requestTemplate = parsedRequestTemplate && typeof parsedRequestTemplate === "object" && !Array.isArray(parsedRequestTemplate)
+        ? parsedRequestTemplate as Record<string, unknown>
+        : {};
+      autoRun = parsedAutoRun && typeof parsedAutoRun === "object" && !Array.isArray(parsedAutoRun)
+        ? parsedAutoRun as Record<string, unknown>
+        : {};
+    } catch {
+      setError("Hook config must be valid JSON objects.");
+      return;
+    }
+    updateHook(hook, { requestTemplate, autoRun });
+    setEditingHookKey(null);
   }
 
   function deleteHook(hook: HookRecord) {
@@ -346,6 +404,15 @@ export function HooksWorkspace() {
               type="button"
               variant="outline"
               size="icon"
+              onClick={() => beginEditHook(hook)}
+              title="Edit hook config"
+            >
+              <Edit3 className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
               onClick={() => copyEndpoint(hook)}
               title="Copy endpoint"
             >
@@ -364,6 +431,48 @@ export function HooksWorkspace() {
             ) : null}
           </div>
         </div>
+        {editingHookKey === hook.key ? (
+          <div className="mt-4 grid gap-3 border border-border bg-background p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Hook Config
+              </p>
+              {hook.systemDefault ? <Badge variant="outline">Built-in editable</Badge> : null}
+            </div>
+            <div className="grid gap-2">
+              <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Request Template
+              </label>
+              <Textarea
+                value={configDrafts[hook.key]?.requestTemplate ?? JSON.stringify(hook.requestTemplate ?? {}, null, 2)}
+                onChange={(event) => updateConfigDraft(hook, "requestTemplate", event.target.value)}
+                rows={12}
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Auto Run
+              </label>
+              <Textarea
+                value={configDrafts[hook.key]?.autoRun ?? JSON.stringify(hook.autoRun ?? {}, null, 2)}
+                onChange={(event) => updateConfigDraft(hook, "autoRun", event.target.value)}
+                rows={5}
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" onClick={() => saveHookConfig(hook)} disabled={isPending}>
+                <Save className="mr-2 h-4 w-4" />
+                Save Config
+              </Button>
+              <Button type="button" variant="outline" onClick={() => cancelEditHook(hook)} disabled={isPending}>
+                <X className="mr-2 h-4 w-4" />
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <div className="mt-4 space-y-2">
           <label className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Test Payload

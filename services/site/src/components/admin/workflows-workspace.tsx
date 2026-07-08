@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Eye, FileText, GitBranch, RefreshCw, Route } from "lucide-react";
+import { Edit3, Eye, FileText, GitBranch, RefreshCw, Route, Save, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 
 type WorkflowRecord = {
   id: string;
@@ -182,7 +183,10 @@ export function WorkflowsWorkspace() {
   const [selectedWorkflowDetail, setSelectedWorkflowDetail] =
     useState<WorkflowDetail | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [isEditingJson, setIsEditingJson] = useState(false);
+  const [definitionDraft, setDefinitionDraft] = useState("");
   const [activeView, setActiveView] = useState<WorkflowView>("custom");
   const [isRefreshing, startRefresh] = useTransition();
   const detailRequestRef = useRef(0);
@@ -218,6 +222,8 @@ export function WorkflowsWorkspace() {
     setSelectedWorkflow(workflow);
     setSelectedWorkflowDetail(null);
     setDetailError(null);
+    setIsEditingJson(false);
+    setDefinitionDraft(JSON.stringify(workflow.definition, null, 2));
     setIsDetailLoading(true);
     try {
       const response = await fetch(
@@ -230,6 +236,7 @@ export function WorkflowsWorkspace() {
       }
       if (detailRequestRef.current !== requestToken) return;
       setSelectedWorkflow(payload.workflow ?? workflow);
+      setDefinitionDraft(JSON.stringify((payload.workflow ?? workflow).definition, null, 2));
       setSelectedWorkflowDetail(payload.detail);
     } catch (nextError) {
       if (detailRequestRef.current !== requestToken) return;
@@ -242,6 +249,46 @@ export function WorkflowsWorkspace() {
       if (detailRequestRef.current === requestToken) {
         setIsDetailLoading(false);
       }
+    }
+  }
+
+  async function saveWorkflowDefinition() {
+    if (!selectedWorkflow) return;
+    let definition: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(definitionDraft) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("Workflow JSON must be an object.");
+      }
+      definition = parsed as Record<string, unknown>;
+    } catch (parseError) {
+      setDetailError(parseError instanceof Error ? parseError.message : "Workflow JSON is invalid.");
+      return;
+    }
+
+    setDetailError(null);
+    setMessage(null);
+    setIsDetailLoading(true);
+    try {
+      const response = await fetch(`/admin/workflows/${encodeURIComponent(selectedWorkflow.key)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ definition }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as WorkflowDetailPayload;
+      if (!response.ok || !payload.ok || !payload.workflow) {
+        throw new Error(payload.error || "Could not save workflow definition");
+      }
+      setSelectedWorkflow(payload.workflow);
+      setDefinitionDraft(JSON.stringify(payload.workflow.definition, null, 2));
+      setWorkflows((current) => current.map((workflow) => workflow.key === payload.workflow?.key ? payload.workflow : workflow));
+      setIsEditingJson(false);
+      setMessage(`Saved workflow ${payload.workflow.key}`);
+      await openWorkflow(payload.workflow);
+    } catch (saveError) {
+      setDetailError(saveError instanceof Error ? saveError.message : "Could not save workflow definition");
+    } finally {
+      setIsDetailLoading(false);
     }
   }
 
@@ -441,6 +488,8 @@ export function WorkflowsWorkspace() {
             setSelectedWorkflow(null);
             setSelectedWorkflowDetail(null);
             setDetailError(null);
+            setIsEditingJson(false);
+            setDefinitionDraft("");
             setIsDetailLoading(false);
           }
         }}
@@ -455,6 +504,11 @@ export function WorkflowsWorkspace() {
           {detailError ? (
             <div className="border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {detailError}
+            </div>
+          ) : null}
+          {message ? (
+            <div className="border border-border bg-background px-4 py-3 text-sm">
+              {message}
             </div>
           ) : null}
           <Tabs
@@ -560,13 +614,53 @@ export function WorkflowsWorkspace() {
             </TabsContent>
 
             <TabsContent value="json" className="mt-0 min-h-0 flex-1">
-              <ScrollArea className="h-[calc(90vh-180px)] border border-border/70 bg-muted/20">
-                <pre className="whitespace-pre-wrap break-words p-4 text-xs leading-6">
-                  {selectedWorkflow
-                    ? JSON.stringify(selectedWorkflow.definition, null, 2)
-                    : ""}
-                </pre>
-              </ScrollArea>
+              <div className="grid h-[calc(90vh-180px)] gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-muted-foreground">
+                    Edit the workflow definition JSON. Markdown instruction files remain file-backed.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {isEditingJson ? (
+                      <>
+                        <Button type="button" onClick={saveWorkflowDefinition} disabled={isDetailLoading}>
+                          <Save className="h-4 w-4" />
+                          Save
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setIsEditingJson(false);
+                            setDefinitionDraft(selectedWorkflow ? JSON.stringify(selectedWorkflow.definition, null, 2) : "");
+                          }}
+                          disabled={isDetailLoading}
+                        >
+                          <X className="h-4 w-4" />
+                          Cancel
+                        </Button>
+                      </>
+                    ) : (
+                      <Button type="button" variant="outline" onClick={() => setIsEditingJson(true)}>
+                        <Edit3 className="h-4 w-4" />
+                        Edit JSON
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {isEditingJson ? (
+                  <Textarea
+                    value={definitionDraft}
+                    onChange={(event) => setDefinitionDraft(event.target.value)}
+                    className="min-h-0 flex-1 resize-none font-mono text-xs"
+                  />
+                ) : (
+                  <ScrollArea className="min-h-0 border border-border/70 bg-muted/20">
+                    <pre className="whitespace-pre-wrap break-words p-4 text-xs leading-6">
+                      {selectedWorkflow ? JSON.stringify(selectedWorkflow.definition, null, 2) : ""}
+                    </pre>
+                  </ScrollArea>
+                )}
+              </div>
             </TabsContent>
           </Tabs>
         </DialogContent>
