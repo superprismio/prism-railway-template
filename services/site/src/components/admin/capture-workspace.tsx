@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, LoaderCircle, Mic, MonitorUp, Radio, Square } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileText, LoaderCircle, Mic, MonitorUp, Radio, Square } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -89,6 +89,7 @@ export function CaptureWorkspace() {
   const [capture, setCapture] = useState<CaptureManifest | null>(null);
   const [chunks, setChunks] = useState<ChunkUploadState[]>([]);
   const [status, setStatus] = useState<"idle" | "starting" | "recording" | "stopping" | "finalized">("idle");
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -370,6 +371,26 @@ export function CaptureWorkspace() {
     }
   }
 
+  async function transcribeCapture() {
+    const captureId = capture?.id ?? captureIdRef.current;
+    if (!captureId) return;
+    setError(null);
+    setIsTranscribing(true);
+    try {
+      const response = await fetch(`/admin/captures/${captureId}/transcribe`, {
+        method: "POST",
+      });
+      const payload = await parseJsonResponse(response);
+      if (payload.capture) {
+        setCapture(payload.capture);
+      }
+    } catch (transcribeError) {
+      setError(transcribeError instanceof Error ? transcribeError.message : "Could not transcribe capture.");
+    } finally {
+      setIsTranscribing(false);
+    }
+  }
+
   return (
     <div className="grid gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/60 px-5 py-4 md:px-6">
@@ -502,6 +523,16 @@ export function CaptureWorkspace() {
                 Stop
               </Button>
             )}
+            {capture?.status === "finalized" ? (
+              <Button type="button" variant="outline" onClick={transcribeCapture} disabled={isTranscribing}>
+                {isTranscribing ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4" />
+                )}
+                Transcribe
+              </Button>
+            ) : null}
           </div>
 
           <div className="border border-border/70 bg-background p-4">
@@ -571,6 +602,10 @@ export function CaptureWorkspace() {
                   <span>{capture.chunks.length}</span>
                 </div>
                 <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Transcript</span>
+                  <span>{capture.transcript?.status ?? "not run"}</span>
+                </div>
+                <div className="flex justify-between gap-3">
                   <span className="text-muted-foreground">Started</span>
                   <span>{new Date(capture.startedAt).toLocaleTimeString()}</span>
                 </div>
@@ -578,6 +613,18 @@ export function CaptureWorkspace() {
                   <div className="flex justify-between gap-3">
                     <span className="text-muted-foreground">Finalized</span>
                     <span>{new Date(capture.finalizedAt).toLocaleTimeString()}</span>
+                  </div>
+                ) : null}
+                {capture.transcript?.transcriptMarkdownPath ? (
+                  <div>
+                    <p className="text-muted-foreground">Transcript path</p>
+                    <p className="break-all font-mono text-xs">{capture.transcript.transcriptMarkdownPath}</p>
+                  </div>
+                ) : null}
+                {capture.transcript?.error ? (
+                  <div>
+                    <p className="text-muted-foreground">Transcript error</p>
+                    <p className="break-all text-xs text-destructive">{capture.transcript.error}</p>
                   </div>
                 ) : null}
               </div>

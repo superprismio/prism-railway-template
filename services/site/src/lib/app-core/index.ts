@@ -37,15 +37,21 @@ export {
 } from './request-artifact-storage';
 export {
   captureStorageRoot,
+  captureTranscriptStoragePaths,
   createCaptureSession,
   finalizeCaptureSession,
   getCaptureManifest,
+  markCaptureTranscriptFailed,
+  markCaptureTranscriptPending,
   resolveCaptureStoragePath,
   writeCaptureChunk,
   writeCaptureManifest,
+  writeCaptureTranscriptFiles,
   type CaptureChunkRecord,
   type CaptureManifest,
+  type CaptureTranscriptRecord,
 } from './capture-storage';
+export { transcribeCaptureSession } from './capture-transcription';
 export {
   buildTaskScriptStoragePath,
   deleteTaskScriptFile,

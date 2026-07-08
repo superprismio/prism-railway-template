@@ -17,6 +17,16 @@ export type CaptureChunkRecord = {
   uploadedAt: string;
 };
 
+export type CaptureTranscriptRecord = {
+  status: "pending" | "completed" | "failed";
+  transcriptJsonPath: string | null;
+  transcriptMarkdownPath: string | null;
+  generatedAt: string | null;
+  chunksTranscribed: number;
+  chunksSkipped: number;
+  error: string | null;
+};
+
 export type CaptureManifest = {
   id: string;
   title: string;
@@ -32,6 +42,7 @@ export type CaptureManifest = {
   startedAt: string;
   finalizedAt: string | null;
   chunks: CaptureChunkRecord[];
+  transcript: CaptureTranscriptRecord | null;
   updatedAt: string;
 };
 
@@ -87,6 +98,13 @@ function manifestStoragePath(captureId: string) {
   return path.join(captureSessionStoragePath(captureId), "capture-manifest.json");
 }
 
+export function captureTranscriptStoragePaths(captureId: string) {
+  return {
+    json: path.join(captureSessionStoragePath(captureId), "transcripts", "transcript.json"),
+    markdown: path.join(captureSessionStoragePath(captureId), "transcripts", "transcript.md"),
+  };
+}
+
 export async function getCaptureManifest(captureId: string) {
   try {
     const content = await fs.readFile(resolveCaptureStoragePath(manifestStoragePath(captureId)), "utf8");
@@ -130,6 +148,7 @@ export async function createCaptureSession(input: {
     startedAt: now,
     finalizedAt: null,
     chunks: [],
+    transcript: null,
     updatedAt: now,
   };
   await writeCaptureManifest(manifest);
@@ -201,6 +220,96 @@ export async function finalizeCaptureSession(input: {
     notes: input.notes?.trim() || manifest.notes,
     requestId: input.requestId?.trim() || manifest.requestId,
     finalizedAt: manifest.finalizedAt ?? now,
+    updatedAt: now,
+  };
+  await writeCaptureManifest(updated);
+  return updated;
+}
+
+export async function markCaptureTranscriptPending(captureId: string) {
+  const manifest = await getCaptureManifest(captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  const now = new Date().toISOString();
+  const updated: CaptureManifest = {
+    ...manifest,
+    transcript: {
+      status: "pending",
+      transcriptJsonPath: null,
+      transcriptMarkdownPath: null,
+      generatedAt: null,
+      chunksTranscribed: 0,
+      chunksSkipped: 0,
+      error: null,
+    },
+    updatedAt: now,
+  };
+  await writeCaptureManifest(updated);
+  return updated;
+}
+
+export async function writeCaptureTranscriptFiles(input: {
+  captureId: string;
+  jsonContent: string;
+  markdownContent: string;
+  chunksTranscribed: number;
+  chunksSkipped: number;
+}) {
+  const manifest = await getCaptureManifest(input.captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+
+  const paths = captureTranscriptStoragePaths(input.captureId);
+  const resolvedJson = resolveCaptureStoragePath(paths.json);
+  const resolvedMarkdown = resolveCaptureStoragePath(paths.markdown);
+  await fs.mkdir(path.dirname(resolvedJson), { recursive: true });
+  await fs.writeFile(resolvedJson, input.jsonContent.endsWith("\n") ? input.jsonContent : `${input.jsonContent}\n`, "utf8");
+  await fs.writeFile(
+    resolvedMarkdown,
+    input.markdownContent.endsWith("\n") ? input.markdownContent : `${input.markdownContent}\n`,
+    "utf8",
+  );
+
+  const now = new Date().toISOString();
+  const updated: CaptureManifest = {
+    ...manifest,
+    transcript: {
+      status: "completed",
+      transcriptJsonPath: paths.json,
+      transcriptMarkdownPath: paths.markdown,
+      generatedAt: now,
+      chunksTranscribed: Math.max(0, Math.trunc(input.chunksTranscribed)),
+      chunksSkipped: Math.max(0, Math.trunc(input.chunksSkipped)),
+      error: null,
+    },
+    updatedAt: now,
+  };
+  await writeCaptureManifest(updated);
+  return updated;
+}
+
+export async function markCaptureTranscriptFailed(input: {
+  captureId: string;
+  error: string;
+}) {
+  const manifest = await getCaptureManifest(input.captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  const now = new Date().toISOString();
+  const updated: CaptureManifest = {
+    ...manifest,
+    transcript: {
+      status: "failed",
+      transcriptJsonPath: manifest.transcript?.transcriptJsonPath ?? null,
+      transcriptMarkdownPath: manifest.transcript?.transcriptMarkdownPath ?? null,
+      generatedAt: manifest.transcript?.generatedAt ?? null,
+      chunksTranscribed: manifest.transcript?.chunksTranscribed ?? 0,
+      chunksSkipped: manifest.transcript?.chunksSkipped ?? 0,
+      error: input.error,
+    },
     updatedAt: now,
   };
   await writeCaptureManifest(updated);
