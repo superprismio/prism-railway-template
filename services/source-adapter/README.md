@@ -80,9 +80,11 @@ Discord-specific envs you can add later:
 - `VOICE_TRANSCRIPTION_LANGUAGE=en`
 - `VOICE_TRANSCRIPTION_RESPONSE_FORMAT=json`
 - `VOICE_TRANSCRIPTION_TIMESTAMPS=true`
-- `DISCORD_RECORDING_COMPLETE_HOOK_KEY=<optional Prism hook key to trigger after recording summary/artifact finalization>`
-- `DISCORD_RECORDING_COMPLETE_HOOK_ENABLED=<optional true|false override; defaults to enabled when DISCORD_RECORDING_COMPLETE_HOOK_KEY is set>`
+- `DISCORD_RECORDING_COMPLETE_HOOK_KEY=recording-transcript-completed`
+- `DISCORD_RECORDING_COMPLETE_HOOK_ENABLED=<optional true|false override; defaults to true>`
 - `DISCORD_RECORDING_COMPLETE_HOOK_TIMEOUT_MS=10000`
+- `DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED=false`
+- `DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED=false`
 - `N8N_WEBHOOK_URL=https://your-n8n.example/webhook/transcribe` only if the legacy webhook handoff is still needed
 
 Telegram-specific envs:
@@ -181,8 +183,8 @@ Chat bridge envs:
 - `APP_API_SERVICE_TOKEN=...`
 - `CODEX_RUNTIME_BASE_URL=https://your-codex-runtime.up.railway.app`
 
-Recording completion hooks reuse the agent API base/token when possible. Set
-`DISCORD_RECORDING_COMPLETE_HOOK_KEY` to trigger:
+Recording completion hooks reuse the agent API base/token when possible. The
+default hook key is `recording-transcript-completed`:
 
 ```text
 POST ${PRISM_AGENT_API_BASE_URL:-$APP_API_BASE_URL}/agent/hooks/<hook-key>/trigger
@@ -345,6 +347,7 @@ Current slash commands:
 - `/prism-join`
 - `/prism-record`
 - `/prism-stoprecord`
+- `/prism-recap prompt:<optional text>`
 - `/prism-rollcall`
 
 `/prism-promote-doc` writes new Prism assets, so it requires Discord access mode
@@ -368,10 +371,12 @@ Current voice command status:
 - `/prism-stoprecord` only auto-recovers unfinished sessions from the caller's current voice channel and younger than `VOICE_RECOVERY_MAX_AGE_HOURS`; use `POST /recordings/:sessionId/recover` for explicit older recovery
 - `/prism-stoprecord` also fetches messages posted in the Discord voice channel during the recording window and stitches them into the merged transcript timeline as `chat` segments
 - if the adapter restarts during recording, `/prism-stoprecord` can recover the newest unfinished session for the guild from `/data/recordings/<session-id>/session.json` and `/raw/*.ogg`
-- if `CODEX_RUNTIME_BASE_URL` is set, the adapter asks codex-runtime to synthesize a meeting summary from the merged transcript
-- local summary generation also requires `CODEX_RUNTIME_BASE_URL` in the sourced local env, otherwise transcription can succeed while summary generation is skipped
-- if `PRISM_API_BASE` and `PRISM_API_KEY` are set, transcript and summary artifacts are written into Prism memory inbox as `meeting_transcript` and `meeting_summary`
-- Discord should only receive a short completion notice; the durable transcript/summary artifacts live in Prism memory or the local volume
+- by default, `/prism-stoprecord` triggers the Prism Site hook `recording-transcript-completed` with transcript content, source metadata, participants, and local artifact paths
+- summary generation and downstream memory/Portal/delivery planning should happen in the Prism workflow `recording-transcript-review-publish`
+- `/prism-recap` routes through the existing Prism/Codex chat path and asks for a recap from the latest relevant recording transcript workflow or artifacts for the Discord context
+- legacy adapter-owned summary generation can be re-enabled with `DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED=true`
+- legacy direct Prism Memory inbox writes can be re-enabled with `DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED=true`
+- Discord should only receive a short completion notice; durable transcript/summary artifacts live in Prism workflow/request artifacts or the local recording volume
 - if `N8N_WEBHOOK_URL` is set, the adapter POSTs meeting metadata to `n8n` after stop
 - FLAC chunks can be fetched from `GET /recordings/:sessionId/:fileName` with `X-Adapter-Token`
 

@@ -3365,6 +3365,10 @@ function discordCommandDefinitions() {
     new SlashCommandBuilder().setName("prism-join").setDescription("Join your current voice channel."),
     new SlashCommandBuilder().setName("prism-record").setDescription("Start recording the current meeting."),
     new SlashCommandBuilder().setName("prism-stoprecord").setDescription("Stop recording the current meeting."),
+    new SlashCommandBuilder()
+      .setName("prism-recap")
+      .setDescription("Ask Prism for a recap of the latest recording or meeting context.")
+      .addStringOption((option) => option.setName("prompt").setDescription("Optional steering for the recap.").setRequired(false)),
     new SlashCommandBuilder().setName("prism-rollcall").setDescription("Show who is currently in the meeting voice channel."),
   ].map((command) => command.toJSON());
 }
@@ -3504,6 +3508,19 @@ async function handleDiscordInteraction(interaction: Interaction): Promise<void>
     case "prism-stoprecord":
       await handleVoiceCommand(interaction, "stoprecord");
       return;
+    case "prism-recap": {
+      const steering = interaction.options.getString("prompt", false)?.trim();
+      await handleSlashPrompt(
+        interaction,
+        [
+          "Provide a concise recap for the latest relevant Prism recording transcript or meeting workflow for this Discord context.",
+          "Prefer artifacts from requests created by the `recording-transcript-completed` hook.",
+          "If no completed transcript is available, say what is missing and how to get one.",
+          steering ? `Operator steering: ${steering}` : null,
+        ].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n"),
+      );
+      return;
+    }
     case "prism-rollcall":
       await handleVoiceCommand(interaction, "rollcall");
       return;
