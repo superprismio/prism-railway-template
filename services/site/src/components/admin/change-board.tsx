@@ -7,6 +7,7 @@ import {
   BotMessageSquare,
   BookOpen,
   CalendarClock,
+  Mic,
   FilePlus,
   LoaderCircle,
   LogOut,
@@ -22,6 +23,7 @@ import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminSettingsWorkspace } from "@/components/admin/admin-settings-workspace";
 import { ChangeRequestList } from "@/components/admin/change-request-list";
 import { RequestDetailsPanel } from "@/components/admin/change-request-details-panel";
+import { CaptureWorkspace } from "@/components/admin/capture-workspace";
 import { CodexConsole } from "@/components/admin/codex-console";
 import { HooksWorkspace } from "@/components/admin/hooks-workspace";
 import { NewChangeRequestDialog } from "@/components/admin/new-change-request-dialog";
@@ -58,6 +60,7 @@ const codexConsoleSessionControlsId = "codex-console-session-controls";
 const workspaceTabs = [
   "requests",
   "codex-console",
+  "capture",
   "tasks",
   "skills",
   "workflows",
@@ -427,6 +430,7 @@ export function ChangeBoard({
     () =>
       workspaceTabs.filter((tab) => {
         if (tab === "codex-console") return canRunAgent;
+        if (tab === "capture") return canRunAgent;
         if (tab === "tasks") return canManageTasks;
         if (tab === "skills") return canManageSkills;
         if (tab === "workflows") return canManageWorkflows;
@@ -514,6 +518,15 @@ export function ChangeBoard({
                 >
                   <BotMessageSquare className="h-4 w-4 md:hidden" />
                   <span className="hidden md:inline">Prism Console</span>
+                </TabsTrigger>
+              ) : null}
+              {canRunAgent ? (
+                <TabsTrigger
+                  value="capture"
+                  className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
+                >
+                  <Mic className="h-4 w-4 md:hidden" />
+                  <span className="hidden md:inline">Capture</span>
                 </TabsTrigger>
               ) : null}
               {canManageTasks ? (
@@ -785,6 +798,12 @@ export function ChangeBoard({
         <TabsContent value="tasks" className="mt-0 flex-1">
           <section className="min-h-full">
             <TaskRunnerWorkspace />
+          </section>
+        </TabsContent>
+
+        <TabsContent value="capture" className="mt-0 flex-1">
+          <section className="min-h-full">
+            <CaptureWorkspace />
           </section>
         </TabsContent>
 

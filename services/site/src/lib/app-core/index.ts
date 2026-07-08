@@ -36,6 +36,17 @@ export {
   writeRequestArtifactFile,
 } from './request-artifact-storage';
 export {
+  captureStorageRoot,
+  createCaptureSession,
+  finalizeCaptureSession,
+  getCaptureManifest,
+  resolveCaptureStoragePath,
+  writeCaptureChunk,
+  writeCaptureManifest,
+  type CaptureChunkRecord,
+  type CaptureManifest,
+} from './capture-storage';
+export {
   buildTaskScriptStoragePath,
   deleteTaskScriptFile,
   readTaskScriptFile,
