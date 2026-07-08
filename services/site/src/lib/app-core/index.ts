@@ -58,7 +58,7 @@ export {
   type CaptureManifest,
   type CaptureTranscriptRecord,
 } from './capture-storage';
-export { transcribeCaptureSession } from './capture-transcription';
+export { transcribeCaptureChunk, transcribeCaptureSession } from './capture-transcription';
 export {
   defaultCaptureDispatchSettings,
   normalizeCaptureDispatchSettings,

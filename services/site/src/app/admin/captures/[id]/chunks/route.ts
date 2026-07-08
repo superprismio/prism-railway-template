@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { writeCaptureChunk } from "@/lib/app-core";
+import { transcribeCaptureChunk, writeCaptureChunk } from "@/lib/app-core";
 import { requireCapabilityAccess } from "@/lib/admin-auth";
 
 type RouteContext = {
@@ -52,7 +52,15 @@ export async function POST(request: Request, context: RouteContext) {
       durationMs,
     });
 
-    return NextResponse.json({ ok: true, ...result });
+    const transcript = await transcribeCaptureChunk(id, index).catch((error) => ({
+      error: error instanceof Error ? error.message : "CAPTURE_CHUNK_TRANSCRIPTION_FAILED",
+    }));
+    return NextResponse.json({
+      ok: true,
+      ...("manifest" in transcript ? { manifest: transcript.manifest } : result),
+      chunk: result.chunk,
+      transcript,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not store capture chunk";
     const status = message === "CAPTURE_NOT_FOUND" ? 404 : message === "CAPTURE_NOT_RECORDING" ? 409 : 500;

@@ -126,6 +126,9 @@ export function CaptureWorkspace() {
   const chunkIndexRef = useRef(0);
   const lastChunkAtRef = useRef<number | null>(null);
   const captureIdRef = useRef<string | null>(null);
+  const recordableStreamRef = useRef<MediaStream | null>(null);
+  const rotationTimerRef = useRef<number | null>(null);
+  const stoppingCaptureRef = useRef(false);
 
   const mimeType = useMemo(() => (isBrowserReady ? preferredMimeType() : ""), [isBrowserReady]);
   const isRecording = status === "recording" || status === "starting" || status === "stopping";
@@ -163,6 +166,11 @@ export function CaptureWorkspace() {
     streamsRef.current = [];
     void audioContextRef.current?.close().catch(() => undefined);
     audioContextRef.current = null;
+    recordableStreamRef.current = null;
+    if (rotationTimerRef.current !== null) {
+      window.clearTimeout(rotationTimerRef.current);
+      rotationTimerRef.current = null;
+    }
   }
 
   function upsertChunkState(next: ChunkUploadState) {
@@ -278,6 +286,7 @@ export function CaptureWorkspace() {
     setCapture(null);
     setElapsedMs(0);
     setStatus("starting");
+    stoppingCaptureRef.current = false;
 
     try {
       if (!isBrowserReady) {
@@ -325,6 +334,7 @@ export function CaptureWorkspace() {
       }
 
       streamsRef.current = sourceStreams;
+      recordableStreamRef.current = destination.stream;
       const createResponse = await fetch("/admin/captures", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -351,36 +361,55 @@ export function CaptureWorkspace() {
       lastChunkAtRef.current = now;
       setStartedAt(now);
 
-      const recorder = new MediaRecorder(destination.stream, {
-        ...(mimeType ? { mimeType } : {}),
-        audioBitsPerSecond,
-      });
-      recorderRef.current = recorder;
-
-      recorder.ondataavailable = (event) => {
-        if (!event.data || event.data.size <= 0) return;
-        const endedAtMs = Date.now();
-        const startedAtMs = lastChunkAtRef.current ?? endedAtMs;
-        lastChunkAtRef.current = endedAtMs;
-        const index = chunkIndexRef.current;
-        chunkIndexRef.current += 1;
-        const uploadPromise = uploadChunk({
-          blob: event.data,
-          index,
-          startedAt: new Date(startedAtMs),
-          endedAt: new Date(endedAtMs),
-          durationMs: endedAtMs > startedAtMs ? endedAtMs - startedAtMs : null,
+      const startRecorderChunk = () => {
+        const stream = recordableStreamRef.current;
+        if (!stream || stoppingCaptureRef.current) return;
+        const recorder = new MediaRecorder(stream, {
+          ...(mimeType ? { mimeType } : {}),
+          audioBitsPerSecond,
         });
-        uploadPromisesRef.current.push(uploadPromise);
-      };
+        recorderRef.current = recorder;
+        lastChunkAtRef.current = Date.now();
 
-      recorder.onerror = () => {
-        setError("Recorder error. Stop and start a new capture.");
-      };
+        recorder.ondataavailable = (event) => {
+          if (!event.data || event.data.size <= 0) return;
+          const endedAtMs = Date.now();
+          const startedAtMs = lastChunkAtRef.current ?? endedAtMs;
+          const index = chunkIndexRef.current;
+          chunkIndexRef.current += 1;
+          const uploadPromise = uploadChunk({
+            blob: event.data,
+            index,
+            startedAt: new Date(startedAtMs),
+            endedAt: new Date(endedAtMs),
+            durationMs: endedAtMs > startedAtMs ? endedAtMs - startedAtMs : null,
+          });
+          uploadPromisesRef.current.push(uploadPromise);
+        };
 
-      recorder.onstop = () => {
-        stopStreams();
-        void finalizeCapture();
+        recorder.onerror = () => {
+          setError("Recorder error. Stop and start a new capture.");
+        };
+
+        recorder.onstop = () => {
+          if (rotationTimerRef.current !== null) {
+            window.clearTimeout(rotationTimerRef.current);
+            rotationTimerRef.current = null;
+          }
+          if (stoppingCaptureRef.current) {
+            stopStreams();
+            void finalizeCapture();
+            return;
+          }
+          startRecorderChunk();
+        };
+
+        recorder.start();
+        rotationTimerRef.current = window.setTimeout(() => {
+          if (recorder.state === "recording") {
+            recorder.stop();
+          }
+        }, Math.max(5, chunkSeconds) * 1000);
       };
 
       for (const stream of sourceStreams) {
@@ -394,7 +423,7 @@ export function CaptureWorkspace() {
         }
       }
 
-      recorder.start(Math.max(5, chunkSeconds) * 1000);
+      startRecorderChunk();
       setStatus("recording");
     } catch (startError) {
       stopStreams();
@@ -406,15 +435,15 @@ export function CaptureWorkspace() {
   function stopCapture() {
     setError(null);
     setStatus("stopping");
+    stoppingCaptureRef.current = true;
+    if (rotationTimerRef.current !== null) {
+      window.clearTimeout(rotationTimerRef.current);
+      rotationTimerRef.current = null;
+    }
     const recorder = recorderRef.current;
     if (!recorder || recorder.state === "inactive") {
       void finalizeCapture();
       return;
-    }
-    try {
-      recorder.requestData();
-    } catch {
-      // Some browsers throw when requestData races with stop; stop still flushes.
     }
     recorder.stop();
   }

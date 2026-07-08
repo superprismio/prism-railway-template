@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { finalizeCaptureSession } from "@/lib/app-core";
+import { finalizeCaptureSession, readCaptureDispatchSettings } from "@/lib/app-core";
 import { requireCapabilityAccess } from "@/lib/admin-auth";
+import { dispatchCaptureTranscript } from "@/lib/app-core/capture-dispatch";
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -32,8 +33,19 @@ export async function POST(request: Request, context: RouteContext) {
       notes: parseString(body.notes),
       requestId: parseString(body.requestId ?? body.request_id),
     });
+    const settings = await readCaptureDispatchSettings();
+    const dispatch = capture.transcript?.status === "completed" && settings.autoDispatchOnTranscript && settings.destinationType !== "none"
+      ? await dispatchCaptureTranscript(id, { baseUrl: new URL(request.url).origin, settings }).catch((error) => ({
+          error: error instanceof Error ? error.message : "CAPTURE_DISPATCH_FAILED",
+        }))
+      : null;
 
-    return NextResponse.json({ ok: true, capture });
+    return NextResponse.json({
+      ok: true,
+      capture: dispatch && "manifest" in dispatch ? dispatch.manifest : capture,
+      dispatch: dispatch && "result" in dispatch ? dispatch.result : null,
+      dispatchError: dispatch && "error" in dispatch ? dispatch.error : null,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not finalize capture";
     const status = message === "CAPTURE_NOT_FOUND" ? 404 : 500;

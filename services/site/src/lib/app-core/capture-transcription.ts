@@ -5,6 +5,8 @@ import {
   markCaptureTranscriptFailed,
   markCaptureTranscriptPending,
   resolveCaptureStoragePath,
+  updateCaptureChunkTranscript,
+  writeCaptureChunkTranscriptFiles,
   writeCaptureTranscriptFiles,
   type CaptureChunkRecord,
 } from "./capture-storage";
@@ -223,6 +225,251 @@ function buildMarkdown(input: {
   ].filter((line): line is string => typeof line === "string").join("\n");
 }
 
+function buildChunkMarkdown(input: {
+  title: string;
+  captureId: string;
+  chunk: CaptureTranscriptChunk;
+  generatedAt: string;
+}) {
+  return [
+    `# ${input.title || "Browser Capture"} - Chunk ${input.chunk.index + 1}`,
+    "",
+    `- Capture: \`${input.captureId}\``,
+    `- Chunk: ${input.chunk.index}`,
+    `- Generated: ${input.generatedAt}`,
+    input.chunk.startedAt ? `- Started: ${input.chunk.startedAt}` : null,
+    input.chunk.endedAt ? `- Ended: ${input.chunk.endedAt}` : null,
+    "",
+    "## Transcript",
+    "",
+    input.chunk.segments.length
+      ? input.chunk.segments.map((segment) => `[${formatTimeSec(segment.start)}] ${segment.text}`).join("\n")
+      : "_No transcript text returned._",
+  ].filter((line): line is string => typeof line === "string").join("\n");
+}
+
+function transcriptPayloadFromChunks(input: {
+  captureId: string;
+  title: string;
+  source: string;
+  startedAt: string;
+  finalizedAt: string | null;
+  generatedAt: string;
+  chunks: CaptureTranscriptChunk[];
+}) {
+  const segments = input.chunks.flatMap((chunk) => chunk.segments).sort((left, right) => left.start - right.start);
+  return {
+    captureId: input.captureId,
+    title: input.title,
+    source: input.source,
+    startedAt: input.startedAt,
+    finalizedAt: input.finalizedAt,
+    generatedAt: input.generatedAt,
+    chunks: input.chunks,
+    segments,
+    transcript: segments.map((segment) => `[${formatTimeSec(segment.start)}] ${segment.text}`).join("\n"),
+  };
+}
+
+async function readCompletedChunkTranscript(captureId: string, chunk: CaptureChunkRecord) {
+  if (chunk.transcript?.status !== "completed" || !chunk.transcript.transcriptJsonPath) {
+    return null;
+  }
+  const content = await fs.readFile(resolveCaptureStoragePath(chunk.transcript.transcriptJsonPath), "utf8").catch(() => null);
+  if (!content) return null;
+  const parsed = JSON.parse(content) as { chunk?: CaptureTranscriptChunk };
+  return parsed.chunk ?? null;
+}
+
+async function chunkLooksStandaloneWebm(chunk: CaptureChunkRecord) {
+  if (!chunk.mimeType.toLowerCase().includes("webm")) return true;
+  const resolved = resolveCaptureStoragePath(chunk.storagePath);
+  const handle = await fs.open(resolved, "r").catch(() => null);
+  if (!handle) return false;
+  try {
+    const header = Buffer.alloc(4);
+    await handle.read(header, 0, 4, 0);
+    return header.toString("hex") === "1a45dfa3";
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+async function rebuildAggregateFromCompletedChunks(input: {
+  captureId: string;
+  generatedAt: string;
+}) {
+  const manifest = await getCaptureManifest(input.captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  const completedChunks = (await Promise.all(
+    manifest.chunks.map((candidate) => readCompletedChunkTranscript(input.captureId, candidate)),
+  )).filter((candidate): candidate is CaptureTranscriptChunk => Boolean(candidate));
+  if (completedChunks.length === 0) return null;
+
+  const aggregate = transcriptPayloadFromChunks({
+    captureId: manifest.id,
+    title: manifest.title,
+    source: manifest.source,
+    startedAt: manifest.startedAt,
+    finalizedAt: manifest.finalizedAt,
+    generatedAt: input.generatedAt,
+    chunks: completedChunks.sort((left, right) => left.index - right.index),
+  });
+  const completed = await writeCaptureTranscriptFiles({
+    captureId: input.captureId,
+    jsonContent: JSON.stringify(aggregate, null, 2),
+    markdownContent: buildMarkdown({
+      title: manifest.title,
+      captureId: manifest.id,
+      startedAt: manifest.startedAt,
+      finalizedAt: manifest.finalizedAt,
+      generatedAt: input.generatedAt,
+      chunks: aggregate.chunks,
+      segments: aggregate.segments,
+    }),
+    chunksTranscribed: completedChunks.length,
+    chunksSkipped: Math.max(0, manifest.chunks.length - completedChunks.length),
+  });
+  return { manifest: completed, transcript: aggregate };
+}
+
+export async function transcribeCaptureChunk(captureId: string, chunkIndex: number) {
+  const manifest = await getCaptureManifest(captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  const chunk = manifest.chunks.find((candidate) => candidate.index === chunkIndex);
+  if (!chunk) {
+    throw new Error("CAPTURE_CHUNK_NOT_FOUND");
+  }
+  if (!transcriptionApiKey() || !transcriptionApiUrl()) {
+    throw new Error("CAPTURE_TRANSCRIPTION_NOT_CONFIGURED");
+  }
+
+  await updateCaptureChunkTranscript({
+    captureId,
+    chunkIndex,
+    transcript: {
+      status: "pending",
+      transcriptJsonPath: null,
+      transcriptMarkdownPath: null,
+      generatedAt: null,
+      chunksTranscribed: 0,
+      chunksSkipped: 0,
+      error: null,
+    },
+  });
+
+  const generatedAt = new Date().toISOString();
+  try {
+    const resolved = resolveCaptureStoragePath(chunk.storagePath);
+    const stat = await fs.stat(resolved).catch(() => null);
+    if (!stat || stat.size < minTranscribableAudioBytes) {
+      throw new Error(stat ? `CAPTURE_CHUNK_TOO_SMALL:${stat.size}` : "CAPTURE_CHUNK_MISSING");
+    }
+    if (stat.size > maxUploadBytes()) {
+      throw new Error(`CAPTURE_CHUNK_EXCEEDS_UPLOAD_LIMIT:${stat.size}`);
+    }
+
+    const response = await transcribeAudio({
+      filename: path.basename(resolved),
+      mimeType: chunk.mimeType || "audio/webm",
+      content: await fs.readFile(resolved),
+    });
+    const offsetSeconds = chunkOffsetSeconds(chunk, manifest.startedAt, 0);
+    const segments = normalizeSegments({ chunk, response, offsetSeconds });
+    const transcriptChunk: CaptureTranscriptChunk = {
+      index: chunk.index,
+      filename: chunk.filename,
+      storagePath: chunk.storagePath,
+      mimeType: chunk.mimeType,
+      sizeBytes: stat.size,
+      durationMs: chunk.durationMs,
+      startedAt: chunk.startedAt,
+      endedAt: chunk.endedAt,
+      status: "transcribed",
+      text: segments.map((segment) => segment.text).join(" ").trim(),
+      segments,
+      reason: null,
+    };
+    const chunkPayload = {
+      captureId: manifest.id,
+      generatedAt,
+      chunk: transcriptChunk,
+    };
+    const paths = await writeCaptureChunkTranscriptFiles({
+      captureId,
+      chunkIndex,
+      jsonContent: JSON.stringify(chunkPayload, null, 2),
+      markdownContent: buildChunkMarkdown({
+        title: manifest.title,
+        captureId: manifest.id,
+        chunk: transcriptChunk,
+        generatedAt,
+      }),
+    });
+    const withChunk = await updateCaptureChunkTranscript({
+      captureId,
+      chunkIndex,
+      transcript: {
+        status: "completed",
+        transcriptJsonPath: paths.json,
+        transcriptMarkdownPath: paths.markdown,
+        generatedAt,
+        chunksTranscribed: 1,
+        chunksSkipped: 0,
+        error: null,
+      },
+    });
+    const completedChunks = (await Promise.all(
+      withChunk.chunks.map((candidate) => readCompletedChunkTranscript(captureId, candidate)),
+    )).filter((candidate): candidate is CaptureTranscriptChunk => Boolean(candidate));
+    const aggregate = transcriptPayloadFromChunks({
+      captureId: manifest.id,
+      title: manifest.title,
+      source: manifest.source,
+      startedAt: manifest.startedAt,
+      finalizedAt: manifest.finalizedAt,
+      generatedAt,
+      chunks: completedChunks.sort((left, right) => left.index - right.index),
+    });
+    const completed = await writeCaptureTranscriptFiles({
+      captureId,
+      jsonContent: JSON.stringify(aggregate, null, 2),
+      markdownContent: buildMarkdown({
+        title: manifest.title,
+        captureId: manifest.id,
+        startedAt: manifest.startedAt,
+        finalizedAt: manifest.finalizedAt,
+        generatedAt,
+        chunks: aggregate.chunks,
+        segments: aggregate.segments,
+      }),
+      chunksTranscribed: completedChunks.length,
+      chunksSkipped: Math.max(0, withChunk.chunks.length - completedChunks.length),
+    });
+    return { manifest: completed, transcript: aggregate, chunk: transcriptChunk };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "CAPTURE_CHUNK_TRANSCRIPTION_FAILED";
+    await updateCaptureChunkTranscript({
+      captureId,
+      chunkIndex,
+      transcript: {
+        status: "failed",
+        transcriptJsonPath: null,
+        transcriptMarkdownPath: null,
+        generatedAt: null,
+        chunksTranscribed: 0,
+        chunksSkipped: 1,
+        error: message,
+      },
+    }).catch(() => undefined);
+    throw error;
+  }
+}
+
 export async function transcribeCaptureSession(captureId: string) {
   const manifest = await getCaptureManifest(captureId);
   if (!manifest) {
@@ -245,6 +492,25 @@ export async function transcribeCaptureSession(captureId: string) {
   let fallbackOffsetSeconds = 0;
 
   try {
+    const aggregateFromChunks = await rebuildAggregateFromCompletedChunks({ captureId, generatedAt });
+    if (aggregateFromChunks && aggregateFromChunks.transcript.chunks.length === manifest.chunks.length) {
+      return aggregateFromChunks;
+    }
+
+    if (manifest.chunks.length > 1) {
+      const standalone = await Promise.all(manifest.chunks.map((chunk) => chunkLooksStandaloneWebm(chunk)));
+      if (standalone.every(Boolean)) {
+        let latest: Awaited<ReturnType<typeof transcribeCaptureChunk>> | null = null;
+        for (const chunk of manifest.chunks) {
+          if (chunk.transcript?.status === "completed") continue;
+          latest = await transcribeCaptureChunk(captureId, chunk.index);
+        }
+        const rebuilt = await rebuildAggregateFromCompletedChunks({ captureId, generatedAt });
+        if (rebuilt) return rebuilt;
+        if (latest) return { manifest: latest.manifest, transcript: latest.transcript };
+      }
+    }
+
     const totalBytes = manifest.chunks.reduce((sum, chunk) => sum + Math.max(0, chunk.sizeBytes), 0);
     if (manifest.chunks.length > 1 && totalBytes <= maxUploadBytes()) {
       const contents: Buffer[] = [];

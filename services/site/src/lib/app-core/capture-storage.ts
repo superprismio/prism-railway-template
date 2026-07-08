@@ -15,6 +15,7 @@ export type CaptureChunkRecord = {
   endedAt: string | null;
   durationMs: number | null;
   uploadedAt: string;
+  transcript?: CaptureTranscriptRecord | null;
 };
 
 export type CaptureTranscriptRecord = {
@@ -112,6 +113,14 @@ export function captureTranscriptStoragePaths(captureId: string) {
   return {
     json: path.join(captureSessionStoragePath(captureId), "transcripts", "transcript.json"),
     markdown: path.join(captureSessionStoragePath(captureId), "transcripts", "transcript.md"),
+  };
+}
+
+export function captureChunkTranscriptStoragePaths(captureId: string, chunkIndex: number) {
+  const basename = String(chunkIndex).padStart(6, "0");
+  return {
+    json: path.join(captureSessionStoragePath(captureId), "transcripts", "chunks", `${basename}.json`),
+    markdown: path.join(captureSessionStoragePath(captureId), "transcripts", "chunks", `${basename}.md`),
   };
 }
 
@@ -215,6 +224,7 @@ export async function writeCaptureChunk(input: {
     endedAt: input.endedAt ?? null,
     durationMs: Number.isFinite(input.durationMs) ? Math.trunc(input.durationMs as number) : null,
     uploadedAt: now,
+    transcript: null,
   };
   const chunks = manifest.chunks.filter((existing) => existing.index !== input.index);
   chunks.push(chunk);
@@ -269,6 +279,30 @@ export async function markCaptureTranscriptPending(captureId: string) {
       error: null,
     },
     updatedAt: now,
+  };
+  await writeCaptureManifest(updated);
+  return updated;
+}
+
+export async function updateCaptureChunkTranscript(input: {
+  captureId: string;
+  chunkIndex: number;
+  transcript: CaptureTranscriptRecord;
+}) {
+  const manifest = await getCaptureManifest(input.captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  const chunks = manifest.chunks.map((chunk) => chunk.index === input.chunkIndex
+    ? { ...chunk, transcript: input.transcript }
+    : chunk);
+  if (!chunks.some((chunk) => chunk.index === input.chunkIndex)) {
+    throw new Error("CAPTURE_CHUNK_NOT_FOUND");
+  }
+  const updated: CaptureManifest = {
+    ...manifest,
+    chunks,
+    updatedAt: new Date().toISOString(),
   };
   await writeCaptureManifest(updated);
   return updated;
@@ -346,6 +380,25 @@ export async function writeCaptureTranscriptFiles(input: {
   };
   await writeCaptureManifest(updated);
   return updated;
+}
+
+export async function writeCaptureChunkTranscriptFiles(input: {
+  captureId: string;
+  chunkIndex: number;
+  jsonContent: string;
+  markdownContent: string;
+}) {
+  const paths = captureChunkTranscriptStoragePaths(input.captureId, input.chunkIndex);
+  const resolvedJson = resolveCaptureStoragePath(paths.json);
+  const resolvedMarkdown = resolveCaptureStoragePath(paths.markdown);
+  await fs.mkdir(path.dirname(resolvedJson), { recursive: true });
+  await fs.writeFile(resolvedJson, input.jsonContent.endsWith("\n") ? input.jsonContent : `${input.jsonContent}\n`, "utf8");
+  await fs.writeFile(
+    resolvedMarkdown,
+    input.markdownContent.endsWith("\n") ? input.markdownContent : `${input.markdownContent}\n`,
+    "utf8",
+  );
+  return paths;
 }
 
 export async function markCaptureTranscriptFailed(input: {
