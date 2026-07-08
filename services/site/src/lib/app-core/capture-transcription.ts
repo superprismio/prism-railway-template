@@ -48,6 +48,12 @@ type CaptureTranscriptChunk = {
   reason: string | null;
 };
 
+type TranscriptionInput = {
+  filename: string;
+  mimeType: string;
+  content: Buffer;
+};
+
 function transcriptionApiKey() {
   return (
     process.env.VOICE_TRANSCRIPTION_API_KEY?.trim()
@@ -136,16 +142,15 @@ function normalizeSegments(input: {
   ];
 }
 
-async function transcribeChunk(chunkPath: string, chunk: CaptureChunkRecord) {
+async function transcribeAudio(input: TranscriptionInput) {
   const apiKey = transcriptionApiKey();
   const apiUrl = transcriptionApiUrl();
   if (!apiKey || !apiUrl) {
     throw new Error("CAPTURE_TRANSCRIPTION_NOT_CONFIGURED");
   }
 
-  const fileBuffer = await fs.readFile(chunkPath);
   const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(fileBuffer)], { type: chunk.mimeType || "audio/webm" }), path.basename(chunkPath));
+  form.append("file", new Blob([new Uint8Array(input.content)], { type: input.mimeType || "audio/webm" }), input.filename);
   const model = transcriptionModel();
   if (model) {
     form.append("model", model);
@@ -168,6 +173,18 @@ async function transcribeChunk(chunkPath: string, chunk: CaptureChunkRecord) {
     throw new Error(`CAPTURE_TRANSCRIPTION_FAILED:${response.status}:${(await response.text()).slice(0, 300)}`);
   }
   return (await response.json()) as TranscriptionResponse;
+}
+
+async function readChunkContent(chunk: CaptureChunkRecord) {
+  const resolved = resolveCaptureStoragePath(chunk.storagePath);
+  const stat = await fs.stat(resolved).catch(() => null);
+  if (!stat) {
+    return { resolved, stat: null, content: null };
+  }
+  if (stat.size < minTranscribableAudioBytes || stat.size > maxUploadBytes()) {
+    return { resolved, stat, content: null };
+  }
+  return { resolved, stat, content: await fs.readFile(resolved) };
 }
 
 function buildMarkdown(input: {
@@ -228,7 +245,74 @@ export async function transcribeCaptureSession(captureId: string) {
   let fallbackOffsetSeconds = 0;
 
   try {
+    const totalBytes = manifest.chunks.reduce((sum, chunk) => sum + Math.max(0, chunk.sizeBytes), 0);
+    if (manifest.chunks.length > 1 && totalBytes <= maxUploadBytes()) {
+      const contents: Buffer[] = [];
+      const skippedChunks: CaptureTranscriptChunk[] = [];
+      for (const chunk of manifest.chunks) {
+        const read = await readChunkContent(chunk);
+        if (!read.stat || !read.content) {
+          skippedChunks.push({
+            index: chunk.index,
+            filename: chunk.filename,
+            storagePath: chunk.storagePath,
+            mimeType: chunk.mimeType,
+            sizeBytes: read.stat?.size ?? 0,
+            durationMs: chunk.durationMs,
+            startedAt: chunk.startedAt,
+            endedAt: chunk.endedAt,
+            status: "skipped",
+            text: "",
+            segments: [],
+            reason: read.stat ? `audio chunk cannot be uploaded (${read.stat.size} bytes)` : "audio chunk missing",
+          });
+          continue;
+        }
+        contents.push(read.content);
+      }
+
+      if (contents.length > 0) {
+        const assembledContent = Buffer.concat(contents);
+        const syntheticChunk: CaptureChunkRecord = {
+          ...manifest.chunks[0],
+          filename: `${manifest.id}-assembled.webm`,
+          mimeType: manifest.mimeType || manifest.chunks[0]?.mimeType || "audio/webm",
+          sizeBytes: assembledContent.byteLength,
+          durationMs: manifest.chunks.reduce((sum, chunk) => sum + (chunk.durationMs ?? 0), 0) || null,
+          endedAt: manifest.chunks[manifest.chunks.length - 1]?.endedAt ?? manifest.chunks[0].endedAt,
+        };
+        const response = await transcribeAudio({
+          filename: syntheticChunk.filename,
+          mimeType: syntheticChunk.mimeType,
+          content: assembledContent,
+        });
+        const segments = normalizeSegments({ chunk: syntheticChunk, response, offsetSeconds: 0 });
+        const text = segments.map((segment) => segment.text).join(" ").trim();
+        allSegments.push(...segments);
+        chunks.push({
+          index: 0,
+          filename: syntheticChunk.filename,
+          storagePath: manifest.chunks.map((chunk) => chunk.storagePath).join(","),
+          mimeType: syntheticChunk.mimeType,
+          sizeBytes: assembledContent.byteLength,
+          durationMs: syntheticChunk.durationMs,
+          startedAt: syntheticChunk.startedAt,
+          endedAt: syntheticChunk.endedAt,
+          status: "transcribed",
+          text,
+          segments,
+          reason: null,
+        });
+        chunks.push(...skippedChunks);
+      }
+    }
+
+    if (chunks.length === 0 && manifest.chunks.length > 1 && totalBytes > maxUploadBytes()) {
+      throw new Error("CAPTURE_TRANSCRIPTION_REQUIRES_STANDALONE_CHUNKS");
+    }
+
     for (const chunk of manifest.chunks) {
+      if (chunks.length > 0) break;
       const resolved = resolveCaptureStoragePath(chunk.storagePath);
       const stat = await fs.stat(resolved).catch(() => null);
       if (!stat || stat.size < minTranscribableAudioBytes) {
@@ -267,7 +351,12 @@ export async function transcribeCaptureSession(captureId: string) {
       }
 
       const offsetSeconds = chunkOffsetSeconds(chunk, manifest.startedAt, fallbackOffsetSeconds);
-      const response = await transcribeChunk(resolved, chunk);
+      const content = await fs.readFile(resolved);
+      const response = await transcribeAudio({
+        filename: path.basename(resolved),
+        mimeType: chunk.mimeType || "audio/webm",
+        content,
+      });
       const segments = normalizeSegments({ chunk, response, offsetSeconds });
       const text = segments.map((segment) => segment.text).join(" ").trim();
       allSegments.push(...segments);
