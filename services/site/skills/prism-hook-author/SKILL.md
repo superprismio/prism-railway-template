@@ -22,6 +22,22 @@ Hook authoring rules:
 9. Use `targetAppId` only when the workflow actually requires a target repo/app. Many hooks can create content, notifications, or artifacts without a target.
 10. If a payload references an outside system, include stable identifiers and URLs in the payload so workflow steps can attach external refs.
 
+For template built-in hooks, prefer one canonical hook per generic event family.
+If an older instance has a custom hook or workflow that overlaps a built-in,
+update the hook to point at the built-in only when the behavior is genuinely
+generic. Keep the custom hook/workflow when it calls workspace-specific tools or
+encodes workspace policy.
+
+For completed recording transcripts, use:
+
+- hook key: `recording-transcript-completed`
+- workflow key: `recording-transcript-review-publish`
+
+The hook payload should include stable source and downstream handoff hints:
+source system, recording id, transcript paths, source URLs, scheduled event
+id/details, channel id/name, recording time window, and any policy flags an
+instance-specific follow-up workflow may need.
+
 Hook request templates must use one of these `requestType` values: `bug`, `feature`, `issue`, `content`, `design`, `config`, or `ops`. Use `issue` when the hook represents an imported issue-like source item rather than a broader feature or content request.
 
 When the hook creates a predictable request shape, include `requestTemplate.estimatedHumanHours`. Estimate the whole request, including expected human gates, review/approval time, coordination, and likely loopbacks. Choose one bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`. Leave it out only when the incoming payload determines scope at trigger time.

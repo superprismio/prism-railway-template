@@ -415,24 +415,69 @@ function EnvironmentInstructions() {
           </div>
         </div>
 
-        <div className="grid gap-3 rounded-none border border-border/60 p-4">
+        <div className="grid gap-3 rounded-none border border-border/60 p-4 xl:col-span-2">
           <div>
-            <h4 className="font-medium">Voice Optional</h4>
+            <h4 className="font-medium">Capture & Recording</h4>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              Discord recording stays disabled until the transcription key is
-              set.
+              Browser capture, Discord native recording, transcription, and
+              live recap need env on the service that performs the work.
             </p>
           </div>
-          <div>
-            {serviceLabel("communication adapter")}
-            {copyBlock([
-              'VOICE_DAVE_ENCRYPTION="true"',
-              'VOICE_RECORDING_WARNING_MINUTES="50"',
-              'VOICE_RECORDING_MAX_MINUTES="60"',
-              'VOICE_TRANSCRIPTION_BASE_URL="https://api.venice.ai/api/v1/audio/transcriptions"',
-              'VOICE_TRANSCRIPTION_API_KEY=""',
-              'VOICE_TRANSCRIPTION_MODEL="nvidia/parakeet-tdt-0.6b-v3"',
-            ])}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              {serviceLabel("site")}
+              <div className="mb-3 space-y-2 text-xs leading-relaxed text-muted-foreground">
+                <p>
+                  Required for browser capture transcription. Required for
+                  browser capture recap and summary generation when those
+                  actions call Codex Runtime.
+                </p>
+                <p>
+                  External capture dispatch has a bounded timeout by default;
+                  override it only for slow trusted receivers.
+                </p>
+              </div>
+              {copyBlock([
+                'VOICE_TRANSCRIPTION_BASE_URL="https://api.venice.ai/api/v1/audio/transcriptions"',
+                'VOICE_TRANSCRIPTION_API_KEY=""',
+                'VOICE_TRANSCRIPTION_MODEL="nvidia/parakeet-tdt-0.6b-v3"',
+                'VOICE_TRANSCRIPTION_LANGUAGE="en"',
+                'VOICE_TRANSCRIPTION_RESPONSE_FORMAT="json"',
+                'VOICE_TRANSCRIPTION_TIMESTAMPS="true"',
+                'CODEX_RUNTIME_BASE_URL=""',
+                'CAPTURE_DISPATCH_EXTERNAL_TIMEOUT_MS="10000"',
+              ])}
+            </div>
+            <div>
+              {serviceLabel("communication adapter")}
+              <div className="mb-3 space-y-2 text-xs leading-relaxed text-muted-foreground">
+                <p>
+                  Required for Discord native recording transcription and
+                  <code> /prism-recap</code>. The transcript-completed hook key
+                  defaults to the built-in Prism hook when unset.
+                </p>
+                <p>
+                  Legacy summary and memory ingest flags should stay off unless
+                  intentionally migrating an older instance.
+                </p>
+              </div>
+              {copyBlock([
+                'VOICE_DAVE_ENCRYPTION="true"',
+                'VOICE_RECORDING_WARNING_MINUTES="50"',
+                'VOICE_RECORDING_MAX_MINUTES="60"',
+                'VOICE_TRANSCRIPTION_BASE_URL="https://api.venice.ai/api/v1/audio/transcriptions"',
+                'VOICE_TRANSCRIPTION_API_KEY=""',
+                'VOICE_TRANSCRIPTION_MODEL="nvidia/parakeet-tdt-0.6b-v3"',
+                'VOICE_TRANSCRIPTION_LANGUAGE="en"',
+                'VOICE_TRANSCRIPTION_RESPONSE_FORMAT="json"',
+                'VOICE_TRANSCRIPTION_TIMESTAMPS="true"',
+                'CODEX_RUNTIME_BASE_URL=""',
+                'DISCORD_RECORDING_COMPLETE_HOOK_KEY="recording-transcript-completed"',
+                'DISCORD_RECORDING_COMPLETE_HOOK_ENABLED="true"',
+                'DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED="false"',
+                'DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED="false"',
+              ])}
+            </div>
           </div>
         </div>
 

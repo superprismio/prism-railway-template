@@ -95,6 +95,7 @@ export type RecordingSessionMetadata = {
   channelId: string;
   guildId: string;
   scheduledEventId?: string | null;
+  scheduledEvent?: ScheduledEventMetadata | null;
   speakers: SpeakerMetadata[];
   participants: ParticipantPresence[];
   timingEvents?: VoiceTimingEvent[];
@@ -114,6 +115,18 @@ export type RecordingSessionMetadata = {
     prismMemoryTranscriptPath?: string;
     prismMemorySummaryPath?: string;
   };
+};
+
+type ScheduledEventMetadata = {
+  id: string;
+  name: string | null;
+  description: string | null;
+  status: string | number | null;
+  scheduledStartAt: string | null;
+  scheduledEndAt: string | null;
+  channelId: string | null;
+  entityType: string | number | null;
+  recurrenceRule: unknown | null;
 };
 
 export type StopRecordingResult = {
@@ -181,6 +194,20 @@ type SessionSummary = {
   summaryMarkdownPath: string;
 };
 
+type SessionRecap = {
+  title: string;
+  recap: string;
+  keyPoints: string[];
+  decisions: string[];
+  actionItems: Array<{
+    description: string;
+    owner: string | null;
+    dueDate: string | null;
+  }>;
+  openQuestions: string[];
+  confidence: "low" | "medium" | "high";
+};
+
 type VoiceTranscriptionResponse = {
   text?: string;
   duration?: number;
@@ -231,6 +258,7 @@ type RecordingSession = {
   channelId: string;
   channelName: string;
   scheduledEventId?: string | null;
+  scheduledEvent?: ScheduledEventMetadata | null;
   announcementChannel: TextBasedChannel | null;
   startedAt: number;
   rootDir: string;
@@ -255,6 +283,7 @@ type PersistedRecordingSession = {
   channelId: string;
   channelName: string;
   scheduledEventId?: string | null;
+  scheduledEvent?: ScheduledEventMetadata | null;
   startedAt: string;
   participants?: Array<{
     userId: string;
@@ -356,6 +385,7 @@ export class DiscordVoiceManager {
   private readonly connections = new Map<string, VoiceConnectionState>();
   private readonly sessionsByGuild = new Map<string, RecordingSession>();
   private readonly recordingOperationsByGuild = new Map<string, "starting" | "stopping">();
+  private readonly recapOperationsByGuild = new Set<string>();
   private readonly activeUserStreams = new Map<string, Map<string, ActiveAudioStream>>();
   private readonly ffmpegSegmentSeconds = Number.parseInt(process.env.VOICE_FFMPEG_SEGMENT_SECONDS ?? "180", 10) || 180;
   private readonly voiceChatMaxMessages = Number.parseInt(process.env.VOICE_CHAT_MAX_MESSAGES ?? "200", 10) || 200;
@@ -452,6 +482,7 @@ export class DiscordVoiceManager {
       channelId: session.channelId,
       channelName: session.channelName,
       scheduledEventId: session.scheduledEventId ?? null,
+      scheduledEvent: session.scheduledEvent ?? null,
       startedAt: isoTimestamp(session.startedAt),
       participants: [...session.participants.values()].map((participant) => ({
         userId: participant.userId,
@@ -553,7 +584,31 @@ export class DiscordVoiceManager {
     return state;
   }
 
-  private async resolveScheduledEventId(guild: Guild, channelId: string, atMs = Date.now()): Promise<string | null> {
+  private scheduledEventMetadata(event: {
+    id: string;
+    name?: string | null;
+    description?: string | null;
+    status?: string | number | null;
+    scheduledStartTimestamp?: number | null;
+    scheduledEndTimestamp?: number | null;
+    channelId?: string | null;
+    entityType?: string | number | null;
+    recurrenceRule?: unknown;
+  }): ScheduledEventMetadata {
+    return {
+      id: event.id,
+      name: event.name ?? null,
+      description: event.description ?? null,
+      status: event.status ?? null,
+      scheduledStartAt: event.scheduledStartTimestamp ? new Date(event.scheduledStartTimestamp).toISOString() : null,
+      scheduledEndAt: event.scheduledEndTimestamp ? new Date(event.scheduledEndTimestamp).toISOString() : null,
+      channelId: event.channelId ?? null,
+      entityType: event.entityType ?? null,
+      recurrenceRule: event.recurrenceRule ?? null,
+    };
+  }
+
+  private async resolveScheduledEvent(guild: Guild, channelId: string, atMs = Date.now()): Promise<ScheduledEventMetadata | null> {
     try {
       const scheduledEvents = await guild.scheduledEvents.fetch();
       const candidateEvents = [...scheduledEvents.values()]
@@ -576,7 +631,7 @@ export class DiscordVoiceManager {
         });
       const candidate = candidateEvents[0]?.event;
       if (candidate) {
-        return candidate.id;
+        return this.scheduledEventMetadata(candidate);
       }
       for (const event of scheduledEvents.values()) {
         if (event.channelId === channelId) {
@@ -626,12 +681,14 @@ export class DiscordVoiceManager {
     await fs.mkdir(flacDir, { recursive: true });
     await fs.mkdir(transcriptDir, { recursive: true });
 
+    const scheduledEvent = await this.resolveScheduledEvent(guild, channel.id);
     const session: RecordingSession = {
       sessionId,
       guildId: guild.id,
       channelId: channel.id,
       channelName: channel.name,
-      scheduledEventId: await this.resolveScheduledEventId(guild, channel.id),
+      scheduledEventId: scheduledEvent?.id ?? null,
+      scheduledEvent,
       announcementChannel: interaction.channel && interaction.channel.isSendable() ? interaction.channel : null,
       startedAt: Date.now(),
       rootDir,
@@ -758,14 +815,9 @@ export class DiscordVoiceManager {
 
     try {
       const metadata = await this.finalizeSession(session);
-      const transcriptArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemoryTranscriptPath);
-      const summaryArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemorySummaryPath);
-      const publicMessage = summaryArtifact
-        ? [
-            `Meeting summary for **${session.channelName}** is ready: ${summaryArtifact.url}`,
-            transcriptArtifact ? `Transcript: ${transcriptArtifact.url}` : null,
-          ].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n")
-        : `Recording for **${session.channelName}** stopped automatically. Summary was not generated.`;
+      const publicMessage = metadata.artifacts?.transcriptMarkdownPath
+        ? `Recording for **${session.channelName}** stopped automatically. Transcript was sent to Prism for synthesis.`
+        : `Recording for **${session.channelName}** stopped automatically. Transcript was not generated.`;
       await this.sendRecordingMessage(session, publicMessage);
     } catch (error) {
       await this.sendRecordingMessage(
@@ -826,7 +878,11 @@ export class DiscordVoiceManager {
     if (!speaker.stream) {
       throw new Error(`Recovered speaker stream cannot be reused for live capture: ${userId}`);
     }
-    const pipelinePromise = pipeline(opusStream as any, oggStream as any, speaker.stream) as Promise<void>;
+    const pipelinePromise = (pipeline(opusStream as any, oggStream as any, speaker.stream) as Promise<void>).catch((error) => {
+      console.warn(
+        `[discord-adapter] speaker capture pipeline ended with error session=${session.sessionId} user=${userId}: ${this.describeError(error)}`,
+      );
+    });
     const activeStream: ActiveAudioStream = {
       userId,
       opusStream,
@@ -997,6 +1053,7 @@ export class DiscordVoiceManager {
       channelId: candidate.channelId,
       channelName: candidate.channelName,
       scheduledEventId: candidate.scheduledEventId ?? null,
+      scheduledEvent: candidate.scheduledEvent ?? null,
       announcementChannel: null,
       startedAt: parseIsoDate(candidate.startedAt).getTime(),
       rootDir,
@@ -1166,34 +1223,25 @@ export class DiscordVoiceManager {
       `[discord-adapter] stop recording requested session=${session.sessionId} activeStreams=${session.activeAudioStreams.size} trackedParticipants=${session.participants.size}`,
     );
     const metadata = await this.finalizeSession(session);
-    const transcriptArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemoryTranscriptPath);
-    const summaryArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemorySummaryPath);
     const privateMessage = [
       `Recording stopped for **${session.channelName}**.`,
       `Session: \`${metadata.sessionId}\``,
       session.recoveredFromDisk ? "Recovered unfinished session from the recording volume after adapter restart." : null,
       `Participants: ${metadata.participants.length}`,
       `Speakers with audio: ${metadata.speakers.length}`,
-      transcriptArtifact
-        ? `Transcript: ${transcriptArtifact.url} (\`${transcriptArtifact.id}\`)`
-        : metadata.artifacts?.transcriptMarkdownPath
-          ? `Transcript written locally: \`${metadata.artifacts.transcriptMarkdownPath}\``
-          : "Transcript not generated.",
-      summaryArtifact
-        ? `Summary: ${summaryArtifact.url} (\`${summaryArtifact.id}\`)`
-        : metadata.artifacts?.summaryMarkdownPath
-          ? `Summary written locally: \`${metadata.artifacts.summaryMarkdownPath}\``
-          : "Summary not generated.",
+      metadata.artifacts?.transcriptMarkdownPath
+        ? `Transcript written locally: \`${metadata.artifacts.transcriptMarkdownPath}\``
+        : "Transcript not generated.",
       this.recordingCompleteHookEnabled() && this.recordingCompleteHookKey()
-        ? `Prism recording hook configured: \`${this.recordingCompleteHookKey()}\`.`
-        : "No Prism recording hook configured.",
-      process.env.N8N_WEBHOOK_URL ? "Legacy webhook handoff attempted." : "No legacy webhook handoff configured.",
+        ? `Prism workflow handoff attempted via hook \`${this.recordingCompleteHookKey()}\`.`
+        : "Prism workflow handoff disabled.",
+      this.legacyRecordingSummaryEnabled() && metadata.artifacts?.summaryMarkdownPath
+        ? `Legacy summary written locally: \`${metadata.artifacts.summaryMarkdownPath}\``
+        : null,
+      process.env.N8N_WEBHOOK_URL ? "Legacy n8n webhook handoff attempted." : null,
     ].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n");
-    const publicMessage = summaryArtifact
-      ? [
-          `Meeting summary for **${session.channelName}** is ready: ${summaryArtifact.url}`,
-          transcriptArtifact ? `Transcript: ${transcriptArtifact.url}` : null,
-        ].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n")
+    const publicMessage = metadata.artifacts?.transcriptMarkdownPath
+      ? `Recording for **${session.channelName}** is transcribed and queued for Prism synthesis.`
       : null;
     return {
       privateMessage,
@@ -1280,23 +1328,27 @@ export class DiscordVoiceManager {
     const metadata = this.buildWebhookPayload(session, speakers, participants, endedAt);
     const transcriptArtifacts = await this.buildTranscriptArtifacts(session, metadata);
     let summary: SessionSummary | null = null;
-    try {
-      summary = await this.buildSummaryArtifacts(session, metadata, transcriptArtifacts);
-    } catch (error) {
-      console.warn(
-        `[discord-adapter] summary generation skipped session=${session.sessionId}: ${this.describeError(error)}`,
-      );
+    if (this.legacyRecordingSummaryEnabled()) {
+      try {
+        summary = await this.buildSummaryArtifacts(session, metadata, transcriptArtifacts);
+      } catch (error) {
+        console.warn(
+          `[discord-adapter] legacy summary generation skipped session=${session.sessionId}: ${this.describeError(error)}`,
+        );
+      }
     }
     let memoryIngest: { transcriptPath: string | null; summaryPath: string | null } = {
       transcriptPath: null,
       summaryPath: null,
     };
-    try {
-      memoryIngest = await this.ingestArtifactsToPrismMemory(metadata, transcriptArtifacts, summary);
-    } catch (error) {
-      console.warn(
-        `[discord-adapter] prism memory ingest skipped session=${session.sessionId}: ${this.describeError(error)}`,
-      );
+    if (this.legacyRecordingMemoryIngestEnabled()) {
+      try {
+        memoryIngest = await this.ingestArtifactsToPrismMemory(metadata, transcriptArtifacts, summary);
+      } catch (error) {
+        console.warn(
+          `[discord-adapter] legacy prism memory ingest skipped session=${session.sessionId}: ${this.describeError(error)}`,
+        );
+      }
     }
     metadata.artifacts = {
       transcriptJsonPath: transcriptArtifacts?.transcriptJsonPath,
@@ -1355,6 +1407,35 @@ export class DiscordVoiceManager {
       `Participants: ${members.length}`,
       members.length > 0 ? members.join("\n") : "- none",
     ].join("\n");
+  }
+
+  async recap(interaction: ChatInputCommandInteraction, steering?: string | null): Promise<string> {
+    if (!interaction.guildId) {
+      throw new Error("This command must be used inside a Discord server.");
+    }
+    if (this.recapOperationsByGuild.has(interaction.guildId)) {
+      throw new Error("A meeting recap is already running for this server.");
+    }
+    const { channel } = await this.resolveMemberVoiceChannel(interaction);
+    const session = this.sessionsByGuild.get(interaction.guildId);
+    if (!session) {
+      throw new Error(`No active recording session found for **${channel.name}**. Use \`/prism-record\` first.`);
+    }
+    if (session.channelId !== channel.id) {
+      throw new Error(`An active recording is running in **${session.channelName}**. Join that channel to request a recap.`);
+    }
+
+    this.recapOperationsByGuild.add(interaction.guildId);
+    try {
+      const transcript = await this.buildLiveRecapTranscript(session);
+      if (!transcript.mergedTranscript.trim()) {
+        throw new Error("No transcript text is available yet. Wait for people to speak, then try `/prism-recap` again.");
+      }
+      const recap = await this.buildLiveRecap(session, transcript, steering?.trim() || null);
+      return this.renderLiveRecapResponse(session, recap, transcript);
+    } finally {
+      this.recapOperationsByGuild.delete(interaction.guildId);
+    }
   }
 
   async handleVoiceStateUpdate(oldState: VoiceState, newState: VoiceState): Promise<void> {
@@ -1473,6 +1554,7 @@ export class DiscordVoiceManager {
       channelId: session.channelId,
       guildId: session.guildId,
       scheduledEventId: session.scheduledEventId ?? null,
+      scheduledEvent: session.scheduledEvent ?? null,
       speakers,
       participants,
       timingEvents: session.timingEvents,
@@ -1647,6 +1729,178 @@ export class DiscordVoiceManager {
         `- Ended: ${new Date(metadata.endedAt).toISOString()}`,
         "",
         ...skippedChunkLines,
+        mergedTranscript || "_No transcript content generated._",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    return {
+      speakerTranscripts,
+      chatMessages,
+      mergedSegments,
+      mergedTranscript,
+      transcriptJsonPath,
+      transcriptMarkdownPath,
+      skippedChunks,
+    };
+  }
+
+  private async buildLiveRecapTranscript(session: RecordingSession): Promise<SessionTranscriptArtifacts> {
+    if (!this.voiceTranscriptionApiKey()) {
+      throw new Error("VOICE_TRANSCRIPTION_API_KEY is required for meeting recaps");
+    }
+
+    const now = Date.now();
+    const recapDir = path.join(session.rootDir, "recaps", new Date(now).toISOString().replace(/[:.]/g, "-"));
+    const audioDir = path.join(recapDir, "audio");
+    await fs.mkdir(audioDir, { recursive: true });
+
+    const speakerTranscripts: SpeakerTranscript[] = [];
+    const skippedChunks: SkippedTranscriptionChunk[] = [];
+
+    for (const speaker of session.speakers.values()) {
+      const rawStat = await fs.stat(speaker.rawPath).catch(() => null);
+      if (!rawStat || rawStat.size < MIN_TRANSCRIBABLE_AUDIO_BYTES) {
+        skippedChunks.push({
+          speaker: speaker.username,
+          speakerId: speaker.userId,
+          chunkIndex: 0,
+          fileName: path.basename(speaker.rawPath),
+          reason: rawStat ? `audio too small (${rawStat.size} bytes)` : "audio missing",
+        });
+        continue;
+      }
+
+      const snapshotPath = path.join(audioDir, `${speaker.userId}-${sanitizeFileSegment(speaker.username)}-snapshot.ogg`);
+      await fs.copyFile(speaker.rawPath, snapshotPath);
+      const outputPattern = path.join(audioDir, `${speaker.userId}-${sanitizeFileSegment(speaker.username)}-chunk_%03d.flac`);
+      try {
+        await this.runFfmpeg(snapshotPath, outputPattern);
+      } catch (error) {
+        skippedChunks.push({
+          speaker: speaker.username,
+          speakerId: speaker.userId,
+          chunkIndex: 0,
+          fileName: path.basename(snapshotPath),
+          reason: this.describeError(error),
+        });
+        continue;
+      }
+
+      const files = (await fs.readdir(audioDir))
+        .filter((name) => name.startsWith(`${speaker.userId}-${sanitizeFileSegment(speaker.username)}-chunk_`) && name.endsWith(".flac"))
+        .sort();
+      const segments: TranscriptionSegment[] = [];
+      for (const [index, fileName] of files.entries()) {
+        const chunkPath = path.join(audioDir, fileName);
+        const chunkStat = await fs.stat(chunkPath).catch(() => null);
+        if (!chunkStat || chunkStat.size < MIN_TRANSCRIBABLE_AUDIO_BYTES) {
+          skippedChunks.push({
+            speaker: speaker.username,
+            speakerId: speaker.userId,
+            chunkIndex: index,
+            fileName,
+            reason: chunkStat ? `audio chunk too small (${chunkStat.size} bytes)` : "audio chunk missing",
+          });
+          continue;
+        }
+
+        let result: VoiceTranscriptionResponse;
+        try {
+          result = await this.transcribeChunk(chunkPath);
+        } catch (error) {
+          if (!this.isSkippableTranscriptionError(error)) {
+            throw error;
+          }
+          skippedChunks.push({
+            speaker: speaker.username,
+            speakerId: speaker.userId,
+            chunkIndex: index,
+            fileName,
+            reason: this.describeError(error),
+          });
+          continue;
+        }
+
+        const offsetSeconds = voiceOffsetSeconds(isoTimestamp(speaker.firstAudioAt ?? speaker.startedAt), session.startedAt)
+          + index * this.ffmpegSegmentSeconds;
+        const chunkSegments = (result.timestamps?.segment ?? [])
+          .map((segment) => ({
+            text: String(segment.text ?? "").trim(),
+            start: Number(segment.start ?? 0) + offsetSeconds,
+            end: Number(segment.end ?? 0) + offsetSeconds,
+            speaker: speaker.username,
+            speakerId: speaker.userId,
+            chunkIndex: index,
+            source: "voice" as const,
+          }))
+          .filter((segment) => segment.text);
+        if (chunkSegments.length === 0) {
+          const fallbackText = String(result.text ?? "").trim();
+          if (fallbackText) {
+            chunkSegments.push({
+              text: fallbackText,
+              start: offsetSeconds,
+              end: offsetSeconds + Math.max(1, Number(result.duration ?? 0)),
+              speaker: speaker.username,
+              speakerId: speaker.userId,
+              chunkIndex: index,
+              source: "voice",
+            });
+          }
+        }
+        segments.push(...chunkSegments);
+      }
+
+      segments.sort((left, right) => left.start - right.start);
+      if (segments.length > 0) {
+        speakerTranscripts.push({
+          userId: speaker.userId,
+          username: speaker.username,
+          text: segments.map((segment) => segment.text).join(" ").trim(),
+          segments,
+        });
+      }
+    }
+
+    const chatMessages = await this.fetchVoiceChannelChatSegments(session, now);
+    const mergedSegments = [...speakerTranscripts.flatMap((speaker) => speaker.segments), ...chatMessages].sort((left, right) =>
+      left.start === right.start ? left.speaker.localeCompare(right.speaker) : left.start - right.start,
+    );
+    const mergedTranscript = mergedSegments
+      .map((segment) => {
+        const sourceLabel = segment.source === "chat" ? " chat" : "";
+        const suffix = segment.jumpUrl ? ` (${segment.jumpUrl})` : "";
+        return `[${this.formatTimeSec(segment.start)}] [${segment.speaker}${sourceLabel}]: ${segment.text}${suffix}`;
+      })
+      .join("\n");
+
+    const transcriptJsonPath = path.join(recapDir, "transcript.json");
+    const transcriptMarkdownPath = path.join(recapDir, "transcript.md");
+    await fs.writeFile(
+      transcriptJsonPath,
+      `${JSON.stringify({
+        sessionId: session.sessionId,
+        guildId: session.guildId,
+        channelId: session.channelId,
+        generatedAt: new Date(now).toISOString(),
+        speakerTranscripts,
+        chatMessages,
+        mergedSegments,
+        mergedTranscript,
+        skippedChunks,
+      }, null, 2)}\n`,
+      "utf8",
+    );
+    await fs.writeFile(
+      transcriptMarkdownPath,
+      [
+        `# ${session.channelName} Live Recap Transcript`,
+        "",
+        `- Session: \`${session.sessionId}\``,
+        `- Generated: ${new Date(now).toISOString()}`,
+        "",
         mergedTranscript || "_No transcript content generated._",
         "",
       ].join("\n"),
@@ -1858,6 +2112,103 @@ export class DiscordVoiceManager {
     await fs.writeFile(summary.summaryJsonPath, `${JSON.stringify(summary, null, 2)}\n`, "utf8");
     await fs.writeFile(summary.summaryMarkdownPath, this.renderSummaryMarkdown(metadata, summary), "utf8");
     return summary;
+  }
+
+  private async buildLiveRecap(
+    session: RecordingSession,
+    transcriptArtifacts: SessionTranscriptArtifacts,
+    steering: string | null,
+  ): Promise<SessionRecap> {
+    const participants = [...session.participants.values()].map((participant) => participant.username).filter(Boolean);
+    const prompt = [
+      "You are producing an in-progress meeting recap for Prism.",
+      "Return valid JSON only. Do not include markdown fences or extra commentary.",
+      "Use only the transcript evidence provided. If the transcript is sparse or partial, say that plainly and set confidence to low.",
+      "Keep the recap useful for someone joining the meeting now.",
+      steering ? `Operator steering: ${steering}` : "Operator steering: none",
+      "Use exactly this JSON schema:",
+      "{",
+      '  "title": "short meeting title",',
+      '  "recap": "concise current-state recap",',
+      '  "keyPoints": ["point"],',
+      '  "decisions": ["decision"],',
+      '  "actionItems": [{"description":"string","owner":"string or null","dueDate":"YYYY-MM-DD or null"}],',
+      '  "openQuestions": ["question"],',
+      '  "confidence": "low|medium|high"',
+      "}",
+      "",
+      "Meeting metadata:",
+      `- Session: ${session.sessionId}`,
+      `- Channel: ${session.channelName}`,
+      `- Started: ${new Date(session.startedAt).toISOString()}`,
+      `- Generated: ${new Date().toISOString()}`,
+      `- Participants: ${participants.join(", ") || "unknown"}`,
+      "",
+      "Transcript so far:",
+      transcriptArtifacts.mergedTranscript.slice(0, 120_000),
+    ].join("\n");
+
+    const parsed = this.safeJsonParse(await this.codexRuntimeRequest(prompt, `voice-recap-${session.sessionId}`)) as Record<string, unknown>;
+    const stringArray = (value: unknown) => Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim())
+      : [];
+    const actionItems = Array.isArray(parsed.actionItems)
+      ? parsed.actionItems
+          .filter((item: unknown): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+          .map((item) => ({
+            description: typeof item.description === "string" && item.description.trim()
+              ? item.description.trim()
+              : typeof item.name === "string" && item.name.trim()
+                ? item.name.trim()
+                : "Action item",
+            owner: typeof item.owner === "string" && item.owner.trim()
+              ? item.owner.trim()
+              : typeof item.assignedTo === "string" && item.assignedTo.trim()
+                ? item.assignedTo.trim()
+                : null,
+            dueDate: typeof item.dueDate === "string" && item.dueDate.trim() ? item.dueDate.trim() : null,
+          }))
+      : [];
+    const confidence = parsed.confidence === "high" || parsed.confidence === "medium" || parsed.confidence === "low"
+      ? parsed.confidence
+      : "low";
+    return {
+      title: typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : `${session.channelName} recap`,
+      recap: typeof parsed.recap === "string" && parsed.recap.trim()
+        ? parsed.recap.trim()
+        : typeof parsed.summary === "string" ? parsed.summary.trim() : "",
+      keyPoints: stringArray(parsed.keyPoints),
+      decisions: stringArray(parsed.decisions),
+      actionItems,
+      openQuestions: stringArray(parsed.openQuestions),
+      confidence,
+    };
+  }
+
+  private renderLiveRecapResponse(
+    session: RecordingSession,
+    recap: SessionRecap,
+    transcriptArtifacts: SessionTranscriptArtifacts,
+  ): string {
+    const sections = [
+      `**${recap.title || `${session.channelName} recap`}**`,
+      "",
+      recap.recap || "No recap generated.",
+      "",
+      recap.keyPoints.length ? ["**Key points**", ...recap.keyPoints.map((item) => `- ${item}`)].join("\n") : null,
+      recap.decisions.length ? ["**Decisions**", ...recap.decisions.map((item) => `- ${item}`)].join("\n") : null,
+      recap.actionItems.length
+        ? [
+            "**Action items**",
+            ...recap.actionItems.map((item) => `- ${item.description}${item.owner ? ` (${item.owner})` : ""}${item.dueDate ? ` due ${item.dueDate}` : ""}`),
+          ].join("\n")
+        : null,
+      recap.openQuestions.length ? ["**Open questions**", ...recap.openQuestions.map((item) => `- ${item}`)].join("\n") : null,
+      "",
+      `_Confidence: ${recap.confidence}. Transcript segments: ${transcriptArtifacts.mergedSegments.length}._`,
+    ].filter((line): line is string => typeof line === "string" && line.length > 0);
+    const content = sections.join("\n");
+    return content.length <= 1900 ? content : `${content.slice(0, 1850).trim()}\n\n_Recap truncated for Discord._`;
   }
 
   private codexRuntimeBaseUrl(): string {
@@ -2284,7 +2635,7 @@ export class DiscordVoiceManager {
   }
 
   private recordingCompleteHookKey(): string {
-    return (process.env.DISCORD_RECORDING_COMPLETE_HOOK_KEY ?? "").trim();
+    return (process.env.DISCORD_RECORDING_COMPLETE_HOOK_KEY ?? "recording-transcript-completed").trim();
   }
 
   private recordingCompleteHookEnabled(): boolean {
@@ -2296,14 +2647,61 @@ export class DiscordVoiceManager {
     return parseIntegerEnv("DISCORD_RECORDING_COMPLETE_HOOK_TIMEOUT_MS", 10_000);
   }
 
-  private recordingCompleteHookPayload(metadata: RecordingSessionMetadata, summary: SessionSummary | null): Record<string, unknown> {
+  private legacyRecordingSummaryEnabled(): boolean {
+    return parseBooleanEnv("DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED", false);
+  }
+
+  private legacyRecordingMemoryIngestEnabled(): boolean {
+    return parseBooleanEnv("DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED", false);
+  }
+
+  private async readJsonArtifact(filePath?: string): Promise<unknown | null> {
+    if (!filePath) {
+      return null;
+    }
+    const raw = await fs.readFile(filePath, "utf8").catch(() => null);
+    if (!raw) {
+      return null;
+    }
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      return null;
+    }
+  }
+
+  private async readTextArtifact(filePath?: string): Promise<string | null> {
+    if (!filePath) {
+      return null;
+    }
+    return fs.readFile(filePath, "utf8").catch(() => null);
+  }
+
+  private async recordingCompleteHookPayload(metadata: RecordingSessionMetadata, summary: SessionSummary | null): Promise<Record<string, unknown>> {
     const transcriptArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemoryTranscriptPath);
     const summaryArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemorySummaryPath);
     const recordingUrl = metadata.source.recordingBaseUrl ? `${metadata.source.recordingBaseUrl}/recordings/${metadata.sessionId}` : null;
+    const transcriptMarkdown = await this.readTextArtifact(metadata.artifacts?.transcriptMarkdownPath);
+    const transcriptJson = await this.readJsonArtifact(metadata.artifacts?.transcriptJsonPath);
+    const summaryMarkdown = summary ? await this.readTextArtifact(summary.summaryMarkdownPath) : null;
+    const summaryJson = summary ? await this.readJsonArtifact(summary.summaryJsonPath) : null;
+    const startedAt = new Date(metadata.startedAt).toISOString();
+    const endedAt = new Date(metadata.endedAt).toISOString();
     return {
       source: "discord-source-adapter",
-      event: "discord.recording.completed",
-      occurredAt: new Date(metadata.endedAt).toISOString(),
+      event: "recording.transcript.completed",
+      occurredAt: endedAt,
+      recording: {
+        source: "discord-native",
+        platform: "discord",
+        service: "source-adapter",
+        sessionId: metadata.sessionId,
+        title: metadata.metadata.meeting.name || "Discord recording",
+        location: metadata.metadata.meeting.location || metadata.channelId,
+        startedAt,
+        endedAt,
+        recordingUrl,
+      },
       discord: {
         guildID: metadata.guildId,
         channelID: metadata.channelId,
@@ -2311,8 +2709,28 @@ export class DiscordVoiceManager {
         threadID: null,
         messageID: null,
         scheduledEventID: metadata.scheduledEventId ?? null,
-        recordingStartedAt: new Date(metadata.startedAt).toISOString(),
-        recordingEndedAt: new Date(metadata.endedAt).toISOString(),
+        scheduledEvent: metadata.scheduledEvent ?? null,
+        recordingStartedAt: startedAt,
+        recordingEndedAt: endedAt,
+      },
+      transcript: {
+        markdown: transcriptMarkdown,
+        json: transcriptJson,
+        storagePath: metadata.artifacts?.transcriptMarkdownPath ?? null,
+        jsonStoragePath: metadata.artifacts?.transcriptJsonPath ?? null,
+      },
+      summary: summary ? {
+        markdown: summaryMarkdown,
+        json: summaryJson ?? summary,
+        storagePath: summary.summaryMarkdownPath,
+        jsonStoragePath: summary.summaryJsonPath,
+      } : null,
+      sourceArtifacts: {
+        recordingURL: recordingUrl,
+        transcriptPath: metadata.artifacts?.transcriptMarkdownPath ?? null,
+        transcriptJsonPath: metadata.artifacts?.transcriptJsonPath ?? null,
+        summaryPath: metadata.artifacts?.summaryMarkdownPath ?? null,
+        summaryJsonPath: metadata.artifacts?.summaryJsonPath ?? null,
       },
       artifacts: {
         artifactID: summaryArtifact?.id ?? transcriptArtifact?.id ?? null,
@@ -2326,10 +2744,15 @@ export class DiscordVoiceManager {
         username: participant.username,
         displayName: participant.username,
       })),
+      operator: {
+        notes: [],
+        requestedOutputs: ["summary", "downstream-plan"],
+      },
       metadata: {
         adapterInstance: process.env.RAILWAY_SERVICE_NAME || "source-adapter",
         confidence: "direct",
         notes: [],
+        timingEvents: metadata.timingEvents ?? [],
       },
     };
   }
@@ -2382,7 +2805,7 @@ export class DiscordVoiceManager {
       console.warn(`[discord-adapter] recording complete hook skipped session=${metadata.sessionId}: missing DISCORD_RECORDING_COMPLETE_HOOK_KEY`);
       return;
     }
-    await this.triggerPrismHook(hookKey, this.recordingCompleteHookPayload(metadata, summary), metadata.sessionId);
+    await this.triggerPrismHook(hookKey, await this.recordingCompleteHookPayload(metadata, summary), metadata.sessionId);
   }
 
   async resolveRecordingDownload(sessionId: string, fileName: string): Promise<{ filePath: string; contentType: string } | null> {

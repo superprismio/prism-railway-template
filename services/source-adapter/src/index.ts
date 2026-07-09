@@ -3365,6 +3365,10 @@ function discordCommandDefinitions() {
     new SlashCommandBuilder().setName("prism-join").setDescription("Join your current voice channel."),
     new SlashCommandBuilder().setName("prism-record").setDescription("Start recording the current meeting."),
     new SlashCommandBuilder().setName("prism-stoprecord").setDescription("Stop recording the current meeting."),
+    new SlashCommandBuilder()
+      .setName("prism-recap")
+      .setDescription("Ask Prism for a recap of the latest recording or meeting context.")
+      .addStringOption((option) => option.setName("prompt").setDescription("Optional steering for the recap.").setRequired(false)),
     new SlashCommandBuilder().setName("prism-rollcall").setDescription("Show who is currently in the meeting voice channel."),
   ].map((command) => command.toJSON());
 }
@@ -3383,12 +3387,12 @@ function voiceTranscriptionSetupMessage(): string {
   ].join("\n");
 }
 
-async function handleVoiceCommand(interaction: ChatInputCommandInteraction, action: "join" | "record" | "stoprecord" | "rollcall"): Promise<void> {
+async function handleVoiceCommand(interaction: ChatInputCommandInteraction, action: "join" | "record" | "stoprecord" | "recap" | "rollcall"): Promise<void> {
   if (!voiceManager) {
     await interaction.reply({ content: "Voice manager is not available in this runtime.", ephemeral: true });
     return;
   }
-  if ((action === "record" || action === "stoprecord") && !voiceTranscriptionConfigured()) {
+  if ((action === "record" || action === "stoprecord" || action === "recap") && !voiceTranscriptionConfigured()) {
     await interaction.reply({ content: voiceTranscriptionSetupMessage(), ephemeral: true });
     return;
   }
@@ -3410,6 +3414,10 @@ async function handleVoiceCommand(interaction: ChatInputCommandInteraction, acti
         publicContent = result.publicMessage ?? null;
         break;
       }
+      case "recap":
+        await interaction.editReply({ content: "Building a recap from the recording so far. This can take a minute." });
+        content = await voiceManager.recap(interaction, interaction.options.getString("prompt", false));
+        break;
       case "rollcall":
         content = await voiceManager.rollcall(interaction);
         break;
@@ -3503,6 +3511,9 @@ async function handleDiscordInteraction(interaction: Interaction): Promise<void>
       return;
     case "prism-stoprecord":
       await handleVoiceCommand(interaction, "stoprecord");
+      return;
+    case "prism-recap":
+      await handleVoiceCommand(interaction, "recap");
       return;
     case "prism-rollcall":
       await handleVoiceCommand(interaction, "rollcall");

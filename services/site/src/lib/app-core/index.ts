@@ -36,6 +36,53 @@ export {
   writeRequestArtifactFile,
 } from './request-artifact-storage';
 export {
+  captureStorageRoot,
+  captureRecapStoragePaths,
+  captureSummaryStoragePaths,
+  captureTranscriptStoragePaths,
+  createCaptureSession,
+  finalizeCaptureSession,
+  getCaptureManifest,
+  listCaptureManifests,
+  markCaptureDispatchCompleted,
+  markCaptureDispatchFailed,
+  markCaptureDispatchPending,
+  markCaptureRecapFailed,
+  markCaptureRecapPending,
+  markCaptureSummaryFailed,
+  markCaptureSummaryPending,
+  markCaptureTranscriptFailed,
+  markCaptureTranscriptPending,
+  readCaptureRecapFiles,
+  readCaptureRecapFile,
+  readCaptureSummaryFiles,
+  readCaptureSummaryFile,
+  readCaptureTranscriptFiles,
+  readCaptureTranscriptFile,
+  resolveCaptureStoragePath,
+  writeCaptureChunk,
+  writeCaptureManifest,
+  writeCaptureRecapFiles,
+  writeCaptureSummaryFiles,
+  writeCaptureTranscriptFiles,
+  type CaptureChunkRecord,
+  type CaptureDispatchRecord,
+  type CaptureManifest,
+  type CaptureRecapRecord,
+  type CaptureSummaryRecord,
+  type CaptureTranscriptRecord,
+} from './capture-storage';
+export { transcribeCaptureChunk, transcribeCaptureSession } from './capture-transcription';
+export { summarizeCaptureSession, type CaptureSummary } from './capture-summary';
+export { recapCaptureSession, type CaptureRecap } from './capture-recap';
+export {
+  defaultCaptureDispatchSettings,
+  normalizeCaptureDispatchSettings,
+  readCaptureDispatchSettings,
+  writeCaptureDispatchSettings,
+  type CaptureDispatchSettings,
+} from './capture-settings';
+export {
   buildTaskScriptStoragePath,
   deleteTaskScriptFile,
   readTaskScriptFile,

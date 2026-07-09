@@ -24,6 +24,30 @@ services/site/workflows/<workflow-key>/
     <step-key>.md
 ```
 
+Built-ins are allowed to evolve when the behavior is generally useful across
+Prism instances. Prefer updating a built-in workflow when all of these are true:
+
+- the behavior belongs to the platform contract rather than one workspace's
+  private policy
+- the workflow can remain configurable through payload metadata, hook template
+  constraints, environment variables, or editable markdown instructions
+- the change reduces duplicate custom workflows or legacy adapter logic
+- existing instances can be migrated with a numbered site migration
+
+Keep instance-specific decisions in the hook payload, instance custom workflow
+markdown, custom skills, or workspace configuration. Do not hard-code one
+community's IDs, channels, recurrence rules, API keys, or publication policy
+into a template built-in.
+
+When a custom workflow overlaps a new built-in, decide whether the overlap is
+generic or instance-specific. Generic behavior can move into the built-in.
+Instance-specific behavior should remain in an instance custom workflow or custom
+skill, with the built-in producing a durable handoff artifact when useful.
+Example: `recording-transcript-review-publish` can produce transcript, summary,
+Memory, and downstream handoff artifacts, while an instance-specific
+post-recording workflow can continue to own external publishing, recurrence, and
+agenda creation.
+
 Instance custom workflows should use the site-owned volume when that API/storage path exists:
 
 ```text
