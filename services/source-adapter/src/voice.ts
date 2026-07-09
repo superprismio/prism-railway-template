@@ -2090,7 +2090,9 @@ export class DiscordVoiceManager {
     const baseUrl = this.prismHooksBaseUrl();
     const token = this.prismHookServiceToken();
     if (!baseUrl || !token) {
-      return { content: "", source: "unavailable" };
+      const unavailable = { content: "", source: "unavailable" };
+      this.recordingSummaryProfileCache = { ...unavailable, loadedAt: Date.now() };
+      return unavailable;
     }
 
     try {
@@ -2100,7 +2102,9 @@ export class DiscordVoiceManager {
         },
       });
       if (!response.ok) {
-        return { content: "", source: `unavailable:${response.status}` };
+        const unavailable = { content: "", source: `unavailable:${response.status}` };
+        this.recordingSummaryProfileCache = { ...unavailable, loadedAt: Date.now() };
+        return unavailable;
       }
       const payload = await response.json() as { content?: unknown };
       const content = typeof payload.content === "string" ? this.stripSkillFrontmatter(payload.content) : "";
@@ -2109,7 +2113,9 @@ export class DiscordVoiceManager {
       return profile;
     } catch (error) {
       console.warn(`[discord-adapter] recording summary profile unavailable: ${this.describeError(error)}`);
-      return { content: "", source: "unavailable" };
+      const unavailable = { content: "", source: "unavailable" };
+      this.recordingSummaryProfileCache = { ...unavailable, loadedAt: Date.now() };
+      return unavailable;
     }
   }
 
@@ -2499,11 +2505,19 @@ export class DiscordVoiceManager {
   }
 
   private prismArtifactBaseUrl(): string {
-    const publicBaseUrl = (process.env.PRISM_ARTIFACT_PUBLIC_BASE_URL ?? "").trim().replace(/\/+$/, "");
+    const publicBaseUrl = this.publicPrismArtifactBaseUrl();
     if (publicBaseUrl) {
       return publicBaseUrl;
     }
     return this.prismApiBaseUrl();
+  }
+
+  private publicPrismArtifactBaseUrl(): string | null {
+    return (
+      process.env.PRISM_ARTIFACT_PUBLIC_BASE_URL ??
+      process.env.PRISM_MEMORY_PUBLIC_BASE_URL ??
+      ""
+    ).trim().replace(/\/+$/, "") || null;
   }
 
   private prismArtifactReference(artifactPath?: string): { id: string; url: string } | null {
@@ -2524,6 +2538,22 @@ export class DiscordVoiceManager {
     } catch {
       return null;
     }
+  }
+
+  private publicPrismArtifactReference(artifactPath?: string): { id: string; url: string } | null {
+    const baseUrl = this.publicPrismArtifactBaseUrl();
+    if (!baseUrl || !artifactPath) {
+      return null;
+    }
+    const filename = path.basename(artifactPath);
+    const artifactId = filename.replace(/\.json$/i, "");
+    if (!artifactId || artifactId === filename) {
+      return null;
+    }
+    return {
+      id: artifactId,
+      url: `${baseUrl}/artifacts/${encodeURIComponent(artifactId)}`,
+    };
   }
 
   private prismApiKey(): string {
@@ -2717,7 +2747,7 @@ export class DiscordVoiceManager {
     if (explicit !== undefined) {
       return parseBooleanEnv("DISCORD_RECORDING_SUMMARY_ENABLED", true);
     }
-    return parseBooleanEnv("DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED", true);
+    return parseBooleanEnv("DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED", false);
   }
 
   private recordingSummaryMemoryIngestEnabled(): boolean {
@@ -2725,7 +2755,7 @@ export class DiscordVoiceManager {
     if (explicit !== undefined) {
       return parseBooleanEnv("DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED", true);
     }
-    return parseBooleanEnv("DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED", true);
+    return parseBooleanEnv("DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED", false);
   }
 
   private recordingTranscriptMemoryIngestEnabled(): boolean {
@@ -2759,8 +2789,8 @@ export class DiscordVoiceManager {
   }
 
   private async recordingCompleteHookPayload(metadata: RecordingSessionMetadata, summary: SessionSummary | null): Promise<Record<string, unknown>> {
-    const transcriptArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemoryTranscriptPath);
-    const summaryArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemorySummaryPath);
+    const transcriptArtifact = this.publicPrismArtifactReference(metadata.artifacts?.prismMemoryTranscriptPath);
+    const summaryArtifact = this.publicPrismArtifactReference(metadata.artifacts?.prismMemorySummaryPath);
     const recordingUrl = metadata.source.recordingBaseUrl ? `${metadata.source.recordingBaseUrl}/recordings/${metadata.sessionId}` : null;
     const includeTranscriptBody = this.recordingCompleteHookIncludeTranscriptBody() || !summary;
     const transcriptMarkdown = includeTranscriptBody ? await this.readTextArtifact(metadata.artifacts?.transcriptMarkdownPath) : null;

@@ -57,12 +57,8 @@ async function buildDispatchPayload(captureId: string): Promise<CaptureDispatchP
     throw error;
   });
   if (!summary) {
-    const generated = await summarizeCaptureSession(captureId);
-    summary = await readCaptureSummaryFiles(captureId).catch(() => ({
-      manifest: generated.manifest,
-      markdown: "",
-      json: generated.summary,
-    }));
+    await summarizeCaptureSession(captureId);
+    summary = await readCaptureSummaryFiles(captureId);
   }
   const includeTranscriptBody = ["1", "true", "yes", "on"].includes(
     (process.env.CAPTURE_DISPATCH_INCLUDE_TRANSCRIPT_BODY ?? "").trim().toLowerCase(),

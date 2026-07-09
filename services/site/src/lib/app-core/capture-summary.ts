@@ -345,13 +345,14 @@ export async function summarizeCaptureSession(captureId: string) {
       },
     }));
     const summary = normalizeSummary(parsed, transcript.manifest);
+    const summaryMarkdown = renderSummaryMarkdown(transcript.manifest, summary);
     let completed = await writeCaptureSummaryFiles({
       captureId,
       jsonContent: JSON.stringify(summary, null, 2),
-      markdownContent: renderSummaryMarkdown(transcript.manifest, summary),
+      markdownContent: summaryMarkdown,
     });
     const memory = await promoteMeetingSummaryToMemory({
-      content: renderSummaryMarkdown(transcript.manifest, summary),
+      content: summaryMarkdown,
       title: summary.title,
       tldr: summary.tldr,
       source: "browser-capture",
@@ -374,11 +375,13 @@ export async function summarizeCaptureSession(captureId: string) {
       artifactUrl: null,
       skippedReason: error instanceof Error ? error.message : "PRISM_MEMORY_PROMOTION_FAILED",
     }));
-    completed = await updateCaptureSummaryMemory({
-      captureId,
-      memoryPath: memory.memoryPath,
-      memoryArtifactUrl: memory.artifactUrl,
-    });
+    if (memory.memoryPath || memory.artifactUrl) {
+      completed = await updateCaptureSummaryMemory({
+        captureId,
+        memoryPath: memory.memoryPath,
+        memoryArtifactUrl: memory.artifactUrl,
+      });
+    }
     return {
       manifest: completed,
       summary: {
