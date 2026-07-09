@@ -42,9 +42,9 @@ const recordingTranscriptWorkflow = {
 const recordingTranscriptHookRequestTemplate = {
   titleTemplate: "Recording transcript completed - {{date}}",
   descriptionTemplate: [
-    "A recording transcript completed and was dispatched to Prism.",
+    "A recording summary completed and was dispatched to Prism.",
     "",
-    "Use the attached `hook-payload.json` artifact for capture metadata, transcript content, optional summary, source event context, Memory promotion, and downstream handoff planning.",
+    "Use the attached `hook-payload.json` artifact for capture metadata, summary content, transcript references, source event context, Memory promotion URLs, and downstream handoff planning.",
     "",
     "Payload:",
     "{{payload}}",
@@ -67,7 +67,7 @@ const recordingTranscriptHookRequestTemplate = {
       delivery: "plan-only",
     },
   },
-  agentRecommendation: "Synthesize the completed recording transcript, promote the summary to Memory when configured, and create a generic downstream handoff plan for instance-specific publishing workflows.",
+  agentRecommendation: "Use the completed recording summary and Memory artifact URL when present, synthesize from transcript references only when needed, and create a generic downstream handoff plan for instance-specific publishing workflows.",
 };
 
 const escapedWorkflow = JSON.stringify(recordingTranscriptWorkflow).replace(/'/g, "''");

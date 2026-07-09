@@ -369,9 +369,9 @@ For v1, transcription and rolling summary should happen as part of the capture
 pipeline, not only inside a request workflow. The request workflow is better as
 the handoff/review layer after useful transcript artifacts already exist.
 
-Create a reusable hook, `recording-transcript-completed`, that accepts capture
-artifacts and creates or links a request workflow. The default workflow is
-`recording-transcript-review-publish`.
+Create a reusable hook, `recording-transcript-completed`, that accepts compact
+recording summary payloads and creates or links a request workflow. The default
+workflow is `recording-transcript-review-publish`.
 
 Inputs:
 
@@ -380,7 +380,8 @@ Inputs:
 - capture metadata
 - source platform and source ids when available
 - transcript artifact ids
-- rolling summary artifact id
+- rolling/final summary artifact id
+- summary Memory artifact URL
 - optional existing request id
 - operator notes
 - memory/Portal/publishing intent
@@ -401,7 +402,8 @@ Artifacts:
 - `speaker-map.json` when operator reconciles labels
 - `summary.md`
 - `summary.json`
-- `memory-ingest-plan.json`
+- summary Memory artifact URL
+- `memory-ingest-plan.json` only when automatic summary promotion is unavailable
 - optional `portal-publish-plan.json`
 
 Flow:
@@ -413,13 +415,17 @@ capture-start
   -> update rolling transcript
   -> update rolling summary
   -> capture-finalize
+  -> generate final summary from editable recording-summary-profile
+  -> promote summary to Prism Memory
   -> trigger recording-transcript-completed hook
   -> request review workflow
-  -> memory-ingest / portal-publish / delivery
+  -> portal-publish / delivery / follow-up workflow
 ```
 
-The review gate should decide whether raw transcript, cleaned transcript,
-summary, or none of the output goes to Prism Memory or Portal.
+The capture pipeline should promote the meeting summary to Prism Memory by
+default and keep raw transcript text private. The workflow should decide whether
+raw transcript, cleaned transcript, Portal publication, outbound delivery, or
+follow-up actions are appropriate.
 
 ### Hook Payloads
 
@@ -600,11 +606,11 @@ and privacy risk from raw meeting audio.
    `operator-notes.md`.
 6. Expose a "recap so far" view that reads rolling transcript and summary
    artifacts.
-7. Trigger `recording-transcript-completed` on finalize with transcript and
-   summary artifact ids.
+7. Trigger `recording-transcript-completed` on finalize with compact summary,
+   summary Memory URL, and private transcript references.
 8. The hook creates or links a request workflow for review and downstream
    routing.
-9. Review before Prism Memory or Portal publication.
+9. Review before Portal publication or raw transcript sharing.
 
 ## Migration From Adapter-Owned Transcription
 
@@ -618,7 +624,8 @@ Target migration:
 2. Adapter hands bytes or source URL to Site.
 3. Site stores capture/session files and kicks off the same capture pipeline or
    `recording-transcript-completed` hook.
-4. Capture pipeline produces transcript/summary artifacts.
+4. Capture pipeline produces transcript/summary artifacts and a summary Memory
+   artifact URL.
 5. Adapter only delivers approved outputs back to source platforms.
 
 This creates one shared pattern for Discord recorder output, browser captures,
@@ -635,20 +642,28 @@ uploaded files, Telegram voice notes, and future Portal session recordings.
   worker as they arrive. This is useful enough for v1 validation.
 - Raw media retention should be temporary by default: keep raw chunks until
   transcript/review unless configured otherwise.
-- Memory ingest should remain review-gated.
+- Summary Memory ingest should happen automatically by default; raw transcript
+  Memory ingest remains disabled unless explicitly allowed.
 - Request linkage should happen through `recording-transcript-completed`.
   Capture can run first, then the hook creates or links the request with
   transcript artifacts.
 - Default summary generation should reuse the existing Discord-native synthesis
   schema: title, TL;DR, summary, action items, notable quotes, and tags.
-- Recorder services should not own hard-coded recap steering. They should pass
-  source metadata, transcript artifacts, and optional operator notes into the
-  workflow.
+- Recorder services should not own hard-coded recap steering. They should load
+  the editable `recording-summary-profile` skill/config and layer optional
+  operator notes on top before generating the first-pass recap.
+- Hook payloads should omit full transcript bodies by default once a summary
+  exists. They should pass summary content, the summary Memory artifact URL,
+  private transcript references, source metadata, and policy flags instead.
+- Browser capture dispatch can include transcript bodies for debugging or
+  fallback workflows with `CAPTURE_DISPATCH_INCLUDE_TRANSCRIPT_BODY=true`, but
+  this should not be the default for normal post-meeting hooks.
 - The built-in hook key is `recording-transcript-completed`.
 - The built-in workflow key is `recording-transcript-review-publish`.
 - The built-in workflow is automated by default and has no operator gate. It
-  creates summary and downstream plan artifacts but does not publish to Prism
-  Memory, Portal, or outbound channels directly.
+  reuses precomputed summaries and Memory artifact URLs when present, creates
+  downstream plan artifacts, and leaves Portal/outbound behavior to
+  instance-specific workflow extensions.
 - Consent/disclaimer copy is deferred for v1.
 
 ## Open Questions

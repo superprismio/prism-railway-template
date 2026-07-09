@@ -393,6 +393,7 @@ export class DiscordVoiceManager {
   private readonly recordingMaxMinutes = parseMinuteEnv("VOICE_RECORDING_MAX_MINUTES", 60);
   private readonly recoveryMaxAgeHours = parseHourEnv("VOICE_RECOVERY_MAX_AGE_HOURS", 12);
   private readonly recordingsRoot: string;
+  private recordingSummaryProfileCache: { loadedAt: number; content: string; source: string } | null = null;
 
   constructor(options: VoiceManagerOptions) {
     this.client = options.client;
@@ -1147,7 +1148,10 @@ export class DiscordVoiceManager {
     }
     const transcriptArtifacts = await this.loadPersistedTranscriptArtifacts(metadata);
     const summary = await this.loadPersistedSummary(metadata);
-    const memoryIngest = await this.ingestArtifactsToPrismMemory(metadata, transcriptArtifacts, summary);
+    const memoryIngest = await this.ingestArtifactsToPrismMemory(metadata, transcriptArtifacts, summary, {
+      ingestTranscript: this.recordingTranscriptMemoryIngestEnabled(),
+      ingestSummary: this.recordingSummaryMemoryIngestEnabled(),
+    });
     metadata.artifacts = {
       ...(metadata.artifacts ?? {}),
       prismMemoryTranscriptPath: memoryIngest.transcriptPath ?? undefined,
@@ -1235,8 +1239,8 @@ export class DiscordVoiceManager {
       this.recordingCompleteHookEnabled() && this.recordingCompleteHookKey()
         ? `Prism workflow handoff attempted via hook \`${this.recordingCompleteHookKey()}\`.`
         : "Prism workflow handoff disabled.",
-      this.legacyRecordingSummaryEnabled() && metadata.artifacts?.summaryMarkdownPath
-        ? `Legacy summary written locally: \`${metadata.artifacts.summaryMarkdownPath}\``
+      this.recordingSummaryEnabled() && metadata.artifacts?.summaryMarkdownPath
+        ? `Summary written locally: \`${metadata.artifacts.summaryMarkdownPath}\``
         : null,
       process.env.N8N_WEBHOOK_URL ? "Legacy n8n webhook handoff attempted." : null,
     ].filter((line): line is string => typeof line === "string" && line.length > 0).join("\n");
@@ -1328,12 +1332,12 @@ export class DiscordVoiceManager {
     const metadata = this.buildWebhookPayload(session, speakers, participants, endedAt);
     const transcriptArtifacts = await this.buildTranscriptArtifacts(session, metadata);
     let summary: SessionSummary | null = null;
-    if (this.legacyRecordingSummaryEnabled()) {
+    if (this.recordingSummaryEnabled()) {
       try {
         summary = await this.buildSummaryArtifacts(session, metadata, transcriptArtifacts);
       } catch (error) {
         console.warn(
-          `[discord-adapter] legacy summary generation skipped session=${session.sessionId}: ${this.describeError(error)}`,
+          `[discord-adapter] summary generation skipped session=${session.sessionId}: ${this.describeError(error)}`,
         );
       }
     }
@@ -1341,12 +1345,15 @@ export class DiscordVoiceManager {
       transcriptPath: null,
       summaryPath: null,
     };
-    if (this.legacyRecordingMemoryIngestEnabled()) {
+    if (this.recordingSummaryMemoryIngestEnabled() || this.recordingTranscriptMemoryIngestEnabled()) {
       try {
-        memoryIngest = await this.ingestArtifactsToPrismMemory(metadata, transcriptArtifacts, summary);
+        memoryIngest = await this.ingestArtifactsToPrismMemory(metadata, transcriptArtifacts, summary, {
+          ingestTranscript: this.recordingTranscriptMemoryIngestEnabled(),
+          ingestSummary: this.recordingSummaryMemoryIngestEnabled(),
+        });
       } catch (error) {
         console.warn(
-          `[discord-adapter] legacy prism memory ingest skipped session=${session.sessionId}: ${this.describeError(error)}`,
+          `[discord-adapter] prism memory ingest skipped session=${session.sessionId}: ${this.describeError(error)}`,
         );
       }
     }
@@ -2062,6 +2069,50 @@ export class DiscordVoiceManager {
     return !["0", "false", "no", "off"].includes(raw);
   }
 
+  private stripSkillFrontmatter(content: string): string {
+    const normalized = content.replace(/^\uFEFF/, "");
+    if (!normalized.startsWith("---")) {
+      return normalized.trim();
+    }
+    const end = normalized.indexOf("\n---", 3);
+    if (end < 0) {
+      return normalized.trim();
+    }
+    return normalized.slice(end + 4).trim();
+  }
+
+  private async recordingSummaryProfile(): Promise<{ content: string; source: string }> {
+    const cached = this.recordingSummaryProfileCache;
+    if (cached && Date.now() - cached.loadedAt < 60_000) {
+      return { content: cached.content, source: cached.source };
+    }
+
+    const baseUrl = this.prismHooksBaseUrl();
+    const token = this.prismHookServiceToken();
+    if (!baseUrl || !token) {
+      return { content: "", source: "unavailable" };
+    }
+
+    try {
+      const response = await fetch(`${baseUrl}/agent/skills/recording-summary-profile`, {
+        headers: {
+          "x-service-token": token,
+        },
+      });
+      if (!response.ok) {
+        return { content: "", source: `unavailable:${response.status}` };
+      }
+      const payload = await response.json() as { content?: unknown };
+      const content = typeof payload.content === "string" ? this.stripSkillFrontmatter(payload.content) : "";
+      const profile = { content, source: "site-skill" };
+      this.recordingSummaryProfileCache = { ...profile, loadedAt: Date.now() };
+      return profile;
+    } catch (error) {
+      console.warn(`[discord-adapter] recording summary profile unavailable: ${this.describeError(error)}`);
+      return { content: "", source: "unavailable" };
+    }
+  }
+
   private async buildSummaryArtifacts(
     session: RecordingSession,
     metadata: RecordingSessionMetadata,
@@ -2071,11 +2122,16 @@ export class DiscordVoiceManager {
       return null;
     }
 
+    const profile = await this.recordingSummaryProfile();
     const prompt = [
       "You are a meeting synthesis assistant for Prism.",
       "Return valid JSON only. Do not include markdown fences or extra commentary.",
       "Summarize the meeting transcript and extract action items, notable quotes, and tags.",
       "The transcript may interleave spoken voice segments and Discord voice-channel chat messages marked with a `chat` source label.",
+      "",
+      `Workspace summary profile source: ${profile.source}`,
+      profile.content || "No additional workspace summary profile is configured.",
+      "",
       "Use exactly this JSON schema:",
       "{",
       '  "title": "descriptive title",',
@@ -2120,12 +2176,17 @@ export class DiscordVoiceManager {
     steering: string | null,
   ): Promise<SessionRecap> {
     const participants = [...session.participants.values()].map((participant) => participant.username).filter(Boolean);
+    const profile = await this.recordingSummaryProfile();
     const prompt = [
       "You are producing an in-progress meeting recap for Prism.",
       "Return valid JSON only. Do not include markdown fences or extra commentary.",
       "Use only the transcript evidence provided. If the transcript is sparse or partial, say that plainly and set confidence to low.",
       "Keep the recap useful for someone joining the meeting now.",
       steering ? `Operator steering: ${steering}` : "Operator steering: none",
+      "",
+      `Workspace summary profile source: ${profile.source}`,
+      profile.content || "No additional workspace summary profile is configured.",
+      "",
       "Use exactly this JSON schema:",
       "{",
       '  "title": "short meeting title",',
@@ -2496,6 +2557,10 @@ export class DiscordVoiceManager {
     metadata: RecordingSessionMetadata,
     transcriptArtifacts: SessionTranscriptArtifacts | null,
     summary: SessionSummary | null,
+    options: {
+      ingestTranscript: boolean;
+      ingestSummary: boolean;
+    },
   ): Promise<{ transcriptPath: string | null; summaryPath: string | null }> {
     const prismApiBase = (process.env.PRISM_API_BASE ?? "").trim();
     const prismApiKey = (process.env.PRISM_API_KEY ?? "").trim();
@@ -2517,7 +2582,7 @@ export class DiscordVoiceManager {
     let transcriptPath: string | null = null;
     let summaryPath: string | null = null;
 
-    if (transcriptArtifacts?.mergedTranscript.trim()) {
+    if (options.ingestTranscript && transcriptArtifacts?.mergedTranscript.trim()) {
       transcriptPath = await this.prismMemoryInboxWrite({
         ...basePayload,
         type: "meeting_transcript",
@@ -2536,7 +2601,7 @@ export class DiscordVoiceManager {
       });
     }
 
-    if (summary) {
+    if (options.ingestSummary && summary) {
       summaryPath = await this.prismMemoryInboxWrite({
         ...basePayload,
         type: "meeting_summary",
@@ -2647,12 +2712,28 @@ export class DiscordVoiceManager {
     return parseIntegerEnv("DISCORD_RECORDING_COMPLETE_HOOK_TIMEOUT_MS", 10_000);
   }
 
-  private legacyRecordingSummaryEnabled(): boolean {
-    return parseBooleanEnv("DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED", false);
+  private recordingSummaryEnabled(): boolean {
+    const explicit = process.env.DISCORD_RECORDING_SUMMARY_ENABLED;
+    if (explicit !== undefined) {
+      return parseBooleanEnv("DISCORD_RECORDING_SUMMARY_ENABLED", true);
+    }
+    return parseBooleanEnv("DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED", true);
   }
 
-  private legacyRecordingMemoryIngestEnabled(): boolean {
-    return parseBooleanEnv("DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED", false);
+  private recordingSummaryMemoryIngestEnabled(): boolean {
+    const explicit = process.env.DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED;
+    if (explicit !== undefined) {
+      return parseBooleanEnv("DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED", true);
+    }
+    return parseBooleanEnv("DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED", true);
+  }
+
+  private recordingTranscriptMemoryIngestEnabled(): boolean {
+    return parseBooleanEnv("DISCORD_RECORDING_TRANSCRIPT_MEMORY_INGEST_ENABLED", false);
+  }
+
+  private recordingCompleteHookIncludeTranscriptBody(): boolean {
+    return parseBooleanEnv("DISCORD_RECORDING_COMPLETE_HOOK_INCLUDE_TRANSCRIPT_BODY", false);
   }
 
   private async readJsonArtifact(filePath?: string): Promise<unknown | null> {
@@ -2681,15 +2762,16 @@ export class DiscordVoiceManager {
     const transcriptArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemoryTranscriptPath);
     const summaryArtifact = this.prismArtifactReference(metadata.artifacts?.prismMemorySummaryPath);
     const recordingUrl = metadata.source.recordingBaseUrl ? `${metadata.source.recordingBaseUrl}/recordings/${metadata.sessionId}` : null;
-    const transcriptMarkdown = await this.readTextArtifact(metadata.artifacts?.transcriptMarkdownPath);
-    const transcriptJson = await this.readJsonArtifact(metadata.artifacts?.transcriptJsonPath);
+    const includeTranscriptBody = this.recordingCompleteHookIncludeTranscriptBody() || !summary;
+    const transcriptMarkdown = includeTranscriptBody ? await this.readTextArtifact(metadata.artifacts?.transcriptMarkdownPath) : null;
+    const transcriptJson = includeTranscriptBody ? await this.readJsonArtifact(metadata.artifacts?.transcriptJsonPath) : null;
     const summaryMarkdown = summary ? await this.readTextArtifact(summary.summaryMarkdownPath) : null;
     const summaryJson = summary ? await this.readJsonArtifact(summary.summaryJsonPath) : null;
     const startedAt = new Date(metadata.startedAt).toISOString();
     const endedAt = new Date(metadata.endedAt).toISOString();
     return {
       source: "discord-source-adapter",
-      event: "recording.transcript.completed",
+      event: summary ? "recording.summary.completed" : "recording.transcript.completed",
       occurredAt: endedAt,
       recording: {
         source: "discord-native",
@@ -2714,17 +2796,26 @@ export class DiscordVoiceManager {
         recordingEndedAt: endedAt,
       },
       transcript: {
+        status: "completed",
         markdown: transcriptMarkdown,
         json: transcriptJson,
+        textOmitted: !includeTranscriptBody,
         storagePath: metadata.artifacts?.transcriptMarkdownPath ?? null,
         jsonStoragePath: metadata.artifacts?.transcriptJsonPath ?? null,
+        sharingAllowed: Boolean(transcriptArtifact?.url),
+        artifactUrl: transcriptArtifact?.url ?? null,
       },
       summary: summary ? {
         markdown: summaryMarkdown,
         json: summaryJson ?? summary,
         storagePath: summary.summaryMarkdownPath,
         jsonStoragePath: summary.summaryJsonPath,
+        memoryPath: metadata.artifacts?.prismMemorySummaryPath ?? null,
+        artifactUrl: summaryArtifact?.url ?? null,
       } : null,
+      policy: {
+        rawTranscriptSharingAllowed: Boolean(transcriptArtifact?.url),
+      },
       sourceArtifacts: {
         recordingURL: recordingUrl,
         transcriptPath: metadata.artifacts?.transcriptMarkdownPath ?? null,

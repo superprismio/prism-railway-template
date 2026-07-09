@@ -3,10 +3,13 @@ import {
   markCaptureSummaryFailed,
   markCaptureSummaryPending,
   readCaptureTranscriptFiles,
+  updateCaptureSummaryMemory,
   writeCaptureSummaryFiles,
   type CaptureManifest,
 } from "./capture-storage";
 import { loadConfig } from "./config";
+import { promoteMeetingSummaryToMemory, type MeetingMemoryPromotionResult } from "./meeting-memory";
+import { readRecordingSummaryProfile } from "./recording-summary-profile";
 
 type RuntimeResponsePayload = {
   responseText?: string | null;
@@ -39,6 +42,7 @@ export type CaptureSummary = {
     paraphrase: string;
   }>;
   tags: string[];
+  memory?: MeetingMemoryPromotionResult | null;
   raw?: unknown;
 };
 
@@ -237,6 +241,7 @@ function normalizeSummary(parsed: unknown, manifest: CaptureManifest): CaptureSu
 function buildSummaryPrompt(input: {
   manifest: CaptureManifest;
   transcriptMarkdown: string;
+  profile: ReturnType<typeof readRecordingSummaryProfile>;
 }) {
   const manifest = input.manifest;
   return [
@@ -245,6 +250,10 @@ function buildSummaryPrompt(input: {
     "Summarize the meeting transcript and extract action items, notable quotes, and tags.",
     "The transcript may interleave spoken voice segments, browser-captured audio, and platform chat messages.",
     "Do not invent details not present in the transcript.",
+    "",
+    `Workspace summary profile source: ${input.profile.source}`,
+    input.profile.content || "No additional workspace summary profile is configured.",
+    "",
     "Use exactly this JSON schema:",
     "{",
     '  "title": "descriptive title",',
@@ -320,9 +329,11 @@ export async function summarizeCaptureSession(captureId: string) {
   await markCaptureSummaryPending(captureId);
   try {
     const transcript = await readCaptureTranscriptFiles(captureId);
+    const profile = readRecordingSummaryProfile();
     const prompt = buildSummaryPrompt({
       manifest: transcript.manifest,
       transcriptMarkdown: transcript.markdown,
+      profile,
     });
     const parsed = safeJsonParse(await codexRuntimeRequest({
       prompt,
@@ -334,14 +345,46 @@ export async function summarizeCaptureSession(captureId: string) {
       },
     }));
     const summary = normalizeSummary(parsed, transcript.manifest);
-    const completed = await writeCaptureSummaryFiles({
+    let completed = await writeCaptureSummaryFiles({
       captureId,
       jsonContent: JSON.stringify(summary, null, 2),
       markdownContent: renderSummaryMarkdown(transcript.manifest, summary),
     });
+    const memory = await promoteMeetingSummaryToMemory({
+      content: renderSummaryMarkdown(transcript.manifest, summary),
+      title: summary.title,
+      tldr: summary.tldr,
+      source: "browser-capture",
+      sourceId: transcript.manifest.id,
+      sourceSystem: "browser-capture",
+      timestamp: transcript.manifest.finalizedAt ?? transcript.manifest.startedAt,
+      author: "Prism Browser Capture",
+      metadata: {
+        capture_id: transcript.manifest.id,
+        request_id: transcript.manifest.requestId,
+        started_at: transcript.manifest.startedAt,
+        ended_at: transcript.manifest.finalizedAt,
+        source_platform: transcript.manifest.sourcePlatform,
+        action_items: summary.actionItems,
+        tags: summary.tags,
+      },
+    }).catch((error): MeetingMemoryPromotionResult => ({
+      ok: false,
+      memoryPath: null,
+      artifactUrl: null,
+      skippedReason: error instanceof Error ? error.message : "PRISM_MEMORY_PROMOTION_FAILED",
+    }));
+    completed = await updateCaptureSummaryMemory({
+      captureId,
+      memoryPath: memory.memoryPath,
+      memoryArtifactUrl: memory.artifactUrl,
+    });
     return {
       manifest: completed,
-      summary,
+      summary: {
+        ...summary,
+        memory,
+      },
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "CAPTURE_SUMMARY_FAILED";
