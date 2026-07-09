@@ -2,6 +2,8 @@
 
 Status: future feature spec
 
+Implementation follow-up: [Prism Gateway MVP Implementation Plan](./prism-gateway-mvp-implementation-plan.md)
+
 ## Purpose
 
 Prism instances are accumulating more connected systems:
