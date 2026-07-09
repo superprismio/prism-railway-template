@@ -274,6 +274,7 @@ export function CaptureWorkspace() {
         durationMs: input.durationMs,
         error: null,
       });
+      window.setTimeout(() => void refreshCaptures(), 2500);
     } catch (uploadError) {
       upsertChunkState({
         index: input.index,
@@ -421,8 +422,7 @@ export function CaptureWorkspace() {
         for (const track of stream.getTracks()) {
           track.addEventListener("ended", () => {
             if (recorderRef.current?.state === "recording") {
-              setError("A capture source ended.");
-              stopCapture();
+              stopCapture("A capture source ended.");
             }
           }, { once: true });
         }
@@ -437,8 +437,8 @@ export function CaptureWorkspace() {
     }
   }
 
-  function stopCapture() {
-    setError(null);
+  function stopCapture(reason?: string) {
+    setError(reason ?? null);
     setStatus("stopping");
     stoppingCaptureRef.current = true;
     if (rotationTimerRef.current !== null) {
@@ -695,7 +695,7 @@ export function CaptureWorkspace() {
                 Start Capture
               </Button>
             ) : (
-              <Button type="button" variant="destructive" onClick={stopCapture} disabled={status === "stopping"}>
+              <Button type="button" variant="destructive" onClick={() => stopCapture()} disabled={status === "stopping"}>
                 {status === "stopping" ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                 ) : (

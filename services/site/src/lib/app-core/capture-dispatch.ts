@@ -34,6 +34,11 @@ function redactedSettings(settings: CaptureDispatchSettings) {
   };
 }
 
+function externalDispatchTimeoutMs() {
+  const parsed = Number.parseInt(process.env.CAPTURE_DISPATCH_EXTERNAL_TIMEOUT_MS ?? "10000", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 120_000) : 10_000;
+}
+
 async function buildDispatchPayload(captureId: string): Promise<CaptureDispatchPayload> {
   const transcript = await readCaptureTranscriptFiles(captureId);
   const summary = await readCaptureSummaryFiles(captureId).catch((error) => {
@@ -58,25 +63,41 @@ async function dispatchToExternalHttp(settings: CaptureDispatchSettings, payload
   if (!settings.externalUrl) {
     throw new Error("CAPTURE_DISPATCH_EXTERNAL_URL_REQUIRED");
   }
+  const url = new URL(settings.externalUrl);
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error("CAPTURE_DISPATCH_EXTERNAL_URL_UNSUPPORTED_PROTOCOL");
+  }
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
   if (settings.externalHeaderName && settings.externalHeaderValue) {
     headers[settings.externalHeaderName] = settings.externalHeaderValue;
   }
-  const response = await fetch(settings.externalUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-  });
-  const responseText = await response.text();
-  if (!response.ok) {
-    throw new Error(`CAPTURE_DISPATCH_EXTERNAL_FAILED:${response.status}:${responseText.slice(0, 300)}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), externalDispatchTimeoutMs());
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const responseText = await response.text();
+    if (!response.ok) {
+      throw new Error(`CAPTURE_DISPATCH_EXTERNAL_FAILED:${response.status}:${responseText.slice(0, 300)}`);
+    }
+    return {
+      status: response.status,
+      body: responseText.slice(0, 1000),
+    };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`CAPTURE_DISPATCH_EXTERNAL_TIMEOUT:${externalDispatchTimeoutMs()}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return {
-    status: response.status,
-    body: responseText.slice(0, 1000),
-  };
 }
 
 export async function dispatchCaptureTranscript(captureId: string, options: {

@@ -52,14 +52,19 @@ export async function POST(request: Request, context: RouteContext) {
       durationMs,
     });
 
-    const transcript = await transcribeCaptureChunk(id, index).catch((error) => ({
-      error: error instanceof Error ? error.message : "CAPTURE_CHUNK_TRANSCRIPTION_FAILED",
-    }));
+    void transcribeCaptureChunk(id, index).catch((error) => {
+      console.warn(JSON.stringify({
+        event: "capture_chunk_transcription_failed",
+        captureId: id,
+        chunkIndex: index,
+        error: error instanceof Error ? error.message : "CAPTURE_CHUNK_TRANSCRIPTION_FAILED",
+      }));
+    });
     return NextResponse.json({
       ok: true,
-      ...("manifest" in transcript ? { manifest: transcript.manifest } : result),
+      manifest: result.manifest,
       chunk: result.chunk,
-      transcript,
+      transcript: { status: "queued" },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not store capture chunk";
