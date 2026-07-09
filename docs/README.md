@@ -41,6 +41,8 @@ Feature-specific behavior and UI notes:
 - [LLM Usage Tracking And Budgets](features/llm-usage-tracking-and-budgets.md)
 - [Member Roles](features/member-roles.md)
 - [Memory Explorer UI](features/memory-explorer-ui.md)
+- [Prism Capability Gateway](features/prism-capability-gateway.md)
+- [Prism Gateway MVP Implementation Plan](features/prism-gateway-mvp-implementation-plan.md)
 - [Prism Stack Landing Page](features/prism-stack-landing-page.md)
 
 ## Operations
