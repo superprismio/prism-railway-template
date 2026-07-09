@@ -8,19 +8,30 @@ import {
   type CaptureManifest,
 } from "./capture-storage";
 import { readCaptureDispatchSettings, type CaptureDispatchSettings } from "./capture-settings";
+import { summarizeCaptureSession } from "./capture-summary";
 import { triggerHook } from "@/lib/hook-trigger";
 
 type CaptureDispatchPayload = {
-  event: "capture.transcript.completed";
+  event: "capture.summary.completed";
   capture: CaptureManifest;
   transcript: {
-    markdown: string;
-    json: unknown;
+    status: "completed";
+    markdown: string | null;
+    json: unknown | null;
+    textOmitted: boolean;
+    storagePath: string | null;
+    jsonStoragePath: string | null;
+    sharingAllowed: boolean;
   };
   summary: {
     markdown: string;
     json: unknown;
-  } | null;
+    memoryPath: string | null;
+    artifactUrl: string | null;
+  };
+  policy: {
+    rawTranscriptSharingAllowed: boolean;
+  };
 };
 
 function redactedSettings(settings: CaptureDispatchSettings) {
@@ -41,21 +52,40 @@ function externalDispatchTimeoutMs() {
 
 async function buildDispatchPayload(captureId: string): Promise<CaptureDispatchPayload> {
   const transcript = await readCaptureTranscriptFiles(captureId);
-  const summary = await readCaptureSummaryFiles(captureId).catch((error) => {
+  let summary = await readCaptureSummaryFiles(captureId).catch((error) => {
     if (error instanceof Error && error.message === "CAPTURE_SUMMARY_NOT_READY") return null;
     throw error;
   });
+  if (!summary) {
+    await summarizeCaptureSession(captureId);
+    summary = await readCaptureSummaryFiles(captureId);
+  }
+  const includeTranscriptBody = ["1", "true", "yes", "on"].includes(
+    (process.env.CAPTURE_DISPATCH_INCLUDE_TRANSCRIPT_BODY ?? "").trim().toLowerCase(),
+  );
+  const manifest = summary.manifest ?? transcript.manifest;
+  const rawTranscriptSharingAllowed = false;
   return {
-    event: "capture.transcript.completed",
-    capture: summary?.manifest ?? transcript.manifest,
+    event: "capture.summary.completed",
+    capture: manifest,
     transcript: {
-      markdown: transcript.markdown,
-      json: transcript.json,
+      status: "completed",
+      markdown: includeTranscriptBody ? transcript.markdown : null,
+      json: includeTranscriptBody ? transcript.json : null,
+      textOmitted: !includeTranscriptBody,
+      storagePath: manifest.transcript?.transcriptMarkdownPath ?? null,
+      jsonStoragePath: manifest.transcript?.transcriptJsonPath ?? null,
+      sharingAllowed: rawTranscriptSharingAllowed,
     },
-    summary: summary ? {
+    summary: {
       markdown: summary.markdown,
       json: summary.json,
-    } : null,
+      memoryPath: manifest.summary?.memoryPath ?? null,
+      artifactUrl: manifest.summary?.memoryArtifactUrl ?? null,
+    },
+    policy: {
+      rawTranscriptSharingAllowed,
+    },
   };
 }
 

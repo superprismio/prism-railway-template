@@ -63,6 +63,7 @@ export {
   writeCaptureChunk,
   writeCaptureManifest,
   writeCaptureRecapFiles,
+  updateCaptureSummaryMemory,
   writeCaptureSummaryFiles,
   writeCaptureTranscriptFiles,
   type CaptureChunkRecord,
@@ -75,6 +76,8 @@ export {
 export { transcribeCaptureChunk, transcribeCaptureSession } from './capture-transcription';
 export { summarizeCaptureSession, type CaptureSummary } from './capture-summary';
 export { recapCaptureSession, type CaptureRecap } from './capture-recap';
+export { promoteMeetingSummaryToMemory, publicMemoryArtifactUrl, type MeetingMemoryPromotionResult } from './meeting-memory';
+export { readRecordingSummaryProfile, recordingSummaryProfileSkillName } from './recording-summary-profile';
 export {
   defaultCaptureDispatchSettings,
   normalizeCaptureDispatchSettings,

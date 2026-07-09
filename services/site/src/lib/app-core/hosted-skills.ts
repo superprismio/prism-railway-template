@@ -112,7 +112,7 @@ function listSkillsFromRoot(
         description: readSkillDescription(skillFilePath),
         source,
         kind,
-        readOnly: true,
+        readOnly: kind !== 'custom',
         sourceKey: options.sourceKey ?? null,
         sourceName: options.sourceName ?? null,
         repoUrl: options.repoUrl ?? null,
@@ -141,7 +141,6 @@ export function listHostedSkills(
     source: 'site',
     kind: 'built-in',
   });
-  const builtInNames = new Set(builtIns.map((skill) => skill.name));
   const sourceSkills: HostedSkillSummary[] = [];
   const seenSourceNames = new Set<string>();
   for (const sourceRoot of sourceSkillRoots) {
@@ -155,23 +154,27 @@ export function listHostedSkills(
       branch: sourceRoot.branch,
       commitSha: sourceRoot.commitSha,
     })) {
-      if (builtInNames.has(skill.name) || seenSourceNames.has(skill.name)) {
+      if (seenSourceNames.has(skill.name)) {
         continue;
       }
       seenSourceNames.add(skill.name);
       sourceSkills.push(skill);
     }
   }
-  const reservedNames = new Set([...builtInNames, ...seenSourceNames]);
   const custom = customSkillsRoot
     ? listSkillsFromRoot(customSkillsRoot, {
         repoRoot,
         source: 'custom',
         kind: 'custom',
-      }).filter((skill) => !reservedNames.has(skill.name))
+      })
     : [];
 
-  return [...builtIns, ...sourceSkills, ...custom].sort((left, right) => left.name.localeCompare(right.name));
+  const byName = new Map<string, HostedSkillSummary>();
+  for (const skill of builtIns) byName.set(skill.name, skill);
+  for (const skill of sourceSkills) byName.set(skill.name, skill);
+  for (const skill of custom) byName.set(skill.name, skill);
+
+  return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name));
 }
 
 export function resolveHostedSkillDirectory(
@@ -186,9 +189,9 @@ export function resolveHostedSkillDirectory(
   }
 
   const roots = [
-    getHostedSkillsRoot(repoRoot),
-    ...sourceSkillRoots.map((entry) => entry.rootPath),
     ...(customSkillsRoot ? [customSkillsRoot] : []),
+    ...sourceSkillRoots.map((entry) => entry.rootPath),
+    getHostedSkillsRoot(repoRoot),
   ];
   for (const rootPath of roots) {
     const skillDir = ensureDirectoryPath(path.join(rootPath, normalizedSkillName), rootPath);
@@ -254,7 +257,7 @@ export function upsertCustomSkill(customSkillsRoot: string, skillName: string, c
     description: readSkillDescription(skillFilePath),
     source: 'custom',
     kind: 'custom',
-    readOnly: true,
+    readOnly: false,
   } satisfies HostedSkillSummary;
 }
 
@@ -272,7 +275,7 @@ export function deleteCustomSkill(customSkillsRoot: string, skillName: string) {
     description: readSkillDescription(skillFilePath),
     source: 'custom',
     kind: 'custom',
-    readOnly: true,
+    readOnly: false,
   } satisfies HostedSkillSummary;
 
   fs.rmSync(skillDir, { recursive: true, force: true });

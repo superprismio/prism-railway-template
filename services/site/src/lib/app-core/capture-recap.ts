@@ -9,6 +9,7 @@ import {
   type CaptureManifest,
 } from "./capture-storage";
 import { codexRuntimeRequest, safeJsonParse } from "./capture-summary";
+import { readRecordingSummaryProfile } from "./recording-summary-profile";
 
 export type CaptureRecap = {
   title: string;
@@ -128,6 +129,7 @@ function buildRecapPrompt(input: {
   manifest: CaptureManifest;
   transcript: TranscriptSource;
   steering: string | null;
+  profile: ReturnType<typeof readRecordingSummaryProfile>;
 }) {
   return [
     "You are producing an in-progress meeting recap for Prism.",
@@ -135,6 +137,10 @@ function buildRecapPrompt(input: {
     "Use only the transcript evidence provided. If the meeting is sparse or the transcript is partial, say that plainly in the recap and set confidence to low.",
     "Keep the recap useful for someone joining the meeting now.",
     input.steering ? `Operator steering: ${input.steering}` : "Operator steering: none",
+    "",
+    `Workspace summary profile source: ${input.profile.source}`,
+    input.profile.content || "No additional workspace summary profile is configured.",
+    "",
     "Use exactly this JSON schema:",
     "{",
     '  "title": "short meeting title",',
@@ -217,6 +223,7 @@ export async function recapCaptureSession(input: {
     const currentManifest = await getCaptureManifest(input.captureId);
     if (!currentManifest) throw new Error("CAPTURE_NOT_FOUND");
     const transcript = await readCurrentTranscript(input.captureId, currentManifest);
+    const profile = readRecordingSummaryProfile();
     const parsed = safeJsonParse(await codexRuntimeRequest({
       captureId: input.captureId,
       sessionId: `capture-recap-${input.captureId}`,
@@ -231,6 +238,7 @@ export async function recapCaptureSession(input: {
         manifest: currentManifest,
         transcript,
         steering: input.steering?.trim() || null,
+        profile,
       }),
     }));
     const recap = normalizeRecap(parsed, currentManifest);

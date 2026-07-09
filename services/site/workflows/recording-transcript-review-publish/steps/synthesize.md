@@ -1,15 +1,24 @@
 # Synthesize
 
 Read the request context and the `hook-payload.json` artifact. The payload should
-contain a completed recording transcript from browser capture, Discord-native
-recording, uploaded media, or another source adapter.
+contain a completed recording summary or transcript references from browser
+capture, Discord-native recording, uploaded media, or another source adapter.
 
-Use the transcript and metadata to create durable request artifacts. Prefer
-source facts from the payload over assumptions.
+Use the summary, transcript references, and metadata to create durable request
+artifacts. Prefer source facts from the payload over assumptions. If the payload
+already includes `summary.markdown`, `summary.json`, `summary.artifactUrl`, or
+`summary.memoryPath`, reuse those fields instead of re-summarizing the full
+transcript.
 
 ## Required Outputs
 
 Create `meeting-summary.md` with kind `meeting-summary`.
+
+If `hook-payload.json` already includes summary markdown, use that as the
+starting content and only adjust it when source evidence clearly requires it.
+If the payload includes only a compact TL;DR and a shareable summary URL, create
+a lightweight artifact that records the TL;DR, URL, source metadata, and the
+fact that full transcript text was omitted from the hook payload.
 
 Use this structure:
 
@@ -88,7 +97,30 @@ Use this Memory payload shape:
 ```
 
 Save `memory-ingest-result.json` with kind `memory-ingest-result` when the write
-succeeds. Include the Memory path and artifact URL when available.
+succeeds. Include the Memory path and a shareable Memory artifact URL.
+
+If the Memory write response only returns a path like
+`inbox/memory/incoming/20260709_160214Z-recording-transcript-workflow-9020a433.json`,
+derive the shareable URL from the final filename without `.json`:
+
+```json
+{
+  "ok": true,
+  "memoryPath": "inbox/memory/incoming/20260709_160214Z-recording-transcript-workflow-9020a433.json",
+  "memoryArtifactUrl": "https://<prism-memory-public-base>/artifacts/20260709_160214Z-recording-transcript-workflow-9020a433",
+  "summaryArtifact": {
+    "id": "request-artifact-id",
+    "name": "meeting-summary.md",
+    "shareableUrl": "https://<prism-memory-public-base>/artifacts/20260709_160214Z-recording-transcript-workflow-9020a433"
+  },
+  "rawTranscriptIngestSkipped": true
+}
+```
+
+Prefer `PRISM_ARTIFACT_PUBLIC_BASE_URL` or `PRISM_MEMORY_PUBLIC_BASE_URL` for
+the base URL when available; otherwise use `PRISM_MEMORY_BASE_URL`. Do not use
+`PRISM_AGENT_API_BASE_URL`, `APP_API_BASE_URL`, `site.railway.internal`, or
+`/agent/change-board/.../artifacts/.../content` URLs as shareable links.
 
 If Memory credentials or routes are unavailable, create `memory-ingest-plan.json`
 with kind `memory-ingest-plan` and include:
@@ -111,10 +143,18 @@ Include:
 - matching evidence from source event metadata, channel, title, and time window
 - whether a follow-up instance workflow or hook should run
 - which summary/transcript artifacts should be shared
+- shareable summary links, preferring `memoryArtifactUrl` from
+  `memory-ingest-result.json`
 - what should remain private
 - whether raw transcript sharing is explicitly allowed
 - any source metadata that would help an instance-specific workflow reconcile
   duplicates
+
+In the handoff plan, keep private request artifact API URLs separate from
+shareable links. Downstream Portal, Discord, Telegram, or email notifications
+should use the Memory artifact URL for the summary. Raw transcripts stay private
+unless policy explicitly allows sharing and a shareable transcript artifact has
+been created.
 
 For Discord-native recordings, inspect `discord.scheduledEventID`,
 `discord.scheduledEvent`, `discord.channelID`, `discord.channelName`,
@@ -132,6 +172,9 @@ model, or agenda creation capability exists in the template.
 - Do not promote the raw transcript to Prism Memory by default.
 - Do not send Discord, Telegram, or email notifications directly unless the
   payload or workspace policy explicitly enables delivery.
+- Do not publish internal service URLs such as `site.railway.internal` or
+  service-token-only `/agent/*` artifact URLs to Portal, Discord, Telegram,
+  email, or other user-facing systems.
 - Workspace-specific publishing behavior belongs in instance custom workflows,
   skills, hooks, or adapters, not in this template workflow.
 - If the transcript is missing, empty, or unsafe to summarize, create

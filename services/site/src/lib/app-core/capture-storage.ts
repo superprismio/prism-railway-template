@@ -32,6 +32,8 @@ export type CaptureSummaryRecord = {
   status: "pending" | "completed" | "failed";
   summaryJsonPath: string | null;
   summaryMarkdownPath: string | null;
+  memoryPath?: string | null;
+  memoryArtifactUrl?: string | null;
   generatedAt: string | null;
   error: string | null;
 };
@@ -541,6 +543,8 @@ export async function writeCaptureSummaryFiles(input: {
   captureId: string;
   jsonContent: string;
   markdownContent: string;
+  memoryPath?: string | null;
+  memoryArtifactUrl?: string | null;
 }) {
   const manifest = await getCaptureManifest(input.captureId);
   if (!manifest) {
@@ -565,8 +569,36 @@ export async function writeCaptureSummaryFiles(input: {
       status: "completed",
       summaryJsonPath: paths.json,
       summaryMarkdownPath: paths.markdown,
+      memoryPath: input.memoryPath ?? manifest.summary?.memoryPath ?? null,
+      memoryArtifactUrl: input.memoryArtifactUrl ?? manifest.summary?.memoryArtifactUrl ?? null,
       generatedAt: now,
       error: null,
+    },
+    updatedAt: now,
+  };
+  await writeCaptureManifest(updated);
+  return updated;
+}
+
+export async function updateCaptureSummaryMemory(input: {
+  captureId: string;
+  memoryPath: string | null;
+  memoryArtifactUrl: string | null;
+}) {
+  const manifest = await getCaptureManifest(input.captureId);
+  if (!manifest) {
+    throw new Error("CAPTURE_NOT_FOUND");
+  }
+  if (!manifest.summary) {
+    throw new Error("CAPTURE_SUMMARY_NOT_READY");
+  }
+  const now = new Date().toISOString();
+  const updated: CaptureManifest = {
+    ...manifest,
+    summary: {
+      ...manifest.summary,
+      memoryPath: input.memoryPath,
+      memoryArtifactUrl: input.memoryArtifactUrl,
     },
     updatedAt: now,
   };

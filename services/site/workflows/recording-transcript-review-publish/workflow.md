@@ -6,8 +6,11 @@ Discord-native recording, uploaded media, or future source adapters.
 The default flow is automated:
 
 - read the hook payload artifact
-- synthesize the transcript into durable meeting artifacts
-- promote the meeting summary to Prism Memory when the Memory write path is configured
+- use the precomputed meeting summary and Memory artifact URL when present
+- synthesize the transcript into durable meeting artifacts only when the payload
+  does not already include a summary
+- promote the meeting summary to Prism Memory when the Memory write path is
+  configured and the payload has not already done so
 - prepare downstream publishing, delivery, and handoff artifacts or plans
 - close without an operator gate
 
@@ -30,8 +33,16 @@ metadata, source links, or workspace policy flags, create a
 - candidate external session/resource identifiers and URLs from the payload
 - matching evidence from source event metadata, channel, title, and time window
 - summary/transcript artifacts recommended for downstream publication
+- shareable summary URLs from Prism Memory when Memory promotion succeeds
 - whether raw transcript sharing is allowed or should stay private
 - whether a follow-up instance workflow or hook should be triggered
+
+Request artifacts are private workflow evidence. Do not put service-token-only
+request artifact content URLs or internal Railway URLs into Portal resources,
+Discord announcements, email, or other user-facing output. Use the shareable
+Prism Memory artifact URL for the meeting summary. Keep raw transcript links
+private unless the payload or workspace policy explicitly allows transcript
+sharing and a shareable transcript artifact exists.
 
 If an instance has a custom post-recording workflow for publishing, recurrence,
 or agenda behavior, keep that behavior there or in an instance custom skill. The
@@ -46,6 +57,10 @@ participants, timestamps, tags, action items, and links back to request artifact
 Do not promote the raw transcript by default. If Memory credentials are missing
 or the write fails, save `memory-ingest-plan.json` or `memory-ingest-error.json`
 so the request still contains the proposed Memory record.
+
+When Memory promotion succeeds, save both the Memory inbox path and the
+shareable Memory artifact URL in `memory-ingest-result.json`. Downstream steps
+should use that URL as the public summary link.
 
 ## Default Summary Contract
 

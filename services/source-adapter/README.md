@@ -83,6 +83,21 @@ Discord-specific envs you can add later:
 - `DISCORD_RECORDING_COMPLETE_HOOK_KEY=recording-transcript-completed`
 - `DISCORD_RECORDING_COMPLETE_HOOK_ENABLED=<optional true|false override; defaults to true>`
 - `DISCORD_RECORDING_COMPLETE_HOOK_TIMEOUT_MS=10000`
+- `DISCORD_RECORDING_SUMMARY_ENABLED=true`
+- `DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=true`
+- `DISCORD_RECORDING_TRANSCRIPT_MEMORY_INGEST_ENABLED=<optional true|false; defaults to false>`
+- `DISCORD_RECORDING_COMPLETE_HOOK_INCLUDE_TRANSCRIPT_BODY=<optional true|false; defaults to false when a summary exists>`
+- `PRISM_ARTIFACT_PUBLIC_BASE_URL=<public Prism Memory artifact base URL, required for shareable summary/transcript artifact links>`
+
+The Discord recorder fetches the editable Prism skill
+`recording-summary-profile` from the Site service and layers that guidance into
+final meeting summaries and in-meeting recaps. If the skill cannot be fetched,
+the recorder falls back to its generic summary prompt.
+
+For backwards-compatible rollout, Discord-native summary generation and summary
+Memory ingest remain disabled unless `DISCORD_RECORDING_SUMMARY_ENABLED=true`
+and `DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=true` are set, or the older
+legacy summary/Memory env flags are already enabled.
 - `DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED=false`
 - `DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED=false`
 - `N8N_WEBHOOK_URL=https://your-n8n.example/webhook/transcribe` only if the legacy webhook handoff is still needed
@@ -371,7 +386,14 @@ Current voice command status:
 - `/prism-stoprecord` only auto-recovers unfinished sessions from the caller's current voice channel and younger than `VOICE_RECOVERY_MAX_AGE_HOURS`; use `POST /recordings/:sessionId/recover` for explicit older recovery
 - `/prism-stoprecord` also fetches messages posted in the Discord voice channel during the recording window and stitches them into the merged transcript timeline as `chat` segments
 - if the adapter restarts during recording, `/prism-stoprecord` can recover the newest unfinished session for the guild from `/data/recordings/<session-id>/session.json` and `/raw/*.ogg`
-- by default, `/prism-stoprecord` triggers the Prism Site hook `recording-transcript-completed` with transcript content, source metadata, participants, and local artifact paths
+- when summary generation is enabled, `/prism-stoprecord` generates a meeting
+  summary, promotes the summary to Prism Memory when configured, and triggers
+  the Prism Site hook `recording-transcript-completed` with a compact
+  `recording.summary.completed` payload: source metadata, participants, summary
+  content, Memory artifact URL, and private transcript references
+- full transcript bodies are omitted from the hook payload when a summary exists;
+  set `DISCORD_RECORDING_COMPLETE_HOOK_INCLUDE_TRANSCRIPT_BODY=true` only for
+  debugging or explicit fallback workflows
 - summary generation and downstream memory/Portal/delivery planning should happen in the Prism workflow `recording-transcript-review-publish`
 - `/prism-recap` routes through the existing Prism/Codex chat path and asks for a recap from the latest relevant recording transcript workflow or artifacts for the Discord context
 - legacy adapter-owned summary generation can be re-enabled with `DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED=true`
