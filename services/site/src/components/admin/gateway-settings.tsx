@@ -206,6 +206,8 @@ export function GatewaySettings() {
   const [replaceConnection, setReplaceConnection] =
     useState<GatewayConnection | null>(null);
   const [replacementValue, setReplacementValue] = useState("");
+  const [replacementEmail, setReplacementEmail] = useState("");
+  const [replacementPassword, setReplacementPassword] = useState("");
   const [revokeConnection, setRevokeConnection] =
     useState<GatewayConnection | null>(null);
   const [capabilityDialog, setCapabilityDialog] = useState(false);
@@ -310,6 +312,7 @@ export function GatewaySettings() {
   function replaceCredentials() {
     if (!replaceConnection) return;
     mutate(async () => {
+      const payloadLogin = replaceConnection.authType === "payload-login";
       const secretName = replaceConnection.id === requestedConnectionId && requestedSecretName
         ? requestedSecretName
         : replaceConnection.secretNames[0] || "apiKey";
@@ -318,12 +321,16 @@ export function GatewaySettings() {
         {
           method: "PUT",
           body: JSON.stringify({
-            credentials: { [secretName]: replacementValue },
+            credentials: payloadLogin
+              ? { email: replacementEmail, password: replacementPassword }
+              : { [secretName]: replacementValue },
           }),
         },
       );
       setReplaceConnection(null);
       setReplacementValue("");
+      setReplacementEmail("");
+      setReplacementPassword("");
     });
   }
 
@@ -940,15 +947,38 @@ export function GatewaySettings() {
             <DialogTitle>Replace credential</DialogTitle>
             <DialogDescription>{replaceConnection?.label}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label>New credential</Label>
-            <Input
-              type="password"
-              autoComplete="new-password"
-              value={replacementValue}
-              onChange={(event) => setReplacementValue(event.target.value)}
-            />
-          </div>
+          {replaceConnection?.authType === "payload-login" ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  autoComplete="username"
+                  value={replacementEmail}
+                  onChange={(event) => setReplacementEmail(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Password</Label>
+                <Input
+                  type="password"
+                  autoComplete="current-password"
+                  value={replacementPassword}
+                  onChange={(event) => setReplacementPassword(event.target.value)}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label>New credential</Label>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                value={replacementValue}
+                onChange={(event) => setReplacementValue(event.target.value)}
+              />
+            </div>
+          )}
           <DialogFooter>
             <Button
               variant="outline"
@@ -958,7 +988,9 @@ export function GatewaySettings() {
             </Button>
             <Button
               onClick={replaceCredentials}
-              disabled={isPending || !replacementValue}
+              disabled={isPending || (replaceConnection?.authType === "payload-login"
+                ? !replacementEmail || !replacementPassword
+                : !replacementValue)}
             >
               Replace
             </Button>
