@@ -197,6 +197,33 @@ Completed on `prism-stack` on 2026-07-10:
 - updated Runtime guidance to use Node.js built-in `fetch` because the Runtime
   image does not guarantee that `curl` is installed
 
+### Job-Scoped Compatibility Leases
+
+Completed on `prism-stack` on 2026-07-10:
+
+- added `adapter` profile environment bindings and a Runtime-only credential
+  lease endpoint
+- limited leases to enabled adapter profiles and audited profile plus variable
+  names without recording values
+- injected leased values into the assigned Codex child process under existing
+  environment names so current skills, CLIs, and SDKs continue to work
+- created and validated `storage.s3`, `x.admin`, `bankr.admin`, and
+  `wallet.admin` compatibility profiles
+- removed the persistent S3 access key pair, seven X credentials,
+  `BANKR_API_KEY`, and `PRIVATE_KEY` from Codex Runtime
+- updated Git workspace preparation, clone/fetch/push authentication, and child
+  jobs to use the same job-scoped GitHub lease
+- created `github.admin`, removed `TARGET_REPO_GITHUB_TOKEN`, and validated both
+  GitHub API authentication and authenticated `git ls-remote` after removal
+- confirmed the migration planner reports no remaining organization integration
+  credentials or unclassified sensitive variables in Codex Runtime
+
+Compatibility leases preserve the existing trusted-runtime boundary: the
+assigned Codex child can read leased values during its job, just as it could read
+the former Railway environment. Gateway is now the durable owner and records
+each lease. Use protocol proxy profiles instead when a less-trusted runtime or
+external agent must never receive the downstream credential.
+
 ## Working Branch Pilot
 
 Use one implementation branch based on current `origin/main`. Railway can point
