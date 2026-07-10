@@ -20,7 +20,6 @@ export class GatewayStoreError extends Error {
     super(code);
   }
 }
-
 type ConnectionRow = {
   id: string;
   provider: string;
@@ -116,6 +115,12 @@ export function normalizeHttpJsonReadConfig(value: unknown): HttpJsonReadDriverC
   if (!pathTemplate.startsWith("/") || pathTemplate.includes("://") || pathTemplate.includes("..")) {
     throw new GatewayStoreError("CAPABILITY_PATH_TEMPLATE_INVALID", 400);
   }
+  const method = input.method === undefined || input.method === "GET"
+    ? "GET"
+    : input.method === "POST"
+      ? "POST"
+      : null;
+  if (!method) throw new GatewayStoreError("CAPABILITY_HTTP_METHOD_INVALID", 400);
   const timeoutMs = typeof input.timeoutMs === "number" ? input.timeoutMs : 10_000;
   const maxResponseBytes = typeof input.maxResponseBytes === "number" ? input.maxResponseBytes : 1_000_000;
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30_000) {
@@ -132,6 +137,42 @@ export function normalizeHttpJsonReadConfig(value: unknown): HttpJsonReadDriverC
     || new Set(allowedQueryParams).size !== allowedQueryParams.length
   ) {
     throw new GatewayStoreError("CAPABILITY_QUERY_ALLOWLIST_INVALID", 400);
+  }
+  const allowedJsonBodyParams = Array.isArray(input.allowedJsonBodyParams)
+    ? input.allowedJsonBodyParams.map((entry) => typeof entry === "string" ? entry.trim() : "")
+    : [];
+  if (
+    allowedJsonBodyParams.some((entry) => !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(entry))
+    || new Set(allowedJsonBodyParams).size !== allowedJsonBodyParams.length
+  ) {
+    throw new GatewayStoreError("CAPABILITY_JSON_BODY_ALLOWLIST_INVALID", 400);
+  }
+  const staticJsonBody = input.staticJsonBody === undefined ? {} : input.staticJsonBody;
+  if (!staticJsonBody || typeof staticJsonBody !== "object" || Array.isArray(staticJsonBody)) {
+    throw new GatewayStoreError("CAPABILITY_STATIC_JSON_BODY_INVALID", 400);
+  }
+  const staticJsonBodyRecord = staticJsonBody as Record<string, unknown>;
+  const staticBodyKeys = Object.keys(staticJsonBodyRecord);
+  if (staticBodyKeys.some((entry) => !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(entry))) {
+    throw new GatewayStoreError("CAPABILITY_STATIC_JSON_BODY_INVALID", 400);
+  }
+  if (method === "GET" && (allowedJsonBodyParams.length > 0 || staticBodyKeys.length > 0)) {
+    throw new GatewayStoreError("CAPABILITY_GET_BODY_FORBIDDEN", 400);
+  }
+  if (method === "POST" && allowedQueryParams.length > 0) {
+    throw new GatewayStoreError("CAPABILITY_POST_QUERY_FORBIDDEN", 400);
+  }
+  if (allowedJsonBodyParams.some((entry) => staticBodyKeys.includes(entry))) {
+    throw new GatewayStoreError("CAPABILITY_STATIC_JSON_BODY_OVERRIDE_FORBIDDEN", 400);
+  }
+  let staticBodyBytes = 0;
+  try {
+    staticBodyBytes = Buffer.byteLength(JSON.stringify(staticJsonBodyRecord));
+  } catch {
+    throw new GatewayStoreError("CAPABILITY_STATIC_JSON_BODY_INVALID", 400);
+  }
+  if (staticBodyBytes > 65_536) {
+    throw new GatewayStoreError("CAPABILITY_STATIC_JSON_BODY_TOO_LARGE", 400);
   }
   const authInput = input.auth;
   let auth: HttpJsonReadDriverConfig["auth"] = { type: "none" };
@@ -153,7 +194,17 @@ export function normalizeHttpJsonReadConfig(value: unknown): HttpJsonReadDriverC
       throw new GatewayStoreError("CAPABILITY_AUTH_CONFIG_INVALID", 400);
     }
   }
-  return { baseUrl, pathTemplate, timeoutMs, maxResponseBytes, allowedQueryParams, auth };
+  return {
+    baseUrl,
+    pathTemplate,
+    method,
+    timeoutMs,
+    maxResponseBytes,
+    allowedQueryParams,
+    allowedJsonBodyParams,
+    staticJsonBody: staticJsonBodyRecord,
+    auth,
+  };
 }
 
 function connectionFromRow(
@@ -252,7 +303,7 @@ export class GatewayStore {
     `).run(
       "http-json.read",
       "read",
-      "Constrained JSON GET requests to an admin-configured public HTTPS origin.",
+      "Constrained JSON GET or POST requests to an admin-configured public HTTPS origin.",
       now,
       now,
     );

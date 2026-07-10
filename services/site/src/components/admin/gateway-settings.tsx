@@ -124,7 +124,10 @@ type CapabilityDraft = {
   description: string;
   baseUrl: string;
   pathTemplate: string;
+  method: "GET" | "POST";
   allowedQueryParams: string;
+  allowedJsonBodyParams: string;
+  staticJsonBody: string;
   authType: "bearer" | "api-key";
   secretName: string;
   headerName: string;
@@ -144,7 +147,10 @@ const emptyCapability: CapabilityDraft = {
   description: "",
   baseUrl: "",
   pathTemplate: "/",
+  method: "GET",
   allowedQueryParams: "",
+  allowedJsonBodyParams: "",
+  staticJsonBody: "{}",
   authType: "bearer",
   secretName: "apiKey",
   headerName: "X-Api-Key",
@@ -308,6 +314,19 @@ export function GatewaySettings() {
     );
     if (!connection) return;
     mutate(async () => {
+      let staticJsonBody: Record<string, unknown> = {};
+      if (capabilityDraft.method === "POST") {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(capabilityDraft.staticJsonBody);
+        } catch {
+          throw new Error("Fixed JSON body must be valid JSON");
+        }
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("Fixed JSON body must be a JSON object");
+        }
+        staticJsonBody = parsed as Record<string, unknown>;
+      }
       await adminRequest("/admin/gateway/capabilities", {
         method: "POST",
         body: JSON.stringify({
@@ -319,10 +338,22 @@ export function GatewaySettings() {
           driverConfig: {
             baseUrl: capabilityDraft.baseUrl.trim(),
             pathTemplate: capabilityDraft.pathTemplate.trim(),
-            allowedQueryParams: capabilityDraft.allowedQueryParams
-              .split(",")
-              .map((value) => value.trim())
-              .filter(Boolean),
+            method: capabilityDraft.method,
+            allowedQueryParams:
+              capabilityDraft.method === "GET"
+                ? capabilityDraft.allowedQueryParams
+                    .split(",")
+                    .map((value) => value.trim())
+                    .filter(Boolean)
+                : [],
+            allowedJsonBodyParams:
+              capabilityDraft.method === "POST"
+                ? capabilityDraft.allowedJsonBodyParams
+                    .split(",")
+                    .map((value) => value.trim())
+                    .filter(Boolean)
+                : [],
+            staticJsonBody,
             auth:
               capabilityDraft.authType === "bearer"
                 ? {
@@ -342,6 +373,23 @@ export function GatewaySettings() {
       setCapabilityDialog(false);
       setCapabilityDraft(emptyCapability);
     });
+  }
+
+  function applyPlausiblePreset() {
+    setCapabilityDraft((draft) => ({
+      ...draft,
+      key: "plausible.stats.query",
+      description: "Read scoped analytics from the Plausible Stats API.",
+      baseUrl: "https://plausible.io",
+      pathTemplate: "/api/v2/query",
+      method: "POST",
+      allowedQueryParams: "",
+      allowedJsonBodyParams:
+        "metrics, date_range, dimensions, filters, include, pagination",
+      staticJsonBody: '{\n  "site_id": "YOUR_SITE_DOMAIN"\n}',
+      authType: "bearer",
+      secretName: "apiKey",
+    }));
   }
 
   function toggleCapability(capability: GatewayCapability, enabled: boolean) {
@@ -578,7 +626,12 @@ export function GatewaySettings() {
                     </div>
                   </TableCell>
                   <TableCell>{capability.provider}</TableCell>
-                  <TableCell>{capability.driverKey}</TableCell>
+                  <TableCell>
+                    <div>{capability.driverKey}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {String(capability.driverConfig.method ?? "GET")}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline">{capability.riskLevel}</Badge>
                   </TableCell>
@@ -910,6 +963,16 @@ export function GatewaySettings() {
               Bind a fixed HTTPS JSON endpoint to an encrypted connection.
             </DialogDescription>
           </DialogHeader>
+          <div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={applyPlausiblePreset}
+            >
+              Use Plausible preset
+            </Button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Capability key</Label>
@@ -973,6 +1036,23 @@ export function GatewaySettings() {
               />
             </div>
             <div className="space-y-2">
+              <Label>Request method</Label>
+              <Select
+                value={capabilityDraft.method}
+                onValueChange={(value: "GET" | "POST") =>
+                  setCapabilityDraft((draft) => ({ ...draft, method: value }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="GET">GET with query parameters</SelectItem>
+                  <SelectItem value="POST">POST with JSON body</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 sm:col-span-2">
               <Label>Path</Label>
               <Input
                 value={capabilityDraft.pathTemplate}
@@ -984,19 +1064,50 @@ export function GatewaySettings() {
                 }
               />
             </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Allowed query parameters</Label>
-              <Input
-                value={capabilityDraft.allowedQueryParams}
-                onChange={(event) =>
-                  setCapabilityDraft((draft) => ({
-                    ...draft,
-                    allowedQueryParams: event.target.value,
-                  }))
-                }
-                placeholder="period, metric"
-              />
-            </div>
+            {capabilityDraft.method === "GET" ? (
+              <div className="space-y-2 sm:col-span-2">
+                <Label>Allowed query parameters</Label>
+                <Input
+                  value={capabilityDraft.allowedQueryParams}
+                  onChange={(event) =>
+                    setCapabilityDraft((draft) => ({
+                      ...draft,
+                      allowedQueryParams: event.target.value,
+                    }))
+                  }
+                  placeholder="period, metric"
+                />
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Fixed JSON body</Label>
+                  <Textarea
+                    className="min-h-24 font-mono text-xs"
+                    value={capabilityDraft.staticJsonBody}
+                    onChange={(event) =>
+                      setCapabilityDraft((draft) => ({
+                        ...draft,
+                        staticJsonBody: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Allowed JSON fields</Label>
+                  <Input
+                    value={capabilityDraft.allowedJsonBodyParams}
+                    onChange={(event) =>
+                      setCapabilityDraft((draft) => ({
+                        ...draft,
+                        allowedJsonBodyParams: event.target.value,
+                      }))
+                    }
+                    placeholder="metrics, date_range, dimensions"
+                  />
+                </div>
+              </>
+            )}
             <div className="space-y-2">
               <Label>Authentication</Label>
               <Select
@@ -1056,7 +1167,8 @@ export function GatewaySettings() {
                 !capabilityDraft.connectionId ||
                 !capabilityDraft.description.trim() ||
                 !capabilityDraft.baseUrl.trim() ||
-                !capabilityDraft.pathTemplate.trim()
+                !capabilityDraft.pathTemplate.trim() ||
+                capabilityDraft.staticJsonBody.includes("YOUR_SITE_DOMAIN")
               }
             >
               Add capability

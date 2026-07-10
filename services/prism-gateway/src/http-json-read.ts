@@ -11,7 +11,6 @@ export class GatewayDriverError extends Error {
     super(code);
   }
 }
-
 export type HttpJsonReadResult = {
   result: unknown;
   status: number;
@@ -27,6 +26,7 @@ type DriverDependencies = {
     headers: Record<string, string>,
     config: HttpJsonReadDriverConfig,
     address: ResolvedAddress,
+    body: string | null,
   ) => Promise<HttpJsonReadResult>;
 };
 
@@ -57,27 +57,46 @@ function queryValue(value: unknown): string[] {
   throw new GatewayDriverError("CAPABILITY_INPUT_QUERY_VALUE_INVALID", false);
 }
 
-function buildRequestUrl(config: HttpJsonReadDriverConfig, input: Record<string, unknown>) {
-  const unknownKeys = Object.keys(input).filter((key) => !config.allowedQueryParams.includes(key));
+function buildRequest(config: HttpJsonReadDriverConfig, input: Record<string, unknown>) {
+  const allowedKeys = config.method === "GET"
+    ? config.allowedQueryParams
+    : config.allowedJsonBodyParams;
+  const unknownKeys = Object.keys(input).filter((key) => !allowedKeys.includes(key));
   if (unknownKeys.length > 0) throw new GatewayDriverError("CAPABILITY_INPUT_KEY_NOT_ALLOWED", false);
   const url = new URL(config.pathTemplate, `${config.baseUrl}/`);
   if (url.origin !== config.baseUrl) throw new GatewayDriverError("CAPABILITY_TARGET_ORIGIN_MISMATCH", false);
-  for (const [key, value] of Object.entries(input)) {
-    for (const item of queryValue(value)) url.searchParams.append(key, item);
+  if (config.method === "GET") {
+    for (const [key, value] of Object.entries(input)) {
+      for (const item of queryValue(value)) url.searchParams.append(key, item);
+    }
+    return { url, body: null };
   }
-  return url;
+  const body = JSON.stringify({ ...config.staticJsonBody, ...input });
+  if (Buffer.byteLength(body) > 65_536) {
+    throw new GatewayDriverError("CAPABILITY_INPUT_JSON_BODY_TOO_LARGE", false);
+  }
+  return { url, body };
 }
 
-function buildHeaders(config: HttpJsonReadDriverConfig, credentials: Record<string, string>) {
+function buildHeaders(
+  config: HttpJsonReadDriverConfig,
+  credentials: Record<string, string>,
+  body: string | null,
+) {
   const headers: Record<string, string> = {
     accept: "application/json",
     "user-agent": "prism-gateway/0.1",
   };
-  if (config.auth.type === "none") return headers;
-  const value = credentials[config.auth.secretName];
-  if (!value) throw new GatewayDriverError("CAPABILITY_CONNECTION_SECRET_MISSING", false);
-  if (config.auth.type === "bearer") headers.authorization = `Bearer ${value}`;
-  else headers[config.auth.headerName] = value;
+  if (body !== null) {
+    headers["content-type"] = "application/json";
+    headers["content-length"] = String(Buffer.byteLength(body));
+  }
+  if (config.auth.type !== "none") {
+    const value = credentials[config.auth.secretName];
+    if (!value) throw new GatewayDriverError("CAPABILITY_CONNECTION_SECRET_MISSING", false);
+    if (config.auth.type === "bearer") headers.authorization = `Bearer ${value}`;
+    else headers[config.auth.headerName] = value;
+  }
   return headers;
 }
 
@@ -100,10 +119,11 @@ function performPinnedJsonRequest(
   headers: Record<string, string>,
   config: HttpJsonReadDriverConfig,
   address: ResolvedAddress,
+  body: string | null,
 ) {
   return new Promise<HttpJsonReadResult>((resolve, reject) => {
     const request = https.request(url, {
-      method: "GET",
+      method: config.method,
       headers,
       signal: AbortSignal.timeout(config.timeoutMs),
       lookup: createPinnedLookup(address) as NonNullable<https.RequestOptions["lookup"]>,
@@ -157,7 +177,7 @@ function performPinnedJsonRequest(
         reject(new GatewayDriverError("CAPABILITY_DOWNSTREAM_TIMEOUT", true));
       } else reject(new GatewayDriverError("CAPABILITY_DOWNSTREAM_REQUEST_FAILED", true));
     });
-    request.end();
+    request.end(body ?? undefined);
   });
 }
 
@@ -167,11 +187,17 @@ export async function executeHttpJsonRead(
   input: Record<string, unknown>,
   dependencies: DriverDependencies = {},
 ) {
-  const url = buildRequestUrl(config, input);
-  const headers = buildHeaders(config, credentials);
+  const { url, body } = buildRequest(config, input);
+  const headers = buildHeaders(config, credentials, body);
   const addresses = await (dependencies.resolve || resolvePublicAddresses)(url.hostname);
   if (addresses.length === 0 || addresses.some((entry) => isForbiddenIpAddress(entry.address))) {
     throw new GatewayDriverError("CAPABILITY_DNS_PRIVATE_ADDRESS_FORBIDDEN", false);
   }
-  return (dependencies.request || performPinnedJsonRequest)(url, headers, config, addresses[0]);
+  return (dependencies.request || performPinnedJsonRequest)(
+    url,
+    headers,
+    config,
+    addresses[0],
+    body,
+  );
 }

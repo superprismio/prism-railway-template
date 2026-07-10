@@ -47,9 +47,12 @@ export type GatewayCapability = {
 export type HttpJsonReadDriverConfig = {
   baseUrl: string;
   pathTemplate: string;
+  method: "GET" | "POST";
   timeoutMs: number;
   maxResponseBytes: number;
   allowedQueryParams: string[];
+  allowedJsonBodyParams: string[];
+  staticJsonBody: Record<string, unknown>;
   auth:
     | { type: "none" }
     | { type: "bearer"; secretName: string }

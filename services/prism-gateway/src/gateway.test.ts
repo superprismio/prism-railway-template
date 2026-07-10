@@ -243,14 +243,16 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     rmSync(root, { recursive: true, force: true });
   }
 });
-
 test("http-json.read pins public DNS and never allows runtime headers or redirects", async () => {
   const config = {
     baseUrl: "https://analytics.example.org",
     pathTemplate: "/api/stats",
+    method: "GET" as const,
     timeoutMs: 5000,
     maxResponseBytes: 250000,
     allowedQueryParams: ["period"],
+    allowedJsonBodyParams: [],
+    staticJsonBody: {},
     auth: { type: "api-key" as const, secretName: "apiKey", headerName: "X-Api-Key" },
   };
   const result = await executeHttpJsonRead(config, { apiKey: "secret" }, { period: "7d" }, {
@@ -275,6 +277,51 @@ test("http-json.read pins public DNS and never allows runtime headers or redirec
       resolve: async () => [{ address: "169.254.169.254", family: 4 }],
     }),
     (error: unknown) => error instanceof GatewayDriverError && error.code === "CAPABILITY_DNS_PRIVATE_ADDRESS_FORBIDDEN",
+  );
+});
+
+test("http-json.read supports fixed-target allowlisted JSON POST reads", async () => {
+  const config = {
+    baseUrl: "https://plausible.io",
+    pathTemplate: "/api/v2/query",
+    method: "POST" as const,
+    timeoutMs: 5000,
+    maxResponseBytes: 250000,
+    allowedQueryParams: [],
+    allowedJsonBodyParams: ["metrics", "date_range", "dimensions"],
+    staticJsonBody: { site_id: "prism.example.org" },
+    auth: { type: "bearer" as const, secretName: "apiKey" },
+  };
+  const result = await executeHttpJsonRead(
+    config,
+    { apiKey: "secret" },
+    { metrics: ["visitors", "pageviews"], date_range: "7d" },
+    {
+      resolve: async () => [{ address: "93.184.216.34", family: 4 }],
+      request: async (url, headers, driverConfig, address, body) => {
+        assert.equal(url.href, "https://plausible.io/api/v2/query");
+        assert.equal(driverConfig.method, "POST");
+        assert.equal(headers.authorization, "Bearer secret");
+        assert.equal(headers["content-type"], "application/json");
+        assert.equal(address.address, "93.184.216.34");
+        assert.deepEqual(JSON.parse(body || "{}"), {
+          site_id: "prism.example.org",
+          metrics: ["visitors", "pageviews"],
+          date_range: "7d",
+        });
+        return { result: { results: [] }, status: 200, responseBytes: 14 };
+      },
+    },
+  );
+  assert.deepEqual(result.result, { results: [] });
+
+  await assert.rejects(
+    executeHttpJsonRead(config, { apiKey: "secret" }, { site_id: "other.example.org" }),
+    (error: unknown) => error instanceof GatewayDriverError && error.code === "CAPABILITY_INPUT_KEY_NOT_ALLOWED",
+  );
+  await assert.rejects(
+    executeHttpJsonRead(config, { apiKey: "secret" }, { headers: { authorization: "other" } }),
+    (error: unknown) => error instanceof GatewayDriverError && error.code === "CAPABILITY_INPUT_KEY_NOT_ALLOWED",
   );
 });
 
