@@ -27,6 +27,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { GatewaySettings } from "@/components/admin/gateway-settings";
 import {
   Card,
   CardContent,
@@ -114,7 +115,7 @@ type SourceAdapterPolicySettings = {
   platforms: Record<string, SourceAdapterPlatformPolicy>;
 };
 
-type SettingsView = "status" | "config" | "docs";
+type SettingsView = "status" | "config" | "gateway" | "docs";
 
 type RepositoryTargetDraft = {
   name: string;
@@ -145,6 +146,12 @@ const settingsViewOptions: Array<{
       "Instance identity, access policy, repository targets, and members.",
   },
   {
+    value: "gateway",
+    label: "Gateway",
+    title: "Capability Gateway",
+    description: "Connections, capability grants, tests, and audit history.",
+  },
+  {
     value: "docs",
     label: "Docs",
     title: "Documentation",
@@ -154,7 +161,12 @@ const settingsViewOptions: Array<{
 ];
 
 function isSettingsView(value: string | null): value is SettingsView {
-  return value === "status" || value === "config" || value === "docs";
+  return (
+    value === "status" ||
+    value === "config" ||
+    value === "gateway" ||
+    value === "docs"
+  );
 }
 
 const managedRoleOptions: Array<{
@@ -2033,6 +2045,8 @@ export function AdminSettingsWorkspace({
             <SourceAdapterPolicySettings />
           </div>
         ) : null}
+
+        {activeView === "gateway" ? <GatewaySettings /> : null}
 
         {activeView === "docs" ? <EnvironmentInstructions /> : null}
       </section>

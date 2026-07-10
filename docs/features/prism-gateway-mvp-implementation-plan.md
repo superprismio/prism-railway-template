@@ -698,11 +698,12 @@ For successful calls, preserve:
 
 ### Phase 5: Site Admin UI
 
-- [ ] Add Settings -> Gateway.
-- [ ] Show gateway health.
-- [ ] Show capabilities.
-- [ ] Add/test/delete integration secret.
-- [ ] Show audit events.
+- [x] Add Settings -> Gateway.
+- [x] Show gateway health.
+- [x] Show capabilities.
+- [x] Add/test/delete integration secret.
+- [x] Manage runtime and service grants.
+- [x] Show audit events.
 - [ ] Show usage warnings.
 
 ### Phase 6: Runtime Client
