@@ -129,6 +129,43 @@ export async function prismGatewayRequest<T = Record<string, unknown>>(
   return body as T;
 }
 
+export async function createGatewayCapabilityWithDefaultGrant(
+  body: Record<string, unknown>,
+) {
+  const created = await prismGatewayRequest<{ capability?: { key?: unknown }; [key: string]: unknown }>(
+    "/capabilities",
+    { method: "POST", body: JSON.stringify(body) },
+  );
+  const capabilityKey = typeof created.capability?.key === "string"
+    ? created.capability.key
+    : "";
+  if (!capabilityKey) return created;
+
+  const runtimeKey = process.env.PRISM_GATEWAY_DEFAULT_RUNTIME_KEY?.trim() || "codex-default";
+  const grantId = `runtime-${runtimeKey}-${capabilityKey}`.replace(/[^a-zA-Z0-9_.:-]/g, "-").slice(0, 200);
+  try {
+    const grant = await prismGatewayRequest(`/grants/${encodeURIComponent(grantId)}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        subjectType: "runtime",
+        subjectId: runtimeKey,
+        capabilityKey,
+        allowed: true,
+        policy: { source: "site-easy-mode" },
+      }),
+    });
+    return { ...created, defaultRuntimeGrant: grant.grant ?? null };
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "prism_gateway.default_runtime_grant_failed",
+      capabilityKey,
+      runtimeKey,
+      error: error instanceof Error ? error.message : "GATEWAY_GRANT_FAILED",
+    }));
+    return { ...created, warning: "CAPABILITY_CREATED_DEFAULT_RUNTIME_GRANT_FAILED" };
+  }
+}
+
 export async function getPrismGatewayOverview() {
   const status = getPrismGatewayStatus();
   if (!status.enabled || !status.configured) {

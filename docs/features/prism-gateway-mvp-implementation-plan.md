@@ -59,12 +59,16 @@ RaidGuild CRM schema, or any other organization-specific integration.
 Gateway internals must not become routine configuration overhead. The default
 operator flow is:
 
-1. an admin connects an integration and enables its standard capabilities
-2. the default runtime grant is created automatically
-3. Site admin Console sessions receive all enabled capabilities
-4. Discord and Telegram sessions inherit capabilities from the existing source
+1. an admin asks Prism chat to configure an integration
+2. the `prism-gateway-author` skill creates pending non-secret configuration
+3. chat directs the admin to a connection-specific Settings URL to enter the
+   credential outside model context
+4. chat tests and enables the integration after the admin confirms
+5. the default runtime grant is created automatically
+6. Site admin Console sessions receive all enabled capabilities
+7. Discord and Telegram sessions inherit capabilities from the existing source
    adapter target, group, and user policy
-5. workflows may declare narrower or additional requirements without being the
+8. workflows may declare narrower or additional requirements without being the
    only way to use an integration
 
 `readonly` and `run-approved` interactive sessions receive enabled read
@@ -76,6 +80,11 @@ Connection records, capability keys, runtime grants, drivers, and schemas are
 advanced configuration. Provider presets should hide those concepts for common
 integrations. Gateway catalog failure must not disable legacy direct tools while
 the migration is additive.
+
+Credentials are the exception to conversational configuration. Agent routes
+must reject credential values. Secret create, replace, and revoke use the
+existing Site admin session and Settings UI, with chat returning a stable deep
+link to the relevant connection.
 
 ## Locked MVP Decisions
 
@@ -737,6 +746,8 @@ For successful calls, preserve:
 - [x] Map Discord and Telegram source policy to interactive capabilities.
 - [x] Auto-grant newly created capabilities to the default runtime.
 - [x] Preserve direct-tool chat behavior when Gateway catalog lookup fails.
+- [x] Add chat-safe Gateway authoring routes and a built-in authoring skill.
+- [x] Add connection-specific Settings credential deep links.
 - [ ] Remove one duplicated secret from runtime env docs.
 - [ ] Keep direct fallback available until stable.
 

@@ -64,10 +64,21 @@ Send service auth as:
 - `PATCH /agent/site-content/branding`
 - `GET /agent/source-adapter-policy`
 - `PATCH /agent/source-adapter-policy`
+- `GET /agent/gateway`
+- `POST /agent/gateway/connections`
+- `POST /agent/gateway/capabilities`
+- `PATCH /agent/gateway/capabilities/:key`
+- `POST /agent/gateway/capabilities/:key/test`
 
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
 
 For source adapter access rules, use `/agent/source-adapter-policy`. Policies are platform-scoped. Use `platforms.discord.targets` for Discord channels or threads, `platforms.discord.groups` for Discord role IDs, and `platforms.discord.users` for Discord user IDs. Use `platforms.telegram.targets` for Telegram chat/group/channel IDs and `platforms.telegram.users` for Telegram user IDs. Telegram DMs are disabled by default unless explicitly enabled in adapter env/config.
+
+For Gateway integration setup and troubleshooting, use the built-in
+`prism-gateway-author` skill. Gateway agent routes accept non-secret
+configuration only. Never ask for or send credentials through chat or
+`/agent/*`; create a pending connection and direct the admin to the returned
+Settings credential URL.
 
 For questions like "what happened to request #10?" or "what artifacts did request #10 create?", do not use `/admin/board`. Use:
 

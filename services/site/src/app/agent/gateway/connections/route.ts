@@ -1,0 +1,43 @@
+import { NextResponse } from "next/server";
+import { requireServiceAccess } from "@/lib/internal-service";
+import { prismGatewayRequest, PrismGatewayError } from "@/lib/prism-gateway";
+import { publicUrlFromRequest } from "@/lib/public-url";
+
+function text(value: unknown, maxLength = 200) {
+  return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+export async function POST(request: Request) {
+  const access = await requireServiceAccess();
+  if (!access.ok) return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body || body.credentials !== undefined || body.credential !== undefined || body.secretValue !== undefined) {
+    return NextResponse.json({ ok: false, error: "GATEWAY_AGENT_CREDENTIALS_FORBIDDEN" }, { status: 400 });
+  }
+  const provider = text(body.provider, 120);
+  const label = text(body.label);
+  const authType = text(body.authType ?? body.auth_type, 80);
+  const secretName = text(body.secretName ?? body.secret_name, 120) || "apiKey";
+  if (!provider || !label || !authType) {
+    return NextResponse.json({ ok: false, error: "GATEWAY_CONNECTION_FIELDS_REQUIRED" }, { status: 400 });
+  }
+  try {
+    const result = await prismGatewayRequest<{ connection?: { id?: unknown }; [key: string]: unknown }>("/connections", {
+      method: "POST",
+      body: JSON.stringify({ provider, label, authType, credentials: {} }),
+    });
+    const connectionId = typeof result.connection?.id === "string" ? result.connection.id : "";
+    const credentialPath = connectionId
+      ? `/admin?tab=settings&settings=gateway&connection=${encodeURIComponent(connectionId)}&action=credential&secretName=${encodeURIComponent(secretName)}`
+      : null;
+    return NextResponse.json({
+      ...result,
+      credentialPath,
+      credentialUrl: credentialPath ? publicUrlFromRequest(request, credentialPath) : null,
+      nextStep: "Ask an admin to add the credential in Settings, then test and enable the capability.",
+    });
+  } catch (error) {
+    const status = error instanceof PrismGatewayError ? error.status : 500;
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "CONNECTION_CREATE_FAILED" }, { status });
+  }
+}

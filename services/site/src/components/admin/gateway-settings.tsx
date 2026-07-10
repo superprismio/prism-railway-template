@@ -4,9 +4,11 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useTransition,
 } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Activity,
   KeyRound,
@@ -219,6 +221,7 @@ function statusVariant(status: string) {
 }
 
 export function GatewaySettings() {
+  const searchParams = useSearchParams();
   const [overview, setOverview] = useState<GatewayOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -241,6 +244,8 @@ export function GatewaySettings() {
     "runtime" | "service"
   >("runtime");
   const [grantSubjectId, setGrantSubjectId] = useState("codex-default");
+  const [focusedConnectionId, setFocusedConnectionId] = useState<string | null>(null);
+  const handledCredentialTarget = useRef("");
 
   const load = useCallback(async () => {
     setError(null);
@@ -269,6 +274,28 @@ export function GatewaySettings() {
       ),
     [overview?.connections],
   );
+
+  const requestedConnectionId = searchParams.get("connection")?.trim() || "";
+  const requestedConnectionAction = searchParams.get("action")?.trim() || "";
+  const requestedSecretName = searchParams.get("secretName")?.trim() || "";
+
+  useEffect(() => {
+    if (!requestedConnectionId || !overview?.connections?.length) return;
+    const connection = overview.connections.find((item) => item.id === requestedConnectionId);
+    if (!connection) return;
+    setFocusedConnectionId(connection.id);
+    requestAnimationFrame(() => {
+      document.getElementById(`gateway-connection-${connection.id}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+    const targetKey = `${connection.id}:${requestedConnectionAction}:${requestedSecretName}`;
+    if (requestedConnectionAction === "credential" && handledCredentialTarget.current !== targetKey) {
+      handledCredentialTarget.current = targetKey;
+      setReplaceConnection(connection);
+    }
+  }, [overview?.connections, requestedConnectionAction, requestedConnectionId, requestedSecretName]);
 
   function mutate(action: () => Promise<void>) {
     setError(null);
@@ -307,7 +334,9 @@ export function GatewaySettings() {
   function replaceCredentials() {
     if (!replaceConnection) return;
     mutate(async () => {
-      const secretName = replaceConnection.secretNames[0] || "apiKey";
+      const secretName = replaceConnection.id === requestedConnectionId && requestedSecretName
+        ? requestedSecretName
+        : replaceConnection.secretNames[0] || "apiKey";
       await adminRequest(
         `/admin/gateway/connections/${encodeURIComponent(replaceConnection.id)}`,
         {
@@ -564,7 +593,11 @@ export function GatewaySettings() {
             </TableHeader>
             <TableBody>
               {(overview?.connections ?? []).map((connection) => (
-                <TableRow key={connection.id}>
+                <TableRow
+                  key={connection.id}
+                  id={`gateway-connection-${connection.id}`}
+                  className={focusedConnectionId === connection.id ? "bg-accent/40" : undefined}
+                >
                   <TableCell>
                     <div className="font-medium">{connection.label}</div>
                     <div className="text-xs text-muted-foreground">
