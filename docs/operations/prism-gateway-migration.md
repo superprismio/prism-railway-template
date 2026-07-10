@@ -261,6 +261,15 @@ to Gateway, never through chat or an agent route. Validation and legacy variable
 removal remain per integration so one failed provider cannot invalidate the
 others silently.
 
+For an existing instance with many Codex Runtime variables, use **Import
+environment** in Gateway Settings. Paste the Railway `.env` export into the
+browser dialog. The browser parser groups allowlisted credentials, identifies
+configuration that must remain available, and blocks submission when an unknown
+sensitive variable needs review. The server upserts encrypted connections from
+fixed definitions and does not return secret values. An imported connection
+marked `adapter required` is custody-only: do not remove its legacy variable
+until its runtime adapter, skill migration, and post-removal smoke test pass.
+
 The toolset declaration is a dependency, not a downstream permission model.
 Codex Runtime adds skill requirements to a short-lived Gateway session; Gateway
 verifies profile assignment, while the downstream identity enforces its native

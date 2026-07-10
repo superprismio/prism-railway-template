@@ -18,6 +18,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Trash2,
+  Upload,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,11 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { plausibleQueryInputSchema } from "@/lib/gateway-presets";
+import {
+  gatewayEnvImportDefinitions,
+  parseEnvText,
+  retainedGatewayEnvVariables,
+} from "@/lib/gateway-env-import";
 
 type GatewayConnection = {
   id: string;
@@ -219,6 +225,8 @@ export function GatewaySettings() {
   const [credentialBatch, setCredentialBatch] = useState<
     Record<string, PendingCredentialDraft>
   >({});
+  const [envImportDialog, setEnvImportDialog] = useState(false);
+  const [envImportText, setEnvImportText] = useState("");
   const [revokeConnection, setRevokeConnection] =
     useState<GatewayConnection | null>(null);
   const [capabilityDialog, setCapabilityDialog] = useState(false);
@@ -266,6 +274,33 @@ export function GatewaySettings() {
   const incompleteConnections = useMemo(
     () => activeConnections.filter((connection) => connection.secretNames.length === 0),
     [activeConnections],
+  );
+  const parsedEnvImport = useMemo(() => parseEnvText(envImportText), [envImportText]);
+  const envImportGroups = useMemo(
+    () => gatewayEnvImportDefinitions.filter((definition) =>
+      Object.keys(definition.credentialVariables).some((name) => parsedEnvImport[name]),
+    ),
+    [parsedEnvImport],
+  );
+  const classifiedEnvNames = useMemo(
+    () => new Set(gatewayEnvImportDefinitions.flatMap((definition) => [
+      ...Object.keys(definition.credentialVariables),
+      ...definition.configurationVariables,
+    ])),
+    [],
+  );
+  const retainedImportNames = Object.keys(parsedEnvImport).filter((name) =>
+    retainedGatewayEnvVariables.has(name) || gatewayEnvImportDefinitions.some(
+      (definition) => definition.configurationVariables.includes(name),
+    ),
+  );
+  const unknownSensitiveImportNames = Object.keys(parsedEnvImport).filter(
+    (name) =>
+      /(KEY|TOKEN|SECRET|PASSWORD|PRIVATE)/.test(name) &&
+      !classifiedEnvNames.has(name) &&
+      !retainedGatewayEnvVariables.has(name) &&
+      name !== "PRISM_RUNTIME_KEY" &&
+      !name.startsWith("RAILWAY_"),
   );
 
   const requestedConnectionId = searchParams.get("connection")?.trim() || "";
@@ -385,6 +420,26 @@ export function GatewaySettings() {
       });
       setCredentialBatch({});
       setCredentialBatchDialog(false);
+    });
+  }
+
+  function importEnvironment() {
+    mutate(async () => {
+      await adminRequest("/admin/gateway/connections/import", {
+        method: "POST",
+        body: JSON.stringify({
+          entries: envImportGroups.map((definition) => ({
+            key: definition.key,
+            values: Object.fromEntries(
+              Object.keys(definition.credentialVariables)
+                .filter((name) => parsedEnvImport[name])
+                .map((name) => [name, parsedEnvImport[name]]),
+            ),
+          })),
+        }),
+      });
+      setEnvImportText("");
+      setEnvImportDialog(false);
     });
   }
 
@@ -616,6 +671,15 @@ export function GatewaySettings() {
             Connections
           </h4>
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setEnvImportDialog(true)}
+              disabled={!overview?.reachable}
+            >
+              <Upload />
+              Import environment
+            </Button>
             {incompleteConnections.length ? (
               <Button
                 size="sm"
@@ -1006,6 +1070,103 @@ export function GatewaySettings() {
               }
             >
               Add connection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={envImportDialog}
+        onOpenChange={(open) => {
+          setEnvImportDialog(open);
+          if (!open) setEnvImportText("");
+        }}
+      >
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import Railway environment</DialogTitle>
+            <DialogDescription>
+              Paste the Codex Runtime environment and review recognized credentials.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Environment</Label>
+            <Textarea
+              className="min-h-48 font-mono text-xs"
+              value={envImportText}
+              onChange={(event) => setEnvImportText(event.target.value)}
+              placeholder="NAME=value"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+          {envImportText ? (
+            <div className="space-y-3">
+              <div className="overflow-x-auto border border-border/70">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Integration</TableHead>
+                      <TableHead>Credentials</TableHead>
+                      <TableHead>Connection</TableHead>
+                      <TableHead>Migration</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {envImportGroups.map((definition) => {
+                      const credentialNames = Object.keys(definition.credentialVariables)
+                        .filter((name) => parsedEnvImport[name]);
+                      const existing = activeConnections.find(
+                        (connection) => connection.provider === definition.provider,
+                      );
+                      return (
+                        <TableRow key={definition.key}>
+                          <TableCell>
+                            <div className="font-medium">{definition.label}</div>
+                            <div className="text-xs text-muted-foreground">{definition.key}</div>
+                          </TableCell>
+                          <TableCell>{credentialNames.length}</TableCell>
+                          <TableCell>{existing ? "Update" : "Create"}</TableCell>
+                          <TableCell>
+                            <Badge variant={definition.readiness === "ready" ? "secondary" : "outline"}>
+                              {definition.readiness === "ready" ? "Ready" : "Adapter required"}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {!envImportGroups.length ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="h-16 text-center text-muted-foreground">
+                          No recognized integration credentials.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Badge variant="outline">Retained configuration: {retainedImportNames.length}</Badge>
+                <Badge variant={unknownSensitiveImportNames.length ? "destructive" : "outline"}>
+                  Unknown sensitive: {unknownSensitiveImportNames.length}
+                </Badge>
+              </div>
+              {unknownSensitiveImportNames.length ? (
+                <div className="text-sm text-destructive">
+                  Review before import: {unknownSensitiveImportNames.join(", ")}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEnvImportDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={importEnvironment}
+              disabled={isPending || !envImportGroups.length || Boolean(unknownSensitiveImportNames.length)}
+            >
+              Import credentials
             </Button>
           </DialogFooter>
         </DialogContent>
