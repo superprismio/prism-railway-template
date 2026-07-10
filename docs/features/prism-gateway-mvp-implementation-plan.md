@@ -54,6 +54,29 @@ The capability and connection are instance-owned. The template supplies the
 constrained connector driver and policy machinery, not a Plausible account, a
 RaidGuild CRM schema, or any other organization-specific integration.
 
+## Easy Mode Contract
+
+Gateway internals must not become routine configuration overhead. The default
+operator flow is:
+
+1. an admin connects an integration and enables its standard capabilities
+2. the default runtime grant is created automatically
+3. Site admin Console sessions receive all enabled capabilities
+4. Discord and Telegram sessions inherit capabilities from the existing source
+   adapter target, group, and user policy
+5. workflows may declare narrower or additional requirements without being the
+   only way to use an integration
+
+`readonly` and `run-approved` interactive sessions receive enabled read
+capabilities. `full` sessions receive all enabled capabilities and behave like
+an admin Console session, subject to normal approval and audit controls. A user
+rule may still reduce access granted by a channel or role rule.
+
+Connection records, capability keys, runtime grants, drivers, and schemas are
+advanced configuration. Provider presets should hide those concepts for common
+integrations. Gateway catalog failure must not disable legacy direct tools while
+the migration is additive.
+
 ## Locked MVP Decisions
 
 - `prism-gateway` is a new optional Railway service.
@@ -710,6 +733,10 @@ For successful calls, preserve:
 
 - [x] Add gateway client helper.
 - [x] Wire one runtime/tool path through the gateway.
+- [x] Give admin Console sessions enabled capabilities by default.
+- [x] Map Discord and Telegram source policy to interactive capabilities.
+- [x] Auto-grant newly created capabilities to the default runtime.
+- [x] Preserve direct-tool chat behavior when Gateway catalog lookup fails.
 - [ ] Remove one duplicated secret from runtime env docs.
 - [ ] Keep direct fallback available until stable.
 

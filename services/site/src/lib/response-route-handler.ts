@@ -31,6 +31,7 @@ import {
 
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
+import { listInteractiveGatewayCapabilityKeysOrEmpty } from "@/lib/prism-gateway"
 import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
 
@@ -1244,7 +1245,14 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       ...requestedSkillsFromAgentConfig(workflowAgentConfig),
     ]),
   )
-  const requestedCapabilities = requestedCapabilitiesFromAgentConfig(workflowAgentConfig)
+  const workflowRequestedCapabilities = requestedCapabilitiesFromAgentConfig(workflowAgentConfig)
+  const interactiveCapabilities = actorType === "admin"
+    ? await listInteractiveGatewayCapabilityKeysOrEmpty("full")
+    : []
+  const requestedCapabilities = Array.from(new Set([
+    ...interactiveCapabilities,
+    ...workflowRequestedCapabilities,
+  ]))
 
   createAgentMessage({
     sessionId: session.id,
@@ -1433,6 +1441,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       recentHistory,
       capabilities: requestedCapabilities,
       gatewayContext: {
+        delegatedActorId: actorType === "admin" ? "admin-console" : undefined,
         requestId: activeLinkedChangeRequestId ?? undefined,
         workflowRunId: linkedWorkflowRun?.id ?? undefined,
         workflowStepKey: runnableStepKey ?? undefined,

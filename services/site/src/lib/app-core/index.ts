@@ -22,7 +22,11 @@ export {
   writeSourceAdapterPolicy,
   normalizeSourceAdapterPolicy,
   mergeSourceAdapterPolicy,
+  resolveSourceAdapterPolicy,
+  sourceAdapterCapabilitiesForMode,
   type SourceAdapterAccessMode,
+  type ResolvedSourceAdapterPolicy,
+  type SourceAdapterIdentityContext,
   type SourceAdapterPolicySettings,
 } from './source-adapter-policy';
 export {

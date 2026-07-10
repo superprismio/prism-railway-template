@@ -27,7 +27,58 @@ export interface SourceAdapterPolicySettings {
   platforms: Record<string, SourceAdapterPlatformPolicy>;
 }
 
+export interface SourceAdapterIdentityContext {
+  platform: string;
+  targetId: string;
+  threadId?: string | null;
+  groupIds?: string[];
+  userId: string;
+}
+
+export interface ResolvedSourceAdapterPolicy {
+  mode: SourceAdapterAccessMode;
+  capabilities: string[];
+  rateLimit: SourceAdapterRateLimit;
+  matchedRules: string[];
+}
+
 const accessModes = new Set<SourceAdapterAccessMode>(['off', 'readonly', 'run-approved', 'full']);
+
+export function sourceAdapterCapabilitiesForMode(mode: SourceAdapterAccessMode): string[] {
+  switch (mode) {
+    case 'off':
+      return [];
+    case 'readonly':
+      return ['chat.read', 'memory.read', 'requests.read', 'artifacts.read'];
+    case 'run-approved':
+      return [
+        'chat.read',
+        'memory.read',
+        'requests.read',
+        'artifacts.read',
+        'tasks.run_existing',
+        'workflows.run_existing',
+        'requests.create',
+      ];
+    case 'full':
+      return [
+        'chat.read',
+        'memory.read',
+        'requests.read',
+        'artifacts.read',
+        'tasks.run_existing',
+        'workflows.run_existing',
+        'requests.create',
+        'adapter.send_message',
+        'memory.write',
+        'knowledge.write',
+        'memory.promote_doc',
+        'skills.author',
+        'tasks.author',
+        'workflows.author',
+      ];
+  }
+}
 
 export const defaultSourceAdapterPolicy: SourceAdapterPolicySettings = {
   platforms: {
@@ -193,6 +244,50 @@ export function mergeSourceAdapterPolicy(
   }
 
   return normalizeSourceAdapterPolicy({ platforms });
+}
+
+function applySourceAdapterPolicyRule(
+  current: ResolvedSourceAdapterPolicy,
+  rule: SourceAdapterPolicyRule | undefined,
+  matchedRule: string,
+): ResolvedSourceAdapterPolicy {
+  if (!rule) return current;
+  const mode = rule.mode ?? current.mode;
+  const modeChanged = Boolean(rule.mode && rule.mode !== current.mode);
+  return {
+    mode,
+    capabilities: rule.capabilities ?? (modeChanged ? sourceAdapterCapabilitiesForMode(mode) : current.capabilities),
+    rateLimit: {
+      windowSeconds: rule.rateLimit?.windowSeconds ?? current.rateLimit.windowSeconds,
+      maxRequests: rule.rateLimit?.maxRequests ?? current.rateLimit.maxRequests,
+    },
+    matchedRules: [...current.matchedRules, matchedRule],
+  };
+}
+
+export function resolveSourceAdapterPolicy(
+  settings: SourceAdapterPolicySettings,
+  context: SourceAdapterIdentityContext,
+): ResolvedSourceAdapterPolicy {
+  const platform = settings.platforms[context.platform]
+    ?? defaultSourceAdapterPolicy.platforms[context.platform]
+    ?? defaultSourceAdapterPolicy.platforms.discord;
+  let resolved: ResolvedSourceAdapterPolicy = {
+    mode: platform.defaultMode,
+    capabilities: sourceAdapterCapabilitiesForMode(platform.defaultMode),
+    rateLimit: platform.defaultRateLimit,
+    matchedRules: ['default'],
+  };
+
+  resolved = applySourceAdapterPolicyRule(resolved, platform.targets[context.targetId], `target:${context.targetId}`);
+  if (context.threadId) {
+    resolved = applySourceAdapterPolicyRule(resolved, platform.targets[context.threadId], `target:${context.threadId}`);
+  }
+  for (const groupId of context.groupIds ?? []) {
+    resolved = applySourceAdapterPolicyRule(resolved, platform.groups[groupId], `group:${groupId}`);
+  }
+  resolved = applySourceAdapterPolicyRule(resolved, platform.users[context.userId], `user:${context.userId}`);
+  return resolved;
 }
 
 export function getSourceAdapterPolicyPath(config: AppConfig) {

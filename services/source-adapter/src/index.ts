@@ -1032,11 +1032,37 @@ async function appendSessionMessage(input: {
   });
 }
 
+async function resolveInteractiveGatewayCapabilities(input: {
+  platform: "discord" | "telegram";
+  targetId: string;
+  threadId?: string | null;
+  groupIds?: string[];
+  userId: string;
+}): Promise<string[]> {
+  try {
+    const payload = await appApiRequest("/agent/gateway/interactive-capabilities", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    return Array.isArray(payload.capabilities)
+      ? Array.from(new Set(payload.capabilities
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter((entry) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(entry))))
+      : [];
+  } catch (error) {
+    console.warn("[source-adapter] interactive Gateway capabilities unavailable; continuing without them", describeError(error));
+    return [];
+  }
+}
+
 async function codexRuntimeRequest(input: {
   prompt: string;
   sessionId: string;
   codexThreadId: string | null;
   recentHistory: Array<{ role: string; content: string }>;
+  capabilities?: string[];
+  gatewayContext?: JsonObject;
   metadata: JsonObject;
 }): Promise<{ responseText: string; codexThreadId: string | null }> {
   const timeoutMs = adapterConfig().codexRuntimeRequestTimeoutSeconds * 1000;
@@ -1045,6 +1071,8 @@ async function codexRuntimeRequest(input: {
     sessionId: input.sessionId,
     codexThreadId: input.codexThreadId,
     recentHistory: input.recentHistory,
+    capabilities: input.capabilities ?? [],
+    context: input.gatewayContext ?? {},
     metadata: input.metadata,
   };
   const runtimeBase = codexRuntimeBaseUrl();
@@ -1749,6 +1777,11 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       : null) ||
     (typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
+  const gatewayCapabilities = await resolveInteractiveGatewayCapabilities({
+    platform: "telegram",
+    targetId: transport.chatId,
+    userId: transport.authorId,
+  });
 
   const stopTyping = startTypingHeartbeat(transport.sendTyping);
   const clearThinking = transport.sendThinkingMessage
@@ -1763,6 +1796,10 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       sessionId: String(session.id),
       codexThreadId,
       recentHistory,
+      capabilities: gatewayCapabilities,
+      gatewayContext: {
+        delegatedActorId: `telegram:${transport.authorId}`,
+      },
       metadata: {
         transport: "telegram",
         telegramChatId: transport.chatId,
@@ -2726,6 +2763,13 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
       ? String((existingSession.meta as JsonObject).codexThreadId)
       : null) ||
     (typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
+  const gatewayCapabilities = await resolveInteractiveGatewayCapabilities({
+    platform: "discord",
+    targetId: transport.channelId,
+    threadId: transport.threadId,
+    groupIds: transport.authorRoleIds,
+    userId: transport.authorId,
+  });
 
   const runAndSendCodexReply = async () => {
     const stopTyping = startTypingHeartbeat(transport.sendTyping);
@@ -2736,6 +2780,10 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         sessionId: String(session.id),
         codexThreadId,
         recentHistory,
+        capabilities: gatewayCapabilities,
+        gatewayContext: {
+          delegatedActorId: `discord:${transport.authorId}`,
+        },
         metadata: {
           transport: "discord",
           discordGuildId: transport.guildId,
