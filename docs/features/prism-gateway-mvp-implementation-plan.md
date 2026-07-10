@@ -271,15 +271,15 @@ complete.
 
 - [x] Add toolset-profile types and persistence.
 - [x] Add create/list/update/disable profile APIs.
-- [ ] Add profile assignments compatible with existing runtime sessions.
+- [x] Add profile assignments compatible with existing runtime sessions.
 - [x] Add `metadata.gateway-toolsets` skill parsing.
 - [ ] Add Doctor checks for missing or disabled required toolsets.
 - [ ] Keep `metadata.gateway-capabilities` compatibility.
 
 ### Phase B: Toolset Relay
 
-- [ ] Expose a fixed OpenAPI document through an assigned toolset session.
-- [ ] Implement a broad authenticated same-origin request relay.
+- [x] Expose a fixed OpenAPI document through an assigned toolset session.
+- [x] Implement a broad authenticated same-origin JSON request relay.
 - [ ] Let skills and runtimes perform API-specific discovery from the canonical specification.
 - [ ] Implement broad MCP discovery using the fixed connection endpoint.
 - [ ] Expose discovered tool descriptors to Codex Runtime.

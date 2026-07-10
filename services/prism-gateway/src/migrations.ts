@@ -134,4 +134,10 @@ export const gatewayMigrations: GatewayMigration[] = [
       CREATE INDEX toolset_profiles_connection_idx ON toolset_profiles(connection_id);
     `,
   },
+  {
+    name: "003_toolset_credential_binding",
+    sql: `
+      ALTER TABLE toolset_profiles ADD COLUMN auth_config_json TEXT NOT NULL DEFAULT '{"type":"none"}';
+    `,
+  },
 ];

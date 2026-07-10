@@ -15,11 +15,25 @@ For broad integrations, create one credential-backed toolset profile such as
 `portal.admin` or `crm.admin` and preserve the provider's OpenAPI or MCP tool
 surface. Do not create one Gateway capability per collection, route, or tool.
 
-The currently deployed agent routes primarily expose the initial narrow
-capability prototype. If an admin asks to connect a broad API before toolset
-profile routes are available, create only the pending connection and report that
-the profile relay is not implemented yet. Do not compensate by rebuilding the
-provider API as dozens of compatibility capabilities.
+Create broad profiles with `POST /agent/gateway/toolsets`. Agent-created
+profiles remain disabled until an admin supplies the credential and validates
+the binding. The profile accepts a canonical HTTPS description URL and a
+non-secret authentication mapping, for example:
+
+```json
+{
+  "key": "portal.admin",
+  "connectionId": "<connection-id>",
+  "protocol": "openapi",
+  "discoveryUrl": "https://portal.example.org/openapi.json",
+  "auth": { "type": "bearer", "secretName": "token" },
+  "description": "Portal administrator identity"
+}
+```
+
+Do not compensate for missing provider documentation by rebuilding the API as
+dozens of compatibility capabilities. The assigned agent can inspect the
+canonical document and use flexible same-origin requests.
 
 Use narrow capabilities only for intentionally small wrappers such as Plausible
 query, Arcade reads, or a deliberately restricted CRM contact read.
@@ -115,8 +129,7 @@ credential. Exercise every enabled workflow, task, hook, and interactive path
 that uses the integration; Gateway configuration alone is not proof that the
 migration is complete.
 
-Broad toolset skills will declare profiles under
-`metadata.gateway-toolsets` once the profile contract is implemented. Existing
+Broad toolset skills declare profiles under `metadata.gateway-toolsets`. Existing
 `metadata.gateway-capabilities` remains the narrow compatibility form.
 
 ## Plausible Preset
@@ -148,7 +161,7 @@ allow callers to supply MCP tool names.
 - Credential create, replace, and revoke remain admin-session operations in
   Settings.
 - Never send credentials through `/agent/*`.
-- Keep each connection destination and authentication recipe fixed; runtime
+- Keep each connection credential bound to its destination origin; runtime
   input must never override either.
 - Keep capabilities disabled until their connection test succeeds.
 - Treat downstream `4xx` as input, authentication, or configuration evidence.

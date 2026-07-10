@@ -9,7 +9,7 @@ import type { RuntimeCapabilityDescriptor } from './codex-runtime.js';
 import { GatewayClientError } from './gateway-client.js';
 import { listPrismSkills } from './prism-skills.js';
 import { RuntimeCapabilityError } from './runtime-capabilities.js';
-import { gatewayClient, runtimeCapabilitySessions } from './runtime-gateway.js';
+import { gatewayClient, runtimeCapabilitySessions, runtimeToolsetSessions } from './runtime-gateway.js';
 
 const startedAt = new Date();
 const app = express();
@@ -314,6 +314,22 @@ app.post('/v1/runtime/capabilities/invoke', async (req, res) => {
       return;
     }
     res.status(500).json({ ok: false, error: 'RUNTIME_CAPABILITY_INVOKE_FAILED' });
+  }
+});
+
+app.post('/v1/runtime/toolsets/invoke', async (req, res) => {
+  const token = req.header('x-runtime-toolset-token')?.trim() || '';
+  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body as Record<string, unknown> : {};
+  const toolset = typeof body.toolset === 'string' ? body.toolset.trim() : '';
+  const action = body.action === 'describe' || body.action === 'request' ? body.action : null;
+  const request = body.request && typeof body.request === 'object' && !Array.isArray(body.request) ? body.request as Record<string, unknown> : undefined;
+  if (!token || !toolset || !action) return res.status(400).json({ ok: false, error: 'RUNTIME_TOOLSET_INPUT_INVALID' });
+  try {
+    res.json(await runtimeToolsetSessions.invoke(token, toolset, action, request));
+  } catch (error) {
+    if (error instanceof RuntimeCapabilityError) return res.status(error.status).json({ ok: false, error: error.code });
+    if (error instanceof GatewayClientError) return res.status(error.status).json({ ok: false, error: error.code, retryable: error.retryable });
+    return res.status(500).json({ ok: false, error: 'RUNTIME_TOOLSET_INVOKE_FAILED' });
   }
 });
 

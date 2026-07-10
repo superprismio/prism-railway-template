@@ -1,8 +1,11 @@
 import type Database from "better-sqlite3";
+import { randomUUID } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { gatewayAuth, requireSiteCaller } from "./auth.js";
 import { GatewayInvoker } from "./invoke.js";
 import { GatewayStore, GatewayStoreError } from "./store.js";
+import { GatewayDriverError } from "./http-json-read.js";
+import { executeToolsetRequest, type ToolsetRequest } from "./toolset-relay.js";
 import type { GatewayCaller, GatewayConfig, GatewayInvocationContext } from "./types.js";
 
 type AppDependencies = {
@@ -12,6 +15,7 @@ type AppDependencies = {
   invoker: GatewayInvoker;
   migrationCount: number;
   startedAt?: Date;
+  executeToolset?: typeof executeToolsetRequest;
 };
 
 function textField(value: unknown, field: string, maxLength = 200) {
@@ -44,6 +48,23 @@ function optionalSchema(value: unknown) {
   return value as Record<string, unknown>;
 }
 
+function toolsetAuthField(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new GatewayStoreError("TOOLSET_AUTH_INVALID", 400);
+  }
+  const auth = value as Record<string, unknown>;
+  if (auth.type === "none") return { type: "none" } as const;
+  const secretName = textField(auth.secretName, "toolset_auth_secret_name", 64);
+  if (!/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(secretName)) throw new GatewayStoreError("TOOLSET_AUTH_INVALID", 400);
+  if (auth.type === "bearer") return { type: "bearer", secretName } as const;
+  if (auth.type === "api-key") {
+    const headerName = textField(auth.headerName, "toolset_auth_header_name", 64);
+    if (!/^[a-zA-Z][a-zA-Z0-9-]{0,63}$/.test(headerName)) throw new GatewayStoreError("TOOLSET_AUTH_INVALID", 400);
+    return { type: "api-key", secretName, headerName } as const;
+  }
+  throw new GatewayStoreError("TOOLSET_AUTH_INVALID", 400);
+}
+
 function routeParam(value: string | string[]) {
   return Array.isArray(value) ? value[0] || "" : value;
 }
@@ -66,6 +87,20 @@ function invocationContext(value: unknown): GatewayInvocationContext {
     result[key] = candidate;
   }
   return result;
+}
+
+function toolsetRequestField(value: unknown): ToolsetRequest {
+  const input = recordField(value, "TOOLSET_REQUEST_INVALID");
+  const method = typeof input.method === "string" ? input.method.toUpperCase() : "";
+  if (method !== "GET" && method !== "POST" && method !== "PUT" && method !== "PATCH" && method !== "DELETE") {
+    throw new GatewayStoreError("TOOLSET_METHOD_INVALID", 400);
+  }
+  return {
+    method,
+    path: textField(input.path, "toolset_path", 2000),
+    query: recordField(input.query, "TOOLSET_QUERY_INVALID") as ToolsetRequest["query"],
+    ...(input.body !== undefined ? { body: input.body } : {}),
+  };
 }
 
 function asyncRoute(
@@ -126,6 +161,7 @@ export function createGatewayApp(dependencies: AppDependencies) {
       connectionId: textField(body.connectionId, "connection_id", 120),
       protocol,
       discoveryUrl: textField(body.discoveryUrl, "discovery_url", 2000),
+      auth: toolsetAuthField(body.auth ?? { type: "none" }),
       description: textField(body.description, "description", 500),
       enabled: body.enabled !== false,
     });
@@ -143,6 +179,52 @@ export function createGatewayApp(dependencies: AppDependencies) {
     });
     response.json({ ok: true, toolset });
   });
+
+  const relayToolset = async (request: Request, response: Response, describe: boolean) => {
+    const traceId = randomUUID();
+    const startedAt = Date.now();
+    const key = routeParam(request.params.key);
+    const profile = dependencies.store.getToolsetProfile(key);
+    if (!profile) throw new GatewayStoreError("TOOLSET_NOT_FOUND", 404);
+    if (!profile.enabled) throw new GatewayStoreError("TOOLSET_DISABLED", 409);
+    const connection = dependencies.store.getConnection(profile.connectionId);
+    if (!connection || connection.status === "revoked") throw new GatewayStoreError("TOOLSET_CONNECTION_UNAVAILABLE", 409);
+    const credentials = dependencies.store.getConnectionCredentials(connection.id);
+    const relayRequest = describe ? undefined : toolsetRequestField(request.body);
+    const auditInput = describe
+      ? { action: "describe" }
+      : { action: "request", method: relayRequest!.method, path: relayRequest!.path };
+    try {
+      const result = await (dependencies.executeToolset ?? executeToolsetRequest)(profile, credentials, relayRequest);
+      dependencies.store.markConnectionUsed(connection.id, result.status >= 200 && result.status < 500);
+      dependencies.store.recordInvocation({
+        traceId, capabilityKey: `toolset:${key}`,
+        caller: response.locals.gatewayCaller as GatewayCaller,
+        context: invocationContext((request.body as Record<string, unknown> | undefined)?.context),
+        status: "succeeded", policyDecision: "runtime_toolset_assigned",
+        latencyMs: Date.now() - startedAt, inputSummary: auditInput,
+        outputSummary: { downstreamStatus: result.status, responseBytes: result.responseBytes }, units: 1,
+      });
+      response.json({ ok: true, traceId, toolset: key, downstreamStatus: result.status, contentType: result.contentType, result: result.body });
+    } catch (error) {
+      if (error instanceof GatewayDriverError) {
+        dependencies.store.recordInvocation({
+          traceId, capabilityKey: `toolset:${key}`,
+          caller: response.locals.gatewayCaller as GatewayCaller,
+          context: invocationContext((request.body as Record<string, unknown> | undefined)?.context),
+          status: "failed", policyDecision: "runtime_toolset_assigned",
+          latencyMs: Date.now() - startedAt, errorCode: error.code,
+          inputSummary: auditInput, outputSummary: null, units: 1,
+        });
+        response.status(error.retryable ? 502 : 400).json({ ok: false, traceId, error: { code: error.code, retryable: error.retryable } });
+        return;
+      }
+      throw error;
+    }
+  };
+
+  app.post("/toolsets/:key/describe", asyncRoute(async (request, response) => relayToolset(request, response, true)));
+  app.post("/toolsets/:key/request", asyncRoute(async (request, response) => relayToolset(request, response, false)));
 
   app.post("/capabilities", requireSiteCaller, (request, response) => {
     const body = request.body as Record<string, unknown>;

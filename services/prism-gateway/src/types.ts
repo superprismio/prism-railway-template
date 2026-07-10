@@ -33,6 +33,7 @@ export type GatewayToolsetProfile = {
   connectionId: string;
   protocol: "openapi" | "mcp" | "http" | "adapter";
   discoveryUrl: string;
+  auth: ToolsetAuthConfig;
   description: string;
   enabled: boolean;
   lastDiscoveredAt: string | null;
@@ -40,6 +41,11 @@ export type GatewayToolsetProfile = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type ToolsetAuthConfig =
+  | { type: "none" }
+  | { type: "bearer"; secretName: string }
+  | { type: "api-key"; secretName: string; headerName: string };
 
 export type GatewayCapability = {
   key: string;

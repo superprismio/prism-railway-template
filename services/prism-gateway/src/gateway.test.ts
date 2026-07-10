@@ -52,7 +52,19 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     assert.deepEqual(input, { period: "7d" });
     return { result: { visitors: 123 }, status: 200, responseBytes: 16 };
   });
-  const app = createGatewayApp({ config, db, store, invoker, migrationCount: migrations.totalKnown });
+  const app = createGatewayApp({
+    config,
+    db,
+    store,
+    invoker,
+    migrationCount: migrations.totalKnown,
+    executeToolset: async (profile, credentials, request) => {
+      assert.equal(profile.key, "portal.admin");
+      assert.equal(credentials.apiKey, "plausible-secret-value");
+      if (request) assert.deepEqual(request, { method: "PATCH", path: "/api/posts/1", query: {}, body: { title: "Updated" } });
+      return { status: 200, contentType: "application/json", body: request ? { updated: true } : { openapi: "3.0.0" }, responseBytes: 20 };
+    },
+  });
   const server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const address = server.address() as AddressInfo;
@@ -136,6 +148,7 @@ test("gateway stores credentials safely and enforces caller identity", async () 
         connectionId,
         protocol: "openapi",
         discoveryUrl: "https://portal.example.org/openapi.json",
+        auth: { type: "bearer", secretName: "apiKey" },
         description: "Portal administrator toolset",
       }),
     });
@@ -158,6 +171,22 @@ test("gateway stores credentials safely and enforces caller identity", async () 
       }),
     });
     assert.equal(runtimeCannotCreateToolset.response.status, 403);
+
+    const describedToolset = await jsonRequest(baseUrl, "/toolsets/portal.admin/describe", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+      body: "{}",
+    });
+    assert.equal(describedToolset.response.status, 200);
+    assert.deepEqual(describedToolset.body.result, { openapi: "3.0.0" });
+
+    const relayedToolset = await jsonRequest(baseUrl, "/toolsets/portal.admin/request", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+      body: JSON.stringify({ method: "PATCH", path: "/api/posts/1", body: { title: "Updated" } }),
+    });
+    assert.equal(relayedToolset.response.status, 200);
+    assert.deepEqual(relayedToolset.body.result, { updated: true });
 
     const toolsetUpdated = await jsonRequest(baseUrl, "/toolsets/portal.admin", {
       method: "PATCH",
@@ -350,7 +379,7 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(audit.response.status, 200);
     const events = audit.body.events as Array<Record<string, unknown>>;
-    assert.equal(events.length, 3);
+    assert.equal(events.length, 5);
     assert.equal(JSON.stringify(events).includes(plaintext), false);
 
     const replacement = "replacement-secret-value";

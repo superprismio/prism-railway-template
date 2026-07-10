@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
 import { loadRelevantPrismSkills } from './prism-skills.js';
-import { runtimeCapabilitySessions } from './runtime-gateway.js';
+import { runtimeCapabilitySessions, runtimeToolsetSessions } from './runtime-gateway.js';
 import { mergeSkillCapabilityRequirements } from './capability-requirements.js';
 
 type HistoryEntry = {
@@ -721,7 +721,8 @@ function buildPrompt(
       '',
       'Organization toolset profiles assigned to this runtime job:',
       input.toolsets.map((toolset) => JSON.stringify(toolset)).join('\n'),
-      'These profiles describe credential-backed tool surfaces. Use only runtime tool endpoints explicitly exposed for them; profile assignment never exposes the stored credential.',
+      'Use an assigned profile by POSTing JSON shaped as {"toolset":"...","action":"describe"} or {"toolset":"...","action":"request","request":{"method":"GET","path":"/api/...","query":{},"body":{}}} to $PRISM_RUNTIME_TOOLSET_URL with header x-runtime-toolset-token: $PRISM_RUNTIME_TOOLSET_TOKEN.',
+      'The destination and credential are fixed by Gateway, while method, same-origin path, query, and body remain under your control. Never print, persist, or return the runtime toolset token.',
     );
   }
 
@@ -887,6 +888,18 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     env.PRISM_RUNTIME_CAPABILITY_TOKEN = capabilityToken;
     env.PRISM_RUNTIME_CAPABILITIES = effectiveCapabilities.map((capability) => capability.key).join(',');
   }
+  const toolsetToken = effectiveToolsets.length
+    ? runtimeToolsetSessions.create(
+        effectiveToolsets.map((toolset) => toolset.key),
+        input.gatewayContext || {},
+        config.codexRuntimeTimeoutMs + 60_000,
+      )
+    : null;
+  if (toolsetToken) {
+    env.PRISM_RUNTIME_TOOLSET_URL = `http://127.0.0.1:${config.port}/v1/runtime/toolsets/invoke`;
+    env.PRISM_RUNTIME_TOOLSET_TOKEN = toolsetToken;
+    env.PRISM_RUNTIME_TOOLSETS = effectiveToolsets.map((toolset) => toolset.key).join(',');
+  }
 
   console.log(
     `[codex-runtime] spawn resume=${isResume ? 'yes' : 'no'} session=${input.sessionId} workspace=${executionWorkspaceRoot}`,
@@ -1032,6 +1045,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     });
   } finally {
     if (capabilityToken) runtimeCapabilitySessions.revoke(capabilityToken);
+    if (toolsetToken) runtimeToolsetSessions.revoke(toolsetToken);
   }
 }
 

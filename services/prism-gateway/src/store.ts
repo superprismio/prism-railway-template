@@ -12,6 +12,7 @@ import type {
   GatewayToolsetProfile,
   HttpJsonReadDriverConfig,
   McpToolCallDriverConfig,
+  ToolsetAuthConfig,
 } from "./types.js";
 
 export class GatewayStoreError extends Error {
@@ -57,6 +58,7 @@ type ToolsetProfileRow = {
   connection_id: string;
   protocol: GatewayToolsetProfile["protocol"];
   discovery_url: string;
+  auth_config_json: string;
   description: string;
   enabled: number;
   last_discovered_at: string | null;
@@ -340,6 +342,7 @@ function toolsetProfileFromRow(row: ToolsetProfileRow): GatewayToolsetProfile {
     connectionId: row.connection_id,
     protocol: row.protocol,
     discoveryUrl: row.discovery_url,
+    auth: (parseJson(row.auth_config_json) || { type: "none" }) as ToolsetAuthConfig,
     description: row.description,
     enabled: row.enabled === 1,
     lastDiscoveredAt: row.last_discovered_at,
@@ -468,6 +471,7 @@ export class GatewayStore {
     connectionId: string;
     protocol: GatewayToolsetProfile["protocol"];
     discoveryUrl: string;
+    auth: ToolsetAuthConfig;
     description: string;
     enabled?: boolean;
   }) {
@@ -486,9 +490,9 @@ export class GatewayStore {
     try {
       this.db.prepare(`
         INSERT INTO toolset_profiles
-          (key, connection_id, protocol, discovery_url, description, enabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(input.key, input.connectionId, input.protocol, discoveryUrl, input.description, input.enabled === false ? 0 : 1, now, now);
+          (key, connection_id, protocol, discovery_url, auth_config_json, description, enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(input.key, input.connectionId, input.protocol, discoveryUrl, JSON.stringify(input.auth), input.description, input.enabled === false ? 0 : 1, now, now);
     } catch (error) {
       if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
         throw new GatewayStoreError("TOOLSET_ALREADY_EXISTS", 409);

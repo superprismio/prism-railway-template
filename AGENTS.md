@@ -83,6 +83,11 @@ configuration only. Never ask for or send credentials through chat or
 `/agent/*`; create a pending connection and direct the admin to the returned
 Settings credential URL.
 
+Assigned runtime toolsets use short-lived runtime-local tokens. The runtime
+interface supports `describe` for the canonical API description and `request`
+for flexible same-origin method/path/query/body calls. Provider credentials and
+destination origins are never runtime inputs.
+
 For questions like "what happened to request #10?" or "what artifacts did request #10 create?", do not use `/admin/board`. Use:
 
 ```bash
