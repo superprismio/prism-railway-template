@@ -30,6 +30,21 @@ type DriverDependencies = {
   ) => Promise<HttpJsonReadResult>;
 };
 
+export function createPinnedLookup(address: ResolvedAddress) {
+  return (
+    _hostname: string,
+    options: { all?: boolean },
+    callback: (
+      error: NodeJS.ErrnoException | null,
+      address: string | ResolvedAddress[],
+      family?: number,
+    ) => void,
+  ) => {
+    if (options?.all) callback(null, [address]);
+    else callback(null, address.address, address.family);
+  };
+}
+
 function queryValue(value: unknown): string[] {
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return [String(value)];
@@ -91,7 +106,7 @@ function performPinnedJsonRequest(
       method: "GET",
       headers,
       signal: AbortSignal.timeout(config.timeoutMs),
-      lookup: (_hostname, _options, callback) => callback(null, address.address, address.family),
+      lookup: createPinnedLookup(address) as NonNullable<https.RequestOptions["lookup"]>,
     }, (response) => {
       const status = response.statusCode || 0;
       if (status >= 300 && status < 400) {

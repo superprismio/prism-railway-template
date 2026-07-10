@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createGatewayApp } from "./app.js";
 import { openGatewayDatabase, runGatewayMigrations } from "./db.js";
-import { executeHttpJsonRead, GatewayDriverError } from "./http-json-read.js";
+import { createPinnedLookup, executeHttpJsonRead, GatewayDriverError } from "./http-json-read.js";
 import { GatewayInvoker } from "./invoke.js";
 import { GatewayStore } from "./store.js";
 import type { GatewayConfig } from "./types.js";
@@ -276,4 +276,17 @@ test("http-json.read pins public DNS and never allows runtime headers or redirec
     }),
     (error: unknown) => error instanceof GatewayDriverError && error.code === "CAPABILITY_DNS_PRIVATE_ADDRESS_FORBIDDEN",
   );
+});
+
+test("pinned lookup supports Node single and multi-address callbacks", () => {
+  const lookup = createPinnedLookup({ address: "93.184.216.34", family: 4 });
+  lookup("example.org", { all: true }, (error, addresses) => {
+    assert.equal(error, null);
+    assert.deepEqual(addresses, [{ address: "93.184.216.34", family: 4 }]);
+  });
+  lookup("example.org", { all: false }, (error, address, family) => {
+    assert.equal(error, null);
+    assert.equal(address, "93.184.216.34");
+    assert.equal(family, 4);
+  });
 });
