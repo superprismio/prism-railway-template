@@ -6,9 +6,10 @@ test("skill frontmatter capability requirements support YAML lists", () => {
   assert.deepEqual(capabilityRequirementsFromSkillMarkdown(`---
 name: discord-send
 description: Send a message.
-gateway-capabilities:
-  - comms.message.send
-  - analytics.query
+metadata:
+  gateway-capabilities:
+    - comms.message.send
+    - analytics.query
 ---
 
 Instructions.
@@ -18,7 +19,8 @@ Instructions.
 test("invalid capability keys are ignored", () => {
   assert.deepEqual(capabilityRequirementsFromSkillMarkdown(`---
 name: unsafe
-gateway-capabilities: [valid.read, "../../secret", "bad key"]
+metadata:
+  gateway-capabilities: [valid.read, "../../secret", "bad key"]
 ---
 `), ["valid.read"]);
 });

@@ -15,7 +15,8 @@ Custom skill definitions are owned by the site service and stored under `/data/s
 4. Use the site internal skill endpoint when `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN` are available.
 5. Keep new skills disabled-by-convention until a task or prompt explicitly requests them.
 6. When a skill invokes Gateway capabilities, declare them in frontmatter under
-   `gateway-capabilities`. Do not tell every workflow to duplicate that list.
+   `metadata.gateway-capabilities`. Do not tell every workflow to duplicate that
+   list. Custom top-level frontmatter keys are not valid Codex skill metadata.
 
 In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the API is unavailable.
 
@@ -39,7 +40,7 @@ Payload shape:
 ```json
 {
   "name": "example-skill",
-  "content": "---\nname: example-skill\ndescription: Use this skill when...\ngateway-capabilities:\n  - example.read\n---\n\nSkill instructions go here.\n"
+  "content": "---\nname: example-skill\ndescription: Use this skill when...\nmetadata:\n  gateway-capabilities:\n    - example.read\n---\n\nSkill instructions go here.\n"
 }
 ```
 

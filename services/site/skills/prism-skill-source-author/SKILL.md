@@ -43,8 +43,9 @@ Rules:
    skill folder.
 6. Keep generated outputs and runtime state out of the skill repo.
 7. Declare every Prism Gateway dependency in `SKILL.md` frontmatter under
-   `gateway-capabilities`. Workflows and tasks inherit these requirements when
-   they select the skill, so do not duplicate capability lists in callers.
+   `metadata.gateway-capabilities`. Workflows and tasks inherit these
+   requirements when they select the skill, so do not duplicate capability
+   lists in callers. Do not add custom top-level frontmatter keys.
 
 Minimal skill:
 
@@ -63,8 +64,9 @@ Skill that uses an organization integration:
 ---
 name: crm-contact-research
 description: Use this skill when Codex is asked to research CRM contacts.
-gateway-capabilities:
-  - crm.contacts.read
+metadata:
+  gateway-capabilities:
+    - crm.contacts.read
 ---
 
 Use the declared Gateway capability instead of reading provider credentials

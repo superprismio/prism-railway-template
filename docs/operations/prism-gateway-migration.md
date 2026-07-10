@@ -180,7 +180,7 @@ Move credentials one at a time:
 3. Create and test the required read/write capabilities without changing
    runtime behavior.
 4. Declare those keys once in each integration skill's `SKILL.md` frontmatter
-   under `gateway-capabilities`.
+   under `metadata.gateway-capabilities`.
 5. Ensure workflow steps reference the skill through `agentConfig.skills` and
    tasks request it through `instructionConfig.requestedSkills`. Do not copy the
    capability list into every workflow, task, or hook.
@@ -214,7 +214,8 @@ introduced:
 - deploy the new Site and Codex Runtime while all legacy secrets remain present
 - deploy the updated Task Runner so Prism Doctor understands skill dependencies
 - run Doctor once before editing instance content and retain the report
-- add `gateway-capabilities` to custom and source-backed integration skills
+- add `metadata.gateway-capabilities` to custom and source-backed integration
+  skills
 - repair only true missing skill references or unavailable capabilities; do not
   add duplicate capability arrays to every workflow
 - test direct console use, scheduled tasks, hooks, and representative workflows

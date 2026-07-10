@@ -197,7 +197,7 @@ Use it for:
 - deterministic delegation policy in `agentConfig.delegation`
 
 When a step uses a skill, put the skill name in `agentConfig.skills`. The
-runtime automatically inherits that skill's `gateway-capabilities`; do not copy
+runtime automatically inherits that skill's `metadata.gateway-capabilities`; do not copy
 the same capability list into every workflow. Use
 `agentConfig.gatewayCapabilities` only when the step invokes a capability
 directly without a capability-declaring skill. Before enabling a workflow,

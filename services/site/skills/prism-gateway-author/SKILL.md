@@ -84,8 +84,9 @@ operation and use `prism-skill-author` or `prism-skill-source-author` to declare
 the key in its `SKILL.md` frontmatter:
 
 ```yaml
-gateway-capabilities:
-  - plausible.stats.query
+metadata:
+  gateway-capabilities:
+    - plausible.stats.query
 ```
 
 Workflows inherit these requirements through `agentConfig.skills`, and tasks

@@ -141,9 +141,10 @@ Skills that invoke organization integrations through Prism Gateway must declare
 their dependencies in `SKILL.md` frontmatter:
 
 ```yaml
-gateway-capabilities:
-  - crm.contacts.read
-  - crm.contacts.write
+metadata:
+  gateway-capabilities:
+    - crm.contacts.read
+    - crm.contacts.write
 ```
 
 Codex Runtime adds these requirements to the job-scoped capability session when

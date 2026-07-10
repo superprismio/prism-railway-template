@@ -25,7 +25,15 @@ const CAPABILITY_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/;
 export function readSkillCapabilityRequirements(content: string) {
   try {
     const data = matter(content).data as Record<string, unknown>;
-    const value = data['gateway-capabilities'] ?? data.gatewayCapabilities ?? data.requiredCapabilities;
+    const metadata = data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
+      ? data.metadata as Record<string, unknown>
+      : {};
+    const value = metadata['gateway-capabilities']
+      ?? metadata.gatewayCapabilities
+      ?? metadata.requiredCapabilities
+      ?? data['gateway-capabilities']
+      ?? data.gatewayCapabilities
+      ?? data.requiredCapabilities;
     const entries = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
     return Array.from(new Set(entries
       .filter((entry): entry is string => typeof entry === 'string')

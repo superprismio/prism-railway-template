@@ -6,9 +6,10 @@ test("hosted skill summaries expose declared Gateway requirements", () => {
   assert.deepEqual(readSkillCapabilityRequirements(`---
 name: discord-send
 description: Send a message.
-gateway-capabilities:
-  - comms.message.send
-  - analytics.query
+metadata:
+  gateway-capabilities:
+    - comms.message.send
+    - analytics.query
 ---
 `), ["comms.message.send", "analytics.query"]);
 });
@@ -16,7 +17,8 @@ gateway-capabilities:
 test("hosted skill requirements reject malformed capability keys", () => {
   assert.deepEqual(readSkillCapabilityRequirements(`---
 name: unsafe
-gateway-capabilities: [valid.read, "../../secret", "bad key"]
+metadata:
+  gateway-capabilities: [valid.read, "../../secret", "bad key"]
 ---
 `), ["valid.read"]);
 });
