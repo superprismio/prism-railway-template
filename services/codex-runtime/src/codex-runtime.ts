@@ -189,15 +189,15 @@ function looksLikeGitHubAuthError(message: string) {
   );
 }
 
-async function inspectGitHubRepoAccess(repoUrl: string): Promise<GitHubRepoAccess | null> {
+async function inspectGitHubRepoAccess(repoUrl: string, githubToken: string | null): Promise<GitHubRepoAccess | null> {
   const parsed = parseGitHubRepoSlug(repoUrl);
-  if (!parsed || !config.githubToken) {
+  if (!parsed || !githubToken) {
     return null;
   }
 
   const response = await fetch(`https://api.github.com/repos/${parsed.slug}`, {
     headers: {
-      Authorization: `Bearer ${config.githubToken}`,
+      Authorization: `Bearer ${githubToken}`,
       'User-Agent': 'prism-codex-runtime',
       Accept: 'application/vnd.github+json',
     },
@@ -238,6 +238,7 @@ async function normalizeGitHubRepoError(
   repoUrl: string,
   operation: 'clone' | 'fetch' | 'push',
   error: unknown,
+  githubToken: string | null,
 ): Promise<Error> {
   const message = error instanceof Error ? error.message : String(error);
   if (!looksLikeGitHubAuthError(message)) {
@@ -245,7 +246,7 @@ async function normalizeGitHubRepoError(
   }
 
   const parsed = parseGitHubRepoSlug(repoUrl);
-  const access = await inspectGitHubRepoAccess(repoUrl);
+  const access = await inspectGitHubRepoAccess(repoUrl, githubToken);
   const repoSlug = access?.repoSlug || parsed?.slug || repoUrl;
   const login = access?.login || 'configured GitHub token';
 
@@ -272,16 +273,16 @@ async function normalizeGitHubRepoError(
   );
 }
 
-function buildGitHubAuthArgs(repoUrl: string) {
+function buildGitHubAuthArgs(repoUrl: string, githubToken: string | null) {
   if (!repoUrl.startsWith('https://github.com/')) {
     return [];
   }
 
-  if (!config.githubToken) {
+  if (!githubToken) {
     throw new Error('TARGET_REPO_AUTH_MISSING:GITHUB_TOKEN');
   }
 
-  const basicAuth = Buffer.from(`x-access-token:${config.githubToken}`).toString('base64');
+  const basicAuth = Buffer.from(`x-access-token:${githubToken}`).toString('base64');
   return ['-c', `http.extraheader=AUTHORIZATION: basic ${basicAuth}`];
 }
 
@@ -292,6 +293,7 @@ function isGitHubHttpsRepo(repoUrl: string) {
 async function runGitHubReadCommand(
   repoUrl: string,
   gitArgs: string[],
+  githubToken: string | null,
   options: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
@@ -306,17 +308,18 @@ async function runGitHubReadCommand(
     await runCommand(['git', ...gitArgs], options);
     return;
   } catch (error) {
-    if (!config.githubToken) {
+    if (!githubToken) {
       throw error;
     }
   }
 
-  await runCommand(['git', ...buildGitHubAuthArgs(repoUrl), ...gitArgs], options);
+  await runCommand(['git', ...buildGitHubAuthArgs(repoUrl, githubToken), ...gitArgs], options);
 }
 
 async function runGitHubReadCapture(
   repoUrl: string,
   gitArgs: string[],
+  githubToken: string | null,
   options: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
@@ -329,12 +332,12 @@ async function runGitHubReadCapture(
   try {
     return await runCommandCapture(['git', ...gitArgs], options);
   } catch (error) {
-    if (!config.githubToken) {
+    if (!githubToken) {
       throw error;
     }
   }
 
-  return await runCommandCapture(['git', ...buildGitHubAuthArgs(repoUrl), ...gitArgs], options);
+  return await runCommandCapture(['git', ...buildGitHubAuthArgs(repoUrl, githubToken), ...gitArgs], options);
 }
 
 async function runCommand(
@@ -479,6 +482,7 @@ type PreparedExecutionWorkspace = {
 async function prepareExecutionWorkspace(
   input: CodexRuntimeInput,
   trace: CodexRuntimeResult['trace'],
+  githubToken: string | null,
 ) : Promise<PreparedExecutionWorkspace> {
   if (!shouldHydrateExternalWorkspace(input.metadata)) {
     return {
@@ -534,15 +538,15 @@ async function prepareExecutionWorkspace(
         '--single-branch',
         targetApp.repoUrl,
         workspacePath,
-      ]);
+      ], githubToken);
     } catch (error) {
-      throw await normalizeGitHubRepoError(targetApp.repoUrl, 'clone', error);
+      throw await normalizeGitHubRepoError(targetApp.repoUrl, 'clone', error, githubToken);
     }
   } else {
     appendTrace(trace, 'workspace.reuse', `Reusing existing workspace ${workspacePath}`);
     const remoteOriginUrl = targetApp.repoUrl;
     await runCommand(['git', 'remote', 'set-url', 'origin', remoteOriginUrl], { cwd: workspacePath }).catch(() => undefined);
-    await runGitHubReadCommand(remoteOriginUrl, ['fetch', 'origin', repoBranch, changeRequestBranch], { cwd: workspacePath }).catch((error) => {
+    await runGitHubReadCommand(remoteOriginUrl, ['fetch', 'origin', repoBranch, changeRequestBranch], githubToken, { cwd: workspacePath }).catch((error) => {
       appendTrace(trace, 'workspace.fetch_failed', error instanceof Error ? error.message : 'git fetch failed');
     });
   }
@@ -603,10 +607,11 @@ async function gitHasChanges(cwd: string) {
   return Boolean(status.trim());
 }
 
-async function remoteBranchExists(repoUrl: string, branchName: string, cwd: string) {
+async function remoteBranchExists(repoUrl: string, branchName: string, cwd: string, githubToken: string | null) {
   const output = await runGitHubReadCapture(
     repoUrl,
     ['ls-remote', '--heads', repoUrl, branchName],
+    githubToken,
     { cwd },
   ).catch(() => '');
   return Boolean(output.trim());
@@ -623,6 +628,7 @@ async function finalizeGitWorkspace(
   input: CodexRuntimeInput,
   preparedWorkspace: PreparedExecutionWorkspace,
   trace: CodexRuntimeResult['trace'],
+  githubToken: string | null,
 ) {
   if (!preparedWorkspace.repoUrl || preparedWorkspace.workspacePath === config.codexWorkspaceRoot) {
     return await captureGitState(
@@ -650,14 +656,14 @@ async function finalizeGitWorkspace(
   appendTrace(trace, 'git.push', `Pushing ${currentBranch} to origin`);
   try {
     await runCommand(
-      ['git', ...buildGitHubAuthArgs(preparedWorkspace.repoUrl), 'push', '-u', 'origin', currentBranch],
+      ['git', ...buildGitHubAuthArgs(preparedWorkspace.repoUrl, githubToken), 'push', '-u', 'origin', currentBranch],
       { cwd: workspacePath },
     );
   } catch (error) {
-    throw await normalizeGitHubRepoError(preparedWorkspace.repoUrl, 'push', error);
+    throw await normalizeGitHubRepoError(preparedWorkspace.repoUrl, 'push', error, githubToken);
   }
 
-  const pushed = await remoteBranchExists(preparedWorkspace.repoUrl, currentBranch, workspacePath);
+  const pushed = await remoteBranchExists(preparedWorkspace.repoUrl, currentBranch, workspacePath, githubToken);
   if (!pushed) {
     throw new Error(`GIT_PUSH_VERIFICATION_FAILED:${currentBranch}`);
   }
@@ -832,9 +838,6 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   const outputFile = path.join(os.tmpdir(), `codex-runtime-${randomUUID()}.txt`);
   const isResume = Boolean(input.codexThreadId);
   const trace: CodexRuntimeResult['trace'] = [];
-  const preparedWorkspace = await prepareExecutionWorkspace(input, trace);
-  input.onTrace?.([...trace]);
-  const executionWorkspaceRoot = preparedWorkspace.workspacePath;
   const prismSkills = await loadRelevantPrismSkills(input.prompt, input.metadata);
   const effectiveCapabilities = mergeSkillCapabilityRequirements(
     input.capabilities ?? [],
@@ -851,6 +854,10 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         context: input.gatewayContext || {},
       })
     : {};
+  const githubToken = leasedEnv.TARGET_REPO_GITHUB_TOKEN || config.githubToken;
+  const preparedWorkspace = await prepareExecutionWorkspace(input, trace, githubToken);
+  input.onTrace?.([...trace]);
+  const executionWorkspaceRoot = preparedWorkspace.workspacePath;
   const prompt = buildPrompt({ ...input, capabilities: effectiveCapabilities, toolsets: effectiveToolsets }, isResume, prismSkills);
   const args = isResume
     ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
@@ -876,11 +883,11 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     ...(config.codexHome ? { CODEX_HOME: config.codexHome } : {}),
     ...(config.appApiBaseUrl ? { PRISM_AGENT_API_BASE_URL: config.appApiBaseUrl } : {}),
     ...(config.appServiceToken ? { PRISM_AGENT_SERVICE_TOKEN: config.appServiceToken } : {}),
-    ...(config.githubToken
+    ...(githubToken
       ? {
-          TARGET_REPO_GITHUB_TOKEN: config.githubToken,
-          GITHUB_TOKEN: process.env.GITHUB_TOKEN?.trim() || config.githubToken,
-          GH_TOKEN: process.env.GH_TOKEN?.trim() || config.githubToken,
+          TARGET_REPO_GITHUB_TOKEN: githubToken,
+          GITHUB_TOKEN: process.env.GITHUB_TOKEN?.trim() || githubToken,
+          GH_TOKEN: process.env.GH_TOKEN?.trim() || githubToken,
         }
       : {}),
   };
@@ -1031,7 +1038,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
           recordTrace('run.empty_tolerated', 'Codex completed without assistant text; returning task fallback text');
         }
         recordTrace('run.completed', 'Codex completed successfully');
-        const finalGitState = await finalizeGitWorkspace(input, preparedWorkspace, trace).catch((error) => {
+        const finalGitState = await finalizeGitWorkspace(input, preparedWorkspace, trace, githubToken).catch((error) => {
           recordTrace('git.finalize_failed', error instanceof Error ? error.message : 'git finalize failed');
           throw error;
         });
