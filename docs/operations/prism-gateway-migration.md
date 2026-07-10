@@ -241,6 +241,14 @@ Before merging implementation, add an idempotent setup command that can:
 - default all caller feature flags to disabled
 - stop before deployments unless explicitly asked to apply
 
-The read-only preflight script ships before implementation. The mutating setup
-command should be completed with the service so it can validate real health and
-configuration rather than provisioning an undeployable placeholder.
+The setup command is:
+
+```bash
+bash scripts/railway-setup-prism-gateway.sh \
+  --project-id <railway-project-id> \
+  --environment production
+```
+
+It defaults to a read-only plan. Add `--apply` to provision missing resources
+without deploying, or `--deploy` to provision and deploy the current checkout.
+The service remains disabled at Site and Codex Runtime callers after setup.

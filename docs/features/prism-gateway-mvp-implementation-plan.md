@@ -660,22 +660,24 @@ For successful calls, preserve:
 
 ### Phase 1: Service Skeleton
 
-- [ ] Add `services/prism-gateway`.
-- [ ] Add health endpoint.
-- [ ] Add SQLite migration runner.
-- [ ] Add `/data` volume expectation.
-- [ ] Add service-token auth middleware.
-- [ ] Add `.env.example` and template variable references.
+- [x] Add `services/prism-gateway`.
+- [x] Add health endpoint.
+- [x] Add SQLite migration runner.
+- [x] Add `/data` volume expectation.
+- [x] Add caller-specific service-token auth middleware.
+- [x] Add `.env.example` and template variable references.
 
 ### Phase 2: Capability Catalog And Connections
 
-- [ ] Seed approved connector drivers and optional capability presets.
-- [ ] Add declarative instance capability create/update/disable.
-- [ ] Add connection create/list/test/replace/revoke.
-- [ ] Keep encrypted secret rows internal and redact admin responses.
-- [ ] Add integration connection records.
+- [x] Seed the approved `http-json.read` connector driver.
+- [x] Add declarative instance capability create.
+- [ ] Add declarative instance capability update/disable.
+- [x] Add connection create/list/replace/revoke.
+- [ ] Add connection test.
+- [x] Keep encrypted secret rows internal and redact admin responses.
+- [x] Add integration connection records.
 - [ ] Add one secret test route.
-- [ ] Add admin-safe response redaction.
+- [x] Add admin-safe response redaction.
 
 ### Phase 3: Invoke And Audit
 
@@ -687,7 +689,7 @@ For successful calls, preserve:
 
 ### Phase 4: First Capabilities
 
-- [ ] Implement the constrained `http-json.read` driver.
+- [ ] Execute the constrained `http-json.read` driver through `/invoke`.
 - [ ] Configure one instance-owned read capability on `prism-stack`.
 - [ ] Implement `comms.discord.send_message`.
 - [ ] Add capability-specific input validation.

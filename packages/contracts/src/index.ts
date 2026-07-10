@@ -162,7 +162,6 @@ export type PrismGatewayConnectionCreateRequest = {
   label: string;
   authType: string;
   credentials: Record<string, string>;
-  capabilityKeys: string[];
 };
 
 export type PrismGatewayConnection = {
