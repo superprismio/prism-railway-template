@@ -92,7 +92,7 @@ type WorkflowRunStepResult = {
 type DoctorFinding = {
   check: string;
   status: "failed" | "warning";
-  subjectType: "workflow" | "task" | "hook";
+  subjectType: "workflow" | "task" | "hook" | "skill";
   subjectKey: string;
   stepKey?: string | null;
   expected: string;
@@ -1480,6 +1480,141 @@ function doctorHookWorkflowKey(hook: Record<string, unknown>): string | null {
   return typeof workflowKey === "string" && workflowKey.trim() ? workflowKey.trim() : null;
 }
 
+function doctorStringList(value: unknown) {
+  return Array.isArray(value)
+    ? Array.from(new Set(value
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => entry.trim())
+      .filter(Boolean)))
+    : [];
+}
+
+const doctorRuntimeProvidedSkills = ["imagegen"];
+
+async function doctorRuntimeSkills() {
+  const baseUrl = codexRuntimeBaseUrl();
+  if (!baseUrl) return [] as Record<string, unknown>[];
+  const response = await fetchWithTimeout(`${baseUrl}/skills`, { method: "GET" }, httpTimeoutMs());
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} from ${baseUrl}/skills`);
+  }
+  const payload = await response.json() as Record<string, unknown>;
+  return Array.isArray(payload.skills) ? payload.skills.filter(isRecord) : [];
+}
+
+function doctorMergeSkills(...groups: Record<string, unknown>[][]) {
+  const byName = new Map<string, Record<string, unknown>>();
+  for (const skill of groups.flat()) {
+    if (typeof skill.name !== "string" || !skill.name.trim()) continue;
+    byName.set(skill.name.trim(), skill);
+  }
+  for (const name of doctorRuntimeProvidedSkills) {
+    if (!byName.has(name)) byName.set(name, { name, source: "codex-runtime" });
+  }
+  return Array.from(byName.values());
+}
+
+function doctorAgentConfigSkills(value: unknown) {
+  return isRecord(value) ? doctorStringList(value.skills) : [];
+}
+
+function doctorAgentConfigCapabilities(value: unknown) {
+  if (!isRecord(value)) return [];
+  return doctorStringList(value.gatewayCapabilities ?? value.gateway_capabilities ?? value.capabilities);
+}
+
+function doctorWorkflowDependencies(workflow: Record<string, unknown>) {
+  const definition = isRecord(workflow.definition) ? workflow.definition : {};
+  const steps = Array.isArray(definition.steps) ? definition.steps.filter(isRecord) : [];
+  return {
+    skills: Array.from(new Set([
+      ...doctorAgentConfigSkills(definition.agentConfig ?? definition.agent_config),
+      ...steps.flatMap((step) => doctorAgentConfigSkills(step.agentConfig ?? step.agent_config)),
+    ])),
+    directCapabilities: Array.from(new Set([
+      ...doctorAgentConfigCapabilities(definition.agentConfig ?? definition.agent_config),
+      ...steps.flatMap((step) => doctorAgentConfigCapabilities(step.agentConfig ?? step.agent_config)),
+    ])),
+  };
+}
+
+function doctorCapabilityDependencyFindings(input: {
+  workflows: Record<string, unknown>[];
+  skills: Record<string, unknown>[];
+  enabledCapabilities: Set<string>;
+}) {
+  const findings: DoctorFinding[] = [];
+  const skillsByName = new Map(input.skills.map((skill) => [
+    typeof skill.name === "string" ? skill.name : "",
+    skill,
+  ]));
+
+  for (const skill of input.skills) {
+    const skillName = typeof skill.name === "string" && skill.name.trim() ? skill.name.trim() : "unknown-skill";
+    for (const capabilityKey of doctorStringList(skill.requiredCapabilities ?? skill.required_capabilities)) {
+      if (input.enabledCapabilities.has(capabilityKey)) continue;
+      findings.push({
+        check: "skill-required-capability-available",
+        status: "failed",
+        subjectType: "skill",
+        subjectKey: skillName,
+        expected: `Required capability is enabled: ${capabilityKey}.`,
+        observed: `Required capability is missing or disabled: ${capabilityKey}.`,
+        recommendation: "Configure and test the capability before removing the legacy integration credential.",
+        evidence: { capabilityKey },
+      });
+    }
+  }
+
+  for (const workflow of input.workflows) {
+    const workflowKey = workflowKeyFromRecord(workflow);
+    const dependencies = doctorWorkflowDependencies(workflow);
+    for (const skillName of dependencies.skills) {
+      const skill = skillsByName.get(skillName);
+      if (!skill) {
+        findings.push({
+          check: "workflow-required-skill-exists",
+          status: "failed",
+          subjectType: "workflow",
+          subjectKey: workflowKey,
+          expected: `Referenced skill exists: ${skillName}.`,
+          observed: `Referenced skill was not found: ${skillName}.`,
+          recommendation: "Install the skill or remove the stale workflow skill reference.",
+          evidence: { skillName },
+        });
+        continue;
+      }
+      for (const capabilityKey of doctorStringList(skill.requiredCapabilities ?? skill.required_capabilities)) {
+        if (input.enabledCapabilities.has(capabilityKey)) continue;
+        findings.push({
+          check: "workflow-skill-capability-available",
+          status: "failed",
+          subjectType: "workflow",
+          subjectKey: workflowKey,
+          expected: `Skill ${skillName} can resolve capability ${capabilityKey}.`,
+          observed: `Capability ${capabilityKey} required by ${skillName} is missing or disabled.`,
+          recommendation: "Configure and test the capability before running this workflow without its legacy credential.",
+          evidence: { skillName, capabilityKey },
+        });
+      }
+    }
+    for (const capabilityKey of dependencies.directCapabilities) {
+      if (input.enabledCapabilities.has(capabilityKey)) continue;
+      findings.push({
+        check: "workflow-direct-capability-available",
+        status: "failed",
+        subjectType: "workflow",
+        subjectKey: workflowKey,
+        expected: `Direct workflow capability is enabled: ${capabilityKey}.`,
+        observed: `Direct workflow capability is missing or disabled: ${capabilityKey}.`,
+        recommendation: "Configure the capability or move provider behavior into a capability-declaring skill.",
+        evidence: { capabilityKey },
+      });
+    }
+  }
+  return findings;
+}
+
 function doctorRepairRequestTitle() {
   return "Repair Prism Doctor findings";
 }
@@ -1507,21 +1642,21 @@ function doctorRepairSummary(report: {
   };
   findings: DoctorFinding[];
 }) {
-  const failedByWorkflow = new Map<string, number>();
+  const failedBySubject = new Map<string, number>();
   const warningBySubject = new Map<string, number>();
   for (const finding of report.findings) {
     const key = `${finding.subjectType}:${finding.subjectKey}`;
     if (finding.status === "failed") {
-      failedByWorkflow.set(finding.subjectKey, (failedByWorkflow.get(finding.subjectKey) ?? 0) + 1);
+      failedBySubject.set(key, (failedBySubject.get(key) ?? 0) + 1);
     } else {
       warningBySubject.set(key, (warningBySubject.get(key) ?? 0) + 1);
     }
   }
 
-  const failedLines = [...failedByWorkflow.entries()]
+  const failedLines = [...failedBySubject.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 20)
-    .map(([workflowKey, count]) => `- ${workflowKey}: ${count} failed check${count === 1 ? "" : "s"}`);
+    .map(([subject, count]) => `- ${subject}: ${count} failed check${count === 1 ? "" : "s"}`);
   const warningLines = [...warningBySubject.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 10)
@@ -1532,7 +1667,7 @@ function doctorRepairSummary(report: {
     "",
     `Checked ${report.summary.workflowsChecked} workflows, ${report.summary.tasksChecked} tasks, ${report.summary.hooksChecked} hooks, and ${report.summary.skillsChecked} skills.`,
     "",
-    "Failed workflow subjects:",
+    "Failed subjects:",
     failedLines.length ? failedLines.join("\n") : "- None",
     "",
     "Warnings:",
@@ -1540,7 +1675,7 @@ function doctorRepairSummary(report: {
     "",
     "Recommended repair flow:",
     "1. Read the attached stamped `prism-doctor-report-<timestamp>.json` and `prism-doctor-report-<timestamp>.md` artifacts.",
-    "2. Repair the listed workflow/task/hook drift deliberately.",
+    "2. Repair the listed workflow, skill, task, hook, or capability drift deliberately.",
     "3. Rerun Prism Doctor and confirm the failed finding count is zero.",
   ].join("\n");
 }
@@ -1727,13 +1862,27 @@ async function runPrismDoctorTask(): Promise<TaskRunResult> {
   const taskPayload = await appApiRequest("/agent/tasks", { method: "GET" }) ?? {};
   const hookPayload = await appApiRequest("/agent/hooks", { method: "GET" }) ?? {};
   const skillPayload = await appApiRequest("/agent/skills", { method: "GET" }) ?? {};
+  const gatewayPayload: Record<string, unknown> = await appApiRequest("/agent/gateway", { method: "GET" })
+    .catch(() => null) ?? {};
   const workflows = Array.isArray(workflowPayload.workflows) ? workflowPayload.workflows.filter(isRecord) : [];
   const tasks = Array.isArray(taskPayload.tasks) ? taskPayload.tasks.filter(isRecord) : [];
   const hooks = Array.isArray(hookPayload.hooks) ? hookPayload.hooks.filter(isRecord) : [];
-  const skills = Array.isArray(skillPayload.skills) ? skillPayload.skills.filter(isRecord) : [];
-  const workflowFindings = workflows.flatMap(doctorWorkflowFindings);
-  const workflowsWithFindings = new Set(workflowFindings.map((finding) => finding.subjectKey));
-  const findings = [...workflowFindings];
+  const hostedSkills = Array.isArray(skillPayload.skills) ? skillPayload.skills.filter(isRecord) : [];
+  const runtimeSkills = await doctorRuntimeSkills().catch(() => [] as Record<string, unknown>[]);
+  const skills = doctorMergeSkills(hostedSkills, runtimeSkills);
+  const gateway = isRecord(gatewayPayload.gateway) ? gatewayPayload.gateway : {};
+  const gatewayCapabilities = Array.isArray(gateway.capabilities) ? gateway.capabilities.filter(isRecord) : [];
+  const enabledCapabilities = new Set(gatewayCapabilities
+    .filter((capability) => capability.enabled === true && typeof capability.key === "string")
+    .map((capability) => String(capability.key)));
+  const initialFindings = [
+    ...workflows.flatMap(doctorWorkflowFindings),
+    ...doctorCapabilityDependencyFindings({ workflows, skills, enabledCapabilities }),
+  ];
+  const workflowsWithFindings = new Set(initialFindings
+    .filter((finding) => finding.subjectType === "workflow")
+    .map((finding) => finding.subjectKey));
+  const findings = [...initialFindings];
 
   for (const task of tasks) {
     const taskKey = typeof task.key === "string" && task.key.trim() ? task.key.trim() : "unknown-task";

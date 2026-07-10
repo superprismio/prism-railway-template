@@ -196,6 +196,14 @@ Use it for:
 - shared `agentConfig`
 - deterministic delegation policy in `agentConfig.delegation`
 
+When a step uses a skill, put the skill name in `agentConfig.skills`. The
+runtime automatically inherits that skill's `gateway-capabilities`; do not copy
+the same capability list into every workflow. Use
+`agentConfig.gatewayCapabilities` only when the step invokes a capability
+directly without a capability-declaring skill. Before enabling a workflow,
+verify its referenced skills exist and run Prism Doctor to catch unavailable
+capability dependencies.
+
 Do not put long prompts, implementation logic, scripts, or large prose in the manifest. Put those in markdown.
 
 Do not require a target repository unless the workflow actually needs repo/deploy helpers. Requests can produce artifacts, Discord messages, summaries, or other outputs without a `targetAppId`.

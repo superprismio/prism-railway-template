@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { config } from './config.js';
 import { loadRelevantPrismSkills } from './prism-skills.js';
 import { runtimeCapabilitySessions } from './runtime-gateway.js';
+import { mergeSkillCapabilityRequirements } from './capability-requirements.js';
 
 type HistoryEntry = {
   role: string;
@@ -663,12 +664,17 @@ async function finalizeGitWorkspace(
   };
 }
 
-async function buildPrompt(input: CodexRuntimeInput, isResume: boolean) {
+type LoadedPrismSkills = Awaited<ReturnType<typeof loadRelevantPrismSkills>>;
+
+function buildPrompt(
+  input: CodexRuntimeInput,
+  isResume: boolean,
+  prismSkills: LoadedPrismSkills,
+) {
   const history = input.recentHistory
     .slice(-12)
     .map((entry) => `${entry.role === 'assistant' ? 'Assistant' : 'User'}: ${entry.content}`)
     .join('\n');
-  const prismSkills = await loadRelevantPrismSkills(input.prompt, input.metadata);
   const availableSkillsSummary = prismSkills.availableSkills.length
     ? prismSkills.availableSkills
       .map((skill) => `${skill.name}: ${skill.description}`)
@@ -812,7 +818,12 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   const preparedWorkspace = await prepareExecutionWorkspace(input, trace);
   input.onTrace?.([...trace]);
   const executionWorkspaceRoot = preparedWorkspace.workspacePath;
-  const prompt = await buildPrompt(input, isResume);
+  const prismSkills = await loadRelevantPrismSkills(input.prompt, input.metadata);
+  const effectiveCapabilities = mergeSkillCapabilityRequirements(
+    input.capabilities ?? [],
+    prismSkills.selectedSkills,
+  );
+  const prompt = buildPrompt({ ...input, capabilities: effectiveCapabilities }, isResume, prismSkills);
   const args = isResume
     ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
     : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile, '-C', executionWorkspaceRoot];
@@ -845,9 +856,9 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       : {}),
   };
   delete env.PRISM_GATEWAY_TOKEN;
-  const capabilityToken = input.capabilities?.length
+  const capabilityToken = effectiveCapabilities.length
     ? runtimeCapabilitySessions.create(
-        input.capabilities.map((capability) => capability.key),
+        effectiveCapabilities.map((capability) => capability.key),
         input.gatewayContext || {},
         config.codexRuntimeTimeoutMs + 60_000,
       )
@@ -855,7 +866,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   if (capabilityToken) {
     env.PRISM_RUNTIME_CAPABILITY_URL = `http://127.0.0.1:${config.port}/v1/runtime/capabilities/invoke`;
     env.PRISM_RUNTIME_CAPABILITY_TOKEN = capabilityToken;
-    env.PRISM_RUNTIME_CAPABILITIES = input.capabilities!.map((capability) => capability.key).join(',');
+    env.PRISM_RUNTIME_CAPABILITIES = effectiveCapabilities.map((capability) => capability.key).join(',');
   }
 
   console.log(

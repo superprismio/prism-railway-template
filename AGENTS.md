@@ -137,6 +137,28 @@ Examples:
 - Task create/update/reasoning: use `prism-task-author`, then `GET /agent/tasks` or `POST /agent/tasks`.
 - Skill create/update/reasoning: use `prism-skill-author`, then `GET /agent/skills` or `POST /agent/skills`.
 
+Skills that invoke organization integrations through Prism Gateway must declare
+their dependencies in `SKILL.md` frontmatter:
+
+```yaml
+gateway-capabilities:
+  - crm.contacts.read
+  - crm.contacts.write
+```
+
+Codex Runtime adds these requirements to the job-scoped capability session when
+it selects the skill. Workflows should reference the skill through
+`agentConfig.skills`; tasks should request it through
+`instructionConfig.requestedSkills`. Do not duplicate the capability list in
+each workflow, task, or hook. Use `agentConfig.gatewayCapabilities` only for a
+workflow step that invokes Gateway directly without a capability-declaring
+skill.
+
+Before removing a legacy integration secret from Codex Runtime, run Prism
+Doctor and exercise every enabled workflow, task, and hook that uses the
+migrated skill. Keep the old credential available until the Gateway path passes
+those instance checks.
+
 ## Output Adapter Delivery
 
 Use the output adapter only when the user explicitly asks to send a message or a workflow/task needs immediate delivery.

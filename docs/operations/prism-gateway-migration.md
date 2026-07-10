@@ -174,16 +174,57 @@ The first pilot must demonstrate:
 
 Move credentials one at a time:
 
-1. Create a Gateway connection through Site Settings.
-2. Test the connection without changing runtime behavior.
-3. Add the corresponding capability grant to one runtime profile or actor.
-4. Enable Gateway invocation for one controlled workflow or console session.
-5. Compare normalized output with the old path.
-6. Confirm audit, latency, and usage records.
-7. Disable direct fallback for that capability.
-8. Delete the old Railway variable from the runtime service.
-9. Redeploy the runtime and repeat the smoke test.
-10. Document the migrated variable in the environment delta history.
+1. Inventory the skills, workflows, tasks, hooks, and console use that depend on
+   the credential. Do not infer this only from Railway variable names.
+2. Create a Gateway connection through Site Settings.
+3. Create and test the required read/write capabilities without changing
+   runtime behavior.
+4. Declare those keys once in each integration skill's `SKILL.md` frontmatter
+   under `gateway-capabilities`.
+5. Ensure workflow steps reference the skill through `agentConfig.skills` and
+   tasks request it through `instructionConfig.requestedSkills`. Do not copy the
+   capability list into every workflow, task, or hook.
+6. Use `agentConfig.gatewayCapabilities` only for direct Gateway calls made by
+   a workflow step that has no capability-declaring skill.
+7. Add the corresponding capability grant to the runtime profile or actor.
+8. Deploy Site, Codex Runtime, and Task Runner with capability-aware Doctor
+   checks before changing any legacy environment variable.
+9. Run Prism Doctor. Repair missing skill references and missing or disabled
+   capabilities before proceeding.
+10. Exercise console use plus every enabled workflow, task, and hook identified
+    in the inventory. Compare normalized output with the old path.
+11. Confirm audit, latency, and usage records for each execution path.
+12. Disable direct fallback for that capability.
+13. Delete the old Railway variable from the runtime service, redeploy, and
+    repeat Doctor and the execution matrix.
+14. Document the migrated variable and tested callers in the instance's
+    environment delta history.
+
+The capability declaration is a dependency, not an authorization grant. Codex
+Runtime adds skill requirements to a short-lived job capability session;
+Gateway still enforces runtime, actor, risk, and capability policy. This keeps
+existing skills and workflows portable between runtimes while allowing each
+instance to configure different providers and grants.
+
+### Instance Upgrade Checklist
+
+Apply this checklist to existing instances when the capability-aware runtime is
+introduced:
+
+- deploy the new Site and Codex Runtime while all legacy secrets remain present
+- deploy the updated Task Runner so Prism Doctor understands skill dependencies
+- run Doctor once before editing instance content and retain the report
+- add `gateway-capabilities` to custom and source-backed integration skills
+- repair only true missing skill references or unavailable capabilities; do not
+  add duplicate capability arrays to every workflow
+- test direct console use, scheduled tasks, hooks, and representative workflows
+- remove one legacy credential at a time and rerun the same checks
+
+Older workflows do not require a manifest rewrite merely because they use a
+skill. Once the selected skill declares its requirements, Codex Runtime resolves
+them automatically. Existing direct `agentConfig.gatewayCapabilities` entries
+remain valid and should only be removed when the step has been converted to use
+a capability-declaring skill.
 
 Do not begin with wallet private keys, broad object-storage credentials, social
 publishing credentials, or repository write tokens.
