@@ -38,6 +38,17 @@ Gateway service token into prompts, tool arguments, traces, or agent-visible
 configuration. Agent access should use a short-lived job-scoped token that is
 restricted to the capabilities listed on that runtime job.
 
+Site-owned workflows assign capabilities through step or workflow agent config:
+
+```json
+{
+  "gatewayCapabilities": ["plausible.stats.query"]
+}
+```
+
+The runtime gives the Codex child a short-lived local invocation token for only
+those keys. Gateway grants remain authoritative.
+
 Railway notes:
 
 - attach a persistent volume at `/data`

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
 import { loadRelevantPrismSkills } from './prism-skills.js';
+import { runtimeCapabilitySessions } from './runtime-gateway.js';
 
 type HistoryEntry = {
   role: string;
@@ -53,6 +54,8 @@ export type CodexRuntimeInput = {
   recentHistory: HistoryEntry[];
   sessionId: string;
   codexThreadId?: string | null;
+  capabilities?: string[];
+  gatewayContext?: Record<string, string>;
   metadata?: Record<string, unknown>;
   onTrace?: (trace: CodexRuntimeResult['trace']) => void;
 };
@@ -683,6 +686,16 @@ async function buildPrompt(input: CodexRuntimeInput, isResume: boolean) {
     sections.push(`Session metadata: ${JSON.stringify(input.metadata)}`);
   }
 
+  if (input.capabilities?.length) {
+    sections.push(
+      '',
+      'Organization capabilities assigned to this runtime job:',
+      input.capabilities.join('\n'),
+      'Invoke an assigned capability by POSTing JSON shaped as {"capability":"...","input":{...}} to $PRISM_RUNTIME_CAPABILITY_URL with header x-runtime-capability-token: $PRISM_RUNTIME_CAPABILITY_TOKEN.',
+      'Never print, persist, or return the runtime capability token.',
+    );
+  }
+
   if (availableSkillsSummary) {
     sections.push('', 'Available Prism skills:', availableSkillsSummary);
   }
@@ -824,13 +837,26 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       : {}),
   };
   delete env.PRISM_GATEWAY_TOKEN;
+  const capabilityToken = input.capabilities?.length
+    ? runtimeCapabilitySessions.create(
+        input.capabilities,
+        input.gatewayContext || {},
+        config.codexRuntimeTimeoutMs + 60_000,
+      )
+    : null;
+  if (capabilityToken) {
+    env.PRISM_RUNTIME_CAPABILITY_URL = `http://127.0.0.1:${config.port}/v1/runtime/capabilities/invoke`;
+    env.PRISM_RUNTIME_CAPABILITY_TOKEN = capabilityToken;
+    env.PRISM_RUNTIME_CAPABILITIES = input.capabilities!.join(',');
+  }
 
   console.log(
     `[codex-runtime] spawn resume=${isResume ? 'yes' : 'no'} session=${input.sessionId} workspace=${executionWorkspaceRoot}`,
   );
 
-  return await new Promise<CodexRuntimeResult>((resolve, reject) => {
-    const child = spawn(config.codexBinary, args, {
+  try {
+    return await new Promise<CodexRuntimeResult>((resolve, reject) => {
+      const child = spawn(config.codexBinary, args, {
       cwd: executionWorkspaceRoot,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -965,7 +991,10 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         reject(error);
       }
     });
-  });
+    });
+  } finally {
+    if (capabilityToken) runtimeCapabilitySessions.revoke(capabilityToken);
+  }
 }
 
 export async function generateCodexCliReply(input: CodexRuntimeInput) {

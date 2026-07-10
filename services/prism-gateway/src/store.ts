@@ -455,6 +455,19 @@ export class GatewayStore {
     return this.getCapability(key)!;
   }
 
+  updateCapabilityConfig(key: string, driverConfigValue: unknown) {
+    const capability = this.getCapability(key);
+    if (!capability) throw new GatewayStoreError("CAPABILITY_NOT_FOUND", 404);
+    if (capability.driverKey !== "http-json.read") {
+      throw new GatewayStoreError("CAPABILITY_DRIVER_UNSUPPORTED", 400);
+    }
+    const driverConfig = normalizeHttpJsonReadConfig(driverConfigValue);
+    this.db.prepare(
+      "UPDATE capabilities SET driver_config_json = ?, updated_at = ? WHERE key = ?",
+    ).run(JSON.stringify(driverConfig), new Date().toISOString(), key);
+    return this.getCapability(key)!;
+  }
+
   createCapability(input: {
     key: string;
     driverKey: string;

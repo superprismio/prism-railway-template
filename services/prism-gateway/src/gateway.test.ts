@@ -209,6 +209,30 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     assert.deepEqual(invoked.body.result, { visitors: 123 });
     assert.equal(invoked.text.includes(plaintext), false);
 
+    const updatedCapability = await jsonRequest(baseUrl, "/capabilities/analytics.query", {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        "x-gateway-token": siteToken,
+      },
+      body: JSON.stringify({
+        driverConfig: {
+          baseUrl: "https://analytics.example.org",
+          pathTemplate: "/api/v2/query",
+          method: "POST",
+          allowedQueryParams: [],
+          allowedJsonBodyParams: ["site_id", "metrics", "date_range"],
+          staticJsonBody: {},
+          auth: { type: "bearer", secretName: "apiKey" },
+        },
+      }),
+    });
+    assert.equal(updatedCapability.response.status, 200);
+    assert.equal(
+      ((updatedCapability.body.capability as Record<string, unknown>).driverConfig as Record<string, unknown>).method,
+      "POST",
+    );
+
     const audit = await jsonRequest(baseUrl, "/audit-events", {
       headers: { "x-gateway-token": siteToken },
     });

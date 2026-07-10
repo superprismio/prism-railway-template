@@ -385,8 +385,8 @@ export function GatewaySettings() {
       method: "POST",
       allowedQueryParams: "",
       allowedJsonBodyParams:
-        "metrics, date_range, dimensions, filters, include, pagination",
-      staticJsonBody: '{\n  "site_id": "YOUR_SITE_DOMAIN"\n}',
+        "site_id, metrics, date_range, dimensions, filters, include, pagination",
+      staticJsonBody: "{}",
       authType: "bearer",
       secretName: "apiKey",
     }));
@@ -1167,8 +1167,7 @@ export function GatewaySettings() {
                 !capabilityDraft.connectionId ||
                 !capabilityDraft.description.trim() ||
                 !capabilityDraft.baseUrl.trim() ||
-                !capabilityDraft.pathTemplate.trim() ||
-                capabilityDraft.staticJsonBody.includes("YOUR_SITE_DOMAIN")
+                !capabilityDraft.pathTemplate.trim()
               }
             >
               Add capability

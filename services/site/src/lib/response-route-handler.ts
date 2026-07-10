@@ -402,6 +402,22 @@ function requestedSkillsFromAgentConfig(config: unknown) {
   return skills.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim())
 }
 
+function requestedCapabilitiesFromAgentConfig(config: unknown) {
+  if (!isRecord(config)) return []
+  const capabilities = Array.isArray(config.gatewayCapabilities)
+    ? config.gatewayCapabilities
+    : Array.isArray(config.capabilities)
+      ? config.capabilities
+      : []
+  return Array.from(new Set(capabilities
+    .map((entry) => {
+      if (typeof entry === "string") return entry.trim()
+      if (isRecord(entry) && typeof entry.key === "string") return entry.key.trim()
+      return ""
+    })
+    .filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key))))
+}
+
 function summarizeGitPushState(trace: RuntimeTraceEntry[] | undefined) {
   if (!Array.isArray(trace) || !trace.length) {
     return {
@@ -445,6 +461,8 @@ async function requestCodexRuntimeResponse(input: {
   sessionId: string
   codexThreadId?: string | null
   recentHistory: Array<{ role: string; content: string }>
+  capabilities?: string[]
+  gatewayContext?: Record<string, string | undefined>
   metadata: Record<string, unknown>
   onProgress?: (progress: {
     status: string
@@ -463,6 +481,8 @@ async function requestCodexRuntimeResponse(input: {
     sessionId: input.sessionId,
     codexThreadId: input.codexThreadId ?? null,
     recentHistory: input.recentHistory,
+    capabilities: (input.capabilities ?? []).map((key) => ({ key })),
+    context: input.gatewayContext ?? {},
     metadata: input.metadata,
   }
   const runtimeJobsUrl = `${config.codexRuntimeBaseUrl}/v1/responses/jobs`
@@ -1224,6 +1244,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       ...requestedSkillsFromAgentConfig(workflowAgentConfig),
     ]),
   )
+  const requestedCapabilities = requestedCapabilitiesFromAgentConfig(workflowAgentConfig)
 
   createAgentMessage({
     sessionId: session.id,
@@ -1410,6 +1431,12 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       sessionId: session.id,
       codexThreadId: typeof session.meta?.codexThreadId === "string" ? session.meta.codexThreadId : null,
       recentHistory,
+      capabilities: requestedCapabilities,
+      gatewayContext: {
+        requestId: activeLinkedChangeRequestId ?? undefined,
+        workflowRunId: linkedWorkflowRun?.id ?? undefined,
+        workflowStepKey: runnableStepKey ?? undefined,
+      },
       metadata: {
         transport: "site",
           requestedSkills,
@@ -1607,6 +1634,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             ...requestedSkillsFromAgentConfig(continuationAgentConfig),
           ]),
         )
+        const continuationCapabilities = requestedCapabilitiesFromAgentConfig(continuationAgentConfig)
         const continuationPrompt = [
           `Automatically continue workflow step ${continuationStepKey} for request #${latestRequest.requestNumber}: ${latestRequest.title}.`,
           `Step label: ${typeof continuationStep.label === "string" ? continuationStep.label : continuationStepKey}.`,
@@ -1622,6 +1650,12 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             sessionId: session.id,
             codexThreadId: continuationThreadId,
             recentHistory: continuationHistory,
+            capabilities: continuationCapabilities,
+            gatewayContext: {
+              requestId: activeLinkedChangeRequestId,
+              workflowRunId: latestRun.id,
+              workflowStepKey: continuationStepKey,
+            },
             metadata: {
               transport: "site",
               requestedSkills: continuationRequestedSkills,

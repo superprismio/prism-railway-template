@@ -5,18 +5,14 @@ import path from 'node:path';
 import express from 'express';
 import { config } from './config.js';
 import { generateCodexCliReply } from './codex-runtime.js';
-import { PrismGatewayClient } from './gateway-client.js';
+import { GatewayClientError } from './gateway-client.js';
 import { listPrismSkills } from './prism-skills.js';
+import { RuntimeCapabilityError } from './runtime-capabilities.js';
+import { gatewayClient, runtimeCapabilitySessions } from './runtime-gateway.js';
 
 const startedAt = new Date();
 const app = express();
 const responseJobs = new Map<string, RuntimeResponseJob>();
-const gatewayClient = new PrismGatewayClient({
-  enabled: config.prismGatewayEnabled,
-  baseUrl: config.prismGatewayBaseUrl,
-  token: config.prismGatewayToken,
-  timeoutMs: config.prismGatewayTimeoutMs,
-});
 
 app.use(express.json({ limit: '1mb' }));
 
@@ -25,6 +21,8 @@ type RuntimeRequestBody = {
   sessionId?: unknown;
   codexThreadId?: unknown;
   recentHistory?: Array<{ role?: unknown; content?: unknown }>;
+  capabilities?: unknown;
+  context?: unknown;
   metadata?: Record<string, unknown>;
 };
 
@@ -53,6 +51,8 @@ type RuntimeResponseJob = {
     sessionId: string;
     codexThreadId: string | null;
     recentHistory: Array<{ role: string; content: string }>;
+    capabilities: string[];
+    gatewayContext: Record<string, string>;
     metadata: Record<string, unknown>;
   };
   response: RuntimeResponsePayload | null;
@@ -98,8 +98,38 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
         }))
         .filter((entry) => entry.content.trim())
       : [],
+    capabilities: Array.isArray(body.capabilities)
+      ? Array.from(new Set(body.capabilities
+        .map((entry) => {
+          if (typeof entry === 'string') return entry.trim();
+          if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+            const key = (entry as Record<string, unknown>).key;
+            return typeof key === 'string' ? key.trim() : '';
+          }
+          return '';
+        })
+        .filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key))))
+      : [],
+    gatewayContext: normalizeGatewayContext(body.context),
     metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
   };
+}
+
+function normalizeGatewayContext(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const input = value as Record<string, unknown>;
+  const allowedKeys = [
+    'delegatedActorId',
+    'requestId',
+    'workflowRunId',
+    'workflowStepKey',
+  ];
+  return Object.fromEntries(allowedKeys.flatMap((key) => {
+    const candidate = input[key];
+    return typeof candidate === 'string' && candidate.trim()
+      ? [[key, candidate.trim().slice(0, 200)]]
+      : [];
+  }));
 }
 
 function responsePayloadFromResult(
@@ -158,6 +188,10 @@ async function runResponseJob(jobId: string) {
   try {
     const result = await generateCodexCliReply({
       ...job.input,
+      gatewayContext: {
+        ...job.input.gatewayContext,
+        runtimeJobId: job.id,
+      },
       onTrace: (trace) => {
         job.trace = [...trace];
       },
@@ -204,6 +238,43 @@ app.get('/skills', async (_req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown skills error';
     res.status(500).json({ ok: false, error: message });
+  }
+});
+
+app.post('/v1/runtime/capabilities/invoke', async (req, res) => {
+  const token = typeof req.header('x-runtime-capability-token') === 'string'
+    ? req.header('x-runtime-capability-token')!.trim()
+    : '';
+  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+    ? req.body as Record<string, unknown>
+    : {};
+  const capability = typeof body.capability === 'string' ? body.capability.trim() : '';
+  const input = body.input && typeof body.input === 'object' && !Array.isArray(body.input)
+    ? body.input as Record<string, unknown>
+    : null;
+  if (!token || !capability || !input) {
+    res.status(400).json({ ok: false, error: 'RUNTIME_CAPABILITY_REQUEST_INVALID' });
+    return;
+  }
+
+  try {
+    const result = await runtimeCapabilitySessions.invoke(token, capability, input);
+    res.status(result.status).json(result);
+  } catch (error) {
+    if (error instanceof RuntimeCapabilityError) {
+      res.status(error.status).json({ ok: false, error: error.code });
+      return;
+    }
+    if (error instanceof GatewayClientError) {
+      res.status(error.status).json({
+        ok: false,
+        error: error.code,
+        retryable: error.retryable,
+        traceId: error.traceId,
+      });
+      return;
+    }
+    res.status(500).json({ ok: false, error: 'RUNTIME_CAPABILITY_INVOKE_FAILED' });
   }
 });
 
