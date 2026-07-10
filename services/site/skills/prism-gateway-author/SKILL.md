@@ -77,6 +77,28 @@ pending connection with no credential.
 Report the capability key, connection label, test result, and follow-up needed.
 Do not claim setup succeeded before the test passes.
 
+## Bind Skills And Workflows
+
+After enabling a capability, identify the skill that owns the provider
+operation and use `prism-skill-author` or `prism-skill-source-author` to declare
+the key in its `SKILL.md` frontmatter:
+
+```yaml
+gateway-capabilities:
+  - plausible.stats.query
+```
+
+Workflows inherit these requirements through `agentConfig.skills`, and tasks
+inherit them through `instructionConfig.requestedSkills`. Do not duplicate the
+capability list in each caller. Keep a direct
+`agentConfig.gatewayCapabilities` entry only when the workflow step invokes the
+capability without an owning skill.
+
+Run Prism Doctor after binding the skill and before removing any legacy runtime
+credential. Exercise every enabled workflow, task, hook, and interactive path
+that uses the integration; Gateway configuration alone is not proof that the
+migration is complete.
+
 ## Plausible Preset
 
 Always use the `plausible` integration preset. It owns the v2 endpoint,
