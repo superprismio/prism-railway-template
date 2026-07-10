@@ -751,7 +751,8 @@ For successful calls, preserve:
 - [x] Add chat-safe Gateway authoring routes and a built-in authoring skill.
 - [x] Add connection-specific Settings credential deep links.
 - [x] Add an idempotent Plausible integration preset endpoint.
-- [ ] Remove one duplicated secret from runtime env docs.
+- [x] Remove one duplicated integration secret from Codex Runtime after
+  capability-backed skill validation (`ARCADE_AGENT_API_KEY` on `prism-stack`).
 - [ ] Keep direct fallback available until stable.
 
 ## Non-Goals

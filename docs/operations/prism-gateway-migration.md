@@ -126,6 +126,30 @@ Gateway merely to satisfy this milestone.
 No variable values were read into this document. Run the preflight again before
 implementation because Railway state may change.
 
+## Pilot Migration History
+
+### RaidGuild Arcade Read API
+
+Completed on `prism-stack` on 2026-07-10:
+
+- moved `ARCADE_AGENT_API_KEY` from Codex Runtime into one encrypted Gateway
+  connection
+- created fixed read capabilities for Brood Tapper and Hack Thy Sack scores and
+  daily summaries
+- added the source-backed `rg-arcade-reader` skill with
+  `metadata.gateway-capabilities`
+- verified both games through a Codex Runtime job submitted with an empty
+  capability list, proving skill requirement inheritance
+- redeployed Codex Runtime without `ARCADE_AGENT_API_KEY` and repeated the same
+  successful two-game query
+- retained non-secret game base URLs in runtime configuration for compatibility
+  and instance inventory
+
+The NextCRM contact-read pilot also proved constrained MCP invocation and skill
+inheritance, but `NEXTCRM_API_TOKEN` remains in Codex Runtime because that token
+still supports broader CRM reads and writes not represented by
+`crm.contact.read`.
+
 ## Working Branch Pilot
 
 Use one implementation branch based on current `origin/main`. Railway can point
