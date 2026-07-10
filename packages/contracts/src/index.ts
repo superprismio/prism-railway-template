@@ -181,12 +181,16 @@ export type PrismGatewayConnection = {
 
 export type PrismGatewayCapability = {
   key: string;
+  driverKey: string;
+  connectionId?: string | null;
   provider: string;
   description: string;
   mode: "read" | "write" | "delivery" | "destructive" | "model" | "runtime";
   riskLevel: "low" | "medium" | "high";
   requiresApproval: boolean;
   enabled: boolean;
+  inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
 };
 
 export type PrismGatewayCapabilityGrant = {

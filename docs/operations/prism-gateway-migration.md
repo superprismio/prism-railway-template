@@ -139,11 +139,11 @@ Recommended order:
 3. Test health, database migration, restart persistence, and caller-token
    separation directly.
 4. Point only Site at the working branch with Gateway disabled.
-5. Enable Site Gateway settings and add/test the Plausible connection.
+5. Enable Site Gateway settings and add/test one read-only instance connection.
 6. Point only Codex Runtime at the working branch with Gateway disabled.
 7. Enable Gateway for one Codex runtime profile or actor grant.
-8. Invoke `plausible.query` and verify the result, trace ID, audit event, and
-   warning-only usage row.
+8. Invoke its instance-owned capability and verify the result, trace ID, audit
+   event, and warning-only usage row.
 9. Restart and redeploy Gateway, then repeat the invocation to prove encrypted
    connection persistence.
 10. Select one existing read-oriented integration for actual credential
@@ -162,7 +162,7 @@ The first pilot must demonstrate:
 - Request JSON cannot override authenticated caller identity.
 - Secret create responses never return plaintext.
 - Secret values are absent from logs, audit input/output summaries, and errors.
-- A valid Plausible query succeeds with a stable trace ID.
+- A valid instance-owned read capability succeeds with a stable trace ID.
 - A denied capability creates a denial audit event and does not call the
   provider.
 - A Gateway restart preserves the encrypted connection and audit history.
@@ -221,7 +221,8 @@ After the production pilot is stable:
 6. Generate a new Railway template revision.
 7. Deploy that revision into a clean test project.
 8. Complete Site bootstrap and Codex device authentication.
-9. Add a connection through Settings and run the Gateway smoke checks.
+9. Add an instance-specific connection and capability through Settings, then run
+   the Gateway smoke checks.
 10. Update the template variable reference and user-facing service docs.
 
 Publishing the final Railway template revision may require dashboard

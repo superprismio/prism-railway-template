@@ -80,6 +80,37 @@ Preferred abstraction:
 The agent or runtime should normally receive the result of an allowed action,
 not the secret used to perform it.
 
+## Template And Instance Ownership
+
+The Railway template should not assume that every Prism organization uses
+Plausible, a particular CRM, Portal, X, or any other provider.
+
+Template-owned Gateway resources:
+
+- constrained connector drivers such as `http-json.read`
+- optional disabled presets for common providers
+- encryption, authentication, policy, audit, and usage machinery
+- Site UI and service-to-service contracts
+
+Instance-owned Gateway resources:
+
+- integration connections and encrypted credentials
+- capability names and declarative input/output schemas
+- bindings between capabilities, connections, and approved drivers
+- actor, role, runtime, destination, and budget grants
+
+Runtime-visible resources:
+
+- stable capability names such as `analytics.query` or `crm.contact.read`
+- input and output schemas
+- invocation results and trace IDs
+
+An instance admin may configure a declarative capability through an approved
+driver. The MVP does not allow arbitrary uploaded executable code. For a generic
+HTTP read driver, base URL, method, path template, authentication, timeout,
+response limit, and redaction are admin-owned configuration and cannot be
+overridden by an invocation.
+
 ## Responsibility Split
 
 ### Prism Site/API
@@ -226,6 +257,7 @@ SQLite. The root encryption key stays in Railway.
 Suggested tables:
 
 ```text
+connector_drivers
 capabilities
 actor_profiles
 profile_capabilities
@@ -265,12 +297,19 @@ remotion.render
 model.generate
 ```
 
+These names are examples, not capabilities that every template deployment must
+enable. The template may ship optional presets, while each instance chooses its
+actual catalog.
+
 Suggested capability metadata:
 
 ```text
 key
+driver_key
+connection_id
 provider
 description
+driver_config_json
 input_schema_json
 output_schema_json
 risk_level

@@ -29,7 +29,7 @@ The first version is additive:
 After the MVP, an operator should be able to:
 
 1. deploy an optional `prism-gateway` service beside the existing stack
-2. configure one or two integration secrets through a Prism admin UI
+2. configure one or two instance-specific connections through a Prism admin UI
 3. allow selected actors or services to invoke selected capabilities
 4. see audit events for every gateway invocation
 5. see warning-only usage and budget events
@@ -42,18 +42,17 @@ real capabilities without blocking current workflows.
 The first vertical slice is successful when:
 
 ```text
-Prism admin enters a Plausible credential in Settings
+Prism admin creates a read-only HTTP JSON connection in Settings
+  -> admin binds an instance capability such as analytics.query
   -> site sends it server-side to prism-gateway
   -> prism-gateway encrypts it on its mounted volume
-  -> codex-runtime invokes plausible.query without receiving the credential
+  -> codex-runtime invokes the named capability without receiving the credential
   -> prism-gateway records the policy decision, result status, and usage
 ```
 
-The production `prism-stack` instance does not currently expose a Plausible
-credential to its Railway services. This is therefore a new low-risk connection
-proof, not the first removal of an existing Codex Runtime variable. After the
-connection and invocation path is stable, use the same framework to migrate one
-existing read-oriented integration credential from Codex Runtime.
+The capability and connection are instance-owned. The template supplies the
+constrained connector driver and policy machinery, not a Plausible account, a
+RaidGuild CRM schema, or any other organization-specific integration.
 
 ## Locked MVP Decisions
 
@@ -68,8 +67,9 @@ existing read-oriented integration credential from Codex Runtime.
 - Use one gateway service token per calling service. Gateway maps the token to a
   trusted caller identity; request JSON cannot select or override that identity.
 - Treat user, agent, request, and workflow fields as delegation context.
-- Seed fixed built-in capability definitions. MVP admins may enable, disable,
-  and grant them but may not author arbitrary executable capabilities.
+- Seed fixed connector drivers and optional capability presets. MVP admins may
+  create declarative capabilities bound to approved drivers, but may not upload
+  arbitrary executable capability code.
 - Require an idempotency key for delivery, write, and destructive capabilities.
 - A compatibility fallback may handle a disabled integration or an unavailable
   legacy route. It must never bypass gateway authentication, policy, approval,
@@ -80,37 +80,43 @@ existing read-oriented integration credential from Codex Runtime.
 - Preserve current Codex Runtime routes while adding the shared runtime adapter
   contract.
 
-## First Capabilities
+## First Connector And Capabilities
 
-Start with one read capability and one delivery capability.
+Start with one constrained read connector and one instance capability. Add a
+delivery capability after the read vertical slice is stable.
 
-### Read Capability
+### Read Connector
 
-Locked first read capability:
+Locked first connector driver:
 
 ```text
+http-json.read
+```
+
+Why:
+
+- supports instance-specific read APIs without teaching the template about each
+  organization
+- can require a fixed HTTPS base URL, fixed method and path template, bounded
+  response size, timeout, redaction, and input/output schemas
+- keeps provider credentials out of runtime context
+- can support analytics or narrow CRM reads through named capabilities
+
+Example instance capabilities:
+
+```text
+analytics.query
+crm.contact.read
 plausible.query
 ```
 
-Why:
+An invocation cannot supply a base URL, arbitrary path, method, or authentication
+header. Those are admin-owned capability configuration. The driver must reject
+private, loopback, link-local, and metadata-service destinations unless a future
+internal-service driver explicitly allows them.
 
-- low operational risk
-- currently requires an API key in agent/runtime context
-- useful for analytics, reporting, and content workflows
-- easy to model as a structured query and structured result
-
-Development fallback when no Plausible account is available:
-
-```text
-memory.search
-```
-
-Why:
-
-- Prism-native
-- does not require a new external account
-- useful for proving policy and audit, but less useful for proving external
-  secret management
+Optional capability presets may make common providers easier to configure, but
+presets are disabled until an instance creates a connection.
 
 ### Follow-Up Delivery Capability
 
@@ -202,8 +208,9 @@ POST /capabilities
 PATCH /capabilities/:key
 ```
 
-MVP can seed built-in capabilities on migration and allow admin enable/disable.
-Full user-authored capability schemas can come later.
+MVP seeds approved connector drivers and optional presets. Admins can create a
+declarative instance capability bound to an approved driver and connection.
+User-uploaded executable capability code can come later, if ever.
 
 ### Connections
 
@@ -245,7 +252,7 @@ Example request:
 
 ```json
 {
-  "capability": "plausible.query",
+  "capability": "analytics.query",
   "input": {
     "siteId": "example.org",
     "period": "7d",
@@ -268,7 +275,7 @@ Example response:
 {
   "ok": true,
   "traceId": "gw_trace_01",
-  "capability": "plausible.query",
+  "capability": "analytics.query",
   "result": {
     "visitors": 123,
     "pageviews": 456
@@ -365,11 +372,22 @@ strict only for explicitly configured high-risk capabilities.
 Use additive migrations.
 
 ```text
+connector_drivers
+  key text primary key
+  mode text not null
+  description text not null
+  built_in integer not null default 1
+  created_at text not null
+  updated_at text not null
+
 capabilities
   key text primary key
+  driver_key text not null
+  connection_id text
   provider text not null
   mode text not null
   description text not null
+  driver_config_json text not null
   input_schema_json text
   output_schema_json text
   risk_level text not null
@@ -396,6 +414,9 @@ encrypted_secrets
   secret_name text not null
   encrypted_value text not null
   nonce text not null
+  auth_tag text not null
+  key_version text not null
+  associated_data_json text not null
   created_at text not null
   updated_at text not null
 
@@ -531,24 +552,25 @@ artifacts, and errors. Gateway does not become the runtime job dispatcher.
 
 ## First Migration Candidate
 
-Recommended first connection to prove:
+Recommended first connector to prove:
 
 ```text
-PLAUSIBLE_API_KEY
+http-json.read
 ```
 
 Reason:
 
-- read-only
-- useful in content/reporting workflows
-- low blast radius
+- read-only and bounded
+- useful with several instance-specific APIs
+- proves secure connection storage without making a provider part of Prism core
 - easier to validate than write APIs
 
-This credential is not currently present on the production `prism-stack`
-services. After proving UI-managed connection storage and invocation, select an
-existing read-oriented Codex Runtime integration for the first actual removal.
-Do not choose a private key, social publishing credential, or broad object
-storage credential for the first migration.
+For the `prism-stack` pilot, configure one low-risk instance capability through
+the UI. Plausible analytics is a good option if the operator supplies that
+connection; otherwise use a narrowly scoped CRM read. After proving connection
+storage and invocation, migrate one existing read-oriented credential from
+Codex Runtime. Do not choose a private key, social publishing credential, or
+broad object storage credential for the first migration.
 
 Provisional production migration candidate:
 
@@ -632,7 +654,7 @@ For successful calls, preserve:
 - [x] Add this implementation plan.
 - [x] Add docs link from the broad gateway spec.
 - [x] Define the runtime adapter contract.
-- [x] Lock the first read and follow-up delivery capabilities.
+- [x] Lock the first connector and follow-up delivery capability.
 - [x] Decide service name and Railway volume mount.
 - [x] Add migration, environment delta, rollback, and production preflight docs.
 
@@ -647,7 +669,8 @@ For successful calls, preserve:
 
 ### Phase 2: Capability Catalog And Connections
 
-- [ ] Seed built-in capabilities.
+- [ ] Seed approved connector drivers and optional capability presets.
+- [ ] Add declarative instance capability create/update/disable.
 - [ ] Add connection create/list/test/replace/revoke.
 - [ ] Keep encrypted secret rows internal and redact admin responses.
 - [ ] Add integration connection records.
@@ -664,7 +687,8 @@ For successful calls, preserve:
 
 ### Phase 4: First Capabilities
 
-- [ ] Implement `plausible.query` or `memory.search`.
+- [ ] Implement the constrained `http-json.read` driver.
+- [ ] Configure one instance-owned read capability on `prism-stack`.
 - [ ] Implement `comms.discord.send_message`.
 - [ ] Add capability-specific input validation.
 - [ ] Add capability-specific output normalization.
@@ -700,8 +724,8 @@ For successful calls, preserve:
 
 These decisions do not block the first vertical slice:
 
-1. Does the existing CRM connection support a sufficiently narrow
-   `crm.contact.read` contract and credential scope for the first removal?
+1. Should the `prism-stack` pilot use Plausible analytics or a sufficiently
+   narrow CRM read as its first instance capability?
 2. Should request-linked audit summaries later be copied into Site artifacts?
 3. Should gateway tools gain an MCP surface after the HTTP invocation API is
    stable?
