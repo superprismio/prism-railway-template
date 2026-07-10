@@ -108,7 +108,7 @@ service_exists() {
 }
 
 volume_exists() {
-  railway volume list --environment "$environment" --json | node -e '
+  railway volume --service prism-gateway --environment "$environment" list --json | node -e '
     let input = "";
     process.stdin.on("data", (chunk) => { input += chunk; });
     process.stdin.on("end", () => {
@@ -194,7 +194,15 @@ if [[ "$apply" == true ]]; then
     echo "  keep prism-gateway /data volume"
   else
     echo "  create prism-gateway /data volume"
-    railway volume add --service prism-gateway --environment "$environment" --mount-path /data --json >/dev/null
+    # Railway CLI 4.x can panic when adding a volume to a new empty service via
+    # --service. Link the service for this operation, then restore the normal
+    # repository link to Site.
+    railway service link prism-gateway >/dev/null
+    if ! railway volume add --mount-path /data --json >/dev/null; then
+      railway service link site >/dev/null || true
+      exit 1
+    fi
+    railway service link site >/dev/null
   fi
 else
   echo "  ensure prism-gateway /data volume"
