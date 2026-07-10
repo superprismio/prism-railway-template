@@ -156,6 +156,30 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(capability.response.status, 201);
 
+    const pendingCapability = await jsonRequest(baseUrl, "/capabilities", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-gateway-token": siteToken,
+      },
+      body: JSON.stringify({
+        key: "analytics.pending",
+        driverKey: "http-json.read",
+        connectionId,
+        provider: "analytics",
+        description: "Pending analytics setup",
+        enabled: false,
+        driverConfig: {
+          baseUrl: "https://analytics.example.org",
+          pathTemplate: "/api/stats",
+          allowedQueryParams: ["period"],
+          auth: { type: "bearer", secretName: "apiKey" },
+        },
+      }),
+    });
+    assert.equal(pendingCapability.response.status, 201);
+    assert.equal((pendingCapability.body.capability as Record<string, unknown>).enabled, false);
+
     const tested = await jsonRequest(baseUrl, "/capabilities/analytics.query/test", {
       method: "POST",
       headers: {

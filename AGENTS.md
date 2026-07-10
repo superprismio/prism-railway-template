@@ -66,6 +66,7 @@ Send service auth as:
 - `PATCH /agent/source-adapter-policy`
 - `GET /agent/gateway`
 - `POST /agent/gateway/connections`
+- `POST /agent/gateway/integrations`
 - `POST /agent/gateway/capabilities`
 - `PATCH /agent/gateway/capabilities/:key`
 - `POST /agent/gateway/capabilities/:key/test`

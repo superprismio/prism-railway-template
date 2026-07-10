@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireServiceAccess } from "@/lib/internal-service";
 import { prismGatewayRequest, PrismGatewayError } from "@/lib/prism-gateway";
 import { publicUrlFromRequest } from "@/lib/public-url";
+import { gatewayCredentialPath } from "@/lib/gateway-presets";
 
 function text(value: unknown, maxLength = 200) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -27,9 +28,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({ provider, label, authType, credentials: {} }),
     });
     const connectionId = typeof result.connection?.id === "string" ? result.connection.id : "";
-    const credentialPath = connectionId
-      ? `/admin?tab=settings&settings=gateway&connection=${encodeURIComponent(connectionId)}&action=credential&secretName=${encodeURIComponent(secretName)}`
-      : null;
+    const credentialPath = connectionId ? gatewayCredentialPath({ connectionId, secretName }) : null;
     return NextResponse.json({
       ...result,
       credentialPath,

@@ -748,6 +748,7 @@ For successful calls, preserve:
 - [x] Preserve direct-tool chat behavior when Gateway catalog lookup fails.
 - [x] Add chat-safe Gateway authoring routes and a built-in authoring skill.
 - [x] Add connection-specific Settings credential deep links.
+- [x] Add an idempotent Plausible integration preset endpoint.
 - [ ] Remove one duplicated secret from runtime env docs.
 - [ ] Keep direct fallback available until stable.
 

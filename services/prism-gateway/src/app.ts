@@ -110,6 +110,9 @@ export function createGatewayApp(dependencies: AppDependencies) {
 
   app.post("/capabilities", requireSiteCaller, (request, response) => {
     const body = request.body as Record<string, unknown>;
+    if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
+      throw new GatewayStoreError("CAPABILITY_ENABLED_INVALID", 400);
+    }
     const capability = dependencies.store.createCapability({
       key: textField(body.key, "capability_key", 120),
       driverKey: textField(body.driverKey, "driver_key", 120),
@@ -119,6 +122,7 @@ export function createGatewayApp(dependencies: AppDependencies) {
       driverConfig: body.driverConfig,
       inputSchema: optionalSchema(body.inputSchema),
       outputSchema: optionalSchema(body.outputSchema),
+      enabled: body.enabled !== false,
     });
     response.status(201).json({ ok: true, capability });
   });

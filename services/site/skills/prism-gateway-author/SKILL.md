@@ -18,7 +18,27 @@ returned.
 ## Configure An Integration
 
 1. Inspect the catalog and reuse an active connection when appropriate.
-2. Create a pending connection with `POST /agent/gateway/connections`:
+2. For a supported provider, use the deterministic preset endpoint instead of
+reconstructing driver configuration:
+
+```http
+POST /agent/gateway/integrations
+```
+
+```json
+{
+  "preset": "plausible",
+  "label": "Plausible Analytics",
+  "origin": "https://plausible.example.org"
+}
+```
+
+This idempotent call returns existing configuration when the standard
+capability already exists. Otherwise it creates a pending connection, disabled
+capability, input schema, and default runtime grant.
+
+3. For providers without a preset, create a pending connection with
+`POST /agent/gateway/connections`:
 
 ```json
 {
@@ -43,15 +63,15 @@ redacted catalog record:
 Use the connection's existing `secretNames[0]` when present; otherwise use the
 secret name required by the capability authentication mapping.
 
-3. Create non-secret capability configuration with
+4. Create non-secret capability configuration with
 `POST /agent/gateway/capabilities`. Chat-created capabilities are disabled by
 default. Include `enabled: true` only when binding to a connection that already
 has a tested credential. Site creates the default runtime grant automatically.
-4. Stop and ask the admin to use the credential link. Do not repeatedly test a
+5. Stop and ask the admin to use the credential link. Do not repeatedly test a
 pending connection with no credential.
-5. After the admin confirms, test representative non-destructive input with
+6. After the admin confirms, test representative non-destructive input with
 `POST /agent/gateway/capabilities/<key>/test` and body `{"input": {...}}`.
-6. On success, enable it with
+7. On success, enable it with
 `PATCH /agent/gateway/capabilities/<key>` and body `{"enabled": true}`.
 
 Report the capability key, connection label, test result, and follow-up needed.
@@ -59,49 +79,10 @@ Do not claim setup succeeded before the test passes.
 
 ## Plausible Preset
 
-For Plausible v2 analytics, use fixed-target `http-json.read` with:
-
-```json
-{
-  "key": "plausible.stats.query",
-  "driverKey": "http-json.read",
-  "provider": "plausible",
-  "description": "Query Plausible analytics. Always provide the exact registered site_id, metrics, and date_range.",
-  "inputSchema": {
-    "type": "object",
-    "required": ["site_id", "metrics", "date_range"],
-    "additionalProperties": false,
-    "properties": {
-      "site_id": { "type": "string", "minLength": 1 },
-      "metrics": { "type": "array", "minItems": 1, "items": { "type": "string" } },
-      "date_range": {
-        "oneOf": [
-          { "type": "string", "minLength": 1 },
-          { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "string" } }
-        ]
-      },
-      "dimensions": { "type": "array", "items": { "type": "string" } },
-      "filters": { "type": "array" },
-      "include": { "type": "object" },
-      "pagination": { "type": "object" }
-    }
-  },
-  "driverConfig": {
-    "baseUrl": "https://plausible.example.org",
-    "pathTemplate": "/api/v2/query",
-    "method": "POST",
-    "allowedQueryParams": [],
-    "allowedJsonBodyParams": ["site_id", "metrics", "date_range", "dimensions", "filters", "include", "pagination"],
-    "staticJsonBody": {},
-    "auth": { "type": "bearer", "secretName": "apiKey" },
-    "timeoutMs": 10000,
-    "maxResponseBytes": 1000000
-  }
-}
-```
-
-Add the pending connection ID and replace only the instance origin. Runtime
-invocations cannot override origin, path, method, authentication, or allowlists.
+Always use the `plausible` integration preset. It owns the v2 endpoint,
+allowlists, input schema, bearer mapping, timeout, and response limit. Supply
+only the instance HTTPS origin and optional label. Do not recreate the preset
+through the generic capability route.
 
 ## Safety
 

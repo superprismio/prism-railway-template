@@ -505,6 +505,7 @@ export class GatewayStore {
     driverConfig: unknown;
     inputSchema?: Record<string, unknown> | null;
     outputSchema?: Record<string, unknown> | null;
+    enabled?: boolean;
   }) {
     if (!/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/.test(input.key)) {
       throw new GatewayStoreError("CAPABILITY_KEY_INVALID", 400);
@@ -527,7 +528,7 @@ export class GatewayStore {
           (key, driver_key, connection_id, provider, mode, description, driver_config_json,
            input_schema_json, output_schema_json, risk_level, requires_approval,
            default_unit_price, enabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'read', ?, ?, ?, ?, 'low', 0, 0, 1, ?, ?)
+        VALUES (?, ?, ?, ?, 'read', ?, ?, ?, ?, 'low', 0, 0, ?, ?, ?)
       `).run(
         input.key,
         input.driverKey,
@@ -537,6 +538,7 @@ export class GatewayStore {
         JSON.stringify(driverConfig),
         input.inputSchema ? JSON.stringify(input.inputSchema) : null,
         input.outputSchema ? JSON.stringify(input.outputSchema) : null,
+        input.enabled === false ? 0 : 1,
         now,
         now,
       );
