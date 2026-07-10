@@ -690,7 +690,7 @@ For successful calls, preserve:
 ### Phase 4: First Capabilities
 
 - [x] Execute the constrained `http-json.read` driver through `/invoke`.
-- [ ] Configure one instance-owned read capability on `prism-stack`.
+- [x] Configure one instance-owned read capability on `prism-stack`.
 - [ ] Implement `comms.discord.send_message`.
 - [x] Add capability-specific query allowlisting and credential mapping.
 - [x] Add DNS pinning, private-address rejection, no redirects, and response limits.
@@ -709,7 +709,7 @@ For successful calls, preserve:
 ### Phase 6: Runtime Client
 
 - [x] Add gateway client helper.
-- [ ] Wire one runtime/tool path through the gateway.
+- [x] Wire one runtime/tool path through the gateway.
 - [ ] Remove one duplicated secret from runtime env docs.
 - [ ] Keep direct fallback available until stable.
 
