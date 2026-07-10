@@ -96,13 +96,27 @@ encrypted secrets:
   password
 ```
 
-Gateway owns encrypted credential storage, the fixed destination, the
-authentication recipe, credential testing, rotation, revocation, and connection
+Gateway owns encrypted credential storage, credential binding to a fixed
+provider destination, credential testing, rotation, revocation, and connection
 health.
 
-The origin and authentication recipe cannot be overridden by runtime input.
-This prevents a caller from forwarding a credential to another host. It is a
-credential-isolation rule, not duplicated application RBAC.
+The credential and destination origin cannot be overridden by runtime input.
+Within that origin, an assigned agent remains free to choose methods, paths,
+query parameters, request bodies, pagination strategies, and operation
+sequences. This prevents forwarding a credential to another host without
+turning Gateway into duplicated application RBAC or an operation allowlist.
+
+This boundary is **credential binding**:
+
+```text
+fixed credential + fixed origin
+flexible method + path + query + body
+```
+
+The OpenAPI document is guidance, not an invocation allowlist. An agent may use
+the complete same-origin API surface available to the downstream identity,
+including an undocumented route when it has enough context to do so. The
+downstream service remains authoritative for authorization and validation.
 
 ### Toolset Profile
 
@@ -297,7 +311,7 @@ The default operator experience is:
 6. The admin assigns the profile to Console, source-policy groups, or runtime
    profiles.
 
-Advanced fields such as protocol, spec URL, auth recipe, and discovery state may
+Advanced fields such as protocol, spec URL, credential binding, and discovery state may
 be shown under an Advanced disclosure. Credentials are never accepted through
 chat or `/agent/*`.
 

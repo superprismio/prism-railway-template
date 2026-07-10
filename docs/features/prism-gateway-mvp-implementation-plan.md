@@ -65,7 +65,7 @@ The default operator flow is:
 
 Credentials are never accepted through chat or `/agent/*`.
 
-Connection internals, auth recipes, spec URLs, and discovery diagnostics belong
+Connection internals, credential bindings, spec URLs, and discovery diagnostics belong
 under Advanced settings. Operators should not manually create one capability per
 API operation.
 
@@ -180,9 +180,14 @@ profiles.
 - inject authentication
 - prevent caller-controlled origin or auth overrides
 - preserve downstream response semantics with bounded transport limits
+- do not require the path or operation to appear in an OpenAPI document
 
 Use this when an integration has no usable OpenAPI or MCP document. Do not turn
 it into a second provider SDK.
+
+The same broad relay behavior applies to OpenAPI profiles. OpenAPI improves
+agent discovery but does not constrain the agent to a Gateway-maintained route
+or operation allowlist.
 
 ### Adapter
 
@@ -274,7 +279,7 @@ complete.
 ### Phase B: Toolset Relay
 
 - [ ] Expose a fixed OpenAPI document through an assigned toolset session.
-- [ ] Implement a generic authenticated fixed-origin request relay.
+- [ ] Implement a broad authenticated same-origin request relay.
 - [ ] Let skills and runtimes perform API-specific discovery from the canonical specification.
 - [ ] Implement broad MCP discovery using the fixed connection endpoint.
 - [ ] Expose discovered tool descriptors to Codex Runtime.

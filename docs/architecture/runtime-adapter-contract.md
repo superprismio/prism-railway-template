@@ -182,6 +182,11 @@ Gateway is the source of truth for credential-backed organization toolset
 profiles. Runtime adapters receive discovered OpenAPI/MCP tools or fixed-origin
 HTTP access for assigned profiles, not underlying provider credentials.
 
+Gateway toolsets bind credentials to a configured origin; they do not restrict
+an assigned agent to a Gateway-owned operation catalog. Method, path, query, and
+body selection remain runtime concerns, subject to the downstream identity's
+actual permissions.
+
 Skills declare broad requirements under `metadata.gateway-toolsets`. Existing
 `metadata.gateway-capabilities` declarations remain valid for narrow wrappers.
 
