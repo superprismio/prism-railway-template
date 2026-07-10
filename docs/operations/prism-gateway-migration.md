@@ -164,6 +164,21 @@ inheritance, but `NEXTCRM_API_TOKEN` remains in Codex Runtime because that token
 still supports broader CRM reads and writes not represented by
 `crm.contact.read`.
 
+### Hivemind Broad Toolset
+
+Completed on `prism-stack` on 2026-07-10:
+
+- created the fixed-origin `hive-mind.admin` HTTP toolset with `x-api-key`
+  authentication
+- validated a read-only project-list call through Gateway
+- updated the instance-owned `hivemind-consult` skill to require the toolset and
+  removed its direct environment fallback
+- validated the toolset through a real Codex Runtime response job
+- removed `HIVE_MIND_API_KEY` from Codex Runtime and repeated the runtime smoke
+  successfully
+- retained Gateway audit trace `800fd6f7-d80b-40c4-873b-d48ce487f81f` as the
+  post-removal proof
+
 ## Working Branch Pilot
 
 Use one implementation branch based on current `origin/main`. Railway can point
