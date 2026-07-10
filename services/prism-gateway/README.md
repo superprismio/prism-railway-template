@@ -10,7 +10,7 @@ This first implementation slice includes:
 - mounted-volume SQLite migrations
 - AES-256-GCM connection credential storage
 - write-only connection create, replace, and revoke APIs
-- a seeded `http-json.read` connector driver
+- seeded `http-json.read` and constrained `mcp-tool.call` connector drivers
 - declarative instance capability creation with public-HTTPS constraints
 - default-deny runtime and service grants
 - hardened read invocation with DNS pinning, redirect rejection, timeouts, and
@@ -78,6 +78,12 @@ allowed query keys, auth secret mapping, timeout, and response limit. Runtime
 input can supply only allowlisted query values. Gateway resolves and pins a
 public address for the request, rejects redirects, and accepts JSON responses
 only.
+
+`mcp-tool.call` capabilities also use a fixed public HTTPS origin and path, but
+map caller-visible operation aliases to an admin-owned allowlist of MCP tool
+names and argument keys. Runtime input cannot choose an arbitrary MCP tool,
+endpoint, header, or credential. Streamable HTTP JSON and SSE-wrapped JSON-RPC
+responses are normalized to the tool result.
 
 Example driver configuration:
 

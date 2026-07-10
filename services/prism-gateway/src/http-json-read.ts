@@ -18,7 +18,7 @@ export type HttpJsonReadResult = {
   responseBytes: number;
 };
 
-type ResolvedAddress = { address: string; family: number };
+export type ResolvedAddress = { address: string; family: number };
 
 type DriverDependencies = {
   resolve?: (hostname: string) => Promise<ResolvedAddress[]>;

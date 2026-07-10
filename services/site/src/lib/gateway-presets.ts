@@ -32,6 +32,28 @@ export const plausibleGatewayPreset = {
   capabilityKey: "plausible.stats.query",
 } as const;
 
+export const nextcrmContactReadInputSchema = {
+  type: "object",
+  required: ["operation"],
+  additionalProperties: false,
+  properties: {
+    operation: { type: "string", enum: ["list", "get", "search"] },
+    id: { type: "string", format: "uuid" },
+    query: { type: "string", minLength: 1 },
+    limit: { type: "integer", minimum: 1, maximum: 100 },
+    offset: { type: "integer", minimum: 0 },
+  },
+} as const;
+
+export const nextcrmGatewayPreset = {
+  key: "nextcrm-contact-read",
+  provider: "nextcrm",
+  defaultLabel: "NextCRM",
+  authType: "bearer",
+  secretName: "apiToken",
+  capabilityKey: "crm.contact.read",
+} as const;
+
 export function plausibleGatewayCapability(input: {
   connectionId: string;
   origin: string;
@@ -61,6 +83,34 @@ export function plausibleGatewayCapability(input: {
       ],
       staticJsonBody: {},
       auth: { type: "bearer", secretName: plausibleGatewayPreset.secretName },
+      timeoutMs: 10_000,
+      maxResponseBytes: 1_000_000,
+    },
+  };
+}
+
+export function nextcrmContactReadCapability(input: {
+  connectionId: string;
+  origin: string;
+  enabled?: boolean;
+}) {
+  return {
+    key: nextcrmGatewayPreset.capabilityKey,
+    driverKey: "mcp-tool.call",
+    connectionId: input.connectionId,
+    provider: nextcrmGatewayPreset.provider,
+    description: "Read assigned NextCRM contacts. Use operation=list, get with id, or search with query; list and search accept optional limit and offset.",
+    inputSchema: nextcrmContactReadInputSchema,
+    enabled: input.enabled === true,
+    driverConfig: {
+      baseUrl: input.origin,
+      pathTemplate: "/api/mcp/mcp",
+      operations: {
+        list: { toolName: "crm_list_contacts", allowedArguments: ["limit", "offset"] },
+        get: { toolName: "crm_get_contact", allowedArguments: ["id"] },
+        search: { toolName: "crm_search_contacts", allowedArguments: ["query", "limit", "offset"] },
+      },
+      auth: { type: "bearer", secretName: nextcrmGatewayPreset.secretName },
       timeoutMs: 10_000,
       maxResponseBytes: 1_000_000,
     },

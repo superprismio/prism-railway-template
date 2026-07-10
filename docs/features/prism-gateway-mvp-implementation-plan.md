@@ -727,6 +727,8 @@ For successful calls, preserve:
 - [x] Add capability-specific query allowlisting and credential mapping.
 - [x] Add DNS pinning, private-address rejection, no redirects, and response limits.
 - [x] Add capability-specific output normalization.
+- [x] Add a constrained MCP read driver with fixed operation-to-tool mappings.
+- [ ] Migrate the existing NextCRM contact-read credential from Codex Runtime.
 
 ### Phase 5: Site Admin UI
 

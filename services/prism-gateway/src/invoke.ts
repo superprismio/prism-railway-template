@@ -4,7 +4,13 @@ import {
   GatewayDriverError,
   type HttpJsonReadResult,
 } from "./http-json-read.js";
-import { GatewayStore, GatewayStoreError, normalizeHttpJsonReadConfig } from "./store.js";
+import { executeMcpToolCall, type McpToolCallResult } from "./mcp-tool-call.js";
+import {
+  GatewayStore,
+  GatewayStoreError,
+  normalizeHttpJsonReadConfig,
+  normalizeMcpToolCallConfig,
+} from "./store.js";
 import type { GatewayCaller, GatewayInvocationContext } from "./types.js";
 
 export type InvokeResult = {
@@ -22,6 +28,7 @@ export type InvokeResult = {
 };
 
 type ExecuteRead = typeof executeHttpJsonRead;
+type ExecuteMcp = typeof executeMcpToolCall;
 
 function inputSummary(input: Record<string, unknown>) {
   return { keys: Object.keys(input).sort(), fieldCount: Object.keys(input).length };
@@ -31,6 +38,7 @@ export class GatewayInvoker {
   constructor(
     private readonly store: GatewayStore,
     private readonly executeRead: ExecuteRead = executeHttpJsonRead,
+    private readonly executeMcp: ExecuteMcp = executeMcpToolCall,
   ) {}
 
   async invoke(input: {
@@ -96,19 +104,24 @@ export class GatewayInvoker {
     if (!connection || connection.status === "revoked") {
       return fail("CAPABILITY_CONNECTION_UNAVAILABLE", 409, false, "failed");
     }
-    if (capability.driverKey !== "http-json.read") {
+    if (capability.driverKey !== "http-json.read" && capability.driverKey !== "mcp-tool.call") {
       return fail("CAPABILITY_DRIVER_UNSUPPORTED", 501, false, "failed");
     }
 
     units = 1;
     try {
       const credentials = this.store.getConnectionCredentials(connection.id);
-      const config = normalizeHttpJsonReadConfig(capability.driverConfig);
-      const executed: HttpJsonReadResult = await this.executeRead(
-        config,
-        credentials,
-        input.capabilityInput,
-      );
+      const executed: HttpJsonReadResult | McpToolCallResult = capability.driverKey === "http-json.read"
+        ? await this.executeRead(
+            normalizeHttpJsonReadConfig(capability.driverConfig),
+            credentials,
+            input.capabilityInput,
+          )
+        : await this.executeMcp(
+            normalizeMcpToolCallConfig(capability.driverConfig),
+            credentials,
+            input.capabilityInput,
+          );
       this.store.markConnectionUsed(connection.id, true);
       this.store.recordInvocation({
         traceId,
@@ -123,6 +136,9 @@ export class GatewayInvoker {
           downstreamStatus: executed.status,
           responseBytes: executed.responseBytes,
           resultType: Array.isArray(executed.result) ? "array" : typeof executed.result,
+          ...("operation" in executed && "toolName" in executed
+            ? { operation: executed.operation, toolName: executed.toolName }
+            : {}),
         },
         units,
       });

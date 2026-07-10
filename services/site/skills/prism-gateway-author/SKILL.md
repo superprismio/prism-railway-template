@@ -106,6 +106,23 @@ allowlists, input schema, bearer mapping, timeout, and response limit. Supply
 only the instance HTTPS origin and optional label. Do not recreate the preset
 through the generic capability route.
 
+## NextCRM Contact Read Preset
+
+Use the `nextcrm-contact-read` preset to migrate the narrow contact-read path:
+
+```json
+{
+  "preset": "nextcrm-contact-read",
+  "label": "NextCRM",
+  "origin": "https://crm.example.org"
+}
+```
+
+It creates `crm.contact.read` through the constrained `mcp-tool.call` driver.
+The only available operations are `list`, `get`, and `search`, mapped to fixed
+NextCRM contact-read tools. Never recreate this as a broad MCP passthrough or
+allow callers to supply MCP tool names.
+
 ## Safety
 
 - Credential create, replace, and revoke remain admin-session operations in

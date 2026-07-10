@@ -10,6 +10,7 @@ import type {
   GatewayGrant,
   GatewayInvocationContext,
   HttpJsonReadDriverConfig,
+  McpToolCallDriverConfig,
 } from "./types.js";
 
 export class GatewayStoreError extends Error {
@@ -89,7 +90,7 @@ function parseJson(value: string | null): Record<string, unknown> | null {
   return JSON.parse(value) as Record<string, unknown>;
 }
 
-function validatePublicHttpsBaseUrl(value: unknown) {
+export function validatePublicHttpsBaseUrl(value: unknown) {
   if (typeof value !== "string") throw new GatewayStoreError("CAPABILITY_BASE_URL_REQUIRED", 400);
   let url: URL;
   try {
@@ -104,6 +105,71 @@ function validatePublicHttpsBaseUrl(value: unknown) {
     throw new GatewayStoreError("CAPABILITY_BASE_URL_PRIVATE_HOST_FORBIDDEN", 400);
   }
   return url.origin;
+}
+
+export function normalizeMcpToolCallConfig(value: unknown): McpToolCallDriverConfig {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new GatewayStoreError("CAPABILITY_DRIVER_CONFIG_REQUIRED", 400);
+  }
+  const input = value as Record<string, unknown>;
+  const baseUrl = validatePublicHttpsBaseUrl(input.baseUrl);
+  const pathTemplate = typeof input.pathTemplate === "string" ? input.pathTemplate.trim() : "";
+  if (!pathTemplate.startsWith("/") || pathTemplate.includes("://") || pathTemplate.includes("..")) {
+    throw new GatewayStoreError("CAPABILITY_PATH_TEMPLATE_INVALID", 400);
+  }
+  const timeoutMs = typeof input.timeoutMs === "number" ? input.timeoutMs : 10_000;
+  const maxResponseBytes = typeof input.maxResponseBytes === "number" ? input.maxResponseBytes : 1_000_000;
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30_000) {
+    throw new GatewayStoreError("CAPABILITY_TIMEOUT_INVALID", 400);
+  }
+  if (!Number.isInteger(maxResponseBytes) || maxResponseBytes < 1_024 || maxResponseBytes > 5_000_000) {
+    throw new GatewayStoreError("CAPABILITY_RESPONSE_LIMIT_INVALID", 400);
+  }
+  if (!input.operations || typeof input.operations !== "object" || Array.isArray(input.operations)) {
+    throw new GatewayStoreError("CAPABILITY_MCP_OPERATIONS_REQUIRED", 400);
+  }
+  const operationEntries = Object.entries(input.operations as Record<string, unknown>);
+  if (operationEntries.length === 0 || operationEntries.length > 20) {
+    throw new GatewayStoreError("CAPABILITY_MCP_OPERATIONS_INVALID", 400);
+  }
+  const operations: McpToolCallDriverConfig["operations"] = {};
+  for (const [operation, rawConfig] of operationEntries) {
+    if (!/^[a-z][a-z0-9-]{0,63}$/.test(operation) || !rawConfig || typeof rawConfig !== "object" || Array.isArray(rawConfig)) {
+      throw new GatewayStoreError("CAPABILITY_MCP_OPERATION_INVALID", 400);
+    }
+    const operationConfig = rawConfig as Record<string, unknown>;
+    const toolName = typeof operationConfig.toolName === "string" ? operationConfig.toolName.trim() : "";
+    const allowedArguments = Array.isArray(operationConfig.allowedArguments)
+      ? operationConfig.allowedArguments.map((entry) => typeof entry === "string" ? entry.trim() : "")
+      : [];
+    if (!/^[a-zA-Z][a-zA-Z0-9_.-]{0,127}$/.test(toolName)) {
+      throw new GatewayStoreError("CAPABILITY_MCP_TOOL_NAME_INVALID", 400);
+    }
+    if (
+      allowedArguments.some((entry) => !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(entry))
+      || new Set(allowedArguments).size !== allowedArguments.length
+    ) {
+      throw new GatewayStoreError("CAPABILITY_MCP_ARGUMENT_ALLOWLIST_INVALID", 400);
+    }
+    operations[operation] = { toolName, allowedArguments };
+  }
+  const authInput = input.auth;
+  if (!authInput || typeof authInput !== "object" || Array.isArray(authInput)) {
+    throw new GatewayStoreError("CAPABILITY_AUTH_CONFIG_INVALID", 400);
+  }
+  const authRecord = authInput as Record<string, unknown>;
+  const secretName = typeof authRecord.secretName === "string" ? authRecord.secretName.trim() : "";
+  if (authRecord.type !== "bearer" || !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(secretName)) {
+    throw new GatewayStoreError("CAPABILITY_AUTH_CONFIG_INVALID", 400);
+  }
+  return {
+    baseUrl,
+    pathTemplate,
+    timeoutMs,
+    maxResponseBytes,
+    operations,
+    auth: { type: "bearer", secretName },
+  };
 }
 
 export function normalizeHttpJsonReadConfig(value: unknown): HttpJsonReadDriverConfig {
@@ -308,6 +374,20 @@ export class GatewayStore {
       now,
       now,
     );
+    this.db.prepare(`
+      INSERT INTO connector_drivers (key, mode, description, built_in, created_at, updated_at)
+      VALUES (?, ?, ?, 1, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        mode = excluded.mode,
+        description = excluded.description,
+        updated_at = excluded.updated_at
+    `).run(
+      "mcp-tool.call",
+      "read",
+      "Constrained calls to admin-allowlisted tools on a fixed public Streamable HTTP MCP endpoint.",
+      now,
+      now,
+    );
   }
 
   stats() {
@@ -458,10 +538,12 @@ export class GatewayStore {
   updateCapabilityConfig(key: string, driverConfigValue: unknown) {
     const capability = this.getCapability(key);
     if (!capability) throw new GatewayStoreError("CAPABILITY_NOT_FOUND", 404);
-    if (capability.driverKey !== "http-json.read") {
+    if (capability.driverKey !== "http-json.read" && capability.driverKey !== "mcp-tool.call") {
       throw new GatewayStoreError("CAPABILITY_DRIVER_UNSUPPORTED", 400);
     }
-    const driverConfig = normalizeHttpJsonReadConfig(driverConfigValue);
+    const driverConfig = capability.driverKey === "http-json.read"
+      ? normalizeHttpJsonReadConfig(driverConfigValue)
+      : normalizeMcpToolCallConfig(driverConfigValue);
     this.db.prepare(
       "UPDATE capabilities SET driver_config_json = ?, updated_at = ? WHERE key = ?",
     ).run(JSON.stringify(driverConfig), new Date().toISOString(), key);
@@ -510,7 +592,7 @@ export class GatewayStore {
     if (!/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/.test(input.key)) {
       throw new GatewayStoreError("CAPABILITY_KEY_INVALID", 400);
     }
-    if (input.driverKey !== "http-json.read") {
+    if (input.driverKey !== "http-json.read" && input.driverKey !== "mcp-tool.call") {
       throw new GatewayStoreError("CAPABILITY_DRIVER_UNSUPPORTED", 400);
     }
     const connection = this.getConnection(input.connectionId);
@@ -520,7 +602,9 @@ export class GatewayStore {
     if (connection.provider !== input.provider) {
       throw new GatewayStoreError("CAPABILITY_CONNECTION_PROVIDER_MISMATCH", 400);
     }
-    const driverConfig = normalizeHttpJsonReadConfig(input.driverConfig);
+    const driverConfig = input.driverKey === "http-json.read"
+      ? normalizeHttpJsonReadConfig(input.driverConfig)
+      : normalizeMcpToolCallConfig(input.driverConfig);
     const now = new Date().toISOString();
     try {
       this.db.prepare(`

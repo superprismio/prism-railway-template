@@ -59,6 +59,18 @@ export type HttpJsonReadDriverConfig = {
     | { type: "api-key"; secretName: string; headerName: string };
 };
 
+export type McpToolCallDriverConfig = {
+  baseUrl: string;
+  pathTemplate: string;
+  timeoutMs: number;
+  maxResponseBytes: number;
+  operations: Record<string, {
+    toolName: string;
+    allowedArguments: string[];
+  }>;
+  auth: { type: "bearer"; secretName: string };
+};
+
 export type GatewayGrant = {
   id: string;
   subjectType: "runtime" | "service";

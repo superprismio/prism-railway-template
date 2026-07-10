@@ -8,8 +8,9 @@ import assert from "node:assert/strict";
 import { createGatewayApp } from "./app.js";
 import { openGatewayDatabase, runGatewayMigrations } from "./db.js";
 import { createPinnedLookup, executeHttpJsonRead, GatewayDriverError } from "./http-json-read.js";
+import { executeMcpToolCall } from "./mcp-tool-call.js";
 import { GatewayInvoker } from "./invoke.js";
-import { GatewayStore } from "./store.js";
+import { GatewayStore, normalizeMcpToolCallConfig } from "./store.js";
 import type { GatewayConfig } from "./types.js";
 
 const siteToken = "site-token-for-gateway-tests";
@@ -380,6 +381,66 @@ test("http-json.read supports fixed-target allowlisted JSON POST reads", async (
   await assert.rejects(
     executeHttpJsonRead(config, { apiKey: "secret" }, { headers: { authorization: "other" } }),
     (error: unknown) => error instanceof GatewayDriverError && error.code === "CAPABILITY_INPUT_KEY_NOT_ALLOWED",
+  );
+});
+
+test("mcp-tool.call maps fixed operations to allowlisted tools and unwraps SSE results", async () => {
+  const config = normalizeMcpToolCallConfig({
+    baseUrl: "https://crm.example.org",
+    pathTemplate: "/api/mcp/mcp",
+    timeoutMs: 5000,
+    maxResponseBytes: 250000,
+    operations: {
+      list: { toolName: "crm_list_contacts", allowedArguments: ["limit", "offset"] },
+      search: { toolName: "crm_search_contacts", allowedArguments: ["query", "limit", "offset"] },
+    },
+    auth: { type: "bearer", secretName: "apiToken" },
+  });
+  const result = await executeMcpToolCall(
+    config,
+    { apiToken: "secret" },
+    { operation: "search", query: "Acme", limit: 5 },
+    {
+      resolve: async () => [{ address: "93.184.216.34", family: 4 }],
+      request: async (url, headers, _driverConfig, address, body) => {
+        assert.equal(url.href, "https://crm.example.org/api/mcp/mcp");
+        assert.equal(headers.authorization, "Bearer secret");
+        assert.equal(address.address, "93.184.216.34");
+        assert.deepEqual(JSON.parse(body), {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: {
+            name: "crm_search_contacts",
+            arguments: { query: "Acme", limit: 5 },
+          },
+        });
+        return {
+          status: 200,
+          responseBytes: 120,
+          contentType: "text/event-stream",
+          body: 'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\\"data\\":[],\\"total\\":0,\\"offset\\":0}"}]}}\n\n',
+        };
+      },
+    },
+  );
+  assert.deepEqual(result.result, { data: [], total: 0, offset: 0 });
+  assert.equal(result.operation, "search");
+  assert.equal(result.toolName, "crm_search_contacts");
+
+  await assert.rejects(
+    executeMcpToolCall(config, { apiToken: "secret" }, { operation: "delete", id: "record-1" }),
+    (error: unknown) => error instanceof GatewayDriverError && error.code === "CAPABILITY_INPUT_OPERATION_NOT_ALLOWED",
+  );
+  await assert.rejects(
+    executeMcpToolCall(config, { apiToken: "secret" }, { operation: "list", headers: { authorization: "other" } }),
+    (error: unknown) => error instanceof GatewayDriverError && error.code === "CAPABILITY_INPUT_KEY_NOT_ALLOWED",
+  );
+  await assert.rejects(
+    executeMcpToolCall(config, { apiToken: "secret" }, { operation: "list" }, {
+      resolve: async () => [{ address: "127.0.0.1", family: 4 }],
+    }),
+    (error: unknown) => error instanceof GatewayDriverError && error.code === "CAPABILITY_DNS_PRIVATE_ADDRESS_FORBIDDEN",
   );
 });
 
