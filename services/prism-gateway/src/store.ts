@@ -20,6 +20,7 @@ export class GatewayStoreError extends Error {
     super(code);
   }
 }
+
 type ConnectionRow = {
   id: string;
   provider: string;

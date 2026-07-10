@@ -243,6 +243,7 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
 test("http-json.read pins public DNS and never allows runtime headers or redirects", async () => {
   const config = {
     baseUrl: "https://analytics.example.org",

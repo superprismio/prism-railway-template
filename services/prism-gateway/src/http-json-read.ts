@@ -11,6 +11,7 @@ export class GatewayDriverError extends Error {
     super(code);
   }
 }
+
 export type HttpJsonReadResult = {
   result: unknown;
   status: number;
