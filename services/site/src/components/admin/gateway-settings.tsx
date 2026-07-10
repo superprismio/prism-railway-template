@@ -136,6 +136,13 @@ type CapabilityDraft = {
   headerName: string;
 };
 
+type PendingCredentialDraft = {
+  secretName: string;
+  value: string;
+  email: string;
+  password: string;
+};
+
 const emptyConnection: ConnectionDraft = {
   provider: "",
   label: "",
@@ -208,6 +215,10 @@ export function GatewaySettings() {
   const [replacementValue, setReplacementValue] = useState("");
   const [replacementEmail, setReplacementEmail] = useState("");
   const [replacementPassword, setReplacementPassword] = useState("");
+  const [credentialBatchDialog, setCredentialBatchDialog] = useState(false);
+  const [credentialBatch, setCredentialBatch] = useState<
+    Record<string, PendingCredentialDraft>
+  >({});
   const [revokeConnection, setRevokeConnection] =
     useState<GatewayConnection | null>(null);
   const [capabilityDialog, setCapabilityDialog] = useState(false);
@@ -251,6 +262,10 @@ export function GatewaySettings() {
         (connection) => connection.status !== "revoked",
       ),
     [overview?.connections],
+  );
+  const incompleteConnections = useMemo(
+    () => activeConnections.filter((connection) => connection.secretNames.length === 0),
+    [activeConnections],
   );
 
   const requestedConnectionId = searchParams.get("connection")?.trim() || "";
@@ -333,6 +348,53 @@ export function GatewaySettings() {
       setReplacementPassword("");
     });
   }
+
+  function openCredentialBatch() {
+    setCredentialBatch(
+      Object.fromEntries(
+        incompleteConnections.map((connection) => [
+          connection.id,
+          {
+            secretName: connection.secretNames[0] || "apiKey",
+            value: "",
+            email: "",
+            password: "",
+          },
+        ]),
+      ),
+    );
+    setCredentialBatchDialog(true);
+  }
+
+  function completeCredentialBatch() {
+    mutate(async () => {
+      await adminRequest("/admin/gateway/connections/credentials/batch", {
+        method: "POST",
+        body: JSON.stringify({
+          entries: incompleteConnections.map((connection) => {
+            const draft = credentialBatch[connection.id];
+            return {
+              connectionId: connection.id,
+              credentials:
+                connection.authType === "payload-login"
+                  ? { email: draft.email, password: draft.password }
+                  : { [draft.secretName.trim()]: draft.value },
+            };
+          }),
+        }),
+      });
+      setCredentialBatch({});
+      setCredentialBatchDialog(false);
+    });
+  }
+
+  const credentialBatchComplete = incompleteConnections.every((connection) => {
+    const draft = credentialBatch[connection.id];
+    if (!draft) return false;
+    return connection.authType === "payload-login"
+      ? Boolean(draft.email.trim() && draft.password)
+      : Boolean(draft.secretName.trim() && draft.value);
+  });
 
   function confirmRevokeConnection() {
     if (!revokeConnection) return;
@@ -553,14 +615,27 @@ export function GatewaySettings() {
             <KeyRound className="h-4 w-4" />
             Connections
           </h4>
-          <Button
-            size="sm"
-            onClick={() => setConnectionDialog(true)}
-            disabled={!overview?.reachable}
-          >
-            <Plus />
-            Add connection
-          </Button>
+          <div className="flex items-center gap-2">
+            {incompleteConnections.length ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={openCredentialBatch}
+                disabled={!overview?.reachable}
+              >
+                <KeyRound />
+                Complete setup ({incompleteConnections.length})
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              onClick={() => setConnectionDialog(true)}
+              disabled={!overview?.reachable}
+            >
+              <Plus />
+              Add connection
+            </Button>
+          </div>
         </div>
         <div className="overflow-x-auto border border-border/70">
           <Table>
@@ -993,6 +1068,111 @@ export function GatewaySettings() {
                 : !replacementValue)}
             >
               Replace
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={credentialBatchDialog}
+        onOpenChange={(open) => {
+          setCredentialBatchDialog(open);
+          if (!open) setCredentialBatch({});
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Complete gateway setup</DialogTitle>
+            <DialogDescription>
+              Add credentials for pending connections.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="divide-y divide-border border-y border-border">
+            {incompleteConnections.map((connection) => {
+              const draft = credentialBatch[connection.id];
+              if (!draft) return null;
+              return (
+                <div key={connection.id} className="grid gap-3 py-4">
+                  <div>
+                    <div className="font-medium">{connection.label}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {connection.provider}
+                    </div>
+                  </div>
+                  {connection.authType === "payload-login" ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label>Email</Label>
+                        <Input
+                          type="email"
+                          autoComplete="username"
+                          value={draft.email}
+                          onChange={(event) =>
+                            setCredentialBatch((current) => ({
+                              ...current,
+                              [connection.id]: { ...draft, email: event.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Password</Label>
+                        <Input
+                          type="password"
+                          autoComplete="current-password"
+                          value={draft.password}
+                          onChange={(event) =>
+                            setCredentialBatch((current) => ({
+                              ...current,
+                              [connection.id]: { ...draft, password: event.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
+                      <div className="space-y-2">
+                        <Label>Secret name</Label>
+                        <Input
+                          value={draft.secretName}
+                          onChange={(event) =>
+                            setCredentialBatch((current) => ({
+                              ...current,
+                              [connection.id]: { ...draft, secretName: event.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Credential</Label>
+                        <Input
+                          type="password"
+                          autoComplete="new-password"
+                          value={draft.value}
+                          onChange={(event) =>
+                            setCredentialBatch((current) => ({
+                              ...current,
+                              [connection.id]: { ...draft, value: event.target.value },
+                            }))
+                          }
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCredentialBatchDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={completeCredentialBatch}
+              disabled={isPending || !credentialBatchComplete}
+            >
+              Save credentials
             </Button>
           </DialogFooter>
         </DialogContent>
