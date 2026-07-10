@@ -16,8 +16,8 @@ old runtime environment.
 - Deploy Gateway disabled at callers first.
 - Use a different gateway token for each calling service.
 - Do not expose gateway tokens or provider credentials to browser code.
-- Do not fall back after authentication, policy, approval, budget, or
-  destination denial.
+- Do not fall back after Gateway caller authentication, profile-assignment, or
+  fixed-destination denial.
 - Keep the old direct integration configured until the gateway path passes its
   smoke test, then remove it in a separate change.
 - Back up the Site volume before applying a Site database migration.
@@ -52,10 +52,10 @@ For the first production pilot, confirm:
 | `PORT` | literal `8794` | yes | Internal service port. |
 | `GATEWAY_MASTER_ENCRYPTION_KEY` | generated secret | yes | Root key remains in Railway. Never expose through Site. |
 | `GATEWAY_SITE_TOKEN` | generated secret | yes | Authenticates server-side Site calls. |
-| `GATEWAY_CODEX_RUNTIME_TOKEN` | generated secret | yes | Authenticates Codex Runtime capability calls. |
-| `GATEWAY_TASK_RUNNER_TOKEN` | generated secret | later | Add when task-runner invokes capabilities directly. |
-| `SITE_INTERNAL_URL` | Railway service reference | later | Needed when Gateway verifies Site-owned approvals or identity state. |
-| `SITE_INTERNAL_TOKEN` | Railway service reference | later | Scoped Site agent token. |
+| `GATEWAY_CODEX_RUNTIME_TOKEN` | generated secret | yes | Authenticates Codex Runtime toolset calls. |
+| `GATEWAY_TASK_RUNNER_TOKEN` | generated secret | later | Add when task-runner invokes Gateway directly. |
+| `SITE_INTERNAL_URL` | Railway service reference | deferred | Not required for credential custody or tool relay. |
+| `SITE_INTERNAL_TOKEN` | Railway service reference | deferred | Not required unless a later feature needs a Site callback. |
 
 Attach one volume:
 
@@ -88,7 +88,7 @@ request, workflow, skill, or capture routes.
 
 Codex CLI device authentication and `CODEX_HOME` stay on the Codex Runtime
 volume. They identify and configure the runtime itself, not an organization
-integration capability.
+integration credential or toolset.
 
 ### `task-runner`
 
@@ -163,11 +163,12 @@ Recommended order:
 3. Test health, database migration, restart persistence, and caller-token
    separation directly.
 4. Point only Site at the working branch with Gateway disabled.
-5. Enable Site Gateway settings and add/test one read-only instance connection.
+5. Enable Site Gateway settings and add/test one instance connection and
+   toolset profile.
 6. Point only Codex Runtime at the working branch with Gateway disabled.
-7. Enable Gateway for one Codex runtime profile or actor grant.
-8. Invoke its instance-owned capability and verify the result, trace ID, audit
-   event, and warning-only usage row.
+7. Assign one toolset profile to Codex Runtime.
+8. Invoke one discovered operation/tool and verify the result, trace ID, and
+   audit event.
 9. Restart and redeploy Gateway, then repeat the invocation to prove encrypted
    connection persistence.
 10. Select one existing read-oriented integration for actual credential
@@ -186,13 +187,13 @@ The first pilot must demonstrate:
 - Request JSON cannot override authenticated caller identity.
 - Secret create responses never return plaintext.
 - Secret values are absent from logs, audit input/output summaries, and errors.
-- A valid instance-owned read capability succeeds with a stable trace ID.
-- A denied capability creates a denial audit event and does not call the
+- A valid assigned toolset operation succeeds with a stable trace ID.
+- An unassigned profile creates a denial audit event and does not call the
   provider.
 - A Gateway restart preserves the encrypted connection and audit history.
 - Replacing or revoking the connection takes effect immediately.
 - Disabling Gateway restores the explicitly configured compatibility path.
-- A policy denial never falls through to direct provider access.
+- A profile-assignment denial never falls through to direct provider access.
 
 ## Existing Credential Migration
 
@@ -201,34 +202,34 @@ Move credentials one at a time:
 1. Inventory the skills, workflows, tasks, hooks, and console use that depend on
    the credential. Do not infer this only from Railway variable names.
 2. Create a Gateway connection through Site Settings.
-3. Create and test the required read/write capabilities without changing
-   runtime behavior.
-4. Declare those keys once in each integration skill's `SKILL.md` frontmatter
-   under `metadata.gateway-capabilities`.
+3. Create and test a toolset profile backed by the connection's OpenAPI, MCP, or
+   fixed-origin HTTP surface without changing runtime behavior.
+4. Declare the profile once in each integration skill's `SKILL.md` frontmatter
+   under `metadata.gateway-toolsets`.
 5. Ensure workflow steps reference the skill through `agentConfig.skills` and
    tasks request it through `instructionConfig.requestedSkills`. Do not copy the
-   capability list into every workflow, task, or hook.
-6. Use `agentConfig.gatewayCapabilities` only for direct Gateway calls made by
-   a workflow step that has no capability-declaring skill.
-7. Add the corresponding capability grant to the runtime profile or actor.
-8. Deploy Site, Codex Runtime, and Task Runner with capability-aware Doctor
+   profile list into every workflow, task, or hook.
+6. Keep existing `metadata.gateway-capabilities` and
+   `agentConfig.gatewayCapabilities` only for narrow compatibility wrappers.
+7. Assign the corresponding toolset profile through Site/runtime/source policy.
+8. Deploy Site, Codex Runtime, and Task Runner with Gateway-requirement-aware Doctor
    checks before changing any legacy environment variable.
 9. Run Prism Doctor. Repair missing skill references and missing or disabled
-   capabilities before proceeding.
+   toolset profiles before proceeding.
 10. Exercise console use plus every enabled workflow, task, and hook identified
     in the inventory. Compare normalized output with the old path.
-11. Confirm audit, latency, and usage records for each execution path.
-12. Disable direct fallback for that capability.
+11. Confirm audit and latency records for each execution path.
+12. Disable direct fallback for that integration.
 13. Delete the old Railway variable from the runtime service, redeploy, and
     repeat Doctor and the execution matrix.
 14. Document the migrated variable and tested callers in the instance's
     environment delta history.
 
-The capability declaration is a dependency, not an authorization grant. Codex
-Runtime adds skill requirements to a short-lived job capability session;
-Gateway still enforces runtime, actor, risk, and capability policy. This keeps
-existing skills and workflows portable between runtimes while allowing each
-instance to configure different providers and grants.
+The toolset declaration is a dependency, not a downstream permission model.
+Codex Runtime adds skill requirements to a short-lived Gateway session; Gateway
+verifies profile assignment, while the downstream identity enforces its native
+RBAC. This keeps skills and workflows portable without reproducing provider
+permissions in Gateway.
 
 ### Instance Upgrade Checklist
 
@@ -238,18 +239,17 @@ introduced:
 - deploy the new Site and Codex Runtime while all legacy secrets remain present
 - deploy the updated Task Runner so Prism Doctor understands skill dependencies
 - run Doctor once before editing instance content and retain the report
-- add `metadata.gateway-capabilities` to custom and source-backed integration
+- add `metadata.gateway-toolsets` to custom and source-backed broad integration
   skills
-- repair only true missing skill references or unavailable capabilities; do not
-  add duplicate capability arrays to every workflow
+- repair only true missing skill references or unavailable profiles/wrappers; do not
+  add duplicate toolset arrays to every workflow
 - test direct console use, scheduled tasks, hooks, and representative workflows
 - remove one legacy credential at a time and rerun the same checks
 
 Older workflows do not require a manifest rewrite merely because they use a
-skill. Once the selected skill declares its requirements, Codex Runtime resolves
-them automatically. Existing direct `agentConfig.gatewayCapabilities` entries
-remain valid and should only be removed when the step has been converted to use
-a capability-declaring skill.
+skill. Once the selected skill declares its toolset requirements, Codex Runtime
+resolves them automatically. Existing direct capability entries remain valid as
+compatibility wrappers.
 
 Do not begin with wallet private keys, broad object-storage credentials, social
 publishing credentials, or repository write tokens.
@@ -266,7 +266,7 @@ Before removing an old integration variable, rollback is:
 After removing an old integration variable, rollback is:
 
 1. Restore that single variable from the operator's credential source.
-2. Set `PRISM_GATEWAY_ENABLED=false` for the affected capability.
+2. Set `PRISM_GATEWAY_ENABLED=false` for the affected profile/integration.
 3. Redeploy the caller and run its original smoke test.
 4. Preserve Gateway audit records for diagnosis.
 
@@ -287,8 +287,8 @@ After the production pilot is stable:
 6. Generate a new Railway template revision.
 7. Deploy that revision into a clean test project.
 8. Complete Site bootstrap and Codex device authentication.
-9. Add an instance-specific connection and capability through Settings, then run
-   the Gateway smoke checks.
+9. Add an instance-specific connection and toolset profile through Settings,
+   then run the Gateway smoke checks.
 10. Update the template variable reference and user-facing service docs.
 
 Publishing the final Railway template revision may require dashboard

@@ -196,13 +196,13 @@ Use it for:
 - shared `agentConfig`
 - deterministic delegation policy in `agentConfig.delegation`
 
-When a step uses a skill, put the skill name in `agentConfig.skills`. The
-runtime automatically inherits that skill's `metadata.gateway-capabilities`; do not copy
-the same capability list into every workflow. Use
-`agentConfig.gatewayCapabilities` only when the step invokes a capability
-directly without a capability-declaring skill. Before enabling a workflow,
-verify its referenced skills exist and run Prism Doctor to catch unavailable
-capability dependencies.
+When a step uses a skill, put the skill name in `agentConfig.skills`. Broad
+integration skills should declare `metadata.gateway-toolsets`; existing narrow
+wrappers use `metadata.gateway-capabilities`. Do not copy either requirement
+list into every workflow or reproduce provider operations in the manifest. Use
+`agentConfig.gatewayCapabilities` only for a direct narrow compatibility call.
+Before enabling a workflow, verify its referenced skills and Gateway
+requirements exist and run Prism Doctor.
 
 Do not put long prompts, implementation logic, scripts, or large prose in the manifest. Put those in markdown.
 

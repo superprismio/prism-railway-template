@@ -42,10 +42,11 @@ Rules:
 5. Do not add README, changelog, install guide, or other auxiliary docs inside a
    skill folder.
 6. Keep generated outputs and runtime state out of the skill repo.
-7. Declare every Prism Gateway dependency in `SKILL.md` frontmatter under
-   `metadata.gateway-capabilities`. Workflows and tasks inherit these
-   requirements when they select the skill, so do not duplicate capability
-   lists in callers. Do not add custom top-level frontmatter keys.
+7. Declare broad Gateway profiles under `metadata.gateway-toolsets`. Use
+   `metadata.gateway-capabilities` only for existing narrow compatibility
+   wrappers. Workflows and tasks inherit these requirements when they select the
+   skill, so do not duplicate lists in callers. Do not add custom top-level
+   frontmatter keys.
 
 Minimal skill:
 
@@ -65,8 +66,8 @@ Skill that uses an organization integration:
 name: crm-contact-research
 description: Use this skill when Codex is asked to research CRM contacts.
 metadata:
-  gateway-capabilities:
-    - crm.contacts.read
+  gateway-toolsets:
+    - crm.admin
 ---
 
 Use the declared Gateway capability instead of reading provider credentials
@@ -92,8 +93,8 @@ requests and work types the skill covers.
 8. Verify the skill appears as a source skill and does not silently duplicate a
    better built-in or custom skill.
 9. Run Prism Doctor on each target instance before removing a legacy runtime
-   secret. A source repository can be shared while capability availability and
-   grants remain instance-specific.
+   secret. A source repository can be shared while toolset availability and
+   Site/source-policy assignments remain instance-specific.
 
 ## Register A Skill Source
 

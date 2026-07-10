@@ -14,9 +14,11 @@ Custom skill definitions are owned by the site service and stored under `/data/s
 3. Keep executable scripts, checkpoints, and generated outputs outside the skill folder, usually under `/data/custom/<experiment>/...` if they must run from `codex-runtime`.
 4. Use the site internal skill endpoint when `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN` are available.
 5. Keep new skills disabled-by-convention until a task or prompt explicitly requests them.
-6. When a skill invokes Gateway capabilities, declare them in frontmatter under
-   `metadata.gateway-capabilities`. Do not tell every workflow to duplicate that
-   list. Custom top-level frontmatter keys are not valid Codex skill metadata.
+6. For a broad credential-backed integration, declare its profile under
+   `metadata.gateway-toolsets` once that profile exists. Use
+   `metadata.gateway-capabilities` only for existing narrow compatibility
+   wrappers. Do not duplicate either list in every workflow. Custom top-level
+   frontmatter keys are not valid Codex skill metadata.
 
 In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the API is unavailable.
 
@@ -46,8 +48,8 @@ Payload shape:
 
 After saving, the skill appears in the admin Skills tab and can be requested by tasks through `instructionConfig.requestedSkills`.
 
-Capability requirements are trusted dependencies, not permission by
-themselves. Codex Runtime adds them to the job-scoped capability session after
-selecting the skill, and Gateway still applies runtime, actor, and capability
-policy. Keep legacy environment-variable fallback until the capability has been
-tested by every enabled workflow/task/hook that uses the skill.
+Gateway requirements are dependencies, not downstream permissions by
+themselves. Site/source policy assigns a toolset to the job; the downstream
+identity remains authoritative for RBAC. Keep legacy environment-variable
+fallback until the profile or compatibility capability has been tested by every
+enabled workflow/task/hook and interactive path that uses the skill.

@@ -1,6 +1,6 @@
 ---
 name: prism-gateway-author
-description: Use this skill when an admin asks to connect, configure, test, enable, disable, inspect, or troubleshoot an organization integration or Prism Gateway capability. It covers chat-driven non-secret configuration and secure credential handoff through Settings.
+description: Use this skill when an admin asks to connect, configure, test, enable, disable, inspect, or troubleshoot an organization integration, Gateway toolset profile, or narrow compatibility capability. It covers chat-driven non-secret configuration and secure credential handoff through Settings.
 ---
 
 Use the Site agent API for Gateway authoring. Never ask the user to paste API
@@ -8,6 +8,21 @@ keys, tokens, passwords, private keys, or other credentials into chat. Do not
 place credentials in capability configuration, artifacts, logs, or output.
 
 Authenticate with `x-service-token: $PRISM_AGENT_SERVICE_TOKEN`.
+
+## Architecture Rule
+
+For broad integrations, create one credential-backed toolset profile such as
+`portal.admin` or `crm.admin` and preserve the provider's OpenAPI or MCP tool
+surface. Do not create one Gateway capability per collection, route, or tool.
+
+The currently deployed agent routes primarily expose the initial narrow
+capability prototype. If an admin asks to connect a broad API before toolset
+profile routes are available, create only the pending connection and report that
+the profile relay is not implemented yet. Do not compensate by rebuilding the
+provider API as dozens of compatibility capabilities.
+
+Use narrow capabilities only for intentionally small wrappers such as Plausible
+query, Arcade reads, or a deliberately restricted CRM contact read.
 
 ## Inspect
 
@@ -77,7 +92,7 @@ pending connection with no credential.
 Report the capability key, connection label, test result, and follow-up needed.
 Do not claim setup succeeded before the test passes.
 
-## Bind Skills And Workflows
+## Bind Narrow Compatibility Skills And Workflows
 
 After enabling a capability, identify the skill that owns the provider
 operation and use `prism-skill-author` or `prism-skill-source-author` to declare
@@ -99,6 +114,10 @@ Run Prism Doctor after binding the skill and before removing any legacy runtime
 credential. Exercise every enabled workflow, task, hook, and interactive path
 that uses the integration; Gateway configuration alone is not proof that the
 migration is complete.
+
+Broad toolset skills will declare profiles under
+`metadata.gateway-toolsets` once the profile contract is implemented. Existing
+`metadata.gateway-capabilities` remains the narrow compatibility form.
 
 ## Plausible Preset
 
@@ -129,7 +148,8 @@ allow callers to supply MCP tool names.
 - Credential create, replace, and revoke remain admin-session operations in
   Settings.
 - Never send credentials through `/agent/*`.
-- Use only approved constrained drivers; never proxy arbitrary URLs or headers.
+- Keep each connection destination and authentication recipe fixed; runtime
+  input must never override either.
 - Keep capabilities disabled until their connection test succeeds.
 - Treat downstream `4xx` as input, authentication, or configuration evidence.
 - Keep working direct integrations until Gateway migration is explicitly tested.

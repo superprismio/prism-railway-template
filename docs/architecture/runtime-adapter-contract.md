@@ -79,10 +79,10 @@ GET  /v1/responses/jobs/:jobId
       "contentUrl": "http://site.railway.internal:3100/agent/skills/weekly-analytics-brief"
     }
   ],
-  "capabilities": [
+  "toolsets": [
     {
-      "key": "plausible.query",
-      "grantId": "grant_analytics_read"
+      "key": "portal.admin",
+      "protocol": "openapi"
     }
   ],
   "context": {
@@ -142,7 +142,7 @@ Errors must include a stable code, a safe message, and whether retry is
 appropriate. Provider-specific failures may be retained in redacted metadata,
 but callers should not need to parse Codex-specific strings.
 
-## Capabilities
+## Runtime Features And Organization Toolsets
 
 `GET /v1/runtime/capabilities` describes execution features, not organizational
 tool permissions.
@@ -155,12 +155,21 @@ shell
 site-hosted-skills
 continuations
 image-input
-gateway-capabilities
+gateway-toolsets
 ```
 
-The runtime request lists the gateway capabilities granted for that job. The
-runtime still invokes the gateway, which makes the authoritative policy
-decision. A capability listed in the job is not permission by itself.
+The runtime request lists the Gateway toolset profiles assigned to that job.
+Site resolves those assignments from Console context, source-adapter policy,
+runtime profile, workflow, task, and selected skills. Gateway verifies the
+short-lived session assignment and brokers the associated credential.
+
+The downstream service remains authoritative for the credential's RBAC and
+request validation. Runtime adapters must not receive the long-lived provider
+credential.
+
+During migration, adapters may continue to accept the existing `capabilities`
+array for narrow compatibility wrappers. New broad integrations should use
+`toolsets`.
 
 ## Skills And Tools
 
@@ -169,9 +178,12 @@ requested skills from authenticated Site agent routes or receive stable skill
 references. Skills should not be copied into runtime-specific persistent
 storage as the canonical version.
 
-The gateway is the source of truth for organization integration capabilities.
-Runtime adapters should receive capability names and invocation access, not the
-underlying provider credentials.
+Gateway is the source of truth for credential-backed organization toolset
+profiles. Runtime adapters receive discovered OpenAPI/MCP tools or fixed-origin
+HTTP access for assigned profiles, not underlying provider credentials.
+
+Skills declare broad requirements under `metadata.gateway-toolsets`. Existing
+`metadata.gateway-capabilities` declarations remain valid for narrow wrappers.
 
 Runtime-specific system instructions and bootstrap authentication may remain
 inside the runtime service. For example, Codex CLI device authentication can
@@ -193,7 +205,7 @@ Site should eventually store profiles shaped like:
   "adapter": "codex",
   "baseUrl": "http://codex-runtime.railway.internal:3030",
   "enabled": true,
-  "features": ["repository", "shell", "site-hosted-skills", "gateway-capabilities"]
+  "features": ["repository", "shell", "site-hosted-skills", "gateway-toolsets"]
 }
 ```
 

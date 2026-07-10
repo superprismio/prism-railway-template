@@ -29,6 +29,11 @@ Current workflow checks:
 - skill-declared Gateway capabilities exist and are enabled;
 - direct workflow Gateway capabilities exist and are enabled.
 
+The current implementation checks narrow compatibility capabilities. Extend the
+same dependency checks to `metadata.gateway-toolsets` when toolset profiles are
+implemented; do not infer downstream RBAC or duplicate provider policy in
+Doctor.
+
 When summarizing a report:
 
 1. Lead with failed workflow checks.
