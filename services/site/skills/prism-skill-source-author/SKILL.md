@@ -42,11 +42,11 @@ Rules:
 5. Do not add README, changelog, install guide, or other auxiliary docs inside a
    skill folder.
 6. Keep generated outputs and runtime state out of the skill repo.
-7. Declare broad Gateway profiles under `metadata.gateway-toolsets`. Use
-   `metadata.gateway-capabilities` only for existing narrow compatibility
-   wrappers. Workflows and tasks inherit these requirements when they select the
-   skill, so do not duplicate lists in callers. Do not add custom top-level
-   frontmatter keys.
+7. Keep generic source skills independent of Prism Gateway. Do not add
+   `metadata.gateway-toolsets` merely for interactive access; Site policy
+   supplies profiles to authorized contexts. Use explicit metadata only when a
+   source is intentionally instance-specific and has a deterministic
+   dependency. Do not add custom top-level frontmatter keys.
 
 Minimal skill:
 

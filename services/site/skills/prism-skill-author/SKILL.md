@@ -14,11 +14,11 @@ Custom skill definitions are owned by the site service and stored under `/data/s
 3. Keep executable scripts, checkpoints, and generated outputs outside the skill folder, usually under `/data/custom/<experiment>/...` if they must run from `codex-runtime`.
 4. Use the site internal skill endpoint when `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN` are available.
 5. Keep new skills disabled-by-convention until a task or prompt explicitly requests them.
-6. For a broad credential-backed integration, declare its profile under
-   `metadata.gateway-toolsets` once that profile exists. Use
+6. Keep generic skills independent of Prism Gateway. Interactive access comes
+   from Site policy, not skill metadata. Use `metadata.gateway-toolsets` only
+   for an instance-owned deterministic dependency, and
    `metadata.gateway-capabilities` only for existing narrow compatibility
-   wrappers. Do not duplicate either list in every workflow. Custom top-level
-   frontmatter keys are not valid Codex skill metadata.
+   wrappers. Custom top-level frontmatter keys are not valid Codex metadata.
 
 In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the API is unavailable.
 

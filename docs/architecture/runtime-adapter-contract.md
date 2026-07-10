@@ -187,8 +187,11 @@ an assigned agent to a Gateway-owned operation catalog. Method, path, query, and
 body selection remain runtime concerns, subject to the downstream identity's
 actual permissions.
 
-Skills declare broad requirements under `metadata.gateway-toolsets`. Existing
-`metadata.gateway-capabilities` declarations remain valid for narrow wrappers.
+Generic skills remain runtime- and credential-provider agnostic. Site assigns
+enabled toolsets to Admin Console and full-access source contexts through its
+existing policy. Instance-owned deterministic workflows may declare
+`metadata.gateway-toolsets`; existing `metadata.gateway-capabilities`
+declarations remain valid for narrow wrappers.
 
 Runtime-specific system instructions and bootstrap authentication may remain
 inside the runtime service. For example, Codex CLI device authentication can

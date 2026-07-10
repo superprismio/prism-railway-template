@@ -162,7 +162,7 @@ Discord read-only channel -> read-oriented profiles only
 Discord full channel      -> configured admin/full profiles
 Telegram target/user      -> profiles resolved by source policy
 Admin Console             -> enabled admin profiles
-Workflow/task             -> profiles required by selected skills
+Workflow/task             -> profiles explicitly required by instance config
 ```
 
 Gateway receives a short-lived runtime session containing the resolved profile
@@ -174,8 +174,10 @@ workflow approvals.
 
 ### Skills
 
-Skills explain how and when to use a toolset. They declare profile dependencies
-in standard skill metadata:
+Generic skills explain how to use a provider without depending on Prism
+Gateway metadata. Site policy supplies enabled toolsets to authorized
+interactive contexts. Instance-owned deterministic workflow skills may declare
+a profile dependency when execution must fail clearly if it is unavailable:
 
 ```yaml
 metadata:

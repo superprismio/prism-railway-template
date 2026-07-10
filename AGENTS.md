@@ -144,8 +144,8 @@ Examples:
 - Task create/update/reasoning: use `prism-task-author`, then `GET /agent/tasks` or `POST /agent/tasks`.
 - Skill create/update/reasoning: use `prism-skill-author`, then `GET /agent/skills` or `POST /agent/skills`.
 
-Broad organization integrations should use credential-backed Gateway toolset
-profiles and declare them in `SKILL.md` frontmatter:
+Instance-owned deterministic workflows may declare required Gateway toolsets in
+`SKILL.md` frontmatter:
 
 ```yaml
 metadata:
@@ -156,6 +156,10 @@ metadata:
 Existing narrow wrappers continue to use `metadata.gateway-capabilities` during
 migration. Do not create one narrow capability per route or collection for a
 broad OpenAPI/MCP integration.
+
+Do not add Prism-specific Gateway metadata to generic or externally sourced
+skills merely to make interactive access work. Admin Console and full-access
+source contexts receive enabled organization toolsets from Site policy.
 
 Codex Runtime adds Gateway requirements to the job-scoped session when it
 selects the skill. Workflows should reference the skill through

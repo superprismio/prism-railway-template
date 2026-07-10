@@ -77,7 +77,7 @@ Site and existing source-adapter policy own assignment:
 readonly Discord/Telegram context -> configured read-oriented profiles
 full Discord/Telegram context     -> configured full/admin profiles
 admin Console                     -> enabled admin profiles
-workflow/task                     -> profiles required by selected skills
+workflow/task                     -> profiles explicitly required by instance config
 ```
 
 Gateway checks only whether the authenticated runtime session was assigned the

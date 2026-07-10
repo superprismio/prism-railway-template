@@ -141,7 +141,10 @@ credential. Exercise every enabled workflow, task, hook, and interactive path
 that uses the integration; Gateway configuration alone is not proof that the
 migration is complete.
 
-Broad toolset skills declare profiles under `metadata.gateway-toolsets`. Existing
+Do not add `metadata.gateway-toolsets` to generic or source-managed skills just
+to make interactive access work. Site policy assigns enabled profiles to Admin
+Console and full-access source contexts. Use metadata only for instance-owned
+deterministic workflows that must declare a hard dependency. Existing
 `metadata.gateway-capabilities` remains the narrow compatibility form.
 
 ## Plausible Preset

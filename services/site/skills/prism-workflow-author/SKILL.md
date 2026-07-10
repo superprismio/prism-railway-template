@@ -196,11 +196,12 @@ Use it for:
 - shared `agentConfig`
 - deterministic delegation policy in `agentConfig.delegation`
 
-When a step uses a skill, put the skill name in `agentConfig.skills`. Broad
-integration skills should declare `metadata.gateway-toolsets`; existing narrow
-wrappers use `metadata.gateway-capabilities`. Do not copy either requirement
-list into every workflow or reproduce provider operations in the manifest. Use
-`agentConfig.gatewayCapabilities` only for a direct narrow compatibility call.
+When a step uses a skill, put the skill name in `agentConfig.skills`. Generic
+skills remain Gateway-agnostic. For deterministic instance workflows, declare
+required broad profiles in workflow/step `agentConfig.gatewayToolsets` or in an
+instance-owned skill; existing narrow wrappers use
+`metadata.gateway-capabilities`. Do not reproduce provider operations in the
+manifest. Use `agentConfig.gatewayCapabilities` only for a direct narrow call.
 Before enabling a workflow, verify its referenced skills and Gateway
 requirements exist and run Prism Doctor.
 

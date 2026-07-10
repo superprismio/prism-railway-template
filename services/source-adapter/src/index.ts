@@ -1039,13 +1039,18 @@ type RuntimeCapabilityDescriptor = {
   inputSchema?: JsonObject;
 };
 
-async function resolveInteractiveGatewayCapabilities(input: {
+type RuntimeToolsetDescriptor = {
+  key: string;
+  protocol?: "openapi" | "mcp" | "http" | "adapter";
+};
+
+async function resolveInteractiveGatewayAccess(input: {
   platform: "discord" | "telegram";
   targetId: string;
   threadId?: string | null;
   groupIds?: string[];
   userId: string;
-}): Promise<RuntimeCapabilityDescriptor[]> {
+}): Promise<{ capabilities: RuntimeCapabilityDescriptor[]; toolsets: RuntimeToolsetDescriptor[] }> {
   try {
     const payload = await appApiRequest("/agent/gateway/interactive-capabilities", {
       method: "POST",
@@ -1075,10 +1080,23 @@ async function resolveInteractiveGatewayCapabilities(input: {
         ...(inputSchema ? { inputSchema } : {}),
       }];
     });
-    return Array.from(new Map(normalized.map((descriptor) => [descriptor.key, descriptor])).values());
+    const toolsets = (Array.isArray(payload.toolsets) ? payload.toolsets : []).flatMap((entry): RuntimeToolsetDescriptor[] => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const record = entry as JsonObject;
+      const key = typeof record.key === "string" ? record.key.trim() : "";
+      if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key)) return [];
+      const protocol = record.protocol === "openapi" || record.protocol === "mcp" || record.protocol === "http" || record.protocol === "adapter"
+        ? record.protocol
+        : undefined;
+      return [{ key, ...(protocol ? { protocol } : {}) }];
+    });
+    return {
+      capabilities: Array.from(new Map(normalized.map((descriptor) => [descriptor.key, descriptor])).values()),
+      toolsets: Array.from(new Map(toolsets.map((descriptor) => [descriptor.key, descriptor])).values()),
+    };
   } catch (error) {
-    console.warn("[source-adapter] interactive Gateway capabilities unavailable; continuing without them", describeError(error));
-    return [];
+    console.warn("[source-adapter] interactive Gateway access unavailable; continuing without it", describeError(error));
+    return { capabilities: [], toolsets: [] };
   }
 }
 
@@ -1088,6 +1106,7 @@ async function codexRuntimeRequest(input: {
   codexThreadId: string | null;
   recentHistory: Array<{ role: string; content: string }>;
   capabilities?: RuntimeCapabilityDescriptor[];
+  toolsets?: RuntimeToolsetDescriptor[];
   gatewayContext?: JsonObject;
   metadata: JsonObject;
 }): Promise<{ responseText: string; codexThreadId: string | null }> {
@@ -1098,6 +1117,7 @@ async function codexRuntimeRequest(input: {
     codexThreadId: input.codexThreadId,
     recentHistory: input.recentHistory,
     capabilities: input.capabilities ?? [],
+    toolsets: input.toolsets ?? [],
     context: input.gatewayContext ?? {},
     metadata: input.metadata,
   };
@@ -1803,7 +1823,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       : null) ||
     (typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
-  const gatewayCapabilities = await resolveInteractiveGatewayCapabilities({
+  const gatewayAccess = await resolveInteractiveGatewayAccess({
     platform: "telegram",
     targetId: transport.chatId,
     userId: transport.authorId,
@@ -1822,7 +1842,8 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       sessionId: String(session.id),
       codexThreadId,
       recentHistory,
-      capabilities: gatewayCapabilities,
+      capabilities: gatewayAccess.capabilities,
+      toolsets: gatewayAccess.toolsets,
       gatewayContext: {
         delegatedActorId: `telegram:${transport.authorId}`,
       },
@@ -2789,7 +2810,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
       ? String((existingSession.meta as JsonObject).codexThreadId)
       : null) ||
     (typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
-  const gatewayCapabilities = await resolveInteractiveGatewayCapabilities({
+  const gatewayAccess = await resolveInteractiveGatewayAccess({
     platform: "discord",
     targetId: transport.channelId,
     threadId: transport.threadId,
@@ -2806,7 +2827,8 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         sessionId: String(session.id),
         codexThreadId,
         recentHistory,
-        capabilities: gatewayCapabilities,
+        capabilities: gatewayAccess.capabilities,
+        toolsets: gatewayAccess.toolsets,
         gatewayContext: {
           delegatedActorId: `discord:${transport.authorId}`,
         },
