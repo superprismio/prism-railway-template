@@ -3,13 +3,19 @@ import https from "node:https";
 import { createPinnedLookup, GatewayDriverError, type ResolvedAddress } from "./http-json-read.js";
 import { isForbiddenIpAddress } from "./network.js";
 import type { GatewayToolsetProfile } from "./types.js";
+import { executeMcpJsonRpc } from "./mcp-tool-call.js";
 
-export type ToolsetRequest = {
+export type HttpToolsetRequest = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
   query?: Record<string, string | number | boolean | Array<string | number | boolean>>;
   body?: unknown;
 };
+export type McpToolsetRequest = {
+  tool: string;
+  arguments?: Record<string, unknown>;
+};
+export type ToolsetRequest = HttpToolsetRequest | McpToolsetRequest;
 
 export type ToolsetRelayResult = {
   status: number;
@@ -20,6 +26,7 @@ export type ToolsetRelayResult = {
 
 function targetUrl(profile: GatewayToolsetProfile, request?: ToolsetRequest) {
   if (!request) return new URL(profile.discoveryUrl);
+  if (!("path" in request)) throw new GatewayDriverError("TOOLSET_HTTP_REQUEST_INVALID", false);
   if (!request.path.startsWith("/") || request.path.startsWith("//") || request.path.includes("\\")) {
     throw new GatewayDriverError("TOOLSET_PATH_INVALID", false);
   }
@@ -79,9 +86,34 @@ export async function executeToolsetRequest(
   credentials: Record<string, string>,
   request?: ToolsetRequest,
 ): Promise<ToolsetRelayResult> {
+  if (profile.protocol === "mcp") {
+    const tool = request && "tool" in request && typeof request.tool === "string"
+      ? request.tool.trim()
+      : "";
+    const rawArguments = request && "arguments" in request ? request.arguments : undefined;
+    const args = rawArguments && typeof rawArguments === "object" && !Array.isArray(rawArguments)
+      ? rawArguments as Record<string, unknown>
+      : {};
+    if (request && !tool) throw new GatewayDriverError("TOOLSET_MCP_TOOL_REQUIRED", false);
+    const result = await executeMcpJsonRpc({
+      endpoint: profile.discoveryUrl,
+      auth: profile.auth,
+      credentials,
+      method: request ? "tools/call" : "tools/list",
+      params: request ? { name: tool, arguments: args } : {},
+    });
+    return {
+      status: result.status,
+      contentType: "application/json",
+      body: result.result,
+      responseBytes: result.responseBytes,
+    };
+  }
+  if (request && !("path" in request)) throw new GatewayDriverError("TOOLSET_HTTP_REQUEST_INVALID", false);
   const url = targetUrl(profile, request);
-  const method = request?.method ?? "GET";
-  const body = request && request.body !== undefined ? JSON.stringify(request.body) : null;
+  const httpRequest = request as HttpToolsetRequest | undefined;
+  const method = httpRequest?.method ?? "GET";
+  const body = httpRequest && httpRequest.body !== undefined ? JSON.stringify(httpRequest.body) : null;
   if (body !== null && Buffer.byteLength(body) > 1_000_000) throw new GatewayDriverError("TOOLSET_BODY_TOO_LARGE", false);
   let payloadToken: string | undefined;
   if (profile.auth.type === "payload-login") {

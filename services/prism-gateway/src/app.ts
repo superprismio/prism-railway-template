@@ -5,7 +5,7 @@ import { gatewayAuth, requireSiteCaller } from "./auth.js";
 import { GatewayInvoker } from "./invoke.js";
 import { GatewayStore, GatewayStoreError } from "./store.js";
 import { GatewayDriverError } from "./http-json-read.js";
-import { executeToolsetRequest, type ToolsetRequest } from "./toolset-relay.js";
+import { executeToolsetRequest, type HttpToolsetRequest, type ToolsetRequest } from "./toolset-relay.js";
 import type { GatewayCaller, GatewayConfig, GatewayInvocationContext } from "./types.js";
 
 type AppDependencies = {
@@ -100,8 +100,14 @@ function invocationContext(value: unknown): GatewayInvocationContext {
   return result;
 }
 
-function toolsetRequestField(value: unknown): ToolsetRequest {
+function toolsetRequestField(value: unknown, protocol: string): ToolsetRequest {
   const input = recordField(value, "TOOLSET_REQUEST_INVALID");
+  if (protocol === "mcp") {
+    return {
+      tool: textField(input.tool, "toolset_tool", 200),
+      arguments: recordField(input.arguments ?? {}, "TOOLSET_MCP_ARGUMENTS_INVALID"),
+    };
+  }
   const method = typeof input.method === "string" ? input.method.toUpperCase() : "";
   if (method !== "GET" && method !== "POST" && method !== "PUT" && method !== "PATCH" && method !== "DELETE") {
     throw new GatewayStoreError("TOOLSET_METHOD_INVALID", 400);
@@ -109,7 +115,7 @@ function toolsetRequestField(value: unknown): ToolsetRequest {
   return {
     method,
     path: textField(input.path, "toolset_path", 2000),
-    query: recordField(input.query, "TOOLSET_QUERY_INVALID") as ToolsetRequest["query"],
+    query: recordField(input.query, "TOOLSET_QUERY_INVALID") as HttpToolsetRequest["query"],
     ...(input.body !== undefined ? { body: input.body } : {}),
   };
 }
@@ -201,10 +207,13 @@ export function createGatewayApp(dependencies: AppDependencies) {
     const connection = dependencies.store.getConnection(profile.connectionId);
     if (!connection || connection.status === "revoked") throw new GatewayStoreError("TOOLSET_CONNECTION_UNAVAILABLE", 409);
     const credentials = dependencies.store.getConnectionCredentials(connection.id);
-    const relayRequest = describe ? undefined : toolsetRequestField(request.body);
+    const relayRequest = describe ? undefined : toolsetRequestField(request.body, profile.protocol);
+    const activeRequest = relayRequest!;
     const auditInput = describe
       ? { action: "describe" }
-      : { action: "request", method: relayRequest!.method, path: relayRequest!.path };
+      : "tool" in activeRequest
+        ? { action: "request", tool: activeRequest.tool }
+        : { action: "request", method: activeRequest.method, path: activeRequest.path };
     try {
       const result = await (dependencies.executeToolset ?? executeToolsetRequest)(profile, credentials, relayRequest);
       dependencies.store.markConnectionUsed(connection.id, result.status >= 200 && result.status < 500);

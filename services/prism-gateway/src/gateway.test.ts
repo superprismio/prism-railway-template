@@ -59,8 +59,12 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     invoker,
     migrationCount: migrations.totalKnown,
     executeToolset: async (profile, credentials, request) => {
-      assert.equal(profile.key, "portal.admin");
       assert.equal(credentials.apiKey, "plausible-secret-value");
+      if (profile.key === "crm.admin") {
+        if (request) assert.deepEqual(request, { tool: "crm_list_accounts", arguments: { limit: 5 } });
+        return { status: 200, contentType: "application/json", body: request ? { accounts: [] } : { tools: [] }, responseBytes: 20 };
+      }
+      assert.equal(profile.key, "portal.admin");
       if (request) assert.deepEqual(request, { method: "PATCH", path: "/api/posts/1", query: {}, body: { title: "Updated" } });
       return { status: 200, contentType: "application/json", body: request ? { updated: true } : { openapi: "3.0.0" }, responseBytes: 20 };
     },
@@ -187,6 +191,33 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(relayedToolset.response.status, 200);
     assert.deepEqual(relayedToolset.body.result, { updated: true });
+
+    const mcpToolset = await jsonRequest(baseUrl, "/toolsets", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
+      body: JSON.stringify({
+        key: "crm.admin",
+        connectionId,
+        protocol: "mcp",
+        discoveryUrl: "https://crm.example.org/api/mcp/mcp",
+        auth: { type: "bearer", secretName: "apiKey" },
+        description: "CRM MCP toolset",
+      }),
+    });
+    assert.equal(mcpToolset.response.status, 201);
+    const describedMcp = await jsonRequest(baseUrl, "/toolsets/crm.admin/describe", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+      body: "{}",
+    });
+    assert.equal(describedMcp.response.status, 200);
+    const calledMcp = await jsonRequest(baseUrl, "/toolsets/crm.admin/request", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+      body: JSON.stringify({ tool: "crm_list_accounts", arguments: { limit: 5 } }),
+    });
+    assert.equal(calledMcp.response.status, 200);
+    assert.deepEqual(calledMcp.body.result, { accounts: [] });
 
     const toolsetUpdated = await jsonRequest(baseUrl, "/toolsets/portal.admin", {
       method: "PATCH",
@@ -379,8 +410,9 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(audit.response.status, 200);
     const events = audit.body.events as Array<Record<string, unknown>>;
-    assert.equal(events.length, 5);
+    assert.equal(events.length, 7);
     assert.equal(JSON.stringify(events).includes(plaintext), false);
+    assert.equal(JSON.stringify(events).includes('"limit":5'), false);
 
     const replacement = "replacement-secret-value";
     const replaced = await jsonRequest(baseUrl, `/connections/${connectionId}/credentials`, {
