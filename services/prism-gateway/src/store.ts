@@ -432,7 +432,6 @@ export class GatewayStore {
     const id = randomUUID();
     const now = new Date().toISOString();
     const entries = Object.entries(input.credentials);
-    if (entries.length === 0) throw new GatewayStoreError("CONNECTION_CREDENTIALS_REQUIRED", 400);
 
     this.db.transaction(() => {
       this.db.prepare(`
@@ -440,7 +439,7 @@ export class GatewayStore {
           (id, provider, label, auth_type, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'untested', ?, ?)
       `).run(id, input.provider, input.label, input.authType, now, now);
-      this.writeCredentials(id, entries, now);
+      if (entries.length > 0) this.writeCredentials(id, entries, now);
     })();
 
     return this.getConnection(id)!;

@@ -71,6 +71,22 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(forbidden.response.status, 403);
 
+    const pending = await jsonRequest(baseUrl, "/connections", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-gateway-token": siteToken,
+      },
+      body: JSON.stringify({
+        provider: "pending-provider",
+        label: "Pending connection",
+        authType: "bearer",
+        credentials: {},
+      }),
+    });
+    assert.equal(pending.response.status, 201);
+    assert.deepEqual((pending.body.connection as Record<string, unknown>).secretNames, []);
+
     const plaintext = "plausible-secret-value";
     const created = await jsonRequest(baseUrl, "/connections", {
       method: "POST",

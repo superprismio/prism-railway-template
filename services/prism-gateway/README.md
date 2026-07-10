@@ -70,8 +70,9 @@ GET    /audit-events
 GET    /audit-events/:traceId
 ```
 
-Credential values are accepted only on create and replacement. Responses list
-credential names but never return plaintext values.
+Connections may be created without credentials for the chat-to-Settings handoff.
+Credential values are accepted only on create and replacement through the Site
+admin caller. Responses list credential names but never return plaintext values.
 
 `http-json.read` capabilities define a fixed public HTTPS origin and path,
 allowed query keys, auth secret mapping, timeout, and response limit. Runtime
