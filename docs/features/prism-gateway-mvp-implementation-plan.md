@@ -4,6 +4,10 @@ Status: future feature implementation plan
 
 Related spec: [Prism Capability Gateway](./prism-capability-gateway.md)
 
+Runtime contract: [Prism Runtime Adapter Contract](../architecture/runtime-adapter-contract.md)
+
+Migration runbook: [Prism Gateway Migration](../operations/prism-gateway-migration.md)
+
 ## Purpose
 
 Define the first buildable slice of `prism-gateway` without turning the current
@@ -35,13 +39,54 @@ After the MVP, an operator should be able to:
 The MVP is successful if the gateway becomes useful for a small number of
 real capabilities without blocking current workflows.
 
-## Proposed First Capabilities
+The first vertical slice is successful when:
+
+```text
+Prism admin enters a Plausible credential in Settings
+  -> site sends it server-side to prism-gateway
+  -> prism-gateway encrypts it on its mounted volume
+  -> codex-runtime invokes plausible.query without receiving the credential
+  -> prism-gateway records the policy decision, result status, and usage
+```
+
+The production `prism-stack` instance does not currently expose a Plausible
+credential to its Railway services. This is therefore a new low-risk connection
+proof, not the first removal of an existing Codex Runtime variable. After the
+connection and invocation path is stable, use the same framework to migrate one
+existing read-oriented integration credential from Codex Runtime.
+
+## Locked MVP Decisions
+
+- `prism-gateway` is a new optional Railway service.
+- Use Node, TypeScript, and Express to match existing runtime and adapter
+  services.
+- Use SQLite at `/data/prism-gateway.sqlite` on a single mounted volume.
+- Site remains authoritative for users, roles, skills, workflows, requests,
+  runtime profiles, and browser admin sessions.
+- Gateway owns integration connections, encrypted credentials, capability
+  grants, invocation, audit, and warning-only usage.
+- Use one gateway service token per calling service. Gateway maps the token to a
+  trusted caller identity; request JSON cannot select or override that identity.
+- Treat user, agent, request, and workflow fields as delegation context.
+- Seed fixed built-in capability definitions. MVP admins may enable, disable,
+  and grant them but may not author arbitrary executable capabilities.
+- Require an idempotency key for delivery, write, and destructive capabilities.
+- A compatibility fallback may handle a disabled integration or an unavailable
+  legacy route. It must never bypass gateway authentication, policy, approval,
+  budget, or destination denials.
+- Use AES-256-GCM with a versioned key reference, nonce, authentication tag, and
+  authenticated connection metadata.
+- Keep budgets in warning mode and defer payment settlement.
+- Preserve current Codex Runtime routes while adding the shared runtime adapter
+  contract.
+
+## First Capabilities
 
 Start with one read capability and one delivery capability.
 
 ### Read Capability
 
-Preferred first read capability:
+Locked first read capability:
 
 ```text
 plausible.query
@@ -54,7 +99,7 @@ Why:
 - useful for analytics, reporting, and content workflows
 - easy to model as a structured query and structured result
 
-Fallback read capability:
+Development fallback when no Plausible account is available:
 
 ```text
 memory.search
@@ -67,9 +112,9 @@ Why:
 - useful for proving policy and audit, but less useful for proving external
   secret management
 
-### Delivery Capability
+### Follow-Up Delivery Capability
 
-Preferred first delivery capability:
+First delivery capability after the read vertical slice:
 
 ```text
 comms.discord.send_message
@@ -102,9 +147,9 @@ Add an optional service:
 prism-gateway
 ```
 
-Recommended runtime:
+Runtime:
 
-- Node/TypeScript Fastify or Express, matching existing service style
+- Node/TypeScript with Express, matching existing service style
 - mounted Railway volume at `/data`
 - SQLite database at `/data/prism-gateway.sqlite`
 - no horizontal scaling in the first version
@@ -114,10 +159,10 @@ Required bootstrap env:
 ```env
 NODE_ENV=production
 PORT=8794
-GATEWAY_SERVICE_TOKEN=
 GATEWAY_MASTER_ENCRYPTION_KEY=
-SITE_INTERNAL_URL=
-SITE_INTERNAL_TOKEN=
+GATEWAY_SITE_TOKEN=
+GATEWAY_CODEX_RUNTIME_TOKEN=
+GATEWAY_TASK_RUNNER_TOKEN=
 ```
 
 Optional adapter env for MVP capabilities:
@@ -133,7 +178,7 @@ Optional runtime env added to callers:
 
 ```env
 PRISM_GATEWAY_BASE_URL=
-PRISM_GATEWAY_TOKEN=
+PRISM_GATEWAY_TOKEN= # caller-specific token reference
 ```
 
 The gateway should not require all downstream internal URLs at boot. Missing
@@ -160,13 +205,14 @@ PATCH /capabilities/:key
 MVP can seed built-in capabilities on migration and allow admin enable/disable.
 Full user-authored capability schemas can come later.
 
-### Secrets
+### Connections
 
 ```text
-GET /secrets
-POST /secrets
-POST /secrets/:id/test
-DELETE /secrets/:id
+GET    /connections
+POST   /connections
+POST   /connections/:id/test
+PUT    /connections/:id/credentials
+DELETE /connections/:id
 ```
 
 Rules:
@@ -175,7 +221,19 @@ Rules:
 - encrypt values before writing SQLite
 - show provider, label, capabilities, last-used timestamp, and health
 - support deletion/revocation in the MVP
-- rotation can be implemented as create-new plus delete-old in the first slice
+- replacing credentials updates the connection without changing its stable id
+- encrypted secret records remain an internal storage detail and have no generic
+  plaintext read API
+
+### Grants
+
+```text
+GET /grants
+PUT /grants/:id
+```
+
+MVP grants bind a Site-owned runtime, role, user, or agent identifier to a fixed
+capability. Gateway does not create a second user directory.
 
 ### Invoke
 
@@ -241,13 +299,26 @@ Filter by:
 
 ## Authentication
 
-The MVP can use service-token auth for all gateway API calls.
+The MVP uses service-token auth for gateway service calls. Tokens are distinct
+per caller so the gateway can derive trusted caller identity from the presented
+credential.
 
 Headers:
 
 ```text
-x-gateway-token: <token>
+x-gateway-token: <caller-specific-token>
 ```
+
+The gateway token record determines trusted fields such as:
+
+```text
+caller service: codex-runtime
+runtime identity: codex-default
+allowed delegation sources: site, task-runner
+```
+
+The request body may carry delegated actor, user, request, workflow, and task
+context. It may not override the authenticated caller or runtime identity.
 
 Admin UI calls should go through `site`, not directly from the browser to
 `prism-gateway`, unless and until a gateway admin session model exists.
@@ -454,9 +525,13 @@ invokeGatewayCapability({
 Codex Runtime should not be migrated wholesale. Start by moving one integration
 key or one tool path to the gateway and leave the rest unchanged.
 
+Runtime job submission is a separate boundary from capability invocation. The
+runtime adapter contract normalizes submit, status, cancellation, output,
+artifacts, and errors. Gateway does not become the runtime job dispatcher.
+
 ## First Migration Candidate
 
-Recommended first secret to move:
+Recommended first connection to prove:
 
 ```text
 PLAUSIBLE_API_KEY
@@ -468,6 +543,25 @@ Reason:
 - useful in content/reporting workflows
 - low blast radius
 - easier to validate than write APIs
+
+This credential is not currently present on the production `prism-stack`
+services. After proving UI-managed connection storage and invocation, select an
+existing read-oriented Codex Runtime integration for the first actual removal.
+Do not choose a private key, social publishing credential, or broad object
+storage credential for the first migration.
+
+Provisional production migration candidate:
+
+```text
+crm.contact.read
+```
+
+The production inventory found an existing CRM connection in Codex Runtime, and
+a narrowly modeled read capability matches the security goals better than
+passing a broad CRM or MCP token through to the runtime. Confirm the provider's
+read endpoint and token scope before locking this migration. If the available
+credential grants broad write access and cannot be constrained, choose another
+read-oriented integration.
 
 Recommended first adapter delegation:
 
@@ -535,10 +629,12 @@ For successful calls, preserve:
 
 ### Phase 0: Documentation And Template Shape
 
-- [ ] Add this implementation plan.
-- [ ] Add docs link from the broad gateway spec.
-- [ ] Decide first read and delivery capabilities.
-- [ ] Decide service name and Railway volume mount.
+- [x] Add this implementation plan.
+- [x] Add docs link from the broad gateway spec.
+- [x] Define the runtime adapter contract.
+- [x] Lock the first read and follow-up delivery capabilities.
+- [x] Decide service name and Railway volume mount.
+- [x] Add migration, environment delta, rollback, and production preflight docs.
 
 ### Phase 1: Service Skeleton
 
@@ -549,10 +645,11 @@ For successful calls, preserve:
 - [ ] Add service-token auth middleware.
 - [ ] Add `.env.example` and template variable references.
 
-### Phase 2: Capability Catalog And Secrets
+### Phase 2: Capability Catalog And Connections
 
 - [ ] Seed built-in capabilities.
-- [ ] Add encrypted secret create/list/delete.
+- [ ] Add connection create/list/test/replace/revoke.
+- [ ] Keep encrypted secret rows internal and redact admin responses.
 - [ ] Add integration connection records.
 - [ ] Add one secret test route.
 - [ ] Add admin-safe response redaction.
@@ -599,17 +696,14 @@ For successful calls, preserve:
 - No replacement of site, memory, or adapters.
 - No direct browser calls to gateway with service credentials.
 
-## Open Decisions Before Implementation
+## Deferred Decisions
 
-1. Should the first gateway service use Express for consistency with adapter
-   services, or Fastify for stricter schema-driven route handling?
-2. Should the first read capability be `plausible.query` or `memory.search`?
-3. Should the first delivery capability be `comms.discord.send_message` or a
-   lower-risk artifact write capability?
-4. Should actor profiles initially mirror existing Prism roles or use separate
-   gateway-local profiles?
-5. Should audit events be copied back to Prism Site request artifacts when a
-   request id is present?
-6. Should the gateway eventually expose MCP-compatible tools, or should MCP
-   remain behind runtime-specific adapters until the first HTTP gateway proves
-   useful?
+These decisions do not block the first vertical slice:
+
+1. Does the existing CRM connection support a sufficiently narrow
+   `crm.contact.read` contract and credential scope for the first removal?
+2. Should request-linked audit summaries later be copied into Site artifacts?
+3. Should gateway tools gain an MCP surface after the HTTP invocation API is
+   stable?
+4. Which second runtime is useful enough to validate adapter portability?
+5. When should warning-only budgets become enforceable limits?

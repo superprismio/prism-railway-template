@@ -4,6 +4,8 @@ Status: future feature spec
 
 Implementation follow-up: [Prism Gateway MVP Implementation Plan](./prism-gateway-mvp-implementation-plan.md)
 
+Runtime boundary: [Prism Runtime Adapter Contract](../architecture/runtime-adapter-contract.md)
+
 ## Purpose
 
 Prism instances are accumulating more connected systems:
@@ -30,6 +32,19 @@ runtime types, external tool consumers, and cross-instance workflows.
 
 Add an optional `prism-gateway` service that becomes the organization-level
 capability boundary for agent, workflow, model, tool, data, and delivery access.
+
+The primary outcomes are:
+
+1. Codex Runtime becomes one replaceable runtime adapter rather than the place
+   where organization skills, tools, and integration credentials accumulate.
+2. Prism-managed skills remain owned by Site and are available consistently to
+   Codex and future runtimes.
+3. Organization integrations become named capabilities whose credentials are
+   not exposed to runtimes.
+4. Authorized Prism admins can add, test, replace, and revoke integration
+   credentials through the Site UI without Railway environment access.
+5. Railway variables are reduced to bootstrap encryption, service identity,
+   runtime authentication, and infrastructure configuration.
 
 ## Core Idea
 
@@ -110,6 +125,11 @@ Codex Runtime remains useful for repository-aware coding, shell work, Prism ops,
 and artifact generation, but it should become one runtime among several rather
 than the holder of all organizational authority.
 
+Runtime services implement a common job contract for submit, status,
+cancellation, capabilities, normalized output, artifacts, usage, and errors.
+The existing `codex-runtime` service becomes the Codex adapter directly; Prism
+does not add another proxy service in front of it.
+
 ### Domain Adapters
 
 Adapters keep platform-specific behavior:
@@ -187,7 +207,9 @@ Railway variables should hold only bootstrap and infra secrets:
 
 ```env
 GATEWAY_MASTER_ENCRYPTION_KEY=
-GATEWAY_SERVICE_TOKEN=
+GATEWAY_SITE_TOKEN=
+GATEWAY_CODEX_RUNTIME_TOKEN=
+GATEWAY_TASK_RUNNER_TOKEN=
 SITE_INTERNAL_URL=
 SITE_INTERNAL_TOKEN=
 MEMORY_INTERNAL_URL=
@@ -296,6 +318,11 @@ The policy engine should distinguish:
 - org/workspace identity
 - delegation chain
 
+Authenticated caller identity must come from the gateway credential, not these
+JSON fields. Each calling service receives a distinct gateway token mapped to a
+trusted caller or runtime identity. Actor and workflow fields are delegated
+context and cannot override the authenticated caller.
+
 ## Policy Layers
 
 The gateway should evaluate separate questions explicitly:
@@ -338,6 +365,9 @@ Initial interface:
 - show last-used timestamp
 - show audit events
 - hide secret value after creation
+
+The browser uses the existing Site admin session. Site calls Gateway
+server-side; gateway service credentials are never exposed to browser code.
 
 Example connection records:
 
@@ -532,10 +562,13 @@ This should be an additive feature, not a template rewrite.
    - `GET /health`
    - `GET /capabilities`
    - `POST /invoke`
-   - `GET /secrets`
-   - `POST /secrets`
-   - `POST /secrets/:id/test`
-   - `DELETE /secrets/:id`
+   - `GET /connections`
+   - `POST /connections`
+   - `POST /connections/:id/test`
+   - `PUT /connections/:id/credentials`
+   - `DELETE /connections/:id`
+   - `GET /grants`
+   - `PUT /grants/:id`
    - `GET /audit-events`
 4. Proxy one low-risk read capability, such as `plausible.query` or
    `memory.search`.
@@ -548,6 +581,11 @@ This should be an additive feature, not a template rewrite.
 9. Add Prism admin UI for capability and secret management.
 10. Evaluate Vault, agentgateway, Composio, x402, and MPP as optional backends or
     edge protocols.
+
+For existing Railway instances, ship an environment delta, idempotent setup
+script, smoke checks, and rollback procedure. Service reference variables should
+wire internal URLs and caller-specific gateway tokens so operators do not copy
+the same values into each service manually.
 
 ## Non-Goals For The First Version
 

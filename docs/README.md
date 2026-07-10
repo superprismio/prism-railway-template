@@ -26,6 +26,7 @@ Design notes and system direction:
 - [Site API Consolidation Plan](architecture/site-api-consolidation-plan.md)
 - [Site-Owned Task Scripts](architecture/site-owned-task-scripts.md)
 - [Tasks Workflow Plan](architecture/tasks-workflow-plan.md)
+- [Runtime Adapter Contract](architecture/runtime-adapter-contract.md)
 - [Workflows](architecture/workflows.md)
 
 ## Features
@@ -55,6 +56,7 @@ Setup, deployment, and runtime operations:
 - [Local VPS Deployment](operations/local-vps-deployment.md)
 - [Railway Env Checklist](operations/railway-env-checklist.md)
 - [Railway Setup](operations/railway-setup.md)
+- [Prism Gateway Migration](operations/prism-gateway-migration.md)
 - [Template Deploy Runbook](operations/template-deploy-runbook.md)
 
 ## Research
