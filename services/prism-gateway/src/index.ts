@@ -1,6 +1,7 @@
 import { createGatewayApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { openGatewayDatabase, runGatewayMigrations } from "./db.js";
+import { GatewayInvoker } from "./invoke.js";
 import { GatewayStore } from "./store.js";
 
 const config = loadConfig();
@@ -11,11 +12,13 @@ const store = new GatewayStore(db, {
   keyVersion: config.masterKeyVersion,
 });
 store.seedBuiltInDrivers();
+const invoker = new GatewayInvoker(store);
 
 const app = createGatewayApp({
   config,
   db,
   store,
+  invoker,
   migrationCount: migrations.totalKnown,
 });
 

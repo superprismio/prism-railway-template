@@ -49,4 +49,47 @@ export type HttpJsonReadDriverConfig = {
   pathTemplate: string;
   timeoutMs: number;
   maxResponseBytes: number;
+  allowedQueryParams: string[];
+  auth:
+    | { type: "none" }
+    | { type: "bearer"; secretName: string }
+    | { type: "api-key"; secretName: string; headerName: string };
+};
+
+export type GatewayGrant = {
+  id: string;
+  subjectType: "runtime" | "service";
+  subjectId: string;
+  capabilityKey: string;
+  allowed: boolean;
+  policy: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GatewayInvocationContext = {
+  delegatedActorId?: string;
+  requestId?: string;
+  workflowRunId?: string;
+  workflowStepKey?: string;
+  runtimeJobId?: string;
+};
+
+export type GatewayAuditEvent = {
+  id: string;
+  traceId: string;
+  capabilityKey: string;
+  authenticatedCallerId: string;
+  delegatedActorId: string | null;
+  requestId: string | null;
+  workflowRunId: string | null;
+  workflowStepKey: string | null;
+  status: "denied" | "succeeded" | "failed";
+  policyDecision: string;
+  budgetDecision: string | null;
+  latencyMs: number | null;
+  errorCode: string | null;
+  inputSummary: Record<string, unknown> | null;
+  outputSummary: Record<string, unknown> | null;
+  createdAt: string;
 };

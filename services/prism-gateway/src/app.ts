@@ -1,13 +1,15 @@
 import type Database from "better-sqlite3";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { gatewayAuth, requireSiteCaller } from "./auth.js";
+import { GatewayInvoker } from "./invoke.js";
 import { GatewayStore, GatewayStoreError } from "./store.js";
-import type { GatewayConfig } from "./types.js";
+import type { GatewayCaller, GatewayConfig, GatewayInvocationContext } from "./types.js";
 
 type AppDependencies = {
   config: GatewayConfig;
   db: Database.Database;
   store: GatewayStore;
+  invoker: GatewayInvoker;
   migrationCount: number;
   startedAt?: Date;
 };
@@ -44,6 +46,34 @@ function optionalSchema(value: unknown) {
 
 function routeParam(value: string | string[]) {
   return Array.isArray(value) ? value[0] || "" : value;
+}
+
+function recordField(value: unknown, errorCode: string) {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== "object" || Array.isArray(value)) throw new GatewayStoreError(errorCode, 400);
+  return value as Record<string, unknown>;
+}
+
+function invocationContext(value: unknown): GatewayInvocationContext {
+  const input = recordField(value, "INVOCATION_CONTEXT_INVALID");
+  const result: GatewayInvocationContext = {};
+  for (const key of ["delegatedActorId", "requestId", "workflowRunId", "workflowStepKey", "runtimeJobId"] as const) {
+    const candidate = input[key];
+    if (candidate === undefined || candidate === null || candidate === "") continue;
+    if (typeof candidate !== "string" || candidate.length > 200) {
+      throw new GatewayStoreError("INVOCATION_CONTEXT_INVALID", 400);
+    }
+    result[key] = candidate;
+  }
+  return result;
+}
+
+function asyncRoute(
+  handler: (request: Request, response: Response) => Promise<void>,
+) {
+  return (request: Request, response: Response, next: NextFunction) => {
+    void handler(request, response).catch(next);
+  };
 }
 
 export function createGatewayApp(dependencies: AppDependencies) {
@@ -93,6 +123,25 @@ export function createGatewayApp(dependencies: AppDependencies) {
     response.status(201).json({ ok: true, capability });
   });
 
+  app.patch("/capabilities/:key", requireSiteCaller, (request, response) => {
+    const body = request.body as Record<string, unknown>;
+    if (typeof body.enabled !== "boolean") throw new GatewayStoreError("CAPABILITY_ENABLED_INVALID", 400);
+    const capability = dependencies.store.setCapabilityEnabled(routeParam(request.params.key), body.enabled);
+    response.json({ ok: true, capability });
+  });
+
+  app.post("/capabilities/:key/test", requireSiteCaller, asyncRoute(async (request, response) => {
+    const body = request.body as Record<string, unknown>;
+    const result = await dependencies.invoker.invoke({
+      capabilityKey: routeParam(request.params.key),
+      capabilityInput: recordField(body.input, "CAPABILITY_INPUT_INVALID"),
+      context: invocationContext(body.context),
+      caller: response.locals.gatewayCaller as GatewayCaller,
+      adminTest: true,
+    });
+    response.status(result.status).json(result);
+  }));
+
   app.get("/connections", requireSiteCaller, (_request, response) => {
     response.json({ ok: true, connections: dependencies.store.listConnections() });
   });
@@ -120,6 +169,53 @@ export function createGatewayApp(dependencies: AppDependencies) {
   app.delete("/connections/:id", requireSiteCaller, (request, response) => {
     const connection = dependencies.store.revokeConnection(routeParam(request.params.id));
     response.json({ ok: true, connection });
+  });
+
+  app.get("/grants", requireSiteCaller, (_request, response) => {
+    response.json({ ok: true, grants: dependencies.store.listGrants() });
+  });
+
+  app.put("/grants/:id", requireSiteCaller, (request, response) => {
+    const body = request.body as Record<string, unknown>;
+    const subjectType = body.subjectType === "runtime" || body.subjectType === "service"
+      ? body.subjectType
+      : null;
+    if (!subjectType) throw new GatewayStoreError("GRANT_SUBJECT_TYPE_INVALID", 400);
+    if (typeof body.allowed !== "boolean") throw new GatewayStoreError("GRANT_ALLOWED_INVALID", 400);
+    const grant = dependencies.store.upsertGrant({
+      id: routeParam(request.params.id),
+      subjectType,
+      subjectId: textField(body.subjectId, "grant_subject_id", 120),
+      capabilityKey: textField(body.capabilityKey, "grant_capability_key", 120),
+      allowed: body.allowed,
+      policy: recordField(body.policy, "GRANT_POLICY_INVALID"),
+    });
+    response.json({ ok: true, grant });
+  });
+
+  app.post("/invoke", asyncRoute(async (request, response) => {
+    const body = request.body as Record<string, unknown>;
+    const result = await dependencies.invoker.invoke({
+      capabilityKey: textField(body.capability, "capability", 120),
+      capabilityInput: recordField(body.input, "CAPABILITY_INPUT_INVALID"),
+      context: invocationContext(body.context),
+      caller: response.locals.gatewayCaller as GatewayCaller,
+    });
+    response.status(result.status).json(result);
+  }));
+
+  app.get("/audit-events", requireSiteCaller, (request, response) => {
+    const limit = Number.parseInt(String(request.query.limit || "100"), 10);
+    response.json({
+      ok: true,
+      events: dependencies.store.listAuditEvents(Number.isFinite(limit) ? limit : 100),
+    });
+  });
+
+  app.get("/audit-events/:traceId", requireSiteCaller, (request, response) => {
+    const event = dependencies.store.getAuditEvent(routeParam(request.params.traceId));
+    if (!event) throw new GatewayStoreError("AUDIT_EVENT_NOT_FOUND", 404);
+    response.json({ ok: true, event });
   });
 
   app.use((_request, response) => {

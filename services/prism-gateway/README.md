@@ -12,9 +12,13 @@ This first implementation slice includes:
 - write-only connection create, replace, and revoke APIs
 - a seeded `http-json.read` connector driver
 - declarative instance capability creation with public-HTTPS constraints
+- default-deny runtime and service grants
+- hardened read invocation with DNS pinning, redirect rejection, timeouts, and
+  bounded JSON responses
+- redacted audit events and warning-only usage ledger rows
 
-It does not yet invoke providers, expose Gateway settings in Site, or change any
-existing runtime path.
+It does not yet expose Gateway settings in Site or change any existing runtime
+path.
 
 ## Local Setup
 
@@ -53,14 +57,43 @@ GET    /health
 GET    /connector-drivers
 GET    /capabilities
 POST   /capabilities
+PATCH  /capabilities/:key
+POST   /capabilities/:key/test
 GET    /connections
 POST   /connections
 PUT    /connections/:id/credentials
 DELETE /connections/:id
+GET    /grants
+PUT    /grants/:id
+POST   /invoke
+GET    /audit-events
+GET    /audit-events/:traceId
 ```
 
 Credential values are accepted only on create and replacement. Responses list
 credential names but never return plaintext values.
+
+`http-json.read` capabilities define a fixed public HTTPS origin and path,
+allowed query keys, auth secret mapping, timeout, and response limit. Runtime
+input can supply only allowlisted query values. Gateway resolves and pins a
+public address for the request, rejects redirects, and accepts JSON responses
+only.
+
+Example driver configuration:
+
+```json
+{
+  "baseUrl": "https://analytics.example.org",
+  "pathTemplate": "/api/stats",
+  "allowedQueryParams": ["period", "metric"],
+  "auth": {
+    "type": "bearer",
+    "secretName": "apiKey"
+  },
+  "timeoutMs": 10000,
+  "maxResponseBytes": 1000000
+}
+```
 
 ## Railway
 

@@ -7,6 +7,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createGatewayApp } from "./app.js";
 import { openGatewayDatabase, runGatewayMigrations } from "./db.js";
+import { executeHttpJsonRead, GatewayDriverError } from "./http-json-read.js";
+import { GatewayInvoker } from "./invoke.js";
 import { GatewayStore } from "./store.js";
 import type { GatewayConfig } from "./types.js";
 
@@ -43,7 +45,13 @@ test("gateway stores credentials safely and enforces caller identity", async () 
   const migrations = runGatewayMigrations(db);
   const store = new GatewayStore(db, { key: config.masterKey, keyVersion: config.masterKeyVersion });
   store.seedBuiltInDrivers();
-  const app = createGatewayApp({ config, db, store, migrationCount: migrations.totalKnown });
+  const invoker = new GatewayInvoker(store, async (driverConfig, credentials, input) => {
+    assert.equal(driverConfig.baseUrl, "https://analytics.example.org");
+    assert.equal(credentials.apiKey, "plausible-secret-value");
+    assert.deepEqual(input, { period: "7d" });
+    return { result: { visitors: 123 }, status: 200, responseBytes: 16 };
+  });
+  const app = createGatewayApp({ config, db, store, invoker, migrationCount: migrations.totalKnown });
   const server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const address = server.address() as AddressInfo;
@@ -141,10 +149,73 @@ test("gateway stores credentials safely and enforces caller identity", async () 
           pathTemplate: "/api/stats",
           timeoutMs: 5000,
           maxResponseBytes: 250000,
+          allowedQueryParams: ["period"],
+          auth: { type: "bearer", secretName: "apiKey" },
         },
       }),
     });
     assert.equal(capability.response.status, 201);
+
+    const tested = await jsonRequest(baseUrl, "/capabilities/analytics.query/test", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-gateway-token": siteToken,
+      },
+      body: JSON.stringify({ input: { period: "7d" } }),
+    });
+    assert.equal(tested.response.status, 200);
+    assert.deepEqual(tested.body.result, { visitors: 123 });
+
+    const denied = await jsonRequest(baseUrl, "/invoke", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-gateway-token": codexToken,
+      },
+      body: JSON.stringify({ capability: "analytics.query", input: { period: "7d" } }),
+    });
+    assert.equal(denied.response.status, 403);
+    assert.equal((denied.body.error as Record<string, unknown>).code, "CAPABILITY_POLICY_DENIED");
+
+    const grant = await jsonRequest(baseUrl, "/grants/codex-analytics-read", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-gateway-token": siteToken,
+      },
+      body: JSON.stringify({
+        subjectType: "runtime",
+        subjectId: "codex-test",
+        capabilityKey: "analytics.query",
+        allowed: true,
+      }),
+    });
+    assert.equal(grant.response.status, 200);
+
+    const invoked = await jsonRequest(baseUrl, "/invoke", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-gateway-token": codexToken,
+      },
+      body: JSON.stringify({
+        capability: "analytics.query",
+        input: { period: "7d" },
+        context: { requestId: "349" },
+      }),
+    });
+    assert.equal(invoked.response.status, 200);
+    assert.deepEqual(invoked.body.result, { visitors: 123 });
+    assert.equal(invoked.text.includes(plaintext), false);
+
+    const audit = await jsonRequest(baseUrl, "/audit-events", {
+      headers: { "x-gateway-token": siteToken },
+    });
+    assert.equal(audit.response.status, 200);
+    const events = audit.body.events as Array<Record<string, unknown>>;
+    assert.equal(events.length, 3);
+    assert.equal(JSON.stringify(events).includes(plaintext), false);
 
     const replacement = "replacement-secret-value";
     const replaced = await jsonRequest(baseUrl, `/connections/${connectionId}/credentials`, {
@@ -171,4 +242,38 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     db.close();
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("http-json.read pins public DNS and never allows runtime headers or redirects", async () => {
+  const config = {
+    baseUrl: "https://analytics.example.org",
+    pathTemplate: "/api/stats",
+    timeoutMs: 5000,
+    maxResponseBytes: 250000,
+    allowedQueryParams: ["period"],
+    auth: { type: "api-key" as const, secretName: "apiKey", headerName: "X-Api-Key" },
+  };
+  const result = await executeHttpJsonRead(config, { apiKey: "secret" }, { period: "7d" }, {
+    resolve: async () => [{ address: "93.184.216.34", family: 4 }],
+    request: async (url, headers, _driverConfig, address) => {
+      assert.equal(url.href, "https://analytics.example.org/api/stats?period=7d");
+      assert.equal(headers["X-Api-Key"], "secret");
+      assert.equal(address.address, "93.184.216.34");
+      return { result: { ok: true }, status: 200, responseBytes: 11 };
+    },
+  });
+  assert.deepEqual(result.result, { ok: true });
+
+  await assert.rejects(
+    executeHttpJsonRead(config, { apiKey: "secret" }, { headers: "forbidden" }, {
+      resolve: async () => [{ address: "93.184.216.34", family: 4 }],
+    }),
+    (error: unknown) => error instanceof GatewayDriverError && error.code === "CAPABILITY_INPUT_KEY_NOT_ALLOWED",
+  );
+  await assert.rejects(
+    executeHttpJsonRead(config, { apiKey: "secret" }, { period: "7d" }, {
+      resolve: async () => [{ address: "169.254.169.254", family: 4 }],
+    }),
+    (error: unknown) => error instanceof GatewayDriverError && error.code === "CAPABILITY_DNS_PRIVATE_ADDRESS_FORBIDDEN",
+  );
 });

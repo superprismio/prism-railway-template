@@ -190,11 +190,12 @@ export type PrismGatewayCapability = {
   enabled: boolean;
   inputSchema?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
+  driverConfig: Record<string, unknown>;
 };
 
 export type PrismGatewayCapabilityGrant = {
   id: string;
-  subjectType: "runtime" | "agent" | "user" | "role";
+  subjectType: "runtime" | "service" | "agent" | "user" | "role";
   subjectId: string;
   capabilityKey: string;
   allowed: boolean;

@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
-import net from "node:net";
 import type Database from "better-sqlite3";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "./crypto.js";
+import { isForbiddenHostname } from "./network.js";
 import type {
   GatewayCapability,
   GatewayConnection,
+  GatewayAuditEvent,
+  GatewayCaller,
+  GatewayGrant,
+  GatewayInvocationContext,
   HttpJsonReadDriverConfig,
 } from "./types.js";
 
@@ -50,35 +54,39 @@ type SecretRow = EncryptedSecret & {
   secret_name: string;
 };
 
+type GrantRow = {
+  id: string;
+  subject_type: GatewayGrant["subjectType"];
+  subject_id: string;
+  capability_key: string;
+  allowed: number;
+  policy_json: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type AuditRow = {
+  id: string;
+  trace_id: string;
+  capability_key: string;
+  authenticated_caller_id: string;
+  delegated_actor_id: string | null;
+  request_id: string | null;
+  workflow_run_id: string | null;
+  workflow_step_key: string | null;
+  status: GatewayAuditEvent["status"];
+  policy_decision: string;
+  budget_decision: string | null;
+  latency_ms: number | null;
+  error_code: string | null;
+  input_summary_json: string | null;
+  output_summary_json: string | null;
+  created_at: string;
+};
+
 function parseJson(value: string | null): Record<string, unknown> | null {
   if (!value) return null;
   return JSON.parse(value) as Record<string, unknown>;
-}
-
-function isPrivateIpv4(hostname: string) {
-  const parts = hostname.split(".").map(Number);
-  return parts[0] === 10
-    || parts[0] === 127
-    || (parts[0] === 169 && parts[1] === 254)
-    || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
-    || (parts[0] === 192 && parts[1] === 168)
-    || parts[0] === 0;
-}
-
-function isPrivateIpLiteral(hostname: string) {
-  const ipVersion = net.isIP(hostname);
-  if (ipVersion === 4) return isPrivateIpv4(hostname);
-  if (ipVersion !== 6) return false;
-  const normalized = hostname.toLowerCase();
-  if (
-    normalized === "::"
-    || normalized === "::1"
-    || normalized.startsWith("fc")
-    || normalized.startsWith("fd")
-    || /^fe[89ab]/.test(normalized)
-  ) return true;
-  const mappedIpv4 = normalized.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
-  return mappedIpv4 ? isPrivateIpv4(mappedIpv4) : false;
 }
 
 function validatePublicHttpsBaseUrl(value: unknown) {
@@ -92,14 +100,7 @@ function validatePublicHttpsBaseUrl(value: unknown) {
   if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
     throw new GatewayStoreError("CAPABILITY_BASE_URL_MUST_BE_PUBLIC_HTTPS_ORIGIN", 400);
   }
-  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  if (
-    hostname === "localhost"
-    || hostname.endsWith(".localhost")
-    || hostname.endsWith(".local")
-    || hostname.endsWith(".internal")
-    || isPrivateIpLiteral(hostname)
-  ) {
+  if (isForbiddenHostname(url.hostname)) {
     throw new GatewayStoreError("CAPABILITY_BASE_URL_PRIVATE_HOST_FORBIDDEN", 400);
   }
   return url.origin;
@@ -123,7 +124,36 @@ export function normalizeHttpJsonReadConfig(value: unknown): HttpJsonReadDriverC
   if (!Number.isInteger(maxResponseBytes) || maxResponseBytes < 1_024 || maxResponseBytes > 5_000_000) {
     throw new GatewayStoreError("CAPABILITY_RESPONSE_LIMIT_INVALID", 400);
   }
-  return { baseUrl, pathTemplate, timeoutMs, maxResponseBytes };
+  const allowedQueryParams = Array.isArray(input.allowedQueryParams)
+    ? input.allowedQueryParams.map((entry) => typeof entry === "string" ? entry.trim() : "")
+    : [];
+  if (
+    allowedQueryParams.some((entry) => !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(entry))
+    || new Set(allowedQueryParams).size !== allowedQueryParams.length
+  ) {
+    throw new GatewayStoreError("CAPABILITY_QUERY_ALLOWLIST_INVALID", 400);
+  }
+  const authInput = input.auth;
+  let auth: HttpJsonReadDriverConfig["auth"] = { type: "none" };
+  if (authInput !== undefined) {
+    if (!authInput || typeof authInput !== "object" || Array.isArray(authInput)) {
+      throw new GatewayStoreError("CAPABILITY_AUTH_CONFIG_INVALID", 400);
+    }
+    const candidate = authInput as Record<string, unknown>;
+    const secretName = typeof candidate.secretName === "string" ? candidate.secretName.trim() : "";
+    if (candidate.type === "bearer" && /^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(secretName)) {
+      auth = { type: "bearer", secretName };
+    } else if (candidate.type === "api-key" && /^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(secretName)) {
+      const headerName = typeof candidate.headerName === "string" ? candidate.headerName.trim() : "";
+      if (!/^x-[a-z0-9-]{1,60}$/i.test(headerName)) {
+        throw new GatewayStoreError("CAPABILITY_AUTH_HEADER_INVALID", 400);
+      }
+      auth = { type: "api-key", secretName, headerName };
+    } else if (candidate.type !== "none") {
+      throw new GatewayStoreError("CAPABILITY_AUTH_CONFIG_INVALID", 400);
+    }
+  }
+  return { baseUrl, pathTemplate, timeoutMs, maxResponseBytes, allowedQueryParams, auth };
 }
 
 function connectionFromRow(
@@ -167,6 +197,40 @@ function capabilityFromRow(row: CapabilityRow): GatewayCapability {
     driverConfig: parseJson(row.driver_config_json) || {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function grantFromRow(row: GrantRow): GatewayGrant {
+  return {
+    id: row.id,
+    subjectType: row.subject_type,
+    subjectId: row.subject_id,
+    capabilityKey: row.capability_key,
+    allowed: row.allowed === 1,
+    policy: parseJson(row.policy_json) || {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function auditFromRow(row: AuditRow): GatewayAuditEvent {
+  return {
+    id: row.id,
+    traceId: row.trace_id,
+    capabilityKey: row.capability_key,
+    authenticatedCallerId: row.authenticated_caller_id,
+    delegatedActorId: row.delegated_actor_id,
+    requestId: row.request_id,
+    workflowRunId: row.workflow_run_id,
+    workflowStepKey: row.workflow_step_key,
+    status: row.status,
+    policyDecision: row.policy_decision,
+    budgetDecision: row.budget_decision,
+    latencyMs: row.latency_ms,
+    errorCode: row.error_code,
+    inputSummary: parseJson(row.input_summary_json),
+    outputSummary: parseJson(row.output_summary_json),
+    createdAt: row.created_at,
   };
 }
 
@@ -326,6 +390,19 @@ export class GatewayStore {
     return rows.map(capabilityFromRow);
   }
 
+  getCapability(key: string) {
+    const row = this.db.prepare("SELECT * FROM capabilities WHERE key = ?").get(key) as CapabilityRow | undefined;
+    return row ? capabilityFromRow(row) : null;
+  }
+
+  setCapabilityEnabled(key: string, enabled: boolean) {
+    const result = this.db.prepare(
+      "UPDATE capabilities SET enabled = ?, updated_at = ? WHERE key = ?",
+    ).run(enabled ? 1 : 0, new Date().toISOString(), key);
+    if (result.changes === 0) throw new GatewayStoreError("CAPABILITY_NOT_FOUND", 404);
+    return this.getCapability(key)!;
+  }
+
   createCapability(input: {
     key: string;
     driverKey: string;
@@ -377,5 +454,134 @@ export class GatewayStore {
       throw error;
     }
     return this.listCapabilities().find((capability) => capability.key === input.key)!;
+  }
+
+  listGrants() {
+    return (this.db.prepare("SELECT * FROM capability_grants ORDER BY subject_type, subject_id, capability_key").all() as GrantRow[])
+      .map(grantFromRow);
+  }
+
+  upsertGrant(input: {
+    id: string;
+    subjectType: GatewayGrant["subjectType"];
+    subjectId: string;
+    capabilityKey: string;
+    allowed: boolean;
+    policy?: Record<string, unknown>;
+  }) {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,119}$/.test(input.id)) {
+      throw new GatewayStoreError("GRANT_ID_INVALID", 400);
+    }
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,119}$/.test(input.subjectId)) {
+      throw new GatewayStoreError("GRANT_SUBJECT_ID_INVALID", 400);
+    }
+    if (!this.getCapability(input.capabilityKey)) throw new GatewayStoreError("CAPABILITY_NOT_FOUND", 404);
+    const now = new Date().toISOString();
+    try {
+      this.db.prepare(`
+        INSERT INTO capability_grants
+          (id, subject_type, subject_id, capability_key, allowed, policy_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          subject_type = excluded.subject_type,
+          subject_id = excluded.subject_id,
+          capability_key = excluded.capability_key,
+          allowed = excluded.allowed,
+          policy_json = excluded.policy_json,
+          updated_at = excluded.updated_at
+      `).run(
+        input.id,
+        input.subjectType,
+        input.subjectId,
+        input.capabilityKey,
+        input.allowed ? 1 : 0,
+        JSON.stringify(input.policy || {}),
+        now,
+        now,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+        throw new GatewayStoreError("GRANT_ALREADY_EXISTS", 409);
+      }
+      throw error;
+    }
+    return grantFromRow(this.db.prepare("SELECT * FROM capability_grants WHERE id = ?").get(input.id) as GrantRow);
+  }
+
+  evaluateCallerGrant(caller: GatewayCaller, capabilityKey: string) {
+    const subjectType = caller.kind === "runtime" ? "runtime" : "service";
+    const subjectId = caller.kind === "runtime" ? caller.runtimeKey : caller.id;
+    if (!subjectId) return { allowed: false, decision: "caller_identity_incomplete" };
+    const row = this.db.prepare(`
+      SELECT * FROM capability_grants
+      WHERE subject_type = ? AND subject_id = ? AND capability_key = ?
+    `).get(subjectType, subjectId, capabilityKey) as GrantRow | undefined;
+    if (!row) return { allowed: false, decision: "default_deny_no_grant" };
+    return { allowed: row.allowed === 1, decision: row.allowed === 1 ? "explicit_allow" : "explicit_deny" };
+  }
+
+  markConnectionUsed(id: string, healthy: boolean) {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      UPDATE integration_connections
+      SET status = ?, last_tested_at = ?,
+          last_used_at = CASE WHEN ? = 1 THEN ? ELSE last_used_at END,
+          updated_at = ?
+      WHERE id = ?
+    `).run(healthy ? "healthy" : "unhealthy", now, healthy ? 1 : 0, now, now, id);
+  }
+
+  recordInvocation(input: {
+    traceId: string;
+    capabilityKey: string;
+    caller: GatewayCaller;
+    context: GatewayInvocationContext;
+    status: GatewayAuditEvent["status"];
+    policyDecision: string;
+    latencyMs: number;
+    errorCode?: string | null;
+    inputSummary: Record<string, unknown>;
+    outputSummary?: Record<string, unknown> | null;
+    units: number;
+    unitPrice?: number;
+  }) {
+    const now = new Date().toISOString();
+    const unitPrice = input.unitPrice || 0;
+    this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO audit_events
+          (id, trace_id, capability_key, authenticated_caller_id, delegated_actor_id,
+           request_id, workflow_run_id, workflow_step_key, status, policy_decision,
+           budget_decision, latency_ms, error_code, input_summary_json, output_summary_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'warn_only', ?, ?, ?, ?, ?)
+      `).run(
+        randomUUID(), input.traceId, input.capabilityKey, input.caller.id,
+        input.context.delegatedActorId || null, input.context.requestId || null,
+        input.context.workflowRunId || null, input.context.workflowStepKey || null,
+        input.status, input.policyDecision, input.latencyMs, input.errorCode || null,
+        JSON.stringify(input.inputSummary), input.outputSummary ? JSON.stringify(input.outputSummary) : null, now,
+      );
+      this.db.prepare(`
+        INSERT INTO usage_ledger
+          (id, trace_id, capability_key, authenticated_caller_id, delegated_actor_id,
+           request_id, units, unit_price, estimated_cost, actual_cost, settlement_status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'shadow', ?)
+      `).run(
+        randomUUID(), input.traceId, input.capabilityKey, input.caller.id,
+        input.context.delegatedActorId || null, input.context.requestId || null,
+        input.units, unitPrice, input.units * unitPrice, now,
+      );
+    })();
+  }
+
+  listAuditEvents(limit = 100) {
+    const normalized = Math.min(Math.max(limit, 1), 500);
+    return (this.db.prepare("SELECT * FROM audit_events ORDER BY created_at DESC LIMIT ?").all(normalized) as AuditRow[])
+      .map(auditFromRow);
+  }
+
+  getAuditEvent(traceId: string) {
+    const row = this.db.prepare("SELECT * FROM audit_events WHERE trace_id = ?").get(traceId) as AuditRow | undefined;
+    return row ? auditFromRow(row) : null;
   }
 }

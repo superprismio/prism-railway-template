@@ -671,29 +671,30 @@ For successful calls, preserve:
 
 - [x] Seed the approved `http-json.read` connector driver.
 - [x] Add declarative instance capability create.
-- [ ] Add declarative instance capability update/disable.
+- [x] Add declarative instance capability enable/disable.
+- [ ] Add declarative instance capability configuration update.
 - [x] Add connection create/list/replace/revoke.
-- [ ] Add connection test.
+- [x] Add capability test through the configured connection.
 - [x] Keep encrypted secret rows internal and redact admin responses.
 - [x] Add integration connection records.
-- [ ] Add one secret test route.
 - [x] Add admin-safe response redaction.
 
 ### Phase 3: Invoke And Audit
 
-- [ ] Add `POST /invoke`.
-- [ ] Add policy check.
-- [ ] Add audit event writes.
-- [ ] Add usage ledger writes.
-- [ ] Add timeout handling for downstream calls.
+- [x] Add `POST /invoke`.
+- [x] Add default-deny caller grant policy checks.
+- [x] Add audit event writes and read routes.
+- [x] Add warning-only usage ledger writes.
+- [x] Add timeout handling for downstream calls.
 
 ### Phase 4: First Capabilities
 
-- [ ] Execute the constrained `http-json.read` driver through `/invoke`.
+- [x] Execute the constrained `http-json.read` driver through `/invoke`.
 - [ ] Configure one instance-owned read capability on `prism-stack`.
 - [ ] Implement `comms.discord.send_message`.
-- [ ] Add capability-specific input validation.
-- [ ] Add capability-specific output normalization.
+- [x] Add capability-specific query allowlisting and credential mapping.
+- [x] Add DNS pinning, private-address rejection, no redirects, and response limits.
+- [x] Add capability-specific output normalization.
 
 ### Phase 5: Site Admin UI
 
