@@ -33,6 +33,16 @@ The response includes `credentialUrl` and `credentialPath`. Give the admin that
 link and say the credential must be entered in Settings. Never offer to accept
 the credential in chat.
 
+For an existing connection, construct the same stable Settings path from its
+redacted catalog record:
+
+```text
+/admin?tab=settings&settings=gateway&connection=<connection-id>&action=credential&secretName=<secret-name>
+```
+
+Use the connection's existing `secretNames[0]` when present; otherwise use the
+secret name required by the capability authentication mapping.
+
 3. Create non-secret capability configuration with
 `POST /agent/gateway/capabilities`. Chat-created capabilities are disabled by
 default. Include `enabled: true` only when binding to a connection that already
