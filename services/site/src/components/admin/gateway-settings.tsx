@@ -156,6 +156,31 @@ const emptyCapability: CapabilityDraft = {
   headerName: "X-Api-Key",
 };
 
+const plausibleQueryInputSchema = {
+  type: "object",
+  required: ["site_id", "metrics", "date_range"],
+  additionalProperties: false,
+  properties: {
+    site_id: { type: "string", minLength: 1 },
+    metrics: { type: "array", minItems: 1, items: { type: "string" } },
+    date_range: {
+      oneOf: [
+        { type: "string", minLength: 1 },
+        {
+          type: "array",
+          minItems: 2,
+          maxItems: 2,
+          items: { type: "string" },
+        },
+      ],
+    },
+    dimensions: { type: "array", items: { type: "string" } },
+    filters: { type: "array" },
+    include: { type: "object" },
+    pagination: { type: "object" },
+  },
+};
+
 function formatDate(value: string | null | undefined) {
   if (!value) return "Never";
   const date = new Date(value);
@@ -335,6 +360,10 @@ export function GatewaySettings() {
           connectionId: connection.id,
           provider: connection.provider,
           description: capabilityDraft.description.trim(),
+          inputSchema:
+            capabilityDraft.key.trim() === "plausible.stats.query"
+              ? plausibleQueryInputSchema
+              : null,
           driverConfig: {
             baseUrl: capabilityDraft.baseUrl.trim(),
             pathTemplate: capabilityDraft.pathTemplate.trim(),

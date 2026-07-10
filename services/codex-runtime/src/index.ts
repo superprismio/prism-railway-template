@@ -5,6 +5,7 @@ import path from 'node:path';
 import express from 'express';
 import { config } from './config.js';
 import { generateCodexCliReply } from './codex-runtime.js';
+import type { RuntimeCapabilityDescriptor } from './codex-runtime.js';
 import { GatewayClientError } from './gateway-client.js';
 import { listPrismSkills } from './prism-skills.js';
 import { RuntimeCapabilityError } from './runtime-capabilities.js';
@@ -51,7 +52,7 @@ type RuntimeResponseJob = {
     sessionId: string;
     codexThreadId: string | null;
     recentHistory: Array<{ role: string; content: string }>;
-    capabilities: string[];
+    capabilities: RuntimeCapabilityDescriptor[];
     gatewayContext: Record<string, string>;
     metadata: Record<string, unknown>;
   };
@@ -98,21 +99,37 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
         }))
         .filter((entry) => entry.content.trim())
       : [],
-    capabilities: Array.isArray(body.capabilities)
-      ? Array.from(new Set(body.capabilities
-        .map((entry) => {
-          if (typeof entry === 'string') return entry.trim();
-          if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
-            const key = (entry as Record<string, unknown>).key;
-            return typeof key === 'string' ? key.trim() : '';
-          }
-          return '';
-        })
-        .filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key))))
-      : [],
+    capabilities: normalizeRuntimeCapabilities(body.capabilities),
     gatewayContext: normalizeGatewayContext(body.context),
     metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
   };
+}
+
+function normalizeRuntimeCapabilities(value: unknown): RuntimeCapabilityDescriptor[] {
+  if (!Array.isArray(value)) return [];
+  const normalized = value.flatMap((entry): RuntimeCapabilityDescriptor[] => {
+    const record = entry && typeof entry === 'object' && !Array.isArray(entry)
+      ? entry as Record<string, unknown>
+      : {};
+    const key = typeof entry === 'string'
+      ? entry.trim()
+      : typeof record.key === 'string'
+        ? record.key.trim()
+        : '';
+    if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key)) return [];
+    const inputSchema = record.inputSchema && typeof record.inputSchema === 'object' && !Array.isArray(record.inputSchema)
+      ? record.inputSchema as Record<string, unknown>
+      : undefined;
+    return [{
+      key,
+      ...(typeof record.mode === 'string' && record.mode.trim() ? { mode: record.mode.trim().slice(0, 40) } : {}),
+      ...(typeof record.description === 'string' && record.description.trim()
+        ? { description: record.description.trim().slice(0, 500) }
+        : {}),
+      ...(inputSchema ? { inputSchema } : {}),
+    }];
+  });
+  return Array.from(new Map(normalized.map((capability) => [capability.key, capability])).values());
 }
 
 function normalizeGatewayContext(value: unknown) {

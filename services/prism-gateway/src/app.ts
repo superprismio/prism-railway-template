@@ -126,13 +126,26 @@ export function createGatewayApp(dependencies: AppDependencies) {
   app.patch("/capabilities/:key", requireSiteCaller, (request, response) => {
     const body = request.body as Record<string, unknown>;
     const key = routeParam(request.params.key);
-    if (body.enabled === undefined && body.driverConfig === undefined) {
+    if (
+      body.enabled === undefined &&
+      body.driverConfig === undefined &&
+      body.description === undefined &&
+      body.inputSchema === undefined &&
+      body.outputSchema === undefined
+    ) {
       throw new GatewayStoreError("CAPABILITY_UPDATE_REQUIRED", 400);
     }
     let capability = body.driverConfig === undefined
       ? dependencies.store.getCapability(key)
       : dependencies.store.updateCapabilityConfig(key, body.driverConfig);
     if (!capability) throw new GatewayStoreError("CAPABILITY_NOT_FOUND", 404);
+    if (body.description !== undefined || body.inputSchema !== undefined || body.outputSchema !== undefined) {
+      capability = dependencies.store.updateCapabilityMetadata(key, {
+        ...(body.description !== undefined ? { description: textField(body.description, "description", 500) } : {}),
+        ...(body.inputSchema !== undefined ? { inputSchema: optionalSchema(body.inputSchema) } : {}),
+        ...(body.outputSchema !== undefined ? { outputSchema: optionalSchema(body.outputSchema) } : {}),
+      });
+    }
     if (body.enabled !== undefined) {
       if (typeof body.enabled !== "boolean") throw new GatewayStoreError("CAPABILITY_ENABLED_INVALID", 400);
       capability = dependencies.store.setCapabilityEnabled(key, body.enabled);

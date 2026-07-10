@@ -54,10 +54,17 @@ export type CodexRuntimeInput = {
   recentHistory: HistoryEntry[];
   sessionId: string;
   codexThreadId?: string | null;
-  capabilities?: string[];
+  capabilities?: RuntimeCapabilityDescriptor[];
   gatewayContext?: Record<string, string>;
   metadata?: Record<string, unknown>;
   onTrace?: (trace: CodexRuntimeResult['trace']) => void;
+};
+
+export type RuntimeCapabilityDescriptor = {
+  key: string;
+  mode?: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
 };
 
 export type CodexRuntimeResult = {
@@ -690,8 +697,9 @@ async function buildPrompt(input: CodexRuntimeInput, isResume: boolean) {
     sections.push(
       '',
       'Organization capabilities assigned to this runtime job:',
-      input.capabilities.join('\n'),
+      input.capabilities.map((capability) => JSON.stringify(capability)).join('\n'),
       'Invoke an assigned capability by POSTing JSON shaped as {"capability":"...","input":{...}} to $PRISM_RUNTIME_CAPABILITY_URL with header x-runtime-capability-token: $PRISM_RUNTIME_CAPABILITY_TOKEN.',
+      'Follow each capability inputSchema. Include every required property and do not guess that a rejected request is a provider configuration failure when required input was omitted.',
       'Never print, persist, or return the runtime capability token.',
     );
   }
@@ -839,7 +847,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   delete env.PRISM_GATEWAY_TOKEN;
   const capabilityToken = input.capabilities?.length
     ? runtimeCapabilitySessions.create(
-        input.capabilities,
+        input.capabilities.map((capability) => capability.key),
         input.gatewayContext || {},
         config.codexRuntimeTimeoutMs + 60_000,
       )
@@ -847,7 +855,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   if (capabilityToken) {
     env.PRISM_RUNTIME_CAPABILITY_URL = `http://127.0.0.1:${config.port}/v1/runtime/capabilities/invoke`;
     env.PRISM_RUNTIME_CAPABILITY_TOKEN = capabilityToken;
-    env.PRISM_RUNTIME_CAPABILITIES = input.capabilities!.join(',');
+    env.PRISM_RUNTIME_CAPABILITIES = input.capabilities!.map((capability) => capability.key).join(',');
   }
 
   console.log(

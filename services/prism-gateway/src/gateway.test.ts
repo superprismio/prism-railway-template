@@ -216,6 +216,11 @@ test("gateway stores credentials safely and enforces caller identity", async () 
         "x-gateway-token": siteToken,
       },
       body: JSON.stringify({
+        description: "Query analytics with a required site id.",
+        inputSchema: {
+          type: "object",
+          required: ["site_id", "metrics", "date_range"],
+        },
         driverConfig: {
           baseUrl: "https://analytics.example.org",
           pathTemplate: "/api/v2/query",
@@ -231,6 +236,10 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     assert.equal(
       ((updatedCapability.body.capability as Record<string, unknown>).driverConfig as Record<string, unknown>).method,
       "POST",
+    );
+    assert.deepEqual(
+      ((updatedCapability.body.capability as Record<string, unknown>).inputSchema as Record<string, unknown>).required,
+      ["site_id", "metrics", "date_range"],
     );
 
     const audit = await jsonRequest(baseUrl, "/audit-events", {

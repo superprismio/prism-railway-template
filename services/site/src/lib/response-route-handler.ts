@@ -31,7 +31,8 @@ import {
 
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
-import { listInteractiveGatewayCapabilityKeysOrEmpty } from "@/lib/prism-gateway"
+import { listInteractiveGatewayCapabilitiesOrEmpty } from "@/lib/prism-gateway"
+import type { GatewayCapabilityDescriptor } from "@/lib/prism-gateway-policy"
 import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
 
@@ -462,7 +463,7 @@ async function requestCodexRuntimeResponse(input: {
   sessionId: string
   codexThreadId?: string | null
   recentHistory: Array<{ role: string; content: string }>
-  capabilities?: string[]
+  capabilities?: Array<string | GatewayCapabilityDescriptor>
   gatewayContext?: Record<string, string | undefined>
   metadata: Record<string, unknown>
   onProgress?: (progress: {
@@ -482,7 +483,8 @@ async function requestCodexRuntimeResponse(input: {
     sessionId: input.sessionId,
     codexThreadId: input.codexThreadId ?? null,
     recentHistory: input.recentHistory,
-    capabilities: (input.capabilities ?? []).map((key) => ({ key })),
+    capabilities: (input.capabilities ?? []).map((capability) =>
+      typeof capability === "string" ? { key: capability } : capability),
     context: input.gatewayContext ?? {},
     metadata: input.metadata,
   }
@@ -1246,13 +1248,14 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     ]),
   )
   const workflowRequestedCapabilities = requestedCapabilitiesFromAgentConfig(workflowAgentConfig)
+    .map((key): GatewayCapabilityDescriptor => ({ key }))
   const interactiveCapabilities = actorType === "admin"
-    ? await listInteractiveGatewayCapabilityKeysOrEmpty("full")
+    ? await listInteractiveGatewayCapabilitiesOrEmpty("full")
     : []
-  const requestedCapabilities = Array.from(new Set([
-    ...interactiveCapabilities,
+  const requestedCapabilities = Array.from(new Map([
     ...workflowRequestedCapabilities,
-  ]))
+    ...interactiveCapabilities,
+  ].map((capability) => [capability.key, capability])).values())
 
   createAgentMessage({
     sessionId: session.id,

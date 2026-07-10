@@ -137,7 +137,7 @@ function performPinnedJsonRequest(
       }
       if (status < 200 || status >= 300) {
         response.resume();
-        reject(new GatewayDriverError("CAPABILITY_DOWNSTREAM_HTTP_ERROR", status >= 500 || status === 429));
+        reject(new GatewayDriverError(`CAPABILITY_DOWNSTREAM_HTTP_${status || "ERROR"}`, status >= 500 || status === 429));
         return;
       }
       const contentType = String(response.headers["content-type"] || "").toLowerCase();

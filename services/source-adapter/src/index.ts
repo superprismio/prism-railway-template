@@ -1032,24 +1032,50 @@ async function appendSessionMessage(input: {
   });
 }
 
+type RuntimeCapabilityDescriptor = {
+  key: string;
+  mode?: string;
+  description?: string;
+  inputSchema?: JsonObject;
+};
+
 async function resolveInteractiveGatewayCapabilities(input: {
   platform: "discord" | "telegram";
   targetId: string;
   threadId?: string | null;
   groupIds?: string[];
   userId: string;
-}): Promise<string[]> {
+}): Promise<RuntimeCapabilityDescriptor[]> {
   try {
     const payload = await appApiRequest("/agent/gateway/interactive-capabilities", {
       method: "POST",
       body: JSON.stringify(input),
     });
-    return Array.isArray(payload.capabilities)
-      ? Array.from(new Set(payload.capabilities
-        .filter((entry): entry is string => typeof entry === "string")
-        .map((entry) => entry.trim())
-        .filter((entry) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(entry))))
-      : [];
+    const descriptors = Array.isArray(payload.capabilityDescriptors)
+      ? payload.capabilityDescriptors
+      : Array.isArray(payload.capabilities)
+        ? payload.capabilities
+        : [];
+    const normalized = descriptors.flatMap((entry): RuntimeCapabilityDescriptor[] => {
+      if (typeof entry === "string") {
+        const key = entry.trim();
+        return /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key) ? [{ key }] : [];
+      }
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const record = entry as JsonObject;
+      const key = typeof record.key === "string" ? record.key.trim() : "";
+      if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key)) return [];
+      const inputSchema = record.inputSchema && typeof record.inputSchema === "object" && !Array.isArray(record.inputSchema)
+        ? record.inputSchema as JsonObject
+        : undefined;
+      return [{
+        key,
+        ...(typeof record.mode === "string" ? { mode: record.mode.slice(0, 40) } : {}),
+        ...(typeof record.description === "string" ? { description: record.description.slice(0, 500) } : {}),
+        ...(inputSchema ? { inputSchema } : {}),
+      }];
+    });
+    return Array.from(new Map(normalized.map((descriptor) => [descriptor.key, descriptor])).values());
   } catch (error) {
     console.warn("[source-adapter] interactive Gateway capabilities unavailable; continuing without them", describeError(error));
     return [];
@@ -1061,7 +1087,7 @@ async function codexRuntimeRequest(input: {
   sessionId: string;
   codexThreadId: string | null;
   recentHistory: Array<{ role: string; content: string }>;
-  capabilities?: string[];
+  capabilities?: RuntimeCapabilityDescriptor[];
   gatewayContext?: JsonObject;
   metadata: JsonObject;
 }): Promise<{ responseText: string; codexThreadId: string | null }> {

@@ -1,6 +1,8 @@
 import "server-only";
 import {
+  interactiveGatewayCapabilities,
   interactiveGatewayCapabilityKeys,
+  type GatewayCapabilityDescriptor,
   type GatewayCapabilitySummary,
   type InteractiveGatewayMode,
 } from "@/lib/prism-gateway-policy";
@@ -39,11 +41,34 @@ export async function listInteractiveGatewayCapabilityKeys(mode: InteractiveGate
   return interactiveGatewayCapabilityKeys(payload.capabilities ?? [], mode);
 }
 
+export async function listInteractiveGatewayCapabilities(mode: InteractiveGatewayMode) {
+  if (mode === "off") return [];
+  const payload = await prismGatewayRequest<{ capabilities?: GatewayCapabilitySummary[] }>("/capabilities");
+  return interactiveGatewayCapabilities(payload.capabilities ?? [], mode);
+}
+
 export async function listInteractiveGatewayCapabilityKeysOrEmpty(mode: InteractiveGatewayMode) {
   const status = getPrismGatewayStatus();
   if (!status.enabled || !status.configured || mode === "off") return [];
   try {
     return await listInteractiveGatewayCapabilityKeys(mode);
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "prism_gateway.interactive_catalog_unavailable",
+      mode,
+      error: error instanceof Error ? error.message : "PRISM_GATEWAY_CATALOG_FAILED",
+    }));
+    return [];
+  }
+}
+
+export async function listInteractiveGatewayCapabilitiesOrEmpty(
+  mode: InteractiveGatewayMode,
+): Promise<GatewayCapabilityDescriptor[]> {
+  const status = getPrismGatewayStatus();
+  if (!status.enabled || !status.configured || mode === "off") return [];
+  try {
+    return await listInteractiveGatewayCapabilities(mode);
   } catch (error) {
     console.warn(JSON.stringify({
       event: "prism_gateway.interactive_catalog_unavailable",

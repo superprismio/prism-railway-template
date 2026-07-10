@@ -468,6 +468,34 @@ export class GatewayStore {
     return this.getCapability(key)!;
   }
 
+  updateCapabilityMetadata(key: string, input: {
+    description?: string;
+    inputSchema?: Record<string, unknown> | null;
+    outputSchema?: Record<string, unknown> | null;
+  }) {
+    const capability = this.getCapability(key);
+    if (!capability) throw new GatewayStoreError("CAPABILITY_NOT_FOUND", 404);
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    if (input.description !== undefined) {
+      updates.push("description = ?");
+      values.push(input.description);
+    }
+    if (input.inputSchema !== undefined) {
+      updates.push("input_schema_json = ?");
+      values.push(input.inputSchema ? JSON.stringify(input.inputSchema) : null);
+    }
+    if (input.outputSchema !== undefined) {
+      updates.push("output_schema_json = ?");
+      values.push(input.outputSchema ? JSON.stringify(input.outputSchema) : null);
+    }
+    if (!updates.length) return capability;
+    updates.push("updated_at = ?");
+    values.push(new Date().toISOString(), key);
+    this.db.prepare(`UPDATE capabilities SET ${updates.join(", ")} WHERE key = ?`).run(...values);
+    return this.getCapability(key)!;
+  }
+
   createCapability(input: {
     key: string;
     driverKey: string;
