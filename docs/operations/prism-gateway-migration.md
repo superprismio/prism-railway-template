@@ -179,6 +179,24 @@ Completed on `prism-stack` on 2026-07-10:
 - retained Gateway audit trace `800fd6f7-d80b-40c4-873b-d48ce487f81f` as the
   post-removal proof
 
+### Broad MCP Toolsets
+
+Completed on `prism-stack` on 2026-07-10:
+
+- added protocol-aware broad MCP discovery (`tools/list`) and invocation
+  (`tools/call`) to Gateway toolset profiles
+- kept MCP argument bodies out of Gateway audit summaries
+- created `nextcrm.admin`, discovered 113 tools, and validated
+  `crm_list_accounts` through Codex Runtime
+- removed `NEXTCRM_API_TOKEN`, redeployed Codex Runtime, and retained audit trace
+  `8b97a83e-68aa-42e5-a9d2-611b19ffe7d9` as post-removal proof
+- created `clawbank.admin`, discovered 151 tools, and validated the read-only
+  `get_me` tool through Codex Runtime
+- removed `CLAWBANK_API_KEY`, redeployed Codex Runtime, and retained audit trace
+  `5c1c114f-4349-41e2-8b39-91cdec092b12` as post-removal proof
+- updated Runtime guidance to use Node.js built-in `fetch` because the Runtime
+  image does not guarantee that `curl` is installed
+
 ## Working Branch Pilot
 
 Use one implementation branch based on current `origin/main`. Railway can point
