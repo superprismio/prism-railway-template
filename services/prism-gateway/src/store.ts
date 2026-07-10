@@ -59,6 +59,7 @@ type ToolsetProfileRow = {
   protocol: GatewayToolsetProfile["protocol"];
   discovery_url: string;
   auth_config_json: string;
+  env_bindings_json: string;
   description: string;
   enabled: number;
   last_discovered_at: string | null;
@@ -343,6 +344,7 @@ function toolsetProfileFromRow(row: ToolsetProfileRow): GatewayToolsetProfile {
     protocol: row.protocol,
     discoveryUrl: row.discovery_url,
     auth: (parseJson(row.auth_config_json) || { type: "none" }) as ToolsetAuthConfig,
+    envBindings: (parseJson(row.env_bindings_json) || {}) as Record<string, string>,
     description: row.description,
     enabled: row.enabled === 1,
     lastDiscoveredAt: row.last_discovered_at,
@@ -472,6 +474,7 @@ export class GatewayStore {
     protocol: GatewayToolsetProfile["protocol"];
     discoveryUrl: string;
     auth: ToolsetAuthConfig;
+    envBindings?: Record<string, string>;
     description: string;
     enabled?: boolean;
   }) {
@@ -490,9 +493,9 @@ export class GatewayStore {
     try {
       this.db.prepare(`
         INSERT INTO toolset_profiles
-          (key, connection_id, protocol, discovery_url, auth_config_json, description, enabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(input.key, input.connectionId, input.protocol, discoveryUrl, JSON.stringify(input.auth), input.description, input.enabled === false ? 0 : 1, now, now);
+          (key, connection_id, protocol, discovery_url, auth_config_json, env_bindings_json, description, enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(input.key, input.connectionId, input.protocol, discoveryUrl, JSON.stringify(input.auth), JSON.stringify(input.envBindings || {}), input.description, input.enabled === false ? 0 : 1, now, now);
     } catch (error) {
       if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
         throw new GatewayStoreError("TOOLSET_ALREADY_EXISTS", 409);
@@ -502,7 +505,7 @@ export class GatewayStore {
     return this.getToolsetProfile(input.key)!;
   }
 
-  updateToolsetProfile(key: string, input: { description?: string; enabled?: boolean }) {
+  updateToolsetProfile(key: string, input: { description?: string; enabled?: boolean; envBindings?: Record<string, string> }) {
     if (!this.getToolsetProfile(key)) throw new GatewayStoreError("TOOLSET_NOT_FOUND", 404);
     const updates: string[] = [];
     const values: unknown[] = [];
@@ -513,6 +516,10 @@ export class GatewayStore {
     if (input.enabled !== undefined) {
       updates.push("enabled = ?");
       values.push(input.enabled ? 1 : 0);
+    }
+    if (input.envBindings !== undefined) {
+      updates.push("env_bindings_json = ?");
+      values.push(JSON.stringify(input.envBindings));
     }
     if (!updates.length) throw new GatewayStoreError("TOOLSET_UPDATE_REQUIRED", 400);
     updates.push("updated_at = ?");

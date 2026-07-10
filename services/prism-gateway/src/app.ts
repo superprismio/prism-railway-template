@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import express, { type NextFunction, type Request, type Response } from "express";
-import { gatewayAuth, requireSiteCaller } from "./auth.js";
+import { gatewayAuth, requireRuntimeCaller, requireSiteCaller } from "./auth.js";
 import { GatewayInvoker } from "./invoke.js";
 import { GatewayStore, GatewayStoreError } from "./store.js";
 import { GatewayDriverError } from "./http-json-read.js";
@@ -38,6 +38,20 @@ function credentialsField(value: unknown) {
     credentials[key] = candidate;
   }
   return credentials;
+}
+
+function envBindingsField(value: unknown) {
+  if (value === undefined) return {};
+  const input = recordField(value, "TOOLSET_ENV_BINDINGS_INVALID");
+  const bindings: Record<string, string> = {};
+  for (const [envName, secretName] of Object.entries(input)) {
+    if (!/^[A-Z_][A-Z0-9_]{0,119}$/.test(envName) || typeof secretName !== "string" || !/^[A-Za-z][A-Za-z0-9_-]{0,119}$/.test(secretName)) {
+      throw new GatewayStoreError("TOOLSET_ENV_BINDINGS_INVALID", 400);
+    }
+    bindings[envName] = secretName;
+  }
+  if (Object.keys(bindings).length > 20) throw new GatewayStoreError("TOOLSET_ENV_BINDINGS_INVALID", 400);
+  return bindings;
 }
 
 function optionalSchema(value: unknown) {
@@ -179,6 +193,7 @@ export function createGatewayApp(dependencies: AppDependencies) {
       protocol,
       discoveryUrl: textField(body.discoveryUrl, "discovery_url", 2000),
       auth: toolsetAuthField(body.auth ?? { type: "none" }),
+      envBindings: envBindingsField(body.envBindings),
       description: textField(body.description, "description", 500),
       enabled: body.enabled !== false,
     });
@@ -193,6 +208,7 @@ export function createGatewayApp(dependencies: AppDependencies) {
     const toolset = dependencies.store.updateToolsetProfile(routeParam(request.params.key), {
       ...(body.description !== undefined ? { description: textField(body.description, "description", 500) } : {}),
       ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+      ...(body.envBindings !== undefined ? { envBindings: envBindingsField(body.envBindings) } : {}),
     });
     response.json({ ok: true, toolset });
   });
@@ -245,6 +261,41 @@ export function createGatewayApp(dependencies: AppDependencies) {
 
   app.post("/toolsets/:key/describe", asyncRoute(async (request, response) => relayToolset(request, response, true)));
   app.post("/toolsets/:key/request", asyncRoute(async (request, response) => relayToolset(request, response, false)));
+
+  app.post("/toolsets/lease", requireRuntimeCaller, (request, response) => {
+    const body = request.body as Record<string, unknown>;
+    const keys = Array.isArray(body.toolsets)
+      ? Array.from(new Set(body.toolsets.filter((key): key is string => typeof key === "string" && /^[a-z][a-z0-9.-]{1,119}$/.test(key))))
+      : [];
+    if (!keys.length || keys.length > 20) throw new GatewayStoreError("TOOLSET_LEASE_KEYS_INVALID", 400);
+    const context = invocationContext(body.context);
+    const caller = response.locals.gatewayCaller as GatewayCaller;
+    const env: Record<string, string> = {};
+    const leased: string[] = [];
+    for (const key of keys) {
+      const profile = dependencies.store.getToolsetProfile(key);
+      if (!profile || !profile.enabled || profile.protocol !== "adapter") {
+        throw new GatewayStoreError("TOOLSET_LEASE_PROFILE_UNAVAILABLE", 409);
+      }
+      const credentials = dependencies.store.getConnectionCredentials(profile.connectionId);
+      for (const [envName, secretName] of Object.entries(profile.envBindings)) {
+        const value = credentials[secretName];
+        if (!value) throw new GatewayStoreError("TOOLSET_LEASE_SECRET_MISSING", 409);
+        if (env[envName] !== undefined && env[envName] !== value) {
+          throw new GatewayStoreError("TOOLSET_LEASE_ENV_COLLISION", 409);
+        }
+        env[envName] = value;
+      }
+      dependencies.store.recordInvocation({
+        traceId: randomUUID(), capabilityKey: `toolset:${key}`, caller, context,
+        status: "succeeded", policyDecision: "runtime_credential_lease",
+        latencyMs: 0, inputSummary: { action: "lease" },
+        outputSummary: { envNames: Object.keys(profile.envBindings).sort() }, units: 1,
+      });
+      leased.push(key);
+    }
+    response.json({ ok: true, env, leasedToolsets: leased });
+  });
 
   app.post("/capabilities", requireSiteCaller, (request, response) => {
     const body = request.body as Record<string, unknown>;

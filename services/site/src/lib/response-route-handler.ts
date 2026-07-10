@@ -1270,8 +1270,11 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     ...workflowRequestedCapabilities,
     ...interactiveCapabilities,
   ].map((capability) => [capability.key, capability])).values())
-  const workflowRequestedToolsets = requestedToolsetsFromAgentConfig(workflowAgentConfig).map((key) => ({ key }))
-  const interactiveToolsets = actorType === "admin" ? await listEnabledGatewayToolsetsOrEmpty() : []
+  const enabledToolsets = await listEnabledGatewayToolsetsOrEmpty()
+  const workflowRequestedToolsets = requestedToolsetsFromAgentConfig(workflowAgentConfig).map((key) =>
+    enabledToolsets.find((toolset) => toolset.key === key) ?? { key },
+  )
+  const interactiveToolsets = actorType === "admin" ? enabledToolsets : []
   const requestedToolsets = Array.from(new Map([
     ...workflowRequestedToolsets,
     ...interactiveToolsets,

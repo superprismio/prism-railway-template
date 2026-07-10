@@ -85,3 +85,22 @@ test('gateway client is inert while the runtime flag is disabled', async () => {
     (error: unknown) => error instanceof GatewayClientError && error.code === 'PRISM_GATEWAY_DISABLED',
   );
 });
+
+test('gateway client leases adapter credentials without changing their names', async () => {
+  let observedBody: Record<string, unknown> = {};
+  const client = new PrismGatewayClient(
+    { enabled: true, baseUrl: 'http://prism-gateway.internal:3040', token: 'runtime-secret', timeoutMs: 5000 },
+    (async (url, init) => {
+      assert.equal(String(url), 'http://prism-gateway.internal:3040/toolsets/lease');
+      observedBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        ok: true,
+        env: { AWS_ACCESS_KEY_ID: 'leased-access', AWS_SECRET_ACCESS_KEY: 'leased-secret' },
+        leasedToolsets: ['storage.s3'],
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch,
+  );
+  const env = await client.leaseToolsets({ toolsets: ['storage.s3'], context: { runtimeJobId: 'job-1' } });
+  assert.deepEqual(observedBody, { toolsets: ['storage.s3'], context: { runtimeJobId: 'job-1' } });
+  assert.deepEqual(env, { AWS_ACCESS_KEY_ID: 'leased-access', AWS_SECRET_ACCESS_KEY: 'leased-secret' });
+});

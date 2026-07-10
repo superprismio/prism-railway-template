@@ -35,3 +35,12 @@ export function requireSiteCaller(_request: Request, response: Response, next: N
   }
   next();
 }
+
+export function requireRuntimeCaller(_request: Request, response: Response, next: NextFunction) {
+  const caller = response.locals.gatewayCaller as GatewayCaller | undefined;
+  if (caller?.kind !== "runtime") {
+    response.status(403).json({ ok: false, error: "GATEWAY_RUNTIME_CALLER_REQUIRED" });
+    return;
+  }
+  next();
+}

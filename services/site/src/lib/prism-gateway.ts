@@ -79,7 +79,10 @@ export async function listInteractiveGatewayCapabilitiesOrEmpty(
   }
 }
 
-export async function listEnabledGatewayToolsetsOrEmpty() {
+export async function listEnabledGatewayToolsetsOrEmpty(): Promise<Array<{
+  key: string;
+  protocol?: "openapi" | "mcp" | "http" | "adapter";
+}>> {
   const status = getPrismGatewayStatus();
   if (!status.enabled || !status.configured) return [];
   try {

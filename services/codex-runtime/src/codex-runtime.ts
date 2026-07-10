@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
 import { loadRelevantPrismSkills } from './prism-skills.js';
-import { runtimeCapabilitySessions, runtimeToolsetSessions } from './runtime-gateway.js';
+import { gatewayClient, runtimeCapabilitySessions, runtimeToolsetSessions } from './runtime-gateway.js';
 import { mergeSkillCapabilityRequirements } from './capability-requirements.js';
 
 type HistoryEntry = {
@@ -840,10 +840,17 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     input.capabilities ?? [],
     prismSkills.selectedSkills,
   );
-  const effectiveToolsets = Array.from(new Map([
+  const effectiveToolsets = Array.from(new Map<string, RuntimeToolsetDescriptor>([
     ...(input.toolsets ?? []),
     ...prismSkills.selectedSkills.flatMap((skill) => skill.requiredToolsets.map((key) => ({ key }))),
   ].map((toolset) => [toolset.key, toolset])).values());
+  const adapterToolsets = effectiveToolsets.filter((toolset) => toolset.protocol === 'adapter');
+  const leasedEnv = adapterToolsets.length
+    ? await gatewayClient.leaseToolsets({
+        toolsets: adapterToolsets.map((toolset) => toolset.key),
+        context: input.gatewayContext || {},
+      })
+    : {};
   const prompt = buildPrompt({ ...input, capabilities: effectiveCapabilities, toolsets: effectiveToolsets }, isResume, prismSkills);
   const args = isResume
     ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
@@ -861,6 +868,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    ...leasedEnv,
     GIT_AUTHOR_NAME: config.gitAuthorName,
     GIT_AUTHOR_EMAIL: config.gitAuthorEmail,
     GIT_COMMITTER_NAME: config.gitCommitterName,

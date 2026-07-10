@@ -34,6 +34,7 @@ export type GatewayToolsetProfile = {
   protocol: "openapi" | "mcp" | "http" | "adapter";
   discoveryUrl: string;
   auth: ToolsetAuthConfig;
+  envBindings: Record<string, string>;
   description: string;
   enabled: boolean;
   lastDiscoveredAt: string | null;

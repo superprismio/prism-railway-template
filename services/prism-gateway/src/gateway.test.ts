@@ -219,6 +219,34 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     assert.equal(calledMcp.response.status, 200);
     assert.deepEqual(calledMcp.body.result, { accounts: [] });
 
+    const adapterToolset = await jsonRequest(baseUrl, "/toolsets", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
+      body: JSON.stringify({
+        key: "legacy.env",
+        connectionId,
+        protocol: "adapter",
+        discoveryUrl: "https://adapter.invalid/credential-lease",
+        auth: { type: "none" },
+        envBindings: { LEGACY_API_KEY: "apiKey" },
+        description: "Job-scoped compatibility lease",
+      }),
+    });
+    assert.equal(adapterToolset.response.status, 201);
+    const siteCannotLease = await jsonRequest(baseUrl, "/toolsets/lease", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
+      body: JSON.stringify({ toolsets: ["legacy.env"] }),
+    });
+    assert.equal(siteCannotLease.response.status, 403);
+    const leased = await jsonRequest(baseUrl, "/toolsets/lease", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+      body: JSON.stringify({ toolsets: ["legacy.env"], context: { runtimeJobId: "job-1" } }),
+    });
+    assert.equal(leased.response.status, 200);
+    assert.deepEqual(leased.body.env, { LEGACY_API_KEY: plaintext });
+
     const toolsetUpdated = await jsonRequest(baseUrl, "/toolsets/portal.admin", {
       method: "PATCH",
       headers: {
@@ -410,7 +438,7 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(audit.response.status, 200);
     const events = audit.body.events as Array<Record<string, unknown>>;
-    assert.equal(events.length, 7);
+    assert.equal(events.length, 8);
     assert.equal(JSON.stringify(events).includes(plaintext), false);
     assert.equal(JSON.stringify(events).includes('"limit":5'), false);
 

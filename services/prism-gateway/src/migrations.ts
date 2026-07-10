@@ -140,4 +140,10 @@ export const gatewayMigrations: GatewayMigration[] = [
       ALTER TABLE toolset_profiles ADD COLUMN auth_config_json TEXT NOT NULL DEFAULT '{"type":"none"}';
     `,
   },
+  {
+    name: "004_toolset_env_bindings",
+    sql: `
+      ALTER TABLE toolset_profiles ADD COLUMN env_bindings_json TEXT NOT NULL DEFAULT '{}';
+    `,
+  },
 ];
