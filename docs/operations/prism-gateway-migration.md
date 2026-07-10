@@ -1,6 +1,6 @@
 # Prism Gateway Migration
 
-Status: pre-implementation runbook
+Status: active migration runbook
 
 Related plan: [Prism Gateway MVP Implementation Plan](../features/prism-gateway-mvp-implementation-plan.md)
 
@@ -32,6 +32,20 @@ bash scripts/railway-prism-gateway-preflight.sh
 
 The script reports service wiring and relevant variable names only. It must not
 print values.
+
+Generate a grouped, non-secret migration plan for Codex Runtime:
+
+```bash
+node scripts/railway-prism-gateway-migration-plan.mjs codex-runtime \
+  > /tmp/prism-gateway-migration-plan.json
+```
+
+The planner classifies known integration credential groups, retained
+service/runtime credentials, non-secret configuration, and repository
+references. It reads Railway variable JSON in-process but emits names only.
+Review `unclassifiedSensitiveVariables` before making changes. The plan does
+not copy credentials, create broad profiles with guessed protocols, or remove
+variables.
 
 For the first production pilot, confirm:
 
@@ -224,6 +238,13 @@ Move credentials one at a time:
     repeat Doctor and the execution matrix.
 14. Document the migrated variable and tested callers in the instance's
     environment delta history.
+
+Multiple pending connections may be prepared before step 2. Site Settings then
+shows one **Complete setup** action that accepts all missing credentials in a
+single admin session. The batch request sends secret values directly from Site
+to Gateway, never through chat or an agent route. Validation and legacy variable
+removal remain per integration so one failed provider cannot invalidate the
+others silently.
 
 The toolset declaration is a dependency, not a downstream permission model.
 Codex Runtime adds skill requirements to a short-lived Gateway session; Gateway
