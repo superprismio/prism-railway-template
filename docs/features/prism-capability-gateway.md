@@ -179,15 +179,17 @@ of an OpenAPI or MCP specification.
 
 ### OpenAPI
 
-The runtime receives tools generated from the downstream OpenAPI document. It
-invokes an operation through the assigned profile; Gateway sends the request to
-the fixed origin and injects authentication.
+The runtime can read the downstream OpenAPI document through its assigned
+profile. Skills use that canonical document for API-specific discovery and send
+requests through the profile's generic fixed-origin relay. Gateway injects
+authentication but does not maintain a second operation catalog.
 
 ```json
 {
   "toolset": "portal.admin",
-  "operationId": "createPost",
-  "arguments": {
+  "request": {
+    "method": "POST",
+    "path": "/api/posts",
     "body": {
       "title": "Draft title",
       "_status": "draft"
@@ -235,7 +237,7 @@ Gateway owns only:
 - provider authentication/session establishment
 - caller service authentication
 - short-lived profile assignment verification
-- OpenAPI/MCP discovery and authenticated relay
+- safe access to canonical OpenAPI/MCP descriptions and authenticated relay
 - secret redaction
 - connection health, replacement, and revocation
 - basic invocation audit

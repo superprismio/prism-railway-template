@@ -151,15 +151,16 @@ tokens, or secret-bearing response bodies.
 
 ### OpenAPI
 
-- fetch a specification from a fixed configured location
-- cache a normalized operation catalog
-- expose generated tools to runtimes
-- construct downstream requests from operation arguments
+- expose the specification from a fixed configured location
+- let skills and runtimes inspect the specification when needed
+- provide a generic fixed-origin request relay
 - inject connection authentication
 - keep origin fixed
 - let the downstream service validate request bodies and enforce RBAC
 
-Do not manually reproduce operation schemas in Gateway.
+Do not persist a second normalized operation catalog or manually reproduce
+operation schemas in Gateway. Skills provide domain guidance and may identify
+useful operation IDs, but the downstream specification remains canonical.
 
 ### MCP
 
@@ -270,9 +271,11 @@ complete.
 - [ ] Add Doctor checks for missing or disabled required toolsets.
 - [ ] Keep `metadata.gateway-capabilities` compatibility.
 
-### Phase B: Discovery
+### Phase B: Toolset Relay
 
-- [ ] Implement OpenAPI fetch, validation, normalization, and cache.
+- [ ] Expose a fixed OpenAPI document through an assigned toolset session.
+- [ ] Implement a generic authenticated fixed-origin request relay.
+- [ ] Let skills and runtimes perform API-specific discovery from the canonical specification.
 - [ ] Implement broad MCP discovery using the fixed connection endpoint.
 - [ ] Expose discovered tool descriptors to Codex Runtime.
 - [ ] Add refresh and safe discovery-error reporting.
