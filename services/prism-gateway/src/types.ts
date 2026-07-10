@@ -45,7 +45,8 @@ export type GatewayToolsetProfile = {
 export type ToolsetAuthConfig =
   | { type: "none" }
   | { type: "bearer"; secretName: string }
-  | { type: "api-key"; secretName: string; headerName: string };
+  | { type: "api-key"; secretName: string; headerName: string }
+  | { type: "payload-login"; emailSecretName: string; passwordSecretName: string; loginPath: string };
 
 export type GatewayCapability = {
   key: string;

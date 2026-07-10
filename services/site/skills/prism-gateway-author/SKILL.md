@@ -31,6 +31,18 @@ non-secret authentication mapping, for example:
 }
 ```
 
+For Payload identities that use email/password login, bind both encrypted
+connection fields without exposing the resulting JWT:
+
+```json
+"auth": {
+  "type": "payload-login",
+  "emailSecretName": "email",
+  "passwordSecretName": "password",
+  "loginPath": "/api/users/login"
+}
+```
+
 Do not compensate for missing provider documentation by rebuilding the API as
 dozens of compatibility capabilities. The assigned agent can inspect the
 canonical document and use flexible same-origin requests.

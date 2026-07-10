@@ -190,7 +190,14 @@ export type PrismGatewayToolsetProfile = {
   connectionId: string;
   protocol: "openapi" | "mcp" | "http" | "adapter";
   discoveryUrl: string;
-  auth: { type: "none" | "bearer" | "api-key"; secretName?: string; headerName?: string };
+  auth: {
+    type: "none" | "bearer" | "api-key" | "payload-login";
+    secretName?: string;
+    headerName?: string;
+    emailSecretName?: string;
+    passwordSecretName?: string;
+    loginPath?: string;
+  };
   description: string;
   enabled: boolean;
   lastDiscoveredAt?: string | null;

@@ -54,6 +54,17 @@ function toolsetAuthField(value: unknown) {
   }
   const auth = value as Record<string, unknown>;
   if (auth.type === "none") return { type: "none" } as const;
+  if (auth.type === "payload-login") {
+    const emailSecretName = textField(auth.emailSecretName, "toolset_auth_email_secret_name", 64);
+    const passwordSecretName = textField(auth.passwordSecretName, "toolset_auth_password_secret_name", 64);
+    const loginPath = typeof auth.loginPath === "string" && auth.loginPath.trim() ? auth.loginPath.trim() : "/api/users/login";
+    if (
+      !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(emailSecretName)
+      || !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(passwordSecretName)
+      || !loginPath.startsWith("/") || loginPath.startsWith("//") || loginPath.includes("\\")
+    ) throw new GatewayStoreError("TOOLSET_AUTH_INVALID", 400);
+    return { type: "payload-login", emailSecretName, passwordSecretName, loginPath } as const;
+  }
   const secretName = textField(auth.secretName, "toolset_auth_secret_name", 64);
   if (!/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(secretName)) throw new GatewayStoreError("TOOLSET_AUTH_INVALID", 400);
   if (auth.type === "bearer") return { type: "bearer", secretName } as const;

@@ -38,13 +38,21 @@ function targetUrl(profile: GatewayToolsetProfile, request?: ToolsetRequest) {
   return url;
 }
 
-function requestHeaders(profile: GatewayToolsetProfile, credentials: Record<string, string>, body: string | null) {
+function requestHeaders(
+  profile: GatewayToolsetProfile,
+  credentials: Record<string, string>,
+  body: string | null,
+  payloadToken?: string,
+) {
   const headers: Record<string, string> = { accept: "application/json, text/plain;q=0.9", "user-agent": "prism-gateway/0.1" };
   if (body !== null) {
     headers["content-type"] = "application/json";
     headers["content-length"] = String(Buffer.byteLength(body));
   }
-  if (profile.auth.type !== "none") {
+  if (profile.auth.type === "payload-login") {
+    if (!payloadToken) throw new GatewayDriverError("TOOLSET_PAYLOAD_TOKEN_MISSING", false);
+    headers.authorization = `JWT ${payloadToken}`;
+  } else if (profile.auth.type !== "none") {
     const secret = credentials[profile.auth.secretName];
     if (!secret) throw new GatewayDriverError("TOOLSET_CONNECTION_SECRET_MISSING", false);
     if (profile.auth.type === "bearer") headers.authorization = `Bearer ${secret}`;
@@ -75,7 +83,25 @@ export async function executeToolsetRequest(
   const method = request?.method ?? "GET";
   const body = request && request.body !== undefined ? JSON.stringify(request.body) : null;
   if (body !== null && Buffer.byteLength(body) > 1_000_000) throw new GatewayDriverError("TOOLSET_BODY_TOO_LARGE", false);
-  const headers = requestHeaders(profile, credentials, body);
+  let payloadToken: string | undefined;
+  if (profile.auth.type === "payload-login") {
+    const email = credentials[profile.auth.emailSecretName];
+    const password = credentials[profile.auth.passwordSecretName];
+    if (!email || !password) throw new GatewayDriverError("TOOLSET_CONNECTION_SECRET_MISSING", false);
+    const login = await executeToolsetRequest(
+      { ...profile, auth: { type: "none" } },
+      {},
+      { method: "POST", path: profile.auth.loginPath, body: { email, password } },
+    );
+    const loginBody = login.body && typeof login.body === "object" && !Array.isArray(login.body)
+      ? login.body as Record<string, unknown>
+      : {};
+    if (login.status < 200 || login.status >= 300 || typeof loginBody.token !== "string" || !loginBody.token) {
+      throw new GatewayDriverError("TOOLSET_PAYLOAD_LOGIN_FAILED", login.status >= 500 || login.status === 429);
+    }
+    payloadToken = loginBody.token;
+  }
+  const headers = requestHeaders(profile, credentials, body, payloadToken);
   const addresses = await publicAddresses(url.hostname);
 
   return new Promise((resolve, reject) => {
