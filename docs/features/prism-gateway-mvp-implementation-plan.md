@@ -263,10 +263,11 @@ complete.
 
 ### Phase A: Profile Contract
 
-- [ ] Add toolset-profile types and persistence.
-- [ ] Add create/list/update/disable profile APIs.
+- [x] Add toolset-profile types and persistence.
+- [x] Add create/list/update/disable profile APIs.
 - [ ] Add profile assignments compatible with existing runtime sessions.
-- [ ] Add `metadata.gateway-toolsets` skill parsing and Doctor checks.
+- [x] Add `metadata.gateway-toolsets` skill parsing.
+- [ ] Add Doctor checks for missing or disabled required toolsets.
 - [ ] Keep `metadata.gateway-capabilities` compatibility.
 
 ### Phase B: Discovery

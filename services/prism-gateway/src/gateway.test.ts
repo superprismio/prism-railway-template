@@ -108,6 +108,68 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     assert.deepEqual(connection.secretNames, ["apiKey"]);
     assert.equal(store.getConnectionCredentials(connectionId).apiKey, plaintext);
 
+    const privateToolset = await jsonRequest(baseUrl, "/toolsets", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-gateway-token": siteToken,
+      },
+      body: JSON.stringify({
+        key: "portal.private",
+        connectionId,
+        protocol: "openapi",
+        discoveryUrl: "https://127.0.0.1/openapi.json",
+        description: "Private destination must be rejected",
+      }),
+    });
+    assert.equal(privateToolset.response.status, 400);
+    assert.equal(privateToolset.body.error, "TOOLSET_DISCOVERY_URL_PRIVATE_HOST_FORBIDDEN");
+
+    const toolsetCreated = await jsonRequest(baseUrl, "/toolsets", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-gateway-token": siteToken,
+      },
+      body: JSON.stringify({
+        key: "portal.admin",
+        connectionId,
+        protocol: "openapi",
+        discoveryUrl: "https://portal.example.org/openapi.json",
+        description: "Portal administrator toolset",
+      }),
+    });
+    assert.equal(toolsetCreated.response.status, 201);
+    assert.equal((toolsetCreated.body.toolset as Record<string, unknown>).protocol, "openapi");
+    assert.deepEqual(store.getConnection(connectionId)?.toolsetKeys, ["portal.admin"]);
+
+    const runtimeCannotCreateToolset = await jsonRequest(baseUrl, "/toolsets", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-gateway-token": codexToken,
+      },
+      body: JSON.stringify({
+        key: "portal.runtime",
+        connectionId,
+        protocol: "openapi",
+        discoveryUrl: "https://portal.example.org/openapi.json",
+        description: "Forbidden runtime profile",
+      }),
+    });
+    assert.equal(runtimeCannotCreateToolset.response.status, 403);
+
+    const toolsetUpdated = await jsonRequest(baseUrl, "/toolsets/portal.admin", {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        "x-gateway-token": siteToken,
+      },
+      body: JSON.stringify({ enabled: false }),
+    });
+    assert.equal(toolsetUpdated.response.status, 200);
+    assert.equal((toolsetUpdated.body.toolset as Record<string, unknown>).enabled, false);
+
     const encryptedRow = db.prepare(
       "SELECT encrypted_value AS encryptedValue FROM encrypted_secrets WHERE connection_id = ?",
     ).get(connectionId) as { encryptedValue: string };

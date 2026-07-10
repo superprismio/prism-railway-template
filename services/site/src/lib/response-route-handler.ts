@@ -31,7 +31,7 @@ import {
 
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
-import { listInteractiveGatewayCapabilitiesOrEmpty } from "@/lib/prism-gateway"
+import { listEnabledGatewayToolsetsOrEmpty, listInteractiveGatewayCapabilitiesOrEmpty } from "@/lib/prism-gateway"
 import type { GatewayCapabilityDescriptor } from "@/lib/prism-gateway-policy"
 import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
@@ -420,6 +420,18 @@ function requestedCapabilitiesFromAgentConfig(config: unknown) {
     .filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key))))
 }
 
+function requestedToolsetsFromAgentConfig(config: unknown) {
+  if (!isRecord(config)) return []
+  const toolsets = Array.isArray(config.gatewayToolsets)
+    ? config.gatewayToolsets
+    : Array.isArray(config.toolsets)
+      ? config.toolsets
+      : []
+  return Array.from(new Set(toolsets
+    .map((entry) => typeof entry === "string" ? entry.trim() : isRecord(entry) && typeof entry.key === "string" ? entry.key.trim() : "")
+    .filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key))))
+}
+
 function summarizeGitPushState(trace: RuntimeTraceEntry[] | undefined) {
   if (!Array.isArray(trace) || !trace.length) {
     return {
@@ -464,6 +476,7 @@ async function requestCodexRuntimeResponse(input: {
   codexThreadId?: string | null
   recentHistory: Array<{ role: string; content: string }>
   capabilities?: Array<string | GatewayCapabilityDescriptor>
+  toolsets?: Array<{ key: string; protocol?: "openapi" | "mcp" | "http" | "adapter" }>
   gatewayContext?: Record<string, string | undefined>
   metadata: Record<string, unknown>
   onProgress?: (progress: {
@@ -485,6 +498,7 @@ async function requestCodexRuntimeResponse(input: {
     recentHistory: input.recentHistory,
     capabilities: (input.capabilities ?? []).map((capability) =>
       typeof capability === "string" ? { key: capability } : capability),
+    toolsets: input.toolsets ?? [],
     context: input.gatewayContext ?? {},
     metadata: input.metadata,
   }
@@ -1256,6 +1270,12 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     ...workflowRequestedCapabilities,
     ...interactiveCapabilities,
   ].map((capability) => [capability.key, capability])).values())
+  const workflowRequestedToolsets = requestedToolsetsFromAgentConfig(workflowAgentConfig).map((key) => ({ key }))
+  const interactiveToolsets = actorType === "admin" ? await listEnabledGatewayToolsetsOrEmpty() : []
+  const requestedToolsets = Array.from(new Map([
+    ...workflowRequestedToolsets,
+    ...interactiveToolsets,
+  ].map((toolset) => [toolset.key, toolset])).values())
 
   createAgentMessage({
     sessionId: session.id,
@@ -1443,6 +1463,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       codexThreadId: typeof session.meta?.codexThreadId === "string" ? session.meta.codexThreadId : null,
       recentHistory,
       capabilities: requestedCapabilities,
+      toolsets: requestedToolsets,
       gatewayContext: {
         delegatedActorId: actorType === "admin" ? "admin-console" : undefined,
         requestId: activeLinkedChangeRequestId ?? undefined,

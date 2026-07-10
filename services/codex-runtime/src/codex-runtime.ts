@@ -56,9 +56,15 @@ export type CodexRuntimeInput = {
   sessionId: string;
   codexThreadId?: string | null;
   capabilities?: RuntimeCapabilityDescriptor[];
+  toolsets?: RuntimeToolsetDescriptor[];
   gatewayContext?: Record<string, string>;
   metadata?: Record<string, unknown>;
   onTrace?: (trace: CodexRuntimeResult['trace']) => void;
+};
+
+export type RuntimeToolsetDescriptor = {
+  key: string;
+  protocol?: "openapi" | "mcp" | "http" | "adapter";
 };
 
 export type RuntimeCapabilityDescriptor = {
@@ -710,6 +716,15 @@ function buildPrompt(
     );
   }
 
+  if (input.toolsets?.length) {
+    sections.push(
+      '',
+      'Organization toolset profiles assigned to this runtime job:',
+      input.toolsets.map((toolset) => JSON.stringify(toolset)).join('\n'),
+      'These profiles describe credential-backed tool surfaces. Use only runtime tool endpoints explicitly exposed for them; profile assignment never exposes the stored credential.',
+    );
+  }
+
   if (availableSkillsSummary) {
     sections.push('', 'Available Prism skills:', availableSkillsSummary);
   }
@@ -823,7 +838,11 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     input.capabilities ?? [],
     prismSkills.selectedSkills,
   );
-  const prompt = buildPrompt({ ...input, capabilities: effectiveCapabilities }, isResume, prismSkills);
+  const effectiveToolsets = Array.from(new Map([
+    ...(input.toolsets ?? []),
+    ...prismSkills.selectedSkills.flatMap((skill) => skill.requiredToolsets.map((key) => ({ key }))),
+  ].map((toolset) => [toolset.key, toolset])).values());
+  const prompt = buildPrompt({ ...input, capabilities: effectiveCapabilities, toolsets: effectiveToolsets }, isResume, prismSkills);
   const args = isResume
     ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
     : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile, '-C', executionWorkspaceRoot];

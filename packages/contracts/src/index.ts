@@ -42,6 +42,11 @@ export type PrismRuntimeCapabilityGrant = {
   grantId?: string;
 };
 
+export type PrismRuntimeToolsetGrant = {
+  key: string;
+  protocol?: "openapi" | "mcp" | "http" | "adapter";
+};
+
 export type PrismRuntimeJobRequest = {
   contractVersion: typeof PRISM_RUNTIME_CONTRACT_VERSION;
   prompt: string;
@@ -49,6 +54,7 @@ export type PrismRuntimeJobRequest = {
   continuationId?: string | null;
   recentHistory?: Array<{ role: string; content: string }>;
   skills?: PrismRuntimeSkillReference[];
+  toolsets?: PrismRuntimeToolsetGrant[];
   capabilities?: PrismRuntimeCapabilityGrant[];
   context?: PrismRuntimeDelegationContext;
   metadata?: Record<string, unknown>;
@@ -171,9 +177,23 @@ export type PrismGatewayConnection = {
   authType: string;
   status: PrismGatewayConnectionStatus;
   capabilityKeys: string[];
+  toolsetKeys: string[];
   secretNames: string[];
   lastTestedAt?: string | null;
   lastUsedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PrismGatewayToolsetProfile = {
+  key: string;
+  connectionId: string;
+  protocol: "openapi" | "mcp" | "http" | "adapter";
+  discoveryUrl: string;
+  description: string;
+  enabled: boolean;
+  lastDiscoveredAt?: string | null;
+  discoveryError?: string | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -9,6 +9,7 @@ import type {
   GatewayCaller,
   GatewayGrant,
   GatewayInvocationContext,
+  GatewayToolsetProfile,
   HttpJsonReadDriverConfig,
   McpToolCallDriverConfig,
 } from "./types.js";
@@ -47,6 +48,19 @@ type CapabilityRow = {
   input_schema_json: string | null;
   output_schema_json: string | null;
   driver_config_json: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type ToolsetProfileRow = {
+  key: string;
+  connection_id: string;
+  protocol: GatewayToolsetProfile["protocol"];
+  discovery_url: string;
+  description: string;
+  enabled: number;
+  last_discovered_at: string | null;
+  discovery_error: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -105,6 +119,23 @@ export function validatePublicHttpsBaseUrl(value: unknown) {
     throw new GatewayStoreError("CAPABILITY_BASE_URL_PRIVATE_HOST_FORBIDDEN", 400);
   }
   return url.origin;
+}
+
+export function validatePublicHttpsUrl(value: unknown, field = "URL") {
+  if (typeof value !== "string") throw new GatewayStoreError(`${field}_REQUIRED`, 400);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new GatewayStoreError(`${field}_INVALID`, 400);
+  }
+  if (url.protocol !== "https:" || url.username || url.password || url.hash) {
+    throw new GatewayStoreError(`${field}_MUST_BE_PUBLIC_HTTPS`, 400);
+  }
+  if (isForbiddenHostname(url.hostname)) {
+    throw new GatewayStoreError(`${field}_PRIVATE_HOST_FORBIDDEN`, 400);
+  }
+  return url.toString();
 }
 
 export function normalizeMcpToolCallConfig(value: unknown): McpToolCallDriverConfig {
@@ -284,6 +315,9 @@ function connectionFromRow(
   const capabilityKeys = (db.prepare(
     "SELECT key FROM capabilities WHERE connection_id = ? ORDER BY key",
   ).all(row.id) as Array<{ key: string }>).map((entry) => entry.key);
+  const toolsetKeys = (db.prepare(
+    "SELECT key FROM toolset_profiles WHERE connection_id = ? ORDER BY key",
+  ).all(row.id) as Array<{ key: string }>).map((entry) => entry.key);
   return {
     id: row.id,
     provider: row.provider,
@@ -291,9 +325,25 @@ function connectionFromRow(
     authType: row.auth_type,
     status: row.status,
     capabilityKeys,
+    toolsetKeys,
     secretNames,
     lastTestedAt: row.last_tested_at,
     lastUsedAt: row.last_used_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toolsetProfileFromRow(row: ToolsetProfileRow): GatewayToolsetProfile {
+  return {
+    key: row.key,
+    connectionId: row.connection_id,
+    protocol: row.protocol,
+    discoveryUrl: row.discovery_url,
+    description: row.description,
+    enabled: row.enabled === 1,
+    lastDiscoveredAt: row.last_discovered_at,
+    discoveryError: row.discovery_error,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -397,9 +447,74 @@ export class GatewayStore {
     return {
       drivers: count("connector_drivers"),
       capabilities: count("capabilities"),
+      toolsets: count("toolset_profiles"),
       connections: count("integration_connections"),
       auditEvents: count("audit_events"),
     };
+  }
+
+  listToolsetProfiles() {
+    return (this.db.prepare("SELECT * FROM toolset_profiles ORDER BY key").all() as ToolsetProfileRow[])
+      .map(toolsetProfileFromRow);
+  }
+
+  getToolsetProfile(key: string) {
+    const row = this.db.prepare("SELECT * FROM toolset_profiles WHERE key = ?").get(key) as ToolsetProfileRow | undefined;
+    return row ? toolsetProfileFromRow(row) : null;
+  }
+
+  createToolsetProfile(input: {
+    key: string;
+    connectionId: string;
+    protocol: GatewayToolsetProfile["protocol"];
+    discoveryUrl: string;
+    description: string;
+    enabled?: boolean;
+  }) {
+    if (!/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/.test(input.key)) {
+      throw new GatewayStoreError("TOOLSET_KEY_INVALID", 400);
+    }
+    const connection = this.getConnection(input.connectionId);
+    if (!connection || connection.status === "revoked") {
+      throw new GatewayStoreError("TOOLSET_CONNECTION_UNAVAILABLE", 400);
+    }
+    if (!["openapi", "mcp", "http", "adapter"].includes(input.protocol)) {
+      throw new GatewayStoreError("TOOLSET_PROTOCOL_INVALID", 400);
+    }
+    const discoveryUrl = validatePublicHttpsUrl(input.discoveryUrl, "TOOLSET_DISCOVERY_URL");
+    const now = new Date().toISOString();
+    try {
+      this.db.prepare(`
+        INSERT INTO toolset_profiles
+          (key, connection_id, protocol, discovery_url, description, enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(input.key, input.connectionId, input.protocol, discoveryUrl, input.description, input.enabled === false ? 0 : 1, now, now);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+        throw new GatewayStoreError("TOOLSET_ALREADY_EXISTS", 409);
+      }
+      throw error;
+    }
+    return this.getToolsetProfile(input.key)!;
+  }
+
+  updateToolsetProfile(key: string, input: { description?: string; enabled?: boolean }) {
+    if (!this.getToolsetProfile(key)) throw new GatewayStoreError("TOOLSET_NOT_FOUND", 404);
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    if (input.description !== undefined) {
+      updates.push("description = ?");
+      values.push(input.description);
+    }
+    if (input.enabled !== undefined) {
+      updates.push("enabled = ?");
+      values.push(input.enabled ? 1 : 0);
+    }
+    if (!updates.length) throw new GatewayStoreError("TOOLSET_UPDATE_REQUIRED", 400);
+    updates.push("updated_at = ?");
+    values.push(new Date().toISOString(), key);
+    this.db.prepare(`UPDATE toolset_profiles SET ${updates.join(", ")} WHERE key = ?`).run(...values);
+    return this.getToolsetProfile(key)!;
   }
 
   listDrivers() {

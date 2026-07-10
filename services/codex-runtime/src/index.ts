@@ -23,6 +23,7 @@ type RuntimeRequestBody = {
   codexThreadId?: unknown;
   recentHistory?: Array<{ role?: unknown; content?: unknown }>;
   capabilities?: unknown;
+  toolsets?: unknown;
   context?: unknown;
   metadata?: Record<string, unknown>;
 };
@@ -53,6 +54,7 @@ type RuntimeResponseJob = {
     codexThreadId: string | null;
     recentHistory: Array<{ role: string; content: string }>;
     capabilities: RuntimeCapabilityDescriptor[];
+    toolsets: RuntimeToolsetDescriptor[];
     gatewayContext: Record<string, string>;
     metadata: Record<string, unknown>;
   };
@@ -100,9 +102,29 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
         .filter((entry) => entry.content.trim())
       : [],
     capabilities: normalizeRuntimeCapabilities(body.capabilities),
+    toolsets: normalizeRuntimeToolsets(body.toolsets),
     gatewayContext: normalizeGatewayContext(body.context),
     metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
   };
+}
+
+type RuntimeToolsetDescriptor = {
+  key: string;
+  protocol?: "openapi" | "mcp" | "http" | "adapter";
+};
+
+function normalizeRuntimeToolsets(value: unknown): RuntimeToolsetDescriptor[] {
+  if (!Array.isArray(value)) return [];
+  const normalized = value.flatMap((entry): RuntimeToolsetDescriptor[] => {
+    const record = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : {};
+    const key = typeof entry === 'string' ? entry.trim() : typeof record.key === 'string' ? record.key.trim() : '';
+    if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key)) return [];
+    const protocol = record.protocol === 'openapi' || record.protocol === 'mcp' || record.protocol === 'http' || record.protocol === 'adapter'
+      ? record.protocol
+      : undefined;
+    return [{ key, ...(protocol ? { protocol } : {}) }];
+  });
+  return Array.from(new Map(normalized.map((toolset) => [toolset.key, toolset])).values());
 }
 
 function normalizeRuntimeCapabilities(value: unknown): RuntimeCapabilityDescriptor[] {

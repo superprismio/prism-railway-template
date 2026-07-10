@@ -108,6 +108,42 @@ export function createGatewayApp(dependencies: AppDependencies) {
     response.json({ ok: true, capabilities: dependencies.store.listCapabilities() });
   });
 
+  app.get("/toolsets", (_request, response) => {
+    response.json({ ok: true, toolsets: dependencies.store.listToolsetProfiles() });
+  });
+
+  app.post("/toolsets", requireSiteCaller, (request, response) => {
+    const body = request.body as Record<string, unknown>;
+    if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
+      throw new GatewayStoreError("TOOLSET_ENABLED_INVALID", 400);
+    }
+    const protocol = body.protocol === "openapi" || body.protocol === "mcp" || body.protocol === "http" || body.protocol === "adapter"
+      ? body.protocol
+      : null;
+    if (!protocol) throw new GatewayStoreError("TOOLSET_PROTOCOL_INVALID", 400);
+    const toolset = dependencies.store.createToolsetProfile({
+      key: textField(body.key, "toolset_key", 120),
+      connectionId: textField(body.connectionId, "connection_id", 120),
+      protocol,
+      discoveryUrl: textField(body.discoveryUrl, "discovery_url", 2000),
+      description: textField(body.description, "description", 500),
+      enabled: body.enabled !== false,
+    });
+    response.status(201).json({ ok: true, toolset });
+  });
+
+  app.patch("/toolsets/:key", requireSiteCaller, (request, response) => {
+    const body = request.body as Record<string, unknown>;
+    if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
+      throw new GatewayStoreError("TOOLSET_ENABLED_INVALID", 400);
+    }
+    const toolset = dependencies.store.updateToolsetProfile(routeParam(request.params.key), {
+      ...(body.description !== undefined ? { description: textField(body.description, "description", 500) } : {}),
+      ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+    });
+    response.json({ ok: true, toolset });
+  });
+
   app.post("/capabilities", requireSiteCaller, (request, response) => {
     const body = request.body as Record<string, unknown>;
     if (body.enabled !== undefined && typeof body.enabled !== "boolean") {

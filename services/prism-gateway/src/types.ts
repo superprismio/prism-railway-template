@@ -20,9 +20,23 @@ export type GatewayConnection = {
   authType: string;
   status: "untested" | "healthy" | "unhealthy" | "revoked";
   capabilityKeys: string[];
+  toolsetKeys: string[];
   secretNames: string[];
   lastTestedAt: string | null;
   lastUsedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GatewayToolsetProfile = {
+  key: string;
+  connectionId: string;
+  protocol: "openapi" | "mcp" | "http" | "adapter";
+  discoveryUrl: string;
+  description: string;
+  enabled: boolean;
+  lastDiscoveredAt: string | null;
+  discoveryError: string | null;
   createdAt: string;
   updatedAt: string;
 };

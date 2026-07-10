@@ -114,4 +114,24 @@ export const gatewayMigrations: GatewayMigration[] = [
       );
     `,
   },
+  {
+    name: "002_toolset_profiles",
+    sql: `
+      CREATE TABLE toolset_profiles (
+        key TEXT PRIMARY KEY,
+        connection_id TEXT NOT NULL,
+        protocol TEXT NOT NULL,
+        discovery_url TEXT NOT NULL,
+        description TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        last_discovered_at TEXT,
+        discovery_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(connection_id) REFERENCES integration_connections(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX toolset_profiles_connection_idx ON toolset_profiles(connection_id);
+    `,
+  },
 ];

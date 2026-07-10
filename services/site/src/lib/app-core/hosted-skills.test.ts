@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readSkillCapabilityRequirements } from "./hosted-skills";
+import { readSkillCapabilityRequirements, readSkillToolsetRequirements } from "./hosted-skills";
 
 test("hosted skill summaries expose declared Gateway requirements", () => {
   assert.deepEqual(readSkillCapabilityRequirements(`---
@@ -12,6 +12,15 @@ metadata:
     - analytics.query
 ---
 `), ["comms.message.send", "analytics.query"]);
+});
+
+test("hosted skill summaries expose declared Gateway toolsets", () => {
+  assert.deepEqual(readSkillToolsetRequirements(`---
+name: portal-ops
+metadata:
+  gateway-toolsets: [portal.admin]
+---
+`), ["portal.admin"]);
 });
 
 test("hosted skill requirements reject malformed capability keys", () => {

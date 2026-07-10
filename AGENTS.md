@@ -67,6 +67,8 @@ Send service auth as:
 - `GET /agent/gateway`
 - `POST /agent/gateway/connections`
 - `POST /agent/gateway/integrations`
+- `GET /agent/gateway/toolsets`
+- `POST /agent/gateway/toolsets`
 - `POST /agent/gateway/capabilities`
 - `PATCH /agent/gateway/capabilities/:key`
 - `POST /agent/gateway/capabilities/:key/test`

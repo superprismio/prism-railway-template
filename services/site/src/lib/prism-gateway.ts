@@ -79,6 +79,27 @@ export async function listInteractiveGatewayCapabilitiesOrEmpty(
   }
 }
 
+export async function listEnabledGatewayToolsetsOrEmpty() {
+  const status = getPrismGatewayStatus();
+  if (!status.enabled || !status.configured) return [];
+  try {
+    const payload = await prismGatewayRequest<{ toolsets?: Array<{ key?: unknown; protocol?: unknown; enabled?: unknown }> }>("/toolsets");
+    return (payload.toolsets ?? []).flatMap((toolset) => {
+      if (toolset.enabled !== true || typeof toolset.key !== "string") return [];
+      const protocol = toolset.protocol === "openapi" || toolset.protocol === "mcp" || toolset.protocol === "http" || toolset.protocol === "adapter"
+        ? toolset.protocol
+        : undefined;
+      return [{ key: toolset.key, ...(protocol ? { protocol } : {}) }];
+    });
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "prism_gateway.toolset_catalog_unavailable",
+      error: error instanceof Error ? error.message : "PRISM_GATEWAY_TOOLSET_CATALOG_FAILED",
+    }));
+    return [];
+  }
+}
+
 export async function prismGatewayRequest<T = Record<string, unknown>>(
   path: string,
   init: RequestInit = {},
@@ -172,11 +193,12 @@ export async function getPrismGatewayOverview() {
     return { ...status, reachable: false };
   }
 
-  const [health, drivers, connections, capabilities, grants, audit] =
+  const [health, drivers, connections, toolsets, capabilities, grants, audit] =
     await Promise.all([
       prismGatewayRequest("/health"),
       prismGatewayRequest("/connector-drivers"),
       prismGatewayRequest("/connections"),
+      prismGatewayRequest("/toolsets"),
       prismGatewayRequest("/capabilities"),
       prismGatewayRequest("/grants"),
       prismGatewayRequest("/audit-events?limit=50"),
@@ -188,6 +210,7 @@ export async function getPrismGatewayOverview() {
     health,
     drivers: drivers.drivers ?? [],
     connections: connections.connections ?? [],
+    toolsets: toolsets.toolsets ?? [],
     capabilities: capabilities.capabilities ?? [],
     grants: grants.grants ?? [],
     auditEvents: audit.events ?? [],
