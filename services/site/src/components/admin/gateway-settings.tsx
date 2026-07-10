@@ -405,29 +405,6 @@ export function GatewaySettings() {
 
   return (
     <div className="grid gap-6">
-      <div className="flex flex-col gap-3 border-b border-border/60 pb-5 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h3 className="flex items-center gap-2 text-base font-semibold">
-            <ShieldCheck className="h-4 w-4" />
-            Capability Gateway
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Connections, runtime grants, invocation tests, and audit history.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => void load()}
-          disabled={isPending}
-          title="Refresh Gateway"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
-      </div>
-
       {error ? (
         <div className="border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
@@ -440,13 +417,26 @@ export function GatewaySettings() {
             <Activity className="h-4 w-4" />
             Status
           </h4>
-          <Badge variant={overview?.reachable ? "secondary" : "destructive"}>
-            {overview?.reachable
-              ? "Online"
-              : overview?.enabled
-                ? "Unavailable"
-                : "Disabled"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={overview?.reachable ? "secondary" : "destructive"}>
+              {overview?.reachable
+                ? "Online"
+                : overview?.enabled
+                  ? "Unavailable"
+                  : "Disabled"}
+            </Badge>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void load()}
+              disabled={isPending}
+              title="Refresh Gateway"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
         </div>
         <div className="grid border border-border/70 sm:grid-cols-2 lg:grid-cols-4">
           {[
