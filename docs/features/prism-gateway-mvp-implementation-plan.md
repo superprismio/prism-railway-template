@@ -708,7 +708,7 @@ For successful calls, preserve:
 
 ### Phase 6: Runtime Client
 
-- [ ] Add gateway client helper.
+- [x] Add gateway client helper.
 - [ ] Wire one runtime/tool path through the gateway.
 - [ ] Remove one duplicated secret from runtime env docs.
 - [ ] Keep direct fallback available until stable.

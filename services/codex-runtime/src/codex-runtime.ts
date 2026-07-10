@@ -806,7 +806,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
 
   args.push(prompt);
 
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     GIT_AUTHOR_NAME: config.gitAuthorName,
     GIT_AUTHOR_EMAIL: config.gitAuthorEmail,
@@ -823,6 +823,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         }
       : {}),
   };
+  delete env.PRISM_GATEWAY_TOKEN;
 
   console.log(
     `[codex-runtime] spawn resume=${isResume ? 'yes' : 'no'} session=${input.sessionId} workspace=${executionWorkspaceRoot}`,

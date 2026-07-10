@@ -28,6 +28,15 @@ Recommended env:
 - `APP_API_BASE_URL=<your api base url>`
 - `APP_API_SERVICE_TOKEN=<same internal service token as api>`
 - `TARGET_REPO_GITHUB_TOKEN=<github token for private target repos>`
+- `PRISM_GATEWAY_ENABLED=false`
+- `PRISM_GATEWAY_BASE_URL=<private Prism Gateway URL>`
+- `PRISM_GATEWAY_TOKEN=<runtime-specific Gateway caller token>`
+- `PRISM_GATEWAY_TIMEOUT_MS=20000`
+
+Gateway calls are made by the runtime parent process. Do not pass the long-lived
+Gateway service token into prompts, tool arguments, traces, or agent-visible
+configuration. Agent access should use a short-lived job-scoped token that is
+restricted to the capabilities listed on that runtime job.
 
 Railway notes:
 

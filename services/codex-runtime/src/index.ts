@@ -5,11 +5,18 @@ import path from 'node:path';
 import express from 'express';
 import { config } from './config.js';
 import { generateCodexCliReply } from './codex-runtime.js';
+import { PrismGatewayClient } from './gateway-client.js';
 import { listPrismSkills } from './prism-skills.js';
 
 const startedAt = new Date();
 const app = express();
 const responseJobs = new Map<string, RuntimeResponseJob>();
+const gatewayClient = new PrismGatewayClient({
+  enabled: config.prismGatewayEnabled,
+  baseUrl: config.prismGatewayBaseUrl,
+  token: config.prismGatewayToken,
+  timeoutMs: config.prismGatewayTimeoutMs,
+});
 
 app.use(express.json({ limit: '1mb' }));
 
@@ -182,6 +189,7 @@ app.get('/health', async (_req, res) => {
     codexAuthConfigured: await codexAuthConfigured(),
     codexRuntimeEnabled: config.codexRuntimeEnabled,
     codexImageGenerationEnabled: config.codexImageGenerationEnabled,
+    prismGateway: gatewayClient.status(),
   });
 });
 
