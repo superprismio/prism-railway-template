@@ -100,7 +100,10 @@ test('gateway client leases adapter credentials without changing their names', a
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     }) as typeof fetch,
   );
-  const env = await client.leaseToolsets({ toolsets: ['storage.s3'], context: { runtimeJobId: 'job-1' } });
+  const lease = await client.leaseToolsets({ toolsets: ['storage.s3'], context: { runtimeJobId: 'job-1' } });
   assert.deepEqual(observedBody, { toolsets: ['storage.s3'], context: { runtimeJobId: 'job-1' } });
-  assert.deepEqual(env, { AWS_ACCESS_KEY_ID: 'leased-access', AWS_SECRET_ACCESS_KEY: 'leased-secret' });
+  assert.deepEqual(lease, {
+    env: { AWS_ACCESS_KEY_ID: 'leased-access', AWS_SECRET_ACCESS_KEY: 'leased-secret' },
+    leasedToolsets: ['storage.s3'],
+  });
 });

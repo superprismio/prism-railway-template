@@ -233,6 +233,13 @@ test("gateway stores credentials safely and enforces caller identity", async () 
       }),
     });
     assert.equal(adapterToolset.response.status, 201);
+    const adapterCannotBeInvoked = await jsonRequest(baseUrl, "/toolsets/legacy.env/request", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+      body: JSON.stringify({ method: "GET", path: "/" }),
+    });
+    assert.equal(adapterCannotBeInvoked.response.status, 409);
+    assert.equal(adapterCannotBeInvoked.body.error, "TOOLSET_ADAPTER_NOT_INVOKABLE");
     const siteCannotLease = await jsonRequest(baseUrl, "/toolsets/lease", {
       method: "POST",
       headers: { "content-type": "application/json", "x-gateway-token": siteToken },

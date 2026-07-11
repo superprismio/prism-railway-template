@@ -220,6 +220,7 @@ export function createGatewayApp(dependencies: AppDependencies) {
     const profile = dependencies.store.getToolsetProfile(key);
     if (!profile) throw new GatewayStoreError("TOOLSET_NOT_FOUND", 404);
     if (!profile.enabled) throw new GatewayStoreError("TOOLSET_DISABLED", 409);
+    if (profile.protocol === "adapter") throw new GatewayStoreError("TOOLSET_ADAPTER_NOT_INVOKABLE", 409);
     const connection = dependencies.store.getConnection(profile.connectionId);
     if (!connection || connection.status === "revoked") throw new GatewayStoreError("TOOLSET_CONNECTION_UNAVAILABLE", 409);
     const credentials = dependencies.store.getConnectionCredentials(connection.id);
@@ -274,9 +275,10 @@ export function createGatewayApp(dependencies: AppDependencies) {
     const leased: string[] = [];
     for (const key of keys) {
       const profile = dependencies.store.getToolsetProfile(key);
-      if (!profile || !profile.enabled || profile.protocol !== "adapter") {
+      if (!profile || !profile.enabled) {
         throw new GatewayStoreError("TOOLSET_LEASE_PROFILE_UNAVAILABLE", 409);
       }
+      if (profile.protocol !== "adapter") continue;
       const credentials = dependencies.store.getConnectionCredentials(profile.connectionId);
       for (const [envName, secretName] of Object.entries(profile.envBindings)) {
         const value = credentials[secretName];

@@ -136,7 +136,7 @@ export class PrismGatewayClient {
   async leaseToolsets(input: {
     toolsets: string[];
     context?: GatewayInvocationContext;
-  }): Promise<Record<string, string>> {
+  }): Promise<{ env: Record<string, string>; leasedToolsets: string[] }> {
     if (!this.config.enabled) throw new GatewayClientError('PRISM_GATEWAY_DISABLED', 503, false);
     if (!this.config.baseUrl || !this.config.token) throw new GatewayClientError('PRISM_GATEWAY_NOT_CONFIGURED', 503, false);
     let response: Response;
@@ -161,6 +161,9 @@ export class PrismGatewayClient {
       }
       env[name] = value;
     }
-    return env;
+    const leasedToolsets = Array.isArray(body.leasedToolsets)
+      ? body.leasedToolsets.filter((key): key is string => typeof key === 'string')
+      : [];
+    return { env, leasedToolsets };
   }
 }

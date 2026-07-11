@@ -861,19 +861,24 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     ...(input.toolsets ?? []),
     ...prismSkills.selectedSkills.flatMap((skill) => skill.requiredToolsets.map((key) => ({ key }))),
   ].map((toolset) => [toolset.key, toolset])).values());
-  const adapterToolsets = effectiveToolsets.filter((toolset) => toolset.protocol === 'adapter');
-  const callableToolsets = effectiveToolsets.filter((toolset) => toolset.protocol !== 'adapter');
-  const leasedEnv = adapterToolsets.length
+  const lease = effectiveToolsets.length
     ? await gatewayClient.leaseToolsets({
-        toolsets: adapterToolsets.map((toolset) => toolset.key),
+        toolsets: effectiveToolsets.map((toolset) => toolset.key),
         context: input.gatewayContext || {},
       })
-    : {};
+    : { env: {}, leasedToolsets: [] };
+  const leasedKeys = new Set(lease.leasedToolsets);
+  const resolvedToolsets = effectiveToolsets.map((toolset) =>
+    leasedKeys.has(toolset.key) ? { ...toolset, protocol: 'adapter' as const } : toolset,
+  );
+  const adapterToolsets = resolvedToolsets.filter((toolset) => toolset.protocol === 'adapter');
+  const callableToolsets = resolvedToolsets.filter((toolset) => toolset.protocol !== 'adapter');
+  const leasedEnv = lease.env;
   const githubToken = leasedEnv.TARGET_REPO_GITHUB_TOKEN || config.githubToken;
   const preparedWorkspace = await prepareExecutionWorkspace(input, trace, githubToken);
   input.onTrace?.([...trace]);
   const executionWorkspaceRoot = preparedWorkspace.workspacePath;
-  const prompt = buildPrompt({ ...input, capabilities: effectiveCapabilities, toolsets: effectiveToolsets }, isResume, prismSkills);
+  const prompt = buildPrompt({ ...input, capabilities: effectiveCapabilities, toolsets: resolvedToolsets }, isResume, prismSkills);
   const args = isResume
     ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
     : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile, '-C', executionWorkspaceRoot];
