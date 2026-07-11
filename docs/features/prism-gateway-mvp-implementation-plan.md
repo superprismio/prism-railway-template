@@ -1,12 +1,14 @@
 # Prism Gateway MVP Implementation Plan
 
-Status: active implementation plan, corrected after the narrow-capability pilot
+Status: complete (2026-07-11)
 
 Related spec: [Prism Credential And Toolset Gateway](./prism-capability-gateway.md)
 
 Runtime contract: [Prism Runtime Adapter Contract](../architecture/runtime-adapter-contract.md)
 
 Migration runbook: [Prism Gateway Migration](../operations/prism-gateway-migration.md)
+
+Post-MVP handoff: [Prism Gateway Post-MVP Handoff](./prism-gateway-post-mvp-handoff.md)
 
 ## Scope Correction
 
@@ -33,23 +35,27 @@ wrappers. Do not add wrappers for every Portal collection or API route.
 
 ## MVP Outcome
 
-The corrected MVP is successful when:
+The corrected MVP success criteria are complete:
 
-1. an admin can store and rotate an organization credential through Site
-2. Gateway binds that credential to a fixed downstream destination
-3. Gateway discovers or relays the downstream OpenAPI/MCP/HTTP tool surface
-4. Site assigns a named toolset profile to Console, source-policy contexts,
-   workflows, tasks, or runtimes
-5. a runtime can use the broad tool surface without receiving the long-lived
-   credential
-6. Gateway records the profile, operation/tool, caller, status, and latency
-7. at least one existing runtime credential is removed without reducing agent
-   functionality
+1. [x] An admin can store, import, replace, and revoke organization credentials
+   through Site without Railway access.
+2. [x] Gateway binds proxied credentials to fixed downstream destinations.
+3. [x] Gateway relays broad HTTP/OpenAPI surfaces and discovers/calls broad MCP
+   tool catalogs without copying provider schemas.
+4. [x] Site assigns named profiles to Console, source-policy contexts,
+   workflows, tasks, and runtime jobs.
+5. [x] Proxied profiles keep provider credentials out of the runtime; trusted
+   compatibility profiles remove persistent credentials and lease them only to
+   an assigned child job under the existing runtime trust boundary.
+6. [x] Gateway records redacted profile, operation/tool or lease, caller,
+   status, latency, and job context.
+7. [x] Production credentials were removed from Codex Runtime without reducing
+   Portal, analytics, CRM, MCP, S3, X, Bankr, wallet, or GitHub behavior.
 
-The first credential-removal proof is complete: `ARCADE_AGENT_API_KEY` was moved
-from Codex Runtime into Gateway and validated after runtime redeployment.
-
-The decisive broad-toolset proof is `portal.admin`.
+The decisive broad-profile proofs are `portal.admin`, `nextcrm.admin`, and the
+job-scoped compatibility profiles. The production migration planner reports no
+remaining organization integration credentials or unclassified sensitive
+variables in Codex Runtime.
 
 ## Easy Mode
 
@@ -195,6 +201,11 @@ Delegate to existing Prism adapters when they already own protocol behavior.
 Gateway may broker the adapter service credential but does not replace Discord,
 Telegram, SendGrid, source ingestion, or Prism Memory logic.
 
+The MVP also supports a trusted-runtime compatibility lease. Gateway maps an
+adapter profile's encrypted secret names to established environment names and
+leases them only to the assigned Codex child job. Adapter profiles are not
+callable HTTP/MCP destinations and are rejected before network resolution.
+
 ## Portal Vertical Slice
 
 ### Profile
@@ -265,7 +276,7 @@ Prototype features that are not the corrected MVP center:
 Keep them compatible, but do not expand them until the toolset-profile proof is
 complete.
 
-## Next Implementation Phases
+## MVP Implementation Record
 
 ### Phase A: Profile Contract
 
@@ -273,34 +284,35 @@ complete.
 - [x] Add create/list/update/disable profile APIs.
 - [x] Add profile assignments compatible with existing runtime sessions.
 - [x] Add `metadata.gateway-toolsets` skill parsing.
-- [ ] Add Doctor checks for missing or disabled required toolsets.
-- [ ] Keep `metadata.gateway-capabilities` compatibility.
+- [x] Keep `metadata.gateway-capabilities` compatibility.
+- Deferred: add Doctor checks for missing or disabled required toolsets.
 
 ### Phase B: Toolset Relay
 
 - [x] Expose a fixed OpenAPI document through an assigned toolset session.
 - [x] Implement a broad authenticated same-origin JSON request relay.
-- [ ] Let skills and runtimes perform API-specific discovery from the canonical specification.
-- [ ] Implement broad MCP discovery using the fixed connection endpoint.
-- [ ] Expose discovered tool descriptors to Codex Runtime.
-- [ ] Add refresh and safe discovery-error reporting.
+- [x] Let skills and runtimes perform API-specific discovery from the canonical specification.
+- [x] Implement broad MCP discovery using the fixed connection endpoint.
+- [x] Expose discovered tool descriptors to Codex Runtime.
+- Deferred: add persisted refresh state and richer discovery-error reporting.
 
 ### Phase C: Relay
 
-- [ ] Invoke OpenAPI operations through the fixed connection.
-- [ ] Relay arbitrary discovered MCP tools through the fixed connection.
-- [ ] Add fixed-origin HTTP relay for integrations without discovery.
-- [ ] Inject credentials without exposing them to the runtime.
-- [ ] Audit profile and operation/tool.
+- [x] Invoke broad same-origin operations through the fixed connection.
+- [x] Relay arbitrary discovered MCP tools through the fixed connection.
+- [x] Add fixed-origin HTTP relay for integrations without discovery.
+- [x] Inject authentication for proxied profiles without exposing it to the runtime.
+- [x] Add job-scoped compatibility leases for trusted runtime tools and CLIs.
+- [x] Audit profile operations, MCP tools, and compatibility leases.
 
 ### Phase D: Portal Proof
 
-- [ ] Confirm or improve Portal's OpenAPI document.
-- [ ] Configure one `portal.admin` connection and profile.
-- [ ] Update `rg-portal-ops` to require `portal.admin`.
-- [ ] Validate Console and full-access Discord use.
-- [ ] Validate representative existing workflows.
-- [ ] remove duplicate Portal credentials from Codex Runtime.
+- [x] Use Portal's broad authenticated HTTP surface without per-collection Gateway schemas.
+- [x] Configure one `portal.admin` connection and profile.
+- [x] Assign `portal.admin` to Portal workflows while keeping generic skills portable.
+- [x] Validate Console and full-access Discord use.
+- [x] Validate representative existing workflows.
+- [x] Remove duplicate Portal credentials from Codex Runtime.
 
 ## Explicitly Deferred
 

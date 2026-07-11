@@ -160,9 +160,8 @@ Completed on `prism-stack` on 2026-07-10:
   and instance inventory
 
 The NextCRM contact-read pilot also proved constrained MCP invocation and skill
-inheritance, but `NEXTCRM_API_TOKEN` remains in Codex Runtime because that token
-still supports broader CRM reads and writes not represented by
-`crm.contact.read`.
+inheritance. The later broad MCP migration removed `NEXTCRM_API_TOKEN`; see the
+Broad MCP Toolsets section below.
 
 ### Hivemind Broad Toolset
 

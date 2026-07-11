@@ -1,8 +1,10 @@
 # Prism Credential And Toolset Gateway
 
-Status: corrected future feature spec
+Status: MVP implemented; retained as architecture and future direction
 
 Implementation plan: [Prism Gateway MVP Implementation Plan](./prism-gateway-mvp-implementation-plan.md)
+
+Post-MVP handoff: [Prism Gateway Post-MVP Handoff](./prism-gateway-post-mvp-handoff.md)
 
 Runtime boundary: [Prism Runtime Adapter Contract](../architecture/runtime-adapter-contract.md)
 
@@ -52,8 +54,10 @@ runtimes without reducing what trusted agents can do.
 
 1. Authorized admins can add, replace, test, and revoke integration credentials
    through Prism without Railway access.
-2. Runtimes receive authenticated tool access without receiving long-lived
-   provider credentials.
+2. Runtimes receive authenticated proxied access without provider credentials,
+   or job-scoped compatibility leases when an existing trusted CLI/SDK requires
+   conventional environment variables. Runtimes do not persist organization
+   credentials in Railway configuration.
 3. Broad integrations retain their existing OpenAPI or MCP surface instead of
    being manually re-described in Gateway.
 4. Site and existing source-adapter policy decide which users, channels, roles,
@@ -136,6 +140,12 @@ Supported protocol shapes:
 - `http`: fixed-origin request access when no machine-readable tool document
   exists
 - `adapter`: delegate to an existing Prism domain adapter
+
+For the trusted Codex Runtime compatibility path, an `adapter` profile may map
+encrypted secret names to conventional environment names. Gateway leases those
+values to the assigned child job and audits the profile plus variable names.
+The profile cannot be invoked as an HTTP/MCP destination. This preserves
+existing skills and CLIs while moving durable custody out of Runtime.
 
 The profile name communicates the authority of the downstream identity. If a
 Portal credential is an administrator, `portal.admin` is intentionally broad.

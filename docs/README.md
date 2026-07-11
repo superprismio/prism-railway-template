@@ -44,6 +44,7 @@ Feature-specific behavior and UI notes:
 - [Memory Explorer UI](features/memory-explorer-ui.md)
 - [Prism Capability Gateway](features/prism-capability-gateway.md)
 - [Prism Gateway MVP Implementation Plan](features/prism-gateway-mvp-implementation-plan.md)
+- [Prism Gateway Post-MVP Handoff](features/prism-gateway-post-mvp-handoff.md)
 - [Prism Stack Landing Page](features/prism-stack-landing-page.md)
 
 ## Operations
