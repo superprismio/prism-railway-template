@@ -294,6 +294,7 @@ export function createGatewayApp(dependencies: AppDependencies) {
         latencyMs: 0, inputSummary: { action: "lease" },
         outputSummary: { envNames: Object.keys(profile.envBindings).sort() }, units: 1,
       });
+      dependencies.store.markConnectionLeased(profile.connectionId);
       leased.push(key);
     }
     response.json({ ok: true, env, leasedToolsets: leased });

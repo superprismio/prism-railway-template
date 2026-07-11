@@ -18,7 +18,7 @@ export type GatewayConnection = {
   provider: string;
   label: string;
   authType: string;
-  status: "untested" | "healthy" | "unhealthy" | "revoked";
+  status: "untested" | "leased" | "healthy" | "unhealthy" | "revoked";
   capabilityKeys: string[];
   toolsetKeys: string[];
   secretNames: string[];

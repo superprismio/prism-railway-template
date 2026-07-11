@@ -835,6 +835,16 @@ export class GatewayStore {
     `).run(healthy ? "healthy" : "unhealthy", now, healthy ? 1 : 0, now, now, id);
   }
 
+  markConnectionLeased(id: string) {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      UPDATE integration_connections
+      SET status = CASE WHEN status = 'untested' THEN 'leased' ELSE status END,
+          last_used_at = ?, updated_at = ?
+      WHERE id = ? AND status != 'revoked'
+    `).run(now, now, id);
+  }
+
   recordInvocation(input: {
     traceId: string;
     capabilityKey: string;

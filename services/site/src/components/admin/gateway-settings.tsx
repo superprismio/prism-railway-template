@@ -202,7 +202,7 @@ async function adminRequest(path: string, init: RequestInit = {}) {
 }
 
 function statusVariant(status: string) {
-  if (status === "healthy" || status === "succeeded" || status === "allowed")
+  if (status === "healthy" || status === "leased" || status === "succeeded" || status === "allowed")
     return "secondary" as const;
   if (status === "failed" || status === "denied" || status === "unhealthy")
     return "destructive" as const;

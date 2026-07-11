@@ -102,6 +102,9 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(pending.response.status, 201);
     assert.deepEqual((pending.body.connection as Record<string, unknown>).secretNames, []);
+    const pendingConnectionId = String((pending.body.connection as Record<string, unknown>).id);
+    store.markConnectionLeased(pendingConnectionId);
+    assert.equal(store.getConnection(pendingConnectionId)?.status, "leased");
 
     const plaintext = "plausible-secret-value";
     const created = await jsonRequest(baseUrl, "/connections", {
