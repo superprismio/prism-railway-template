@@ -75,7 +75,7 @@ For the first production pilot, confirm:
 | `GATEWAY_PREVIOUS_MASTER_KEY_VERSION` | prior version | rotation only | Remove with the previous key after re-encryption is verified. |
 | `GATEWAY_SITE_TOKEN` | generated secret | yes | Authenticates server-side Site calls. |
 | `GATEWAY_CODEX_RUNTIME_TOKEN` | generated secret | yes | Authenticates Codex Runtime toolset calls. |
-| `GATEWAY_TASK_RUNNER_TOKEN` | generated secret | later | Add when task-runner invokes Gateway directly. |
+| `GATEWAY_TASK_RUNNER_TOKEN` | generated secret | yes | Authenticates Task Runner job-scoped credential leases. |
 | `SITE_INTERNAL_URL` | Railway service reference | deferred | Not required for credential custody or tool relay. |
 | `SITE_INTERNAL_TOKEN` | Railway service reference | deferred | Not required unless a later feature needs a Site callback. |
 
@@ -114,9 +114,21 @@ integration credential or toolset.
 
 ### `task-runner`
 
-No Gateway variables are required in the first vertical slice. Task Runner
-continues to submit runtime jobs. Add its caller-specific Gateway variables only
-when a task needs to invoke Gateway without a runtime.
+| Variable | Source | Initial value |
+| --- | --- | --- |
+| `PRISM_GATEWAY_ENABLED` | literal | `false` |
+| `PRISM_GATEWAY_BASE_URL` | `http://${{prism-gateway.RAILWAY_PRIVATE_DOMAIN}}:${{prism-gateway.PORT}}` | service reference |
+| `PRISM_GATEWAY_TOKEN` | `${{prism-gateway.GATEWAY_TASK_RUNNER_TOKEN}}` | service reference |
+
+Enable these variables when a `script-runner` task declares
+`agentConfig.gatewayToolsets`. Task Runner leases adapter-profile credentials
+for that execution and injects them only into the script child process. Tasks
+without assigned toolsets do not call Gateway. A declared toolset fails closed
+when Gateway is disabled, unavailable, or returns a protected environment name.
+
+Before removing an embedded task secret, update the script to read the leased
+environment variable, bind that variable in an adapter connected service, run
+the task successfully, and then remove the secret from `inputConfig.params`.
 
 ### Other Services
 

@@ -15,6 +15,7 @@ import type { GatewayConfig } from "./types.js";
 
 const siteToken = "site-token-for-gateway-tests";
 const codexToken = "codex-token-for-gateway-tests";
+const taskRunnerToken = "task-runner-token-for-gateway-tests";
 
 async function jsonRequest(
   baseUrl: string,
@@ -41,6 +42,7 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     callers: [
       { id: "site", kind: "service", runtimeKey: null, token: siteToken },
       { id: "codex-runtime", kind: "runtime", runtimeKey: "codex-test", token: codexToken },
+      { id: "task-runner", kind: "service", runtimeKey: null, token: taskRunnerToken },
     ],
   };
   const db = openGatewayDatabase(config.dbPath);
@@ -330,6 +332,16 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(leased.response.status, 200);
     assert.deepEqual(leased.body.env, { LEGACY_API_KEY: plaintext });
+    const taskRunnerLease = await jsonRequest(baseUrl, "/toolsets/lease", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": taskRunnerToken },
+      body: JSON.stringify({
+        toolsets: ["legacy.env"],
+        context: { delegatedActorId: "task:api-watchdog", runtimeJobId: "script-task:api-watchdog:1" },
+      }),
+    });
+    assert.equal(taskRunnerLease.response.status, 200);
+    assert.deepEqual(taskRunnerLease.body.env, { LEGACY_API_KEY: plaintext });
 
     const toolsetUpdated = await jsonRequest(baseUrl, "/toolsets/portal.admin", {
       method: "PATCH",
@@ -522,7 +534,8 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(audit.response.status, 200);
     const events = audit.body.events as Array<Record<string, unknown>>;
-    assert.equal(events.length, 8);
+    assert.equal(events.length, 9);
+    assert.equal(events.some((event) => event.authenticatedCallerId === "task-runner"), true);
     assert.equal(JSON.stringify(events).includes(plaintext), false);
     assert.equal(JSON.stringify(events).includes('"limit":5'), false);
 

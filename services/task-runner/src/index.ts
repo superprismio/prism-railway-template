@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
+import { leaseGatewayToolsets } from "./gateway-lease.js";
 
 type TaskStatus = "idle" | "running" | "succeeded" | "failed" | "disabled";
 
@@ -860,6 +861,18 @@ async function runSiteTaskScript(input: {
   const timeoutMs = input.timeoutMs ?? script.timeoutMs ?? scriptRunnerTimeoutMs();
   const outputMaxBytes = scriptRunnerOutputMaxBytes();
   const killGraceMs = scriptRunnerKillGraceMs();
+  const gatewayToolsets = requestedGatewayKeysFromConfig(input.siteTask.agentConfig, [
+    "gatewayToolsets",
+    "gateway_toolsets",
+    "toolsets",
+  ]).map(({ key }) => key);
+  const leasedEnv = await leaseGatewayToolsets({
+    toolsets: gatewayToolsets,
+    context: {
+      delegatedActorId: `task:${input.siteTask.key}`,
+      runtimeJobId: `script-task:${input.siteTask.key}:${Date.now()}`,
+    },
+  });
 
   const payload = {
     task: {
@@ -890,6 +903,7 @@ async function runSiteTaskScript(input: {
         PRISM_TASK_KEY: input.siteTask.key,
         PRISM_TASK_SCRIPT_KEY: input.scriptKey,
         PRISM_TASK_PARAMS_JSON: JSON.stringify(input.params),
+        ...leasedEnv,
       },
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -997,6 +1011,8 @@ async function runSiteTaskScript(input: {
           scriptRuntime: script.runtime,
           scriptChecksum: script.checksum,
           scriptUpdatedAt: script.updatedAt,
+          gatewayToolsets,
+          gatewayEnvNames: Object.keys(leasedEnv).sort(),
           durationMs: Date.now() - startedAt,
           stderr: stderrText || null,
           stdoutTruncated,
@@ -1657,6 +1673,7 @@ function doctorCapabilityDependencyFindings(input: {
 
 function doctorToolsetDependencyFindings(input: {
   workflows: Record<string, unknown>[];
+  tasks: Record<string, unknown>[];
   skills: Record<string, unknown>[];
   toolsets: Record<string, unknown>[];
   connections: Record<string, unknown>[];
@@ -1686,7 +1703,7 @@ function doctorToolsetDependencyFindings(input: {
 
   function addFinding(inputFinding: {
     check: string;
-    subjectType: "skill" | "workflow";
+    subjectType: "skill" | "workflow" | "task";
     subjectKey: string;
     toolsetKey: string;
     skillName?: string;
@@ -1742,6 +1759,22 @@ function doctorToolsetDependencyFindings(input: {
         check: "workflow-direct-toolset-available",
         subjectType: "workflow",
         subjectKey: workflowKey,
+        toolsetKey,
+      });
+    }
+  }
+
+  for (const task of input.tasks) {
+    const taskKey = typeof task.key === "string" && task.key.trim() ? task.key.trim() : "unknown-task";
+    const agentConfigValue = task.agentConfig ?? task.agent_config;
+    const agentConfig = isRecord(agentConfigValue) ? agentConfigValue : {};
+    for (const toolsetKey of doctorStringList(
+      agentConfig.gatewayToolsets ?? agentConfig.gateway_toolsets ?? agentConfig.toolsets,
+    )) {
+      addFinding({
+        check: "task-required-toolset-available",
+        subjectType: "task",
+        subjectKey: taskKey,
         toolsetKey,
       });
     }
@@ -2017,6 +2050,7 @@ async function runPrismDoctorTask(): Promise<TaskRunResult> {
     ...doctorCapabilityDependencyFindings({ workflows, skills, enabledCapabilities }),
     ...doctorToolsetDependencyFindings({
       workflows,
+      tasks,
       skills,
       toolsets: gatewayToolsets,
       connections: gatewayConnections,

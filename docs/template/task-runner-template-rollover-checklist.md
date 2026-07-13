@@ -40,6 +40,11 @@ Use this to update the Railway template and migrate existing instances from the 
 
 Set these on `task-runner`:
 
+- [ ] `PRISM_GATEWAY_ENABLED=true` when script-runner tasks use connected services.
+- [ ] `PRISM_GATEWAY_BASE_URL=http://${{prism-gateway.RAILWAY_PRIVATE_DOMAIN}}:${{prism-gateway.PORT}}`.
+- [ ] `PRISM_GATEWAY_TOKEN=${{prism-gateway.GATEWAY_TASK_RUNNER_TOKEN}}`.
+- [ ] Gateway has a distinct generated `GATEWAY_TASK_RUNNER_TOKEN`; do not reuse Site or runtime tokens.
+
 ```text
 PORT="8790"
 TASK_RUNNER_DISABLED="false"

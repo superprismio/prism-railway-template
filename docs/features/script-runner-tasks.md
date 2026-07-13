@@ -33,11 +33,22 @@ Task rows use `taskType="script-runner"` and reference a site-owned task script 
     "timeoutMs": 60000
   },
   "instructionConfig": {},
+  "agentConfig": {
+    "gatewayToolsets": ["example.read"]
+  },
   "outputConfig": {}
 }
 ```
 
 Do not store inline JavaScript, shell, or Python in task rows. The task row stores orchestration config; executable code lives in a site-owned task script managed through `/agent/task-scripts`.
+
+`params` are non-secret task inputs. When a script needs an organization
+credential, assign an adapter connected service through
+`agentConfig.gatewayToolsets` and read its declared environment variable from
+`process.env`. Task Runner leases those values for one execution and exposes
+them only to the child process. It fails the task if an assigned lease cannot be
+obtained; it does not fall back to credentials embedded in params or script
+content.
 
 ## Task Script
 
@@ -71,9 +82,20 @@ Scripts should write JSON to stdout:
   "details": {
     "statusCode": 503,
     "latencyMs": 1240
+  },
+  "agentConfig": {
+    "gatewayToolsets": ["example.read"]
   }
 }
 ```
+
+`params` are non-secret task inputs. When a script needs an organization
+credential, assign an adapter connected service through
+`agentConfig.gatewayToolsets` and read its declared environment variable from
+`process.env`. Task Runner leases those values for one execution and exposes
+them only to the child process. It fails the task if an assigned lease cannot be
+obtained; it does not fall back to credentials embedded in params or script
+content.
 
 When `outputConfig.outputDestinations` is set, task-runner delivers the script output unless the JSON body includes `shouldNotify:false` or `notify:false`.
 

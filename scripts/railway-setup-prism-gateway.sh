@@ -215,6 +215,7 @@ if [[ "$apply" == true ]]; then
   set_generated_secret prism-gateway GATEWAY_MASTER_ENCRYPTION_KEY base64
   set_generated_secret prism-gateway GATEWAY_SITE_TOKEN hex
   set_generated_secret prism-gateway GATEWAY_CODEX_RUNTIME_TOKEN hex
+  set_generated_secret prism-gateway GATEWAY_TASK_RUNNER_TOKEN hex
 
   set_plain_variable site PRISM_GATEWAY_ENABLED false
   set_plain_variable site PRISM_GATEWAY_BASE_URL 'http://${{prism-gateway.RAILWAY_PRIVATE_DOMAIN}}:${{prism-gateway.PORT}}'
@@ -224,9 +225,13 @@ if [[ "$apply" == true ]]; then
   set_plain_variable codex-runtime PRISM_GATEWAY_BASE_URL 'http://${{prism-gateway.RAILWAY_PRIVATE_DOMAIN}}:${{prism-gateway.PORT}}'
   set_plain_variable codex-runtime PRISM_GATEWAY_TOKEN '${{prism-gateway.GATEWAY_CODEX_RUNTIME_TOKEN}}'
   set_plain_variable codex-runtime PRISM_RUNTIME_KEY codex-default
+
+  set_plain_variable task-runner PRISM_GATEWAY_ENABLED false
+  set_plain_variable task-runner PRISM_GATEWAY_BASE_URL 'http://${{prism-gateway.RAILWAY_PRIVATE_DOMAIN}}:${{prism-gateway.PORT}}'
+  set_plain_variable task-runner PRISM_GATEWAY_TOKEN '${{prism-gateway.GATEWAY_TASK_RUNNER_TOKEN}}'
 else
   echo "  ensure generated gateway encryption and caller secrets"
-  echo "  ensure disabled Site and Codex Runtime gateway references"
+  echo "  ensure disabled Site, Codex Runtime, and Task Runner gateway references"
 fi
 
 if [[ "$deploy" == true ]]; then

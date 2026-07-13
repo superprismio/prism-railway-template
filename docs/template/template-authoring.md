@@ -44,6 +44,8 @@ Good reference variable examples:
 - `site.PRISM_GATEWAY_TOKEN=${{prism-gateway.GATEWAY_SITE_TOKEN}}`
 - `codex-runtime.PRISM_GATEWAY_BASE_URL=http://${{prism-gateway.RAILWAY_PRIVATE_DOMAIN}}:${{prism-gateway.PORT}}`
 - `codex-runtime.PRISM_GATEWAY_TOKEN=${{prism-gateway.GATEWAY_CODEX_RUNTIME_TOKEN}}`
+- `task-runner.PRISM_GATEWAY_BASE_URL=http://${{prism-gateway.RAILWAY_PRIVATE_DOMAIN}}:${{prism-gateway.PORT}}`
+- `task-runner.PRISM_GATEWAY_TOKEN=${{prism-gateway.GATEWAY_TASK_RUNNER_TOKEN}}`
 - `discord-sync-cron.PRISM_API_BASE=https://${{discord-adapter.RAILWAY_PUBLIC_DOMAIN}}`
 - `memory-cron.PRISM_API_BASE=https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}`
 - `knowledge-cron.PRISM_API_BASE=https://${{prism-memory.RAILWAY_PUBLIC_DOMAIN}}`
