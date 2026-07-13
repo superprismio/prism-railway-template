@@ -455,7 +455,7 @@ export function CodexConsole({
               if (!draft.trim() || isPending) return;
               formRef.current?.requestSubmit();
             }}
-            placeholder="Ask Codex about a request, review branch, preview state, or Prism context."
+            placeholder="Ask Prism about a request, review branch, preview state, or workspace context."
             className="min-h-28 rounded-none border-x-0 border-t-0 px-0 shadow-none focus-visible:ring-0"
             disabled={isPending}
             required

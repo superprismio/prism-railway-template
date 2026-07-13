@@ -10,11 +10,13 @@ await fs.writeFile(fixtureBinary, `#!/bin/sh
 case "$*" in
   *WAIT_FOR_CANCEL*) sleep 30 ;;
 esac
+printf '%s\n' "$*" > "$GROK_HOME/last-args"
 printf '%s\\n' '{"text":"GROK_TEST_OK","stopReason":"EndTurn","sessionId":"grok-session-test","requestId":"request-test"}'
 `, { mode: 0o700 });
 process.env.GROK_BIN = fixtureBinary;
 process.env.GROK_HOME = fixtureRoot;
 process.env.GROK_WORKSPACE_ROOT = fixtureRoot;
+process.env.PRISM_RUNTIME_KEY = 'grok-test';
 
 const { runGrok } = await import('./grok-process.js');
 const { createGrokRuntimeApp } = await import('./app.js');
@@ -49,6 +51,8 @@ test('Grok process maps JSON output to the normalized runtime result', async () 
   assert.equal(result.continuationId, 'grok-session-test');
   assert.equal(result.providerMetadata.requestId, 'request-test');
   assert.equal(result.trace.at(-1)?.kind, 'run.completed');
+  const args = await fs.readFile(path.join(fixtureRoot, 'last-args'), 'utf8');
+  assert.match(args, /Active Prism runtime profile: grok-test \(adapter: grok-build\)\./);
 });
 
 test('Grok process terminates when the runtime job is canceled', async () => {

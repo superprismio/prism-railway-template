@@ -366,7 +366,7 @@ export function SkillsWorkspace() {
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Skills</h1>
           <p className="text-sm text-muted-foreground">
-            View built-in, GitHub source, and instance custom Codex skills available to Prism.
+            View built-in, GitHub source, and instance custom agent skills available to Prism.
           </p>
         </div>
         <Button

@@ -44,6 +44,8 @@ async function buildPrompt(input: PrismRuntimeJobRequest) {
   const sections = [
     'You are Grok Build replying through the Prism runtime adapter.',
     'Behave like direct agent chat. Follow applicable Prism skill instructions and return only the assistant reply.',
+    `Active Prism runtime profile: ${config.runtimeKey} (adapter: grok-build).`,
+    'Use this active runtime identity when reporting execution details. Ignore legacy workflow agentConfig.runtime labels.',
     `External session id: ${input.sessionId}`,
   ];
   if (input.context && Object.keys(input.context).length) {
