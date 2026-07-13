@@ -7,23 +7,9 @@ import {
   writeCaptureSummaryFiles,
   type CaptureManifest,
 } from "./capture-storage";
-import { loadConfig } from "./config";
 import { promoteMeetingSummaryToMemory, type MeetingMemoryPromotionResult } from "./meeting-memory";
 import { readRecordingSummaryProfile } from "./recording-summary-profile";
-
-type RuntimeResponsePayload = {
-  responseText?: string | null;
-  output_text?: string | null;
-  error?: string | null;
-  jobId?: string | null;
-  job?: {
-    status?: string | null;
-    response?: RuntimeResponsePayload | null;
-    error?: string | null;
-    threadId?: string | null;
-  } | null;
-  response?: RuntimeResponsePayload | null;
-};
+import { requestRuntimeResponse } from "./runtime-client";
 
 export type CaptureSummary = {
   title: string;
@@ -54,114 +40,21 @@ function runtimeTimeoutMs() {
   return 660_000;
 }
 
-async function sleep(ms: number) {
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function runtimeResponseText(payload: RuntimeResponsePayload | null | undefined) {
-  return typeof payload?.responseText === "string" && payload.responseText.trim()
-    ? payload.responseText.trim()
-    : typeof payload?.output_text === "string" && payload.output_text.trim()
-      ? payload.output_text.trim()
-      : "";
-}
-
 export async function codexRuntimeRequest(input: {
   prompt: string;
   captureId: string;
   metadata: Record<string, unknown>;
   sessionId?: string;
 }) {
-  const config = loadConfig();
-  if (!config.codexRuntimeBaseUrl) {
-    throw new Error("CODEX_RUNTIME_BASE_URL_MISSING");
-  }
-
-  const runtimeInput = {
+  const response = await requestRuntimeResponse({
     prompt: input.prompt,
     sessionId: input.sessionId ?? `capture-summary-${input.captureId}`,
-    codexThreadId: null,
+    continuationId: null,
     recentHistory: [],
     metadata: input.metadata,
-  };
-  const timeoutMs = runtimeTimeoutMs();
-  const startedAt = Date.now();
-  const remainingTimeoutMs = () => Math.max(1, timeoutMs - (Date.now() - startedAt));
-  const jobsUrl = `${config.codexRuntimeBaseUrl}/v1/responses/jobs`;
-  const responseUrl = `${config.codexRuntimeBaseUrl}/v1/responses`;
-  let jobId: string | null = null;
-
-  try {
-    const submitResponse = await fetchWithTimeout(jobsUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(runtimeInput),
-    }, Math.min(30_000, timeoutMs));
-    if (submitResponse.status !== 404) {
-      const submitPayload = await submitResponse.json().catch(() => null) as RuntimeResponsePayload | null;
-      if (!submitResponse.ok) {
-        throw new Error(`CODEX_RUNTIME_JOB_CREATE_FAILED:${submitResponse.status}:${String(submitPayload?.error ?? "").slice(0, 300)}`);
-      }
-      jobId = typeof submitPayload?.jobId === "string" ? submitPayload.jobId : null;
-      if (!jobId) {
-        throw new Error("CODEX_RUNTIME_JOB_CREATE_INVALID_RESPONSE");
-      }
-      const pollUrl = `${jobsUrl}/${encodeURIComponent(jobId)}`;
-      for (;;) {
-        if (Date.now() - startedAt >= timeoutMs) {
-          throw new Error(`CODEX_RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`);
-        }
-        await sleep(2000);
-        const pollResponse = await fetchWithTimeout(pollUrl, { cache: "no-store" }, Math.min(30_000, remainingTimeoutMs()));
-        const pollPayload = await pollResponse.json().catch(() => null) as RuntimeResponsePayload | null;
-        if (!pollResponse.ok) {
-          throw new Error(`CODEX_RUNTIME_JOB_POLL_FAILED:${pollResponse.status}:${String(pollPayload?.error ?? "").slice(0, 300)}`);
-        }
-        const status = typeof pollPayload?.job?.status === "string" ? pollPayload.job.status : "";
-        if (status === "queued" || status === "running") continue;
-        if (status === "succeeded") {
-          const text = runtimeResponseText(pollPayload?.response ?? pollPayload?.job?.response ?? null);
-          if (!text) throw new Error("CODEX_RUNTIME_EMPTY_RESPONSE");
-          return text;
-        }
-        throw new Error(`CODEX_RUNTIME_REQUEST_FAILED:500:${String(pollPayload?.error ?? pollPayload?.job?.error ?? "Unknown codex runtime error").slice(0, 300)}`);
-      }
-    }
-  } catch (error) {
-    if (jobId) throw error;
-    console.warn(JSON.stringify({
-      event: "capture_summary.codex_runtime_job_path_unavailable",
-      error: error instanceof Error ? error.message : String(error),
-    }));
-  }
-
-  const response = await fetchWithTimeout(responseUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(runtimeInput),
-  }, remainingTimeoutMs());
-  const payload = await response.json().catch(() => null) as RuntimeResponsePayload | null;
-  if (!response.ok) {
-    throw new Error(`CODEX_RUNTIME_REQUEST_FAILED:${response.status}:${String(payload?.error ?? "Unknown codex runtime error").slice(0, 300)}`);
-  }
-  const text = runtimeResponseText(payload);
-  if (!text) {
-    throw new Error("CODEX_RUNTIME_EMPTY_RESPONSE");
-  }
-  return text;
+    timeoutMs: runtimeTimeoutMs(),
+  });
+  return response.responseText;
 }
 
 export function safeJsonParse(input: string) {

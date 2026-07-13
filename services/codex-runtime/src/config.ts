@@ -49,6 +49,10 @@ export const config = {
       ? path.resolve(process.env.RAILWAY_VOLUME_MOUNT_PATH.trim(), 'workspaces')
       : path.resolve(workspaceRoot, '.codex-target-workspaces')),
   prismSkillCacheTtlMs: readNumberEnv('PRISM_SKILL_CACHE_TTL_MS', 300_000),
+  prismGatewayEnabled: readBooleanEnv('PRISM_GATEWAY_ENABLED', false),
+  prismGatewayBaseUrl: process.env.PRISM_GATEWAY_BASE_URL?.trim().replace(/\/+$/, '') || null,
+  prismGatewayToken: process.env.PRISM_GATEWAY_TOKEN?.trim() || null,
+  prismGatewayTimeoutMs: readNumberEnv('PRISM_GATEWAY_TIMEOUT_MS', 20_000),
   codexRuntimeEnabled: readBooleanEnv('CODEX_RUNTIME_ENABLED', true),
   codexImageGenerationEnabled: readBooleanEnv('CODEX_IMAGE_GENERATION_ENABLED', true),
   codexRuntimeTimeoutMs: readNumberEnv('CODEX_RUNTIME_TIMEOUT_MS', 600_000),

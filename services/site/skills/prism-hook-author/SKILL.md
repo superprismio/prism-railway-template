@@ -21,6 +21,9 @@ Hook authoring rules:
 8. Keep `requestTemplate` generic. Use templates like `{{date}}`, `{{now}}`, `{{payload}}`, or top-level payload keys such as `{{title}}`.
 9. Use `targetAppId` only when the workflow actually requires a target repo/app. Many hooks can create content, notifications, or artifacts without a target.
 10. If a payload references an outside system, include stable identifiers and URLs in the payload so workflow steps can attach external refs.
+11. Gateway toolset or narrow-capability dependencies belong to the workflow's
+    skills. Hooks should not carry duplicated requirement lists. Run Prism
+    Doctor before enabling a hook whose workflow uses a migrated integration.
 
 For template built-in hooks, prefer one canonical hook per generic event family.
 If an older instance has a custom hook or workflow that overlaps a built-in,

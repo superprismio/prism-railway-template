@@ -60,9 +60,9 @@ Instance custom workflows should use the site-owned volume when that API/storage
 
 Do not store runtime approval state, current step, retry state, or run history in workflow files.
 
-In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the API is unavailable.
+In deployed Prism instances, runtime adapters usually receive `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then expose them to agents as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the API is unavailable.
 
-Codex Runtime should not assume it can write the site service volume directly. To install a chat-authored workflow, call the site workflow endpoint with the manifest and files:
+Runtime agents should not assume they can write the site service volume directly. To install a chat-authored workflow, call the site workflow endpoint with the manifest and files:
 
 ```json
 {
@@ -89,7 +89,7 @@ Codex Runtime should not assume it can write the site service volume directly. T
 ```
 
 Use `POST /agent/workflows` with `x-service-token` service auth. The site service writes the files under `/data/workflows/<workflow-key>/`, normalizes manifest paths, and registers the workflow.
-If the route returns `Workflow manifest not found at /data/workflows/...`, the request did not include a usable manifest body. Retry with `manifest` as a JSON object plus the markdown `files`; do not try to write the site volume from Codex Runtime.
+If the route returns `Workflow manifest not found at /data/workflows/...`, the request did not include a usable manifest body. Retry with `manifest` as a JSON object plus the markdown `files`; do not try to write the site volume from a runtime adapter.
 
 To run a request workflow step from another service, use the site response route with internal service auth:
 
@@ -196,6 +196,21 @@ Use it for:
 - shared `agentConfig`
 - deterministic delegation policy in `agentConfig.delegation`
 
+When a step uses a skill, put the skill name in `agentConfig.skills`. Generic
+skills remain Gateway-agnostic. For deterministic instance workflows, declare
+required broad profiles in workflow/step `agentConfig.gatewayToolsets` or in an
+instance-owned skill; existing narrow wrappers use
+`metadata.gateway-capabilities`. Do not reproduce provider operations in the
+manifest. Use `agentConfig.gatewayCapabilities` only for a direct narrow call.
+Before enabling a workflow, verify its referenced skills and Gateway
+requirements exist and run Prism Doctor.
+
+Omit runtime routing fields to use the instance's current default runtime
+profile. Set `agentConfig.runtimeProfileKey` only when the workflow must be
+deliberately pinned to a configured Site runtime profile. Do not add the legacy
+`agentConfig.runtime` field to new workflows, and do not infer the active
+runtime from that field when inspecting an older workflow.
+
 Do not put long prompts, implementation logic, scripts, or large prose in the manifest. Put those in markdown.
 
 Do not require a target repository unless the workflow actually needs repo/deploy helpers. Requests can produce artifacts, Discord messages, summaries, or other outputs without a `targetAppId`.
@@ -243,7 +258,6 @@ Recommended manifest shape:
   "entrypoint": "triage",
   "workflowPath": "workflows/example-workflow/workflow.md",
   "agentConfig": {
-    "runtime": "codex-runtime",
     "mode": "main-agent",
     "identity": "prism-workflow-agent",
     "skills": []

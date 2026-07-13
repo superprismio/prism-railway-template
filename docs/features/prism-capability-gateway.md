@@ -1,572 +1,409 @@
-# Prism Capability Gateway
+# Prism Credential And Toolset Gateway
 
-Status: future feature spec
+Status: MVP implemented; retained as architecture and future direction
 
-## Purpose
+Implementation plan: [Prism Gateway MVP Implementation Plan](./prism-gateway-mvp-implementation-plan.md)
 
-Prism instances are accumulating more connected systems:
+Post-MVP handoff: [Prism Gateway Post-MVP Handoff](./prism-gateway-post-mvp-handoff.md)
 
-- Prism site/API
-- Prism Memory
-- communication adapter
-- source adapter
-- portal
-- CRM
-- Plausible
-- DAOhaus graph
-- GitHub
-- object storage
-- X
-- LLM providers
-- render services
-- external MCP/API tools
+Runtime boundary: [Prism Runtime Adapter Contract](../architecture/runtime-adapter-contract.md)
 
-Today many of these credentials and URLs are carried directly by Codex Runtime,
-task-runner, or service-specific environments. That works for a small trusted
-stack, but it becomes harder to manage as Prism adds specialized agents, multiple
-runtime types, external tool consumers, and cross-instance workflows.
+## Decision
 
-Add an optional `prism-gateway` service that becomes the organization-level
-capability boundary for agent, workflow, model, tool, data, and delivery access.
+Prism Gateway is primarily a credential-custody and authenticated tool-access
+service. It must not become a second implementation of every connected API,
+RBAC system, workflow approval model, or provider schema.
 
-## Core Idea
-
-Runtimes should not own every integration secret or decide every access rule.
-They should execute work as an identified actor and ask the gateway for scoped
-capabilities.
+The primary runtime abstraction is a credential-backed **toolset profile**:
 
 ```text
-codex-runtime / task-runner / external agent / console
-        |
-        v
-prism-gateway
-        |
-        +-- site/api
-        +-- prism-memory
-        +-- communication-adapter
-        +-- source-adapter
-        +-- CRM / portal / Plausible
-        +-- GitHub / X / storage / LLMs / render services
-        +-- MCP servers and external APIs
+portal.admin
+crm.admin
+github.main
+plausible.read
 ```
 
-The gateway should manage capabilities, not just raw secrets.
+A profile binds an authenticated connection to an existing OpenAPI, MCP, or
+fixed-origin HTTP tool surface. The downstream service continues to own API
+semantics, validation, and RBAC.
+
+Per-operation capabilities such as `crm.contact.read` remain supported as
+optional wrappers for unusually small or intentionally restricted integrations.
+They are not the default integration model.
+
+## Problem
+
+Prism instances connect to Portal, CRM, Plausible, GitHub, object storage, X,
+render services, model providers, MCP servers, and other organization tools.
+Long-lived integration credentials currently accumulate in Codex Runtime and
+other execution services.
+
+That creates repeated work when an organization adds specialized agents,
+multiple runtimes, workflows, or external agent consumers:
+
+- credentials must be copied into several services
+- credential rotation requires Railway access
+- runtime replacement also requires integration rewiring
+- organization tools become coupled to one runtime's environment
+- direct interactive use and workflow use drift apart
+
+The first objective is to remove long-lived organization credentials from
+runtimes without reducing what trusted agents can do.
+
+## Goals
+
+1. Authorized admins can add, replace, test, and revoke integration credentials
+   through Prism without Railway access.
+2. Runtimes receive authenticated proxied access without provider credentials,
+   or job-scoped compatibility leases when an existing trusted CLI/SDK requires
+   conventional environment variables. Runtimes do not persist organization
+   credentials in Railway configuration.
+3. Broad integrations retain their existing OpenAPI or MCP surface instead of
+   being manually re-described in Gateway.
+4. Site and existing source-adapter policy decide which users, channels, roles,
+   workflows, and runtimes receive each toolset profile.
+5. Downstream applications remain authoritative for their own RBAC and request
+   validation.
+6. Gateway records a redacted invocation trail sufficient to diagnose credential
+   use and integration failures.
+7. Codex Runtime becomes one replaceable runtime consumer rather than the owner
+   of organization integrations.
+
+## Non-Goals For The First Version
+
+- Reimplement downstream RBAC in Gateway.
+- Classify every API route as read, write, destructive, or approval-required.
+- Interpret Prism workflow gates inside Gateway.
+- Maintain provider schemas that already exist in OpenAPI or MCP.
+- Add budgets, internal pricing, x402, or payment settlement.
+- Route models or optimize model selection.
+- Replace Site, Prism Memory, communication adapters, or source adapters.
+- Force every existing internal service call through Gateway.
+- Require Vault, Composio, Toolhouse, or agentgateway.
+
+These may be explored later only after credential custody and broad toolset
+access prove useful in production.
+
+## Core Model
+
+### Connection
+
+A connection stores one integration identity:
 
 ```text
-Weak abstraction:
-  getSecret("GITHUB_TOKEN")
-
-Preferred abstraction:
-  invoke("github.create_pr", input, context)
+key: portal-main
+provider: portal
+origin: https://portal.example.org
+auth: payload-login
+encrypted secrets:
+  email
+  password
 ```
 
-The agent or runtime should normally receive the result of an allowed action,
-not the secret used to perform it.
+Gateway owns encrypted credential storage, credential binding to a fixed
+provider destination, credential testing, rotation, revocation, and connection
+health.
 
-## Responsibility Split
+The credential and destination origin cannot be overridden by runtime input.
+Within that origin, an assigned agent remains free to choose methods, paths,
+query parameters, request bodies, pagination strategies, and operation
+sequences. This prevents forwarding a credential to another host without
+turning Gateway into duplicated application RBAC or an operation allowlist.
 
-### Prism Site/API
+This boundary is **credential binding**:
 
-Owns Prism application state:
+```text
+fixed credential + fixed origin
+flexible method + path + query + body
+```
 
-- requests
-- workflows
-- tasks
-- skills
-- hooks
-- artifacts
-- approvals
-- admin UI
-- agent API routes
-- branding and workspace configuration
+The OpenAPI document is guidance, not an invocation allowlist. An agent may use
+the complete same-origin API surface available to the downstream identity,
+including an undocumented route when it has enough context to do so. The
+downstream service remains authoritative for authorization and validation.
 
-The site service may expose the UI for gateway configuration, but it should not
-become the general proxy for every external tool.
+### Toolset Profile
 
-### Prism Gateway
+A profile exposes an existing tool surface through a connection:
 
-Owns capability enforcement:
+```text
+key: portal.admin
+connection: portal-main
+protocol: openapi
+specification: https://portal.example.org/openapi.json
+```
 
-- capability catalog
-- actor profiles
-- policy checks
-- integration secret references
-- encrypted integration secrets for the MVP
-- tool invocation/proxy routes
-- audit events
-- usage ledger and budgets
-- model/tool/data routing rules
-- approval checks for high-risk capabilities
+Supported protocol shapes:
 
-### Runtime Services
+- `openapi`: discover operations from a fixed OpenAPI document
+- `mcp`: discover tools from a fixed Streamable HTTP MCP endpoint
+- `http`: fixed-origin request access when no machine-readable tool document
+  exists
+- `adapter`: delegate to an existing Prism domain adapter
 
-Codex Runtime, task-runner, and future specialized runtimes execute work. They
-identify the actor, workflow, request, and runtime context, then call the gateway
-for tools or data.
+For the trusted Codex Runtime compatibility path, an `adapter` profile may map
+encrypted secret names to conventional environment names. Gateway leases those
+values to the assigned child job and audits the profile plus variable names.
+The profile cannot be invoked as an HTTP/MCP destination. This preserves
+existing skills and CLIs while moving durable custody out of Runtime.
 
-Codex Runtime remains useful for repository-aware coding, shell work, Prism ops,
-and artifact generation, but it should become one runtime among several rather
-than the holder of all organizational authority.
+The profile name communicates the authority of the downstream identity. If a
+Portal credential is an administrator, `portal.admin` is intentionally broad.
+Gateway should not pretend that identity is a restricted editor by maintaining a
+fragile route denylist.
+
+When narrower access is needed, create a narrower downstream identity or token:
+
+```text
+portal.read
+portal.editor
+portal.admin
+```
+
+The downstream application enforces those distinctions.
+
+### Assignment
+
+Site owns profile assignment. Existing source-adapter policy remains the first
+interactive access layer:
+
+```text
+Discord read-only channel -> read-oriented profiles only
+Discord full channel      -> configured admin/full profiles
+Telegram target/user      -> profiles resolved by source policy
+Admin Console             -> enabled admin profiles
+Workflow/task             -> profiles explicitly required by instance config
+```
+
+Gateway receives a short-lived runtime session containing the resolved profile
+keys. It verifies only that the authenticated caller session was assigned the
+requested profile.
+
+Gateway does not duplicate Discord roles, Telegram policy, Site users, or
+workflow approvals.
+
+### Skills
+
+Generic skills explain how to use a provider without depending on Prism
+Gateway metadata. Site policy supplies enabled toolsets to authorized
+interactive contexts. Instance-owned deterministic workflow skills may declare
+a profile dependency when execution must fail clearly if it is unavailable:
+
+```yaml
+metadata:
+  gateway-toolsets:
+    - portal.admin
+```
+
+During migration, `metadata.gateway-capabilities` remains accepted for existing
+narrow wrappers. Runtimes resolve both forms into short-lived Gateway access.
+
+Skills do not contain provider credentials and do not become the canonical copy
+of an OpenAPI or MCP specification.
+
+## Invocation
+
+### OpenAPI
+
+The runtime can read the downstream OpenAPI document through its assigned
+profile. Skills use that canonical document for API-specific discovery and send
+requests through the profile's generic fixed-origin relay. Gateway injects
+authentication but does not maintain a second operation catalog.
+
+```json
+{
+  "toolset": "portal.admin",
+  "request": {
+    "method": "POST",
+    "path": "/api/posts",
+    "body": {
+      "title": "Draft title",
+      "_status": "draft"
+    }
+  }
+}
+```
+
+Gateway does not manually redefine the post schema. Portal validates the body.
+If the OpenAPI document includes user administration or delete operations, an
+agent assigned `portal.admin` may use them.
+
+### MCP
+
+Gateway connects to the fixed MCP endpoint, injects its credential, exposes the
+server's discovered tools, and relays tool calls.
+
+```json
+{
+  "toolset": "crm.admin",
+  "tool": "crm_update_contact",
+  "arguments": {
+    "id": "...",
+    "position": "..."
+  }
+}
+```
+
+Gateway does not maintain a second MCP tool catalog. Optional narrow wrappers
+may expose a subset, but broad profiles should use server discovery.
+
+### Fixed-Origin HTTP
+
+When no OpenAPI or MCP surface exists, an assigned HTTP profile may relay
+method, path, query, and body to its fixed origin. Authentication headers and
+origin remain Gateway-owned. This mode should preserve downstream behavior, not
+grow a parallel schema system.
+
+## Gateway Responsibilities
+
+Gateway owns only:
+
+- encrypted credential custody
+- fixed connection destination
+- provider authentication/session establishment
+- caller service authentication
+- short-lived profile assignment verification
+- safe access to canonical OpenAPI/MCP descriptions and authenticated relay
+- secret redaction
+- connection health, replacement, and revocation
+- basic invocation audit
+
+Basic audit fields:
+
+```text
+trace_id
+authenticated_caller
+delegated_actor
+toolset_profile
+operation_or_tool
+request/workflow/task context when supplied
+status
+latency
+redacted error
+created_at
+```
+
+Gateway must never log provider credentials, injected authentication headers,
+Gateway tokens, or unredacted secret-bearing responses.
+
+## Responsibilities Outside Gateway
+
+### Site
+
+Site owns users, roles, source policy, runtime profiles, skills, workflows,
+tasks, hooks, requests, approvals, and admin UI. Site resolves which toolset
+profiles a job or interactive session receives.
+
+### Downstream Services
+
+Portal, CRM, GitHub, Payload, and other providers own their native RBAC,
+validation, route semantics, and business rules.
+
+### Workflows And Skills
+
+Workflows decide when review or approval is required. Skills encode operating
+guidance, safety expectations, and domain-specific usage. Gateway does not read
+workflow state to reinterpret downstream authority.
 
 ### Domain Adapters
 
-Adapters keep platform-specific behavior:
+Communication and source adapters retain protocol-specific behavior. Gateway
+may hold or broker their service credential, but it does not replace formatting,
+destination resolution, event handling, or ingestion logic.
 
-- `communication-adapter` owns Discord, Telegram, and SendGrid protocol details.
-- `source-adapter` owns source ingestion details.
-- Prism Memory owns memory indexing, retrieval, digests, and memory ops.
+## Site UI
 
-The gateway sits in front of adapters for authorized capability use. It does not
-need to replace them.
+The default operator experience is:
 
-## Railway Template Placement
+1. Ask Prism chat to configure an integration.
+2. Chat creates non-secret connection and toolset configuration.
+3. Chat returns a Settings deep link.
+4. An admin enters the credential outside model context.
+5. Site asks Gateway to test authentication and discover OpenAPI/MCP tools.
+6. The admin assigns the profile to Console, source-policy groups, or runtime
+   profiles.
 
-Add a new service beside the existing services:
+Advanced fields such as protocol, spec URL, credential binding, and discovery state may
+be shown under an Advanced disclosure. Credentials are never accepted through
+chat or `/agent/*`.
 
-```text
-site
-task-runner
-codex-runtime
-prism-memory
-communication-adapter
-source-adapter
-prism-gateway
-```
+## Storage
 
-Target connection pattern:
-
-```text
-codex-runtime -> prism-gateway -> selected capabilities
-task-runner   -> prism-gateway -> selected capabilities
-site          -> prism-gateway -> admin/config/test actions
-
-prism-gateway -> site
-prism-gateway -> prism-memory
-prism-gateway -> communication-adapter
-prism-gateway -> source-adapter
-prism-gateway -> external APIs
-```
-
-Existing direct internal calls do not need to disappear immediately. Prism-native
-control traffic can remain direct where that is simpler:
-
-```text
-task-runner <-> site
-codex-runtime <-> site
-site <-> prism-memory
-source-adapter <-> prism-memory
-```
-
-Capability/tool traffic should migrate to the gateway over time:
-
-```text
-send a message
-query CRM
-read Plausible
-publish to X
-create GitHub PR
-call paid data snapshot
-invoke external MCP tool
-call LLM provider
-render media
-```
-
-## MVP Storage Pattern
-
-Follow the current template style: a mounted Railway volume plus SQLite.
+The MVP follows the template's mounted-volume and SQLite pattern:
 
 ```text
 prism-gateway
   volume: /data
-  sqlite: /data/prism-gateway.sqlite
+  database: /data/prism-gateway.sqlite
 ```
 
-Railway variables should hold only bootstrap and infra secrets:
-
-```env
-GATEWAY_MASTER_ENCRYPTION_KEY=
-GATEWAY_SERVICE_TOKEN=
-SITE_INTERNAL_URL=
-SITE_INTERNAL_TOKEN=
-MEMORY_INTERNAL_URL=
-MEMORY_INTERNAL_TOKEN=
-COMMS_INTERNAL_URL=
-COMMS_INTERNAL_TOKEN=
-SOURCE_ADAPTER_INTERNAL_URL=
-SOURCE_ADAPTER_INTERNAL_TOKEN=
-```
-
-Gateway-managed integration credentials should be encrypted before writing to
-SQLite. The root encryption key stays in Railway.
-
-Suggested tables:
+Core records:
 
 ```text
-capabilities
-actor_profiles
-profile_capabilities
-integration_connections
+connections
 encrypted_secrets
+toolset_profiles
+profile_assignments_or_grants
+discovery_cache
 audit_events
-usage_ledger
-budget_limits
 ```
 
-SQLite is appropriate for one gateway instance. Do not horizontally scale the
-gateway against the same mounted SQLite database without revisiting storage and
-write contention.
+Railway retains only bootstrap secrets: the Gateway master encryption key and
+caller service tokens.
 
-## Capability Model
+## Compatibility With The Initial Prototype
 
-Capabilities are the common language between Prism, runtimes, users, agents, and
-external tools.
+The initial prototype implemented per-operation capabilities, constrained HTTP
+and MCP calls, grants, audit events, and a warning-only usage ledger. Keep those
+paths working while the profile model is introduced.
 
-Examples:
+Existing keys remain narrow compatibility wrappers:
 
 ```text
-memory.search
-memory.snapshot
-comms.discord.send_message
-comms.telegram.send_message
-comms.email.send
+plausible.stats.query
 crm.contact.read
-crm.contact.update
-plausible.query
-github.repo.read
-github.pr.create
-x.post.draft
-x.post.publish
-storage.artifact.write
-remotion.render
-model.generate
+arcade.*.read
 ```
 
-Suggested capability metadata:
+Do not expand this catalog to mirror broad APIs. Portal is the first profile-led
+integration and the proof that Gateway can preserve a large existing tool
+surface without schema duplication.
+
+## Portal Proof
+
+The decisive next profile is:
 
 ```text
-key
-provider
-description
-input_schema_json
-output_schema_json
-risk_level
-mode
-requires_approval
-default_audit_level
-default_unit_price
-created_at
-updated_at
+portal.admin
 ```
 
-`mode` should use a controlled vocabulary such as:
-
-- `read`
-- `write`
-- `delivery`
-- `destructive`
-- `model`
-- `runtime`
-
-## Actor Context
-
-Every invocation should carry enough context to explain who acted and why.
-
-```json
-{
-  "actor": "growth-agent",
-  "runtime": "codex-runtime",
-  "initiatedBy": "user:123",
-  "org": "raidguild",
-  "requestId": "43",
-  "workflowRunId": "wf_run_abc",
-  "workflowStepKey": "draft",
-  "capability": "plausible.query"
-}
-```
-
-The policy engine should distinguish:
-
-- human user
-- agent identity
-- runtime identity
-- workflow identity
-- request/change-board identity
-- org/workspace identity
-- delegation chain
-
-## Policy Layers
-
-The gateway should evaluate separate questions explicitly:
-
-```text
-Identity:
-  Who is acting, on whose behalf, from which runtime/workflow/org?
-
-Policy:
-  Is this actor allowed to use this capability with this data?
-
-Approval:
-  Has the relevant request/workflow gate approved this action?
-
-Budget:
-  Does this actor/request/org have enough remaining budget?
-
-Routing:
-  Which provider, adapter, model, runtime, or MCP server should handle it?
-
-Audit:
-  What should be logged, redacted, attached, or written to memory?
-```
-
-Do not collapse RBAC, approvals, budgets, and payment into one check. They answer
-different questions and should be observable independently.
-
-## Secrets UI
-
-The gateway should eventually let org admins connect integrations without
-Railway access.
-
-Initial interface:
-
-- create integration secret
-- validate/test integration secret
-- rotate integration secret
-- revoke integration secret
-- assign secret to capabilities
-- show last-used timestamp
-- show audit events
-- hide secret value after creation
-
-Example connection records:
-
-```text
-github.main
-  provider: github
-  auth_type: token
-  capabilities:
-    - github.repo.read
-    - github.pr.create
-
-plausible.default
-  provider: plausible
-  auth_type: api_key
-  capabilities:
-    - plausible.query
-
-comms.discord.bot
-  provider: discord
-  auth_type: bot_token
-  capabilities:
-    - comms.discord.send_message
-    - comms.discord.list_channels
-```
-
-For the MVP, Discord, Telegram, and SendGrid secrets can remain in the
-communication adapter environment. The gateway can call the adapter through a
-scoped internal token. Later, those credentials can move into gateway-managed
-secrets if org admins need to connect or rotate them without Railway access.
-
-## Comms Adapter Example
-
-Do not replace the communication adapter with the gateway. Put the gateway in
-front of it.
-
-```text
-Agent / workflow / console
-        |
-        v
-prism-gateway
-        |
-        v
-communication-adapter
-        |
-        +-- Discord
-        +-- Telegram
-        +-- SendGrid
-```
-
-The gateway decides:
-
-- is this actor allowed to send?
-- to which destination?
-- as which org/workspace?
-- does this require approval?
-- should the payload be logged, redacted, or blocked?
-- what rate limit or budget applies?
-
-The communication adapter handles:
-
-- platform auth
-- destination resolution
-- platform formatting
-- webhook/event handling
-- actual delivery
-
-## Usage Ledger And Internal Pricing
-
-The gateway can support the experimental x402/MPP direction without coupling the
-internal stack to payments too early.
-
-Start with a shadow ledger:
-
-```text
-actor_id
-user_id
-org_id
-request_id
-workflow_id
-capability_key
-provider
-units
-unit_price
-estimated_cost
-actual_cost
-settlement_status
-trace_id
-created_at
-```
-
-Use internal prices for analytics, budgets, and observability:
-
-```text
-memory.search.basic
-plausible.query
-crm.read_contact
-github.pr.create
-remotion.render
-model.generate
-comms.email.send_external
-x.post.publish
-```
-
-Later, x402 or Machine Payments Protocol can be added at the edge:
-
-- external agents paying to use Prism capabilities
-- Prism agents consuming paid external tools
-- cross-org tool usage
-- paid data snapshots
-- marketplace-style capability exposure
-
-## Observability
-
-Every gateway invocation should emit an audit event with a stable trace ID.
-
-Capture:
-
-- actor
-- runtime
-- request/workflow/task context
-- capability key
-- provider
-- approval state
-- budget decision
-- latency
-- success/failure
-- estimated and actual cost
-- redacted input/output summary
-- artifact or memory refs when relevant
-
-Events should be queryable from the gateway and may be forwarded into Prism site
-or Prism Memory for request review, usage analytics, and long-term operational
-memory.
-
-## Future Backends
-
-### Vault
-
-HashiCorp Vault or HCP Vault can become a secret backend later.
-
-```text
-prism-gateway -> Vault -> secrets
-```
-
-Vault should not replace the gateway. It only strengthens secret storage,
-rotation, and secret-access audit. The gateway still owns Prism-aware policy,
-approval, actor context, capability schemas, and tool invocation.
-
-The gateway should define a pluggable secret backend interface:
-
-```text
-railway-env
-encrypted-sqlite
-vault
-hcp-vault
-```
-
-### agentgateway
-
-agentgateway can become a protocol/data-plane layer later, especially for:
-
-- MCP aggregation and filtering
-- A2A routing
-- LLM provider routing
-- HTTP/gRPC gateway behavior
-- lower-level traffic governance
-
-Prism Gateway should remain the Prism-aware control layer unless the external
-gateway can enforce Prism-specific concepts such as request approvals, workflow
-steps, artifact links, and Prism Memory policies.
-
-### Composio
-
-Composio can be used behind the gateway for managed SaaS integrations and OAuth
-flows.
-
-```text
-prism-gateway -> Composio -> third-party SaaS
-```
-
-Prism should still own actors, approvals, budgets, audit, and request/workflow
-context.
-
-## Migration Plan
-
-This should be an additive feature, not a template rewrite.
-
-1. Add `prism-gateway` as an optional Railway service with volume-backed SQLite.
-2. Add `PRISM_GATEWAY_BASE_URL` and `PRISM_GATEWAY_TOKEN` to Codex Runtime and
-   task-runner.
-3. Implement basic routes:
-   - `GET /health`
-   - `GET /capabilities`
-   - `POST /invoke`
-   - `GET /secrets`
-   - `POST /secrets`
-   - `POST /secrets/:id/test`
-   - `DELETE /secrets/:id`
-   - `GET /audit-events`
-4. Proxy one low-risk read capability, such as `plausible.query` or
-   `memory.search`.
-5. Proxy one write or delivery capability, such as
-   `comms.discord.send_message`.
-6. Emit audit events into the gateway database.
-7. Move selected integration secrets out of Codex Runtime and into gateway
-   encrypted storage.
-8. Add warning-only usage ledger and budgets.
-9. Add Prism admin UI for capability and secret management.
-10. Evaluate Vault, agentgateway, Composio, x402, and MPP as optional backends or
-    edge protocols.
-
-## Non-Goals For The First Version
-
-- Replace Prism site/API.
-- Replace Prism Memory.
-- Replace communication adapter or source adapter.
-- Move all secrets out of Railway immediately.
-- Require Vault, HCP Vault, Composio, agentgateway, x402, or MPP.
-- Force all existing internal service calls through the gateway.
-- Add multi-tenant SaaS complexity before the single-instance template proves
-  the boundary useful.
-
-## Open Questions
-
-- Should the first gateway API be generic `POST /invoke`, provider-specific
-  routes, or both?
-- Should gateway audit events be copied into site artifacts, Prism Memory, or
-  both?
-- Which capabilities should ship as defaults in the template?
-- How should approval checks read workflow/request state from site/API?
-- How much of the management UI belongs in site admin versus the gateway itself?
-- Should external agents access the gateway directly or only through site/API
-  mediated sessions?
-- What is the first paid capability experiment for the x402/MPP direction?
+Use one dedicated Portal automation identity with administrator scope. Gateway
+owns its credential and authentication session. The runtime receives Portal's
+OpenAPI-derived tools and can use the full documented admin surface.
+
+Success criteria:
+
+1. No Portal password is present in Codex Runtime.
+2. Admin Console and configured full-access Discord contexts can use the full
+   Portal toolset.
+3. Read-only Discord contexts do not receive `portal.admin`.
+4. Existing Portal skills and workflows continue to work without per-collection
+   Gateway definitions.
+5. Portal remains the authority for RBAC and payload validation.
+6. Gateway audit identifies the profile and downstream operation without
+   exposing credentials.
+
+## Deferred Work
+
+After the Portal proof, evaluate only from demonstrated need:
+
+- downstream scoped identity provisioning
+- OAuth connection flows
+- Vault as an encrypted-secret backend
+- agentgateway as an MCP/OpenAPI data plane
+- richer audit export
+- rate limits or budgets
+- external agent exposure
+- x402/MPP settlement
+
+These are not prerequisites for moving credentials out of runtimes.

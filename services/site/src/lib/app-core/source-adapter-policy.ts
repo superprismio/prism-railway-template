@@ -3,6 +3,13 @@ import path from 'node:path';
 import type { AppConfig } from './config';
 
 export type SourceAdapterAccessMode = 'off' | 'readonly' | 'run-approved' | 'full';
+export type SourceAdapterPlatform = 'discord' | 'telegram';
+
+const sourceAdapterPlatforms = new Set<SourceAdapterPlatform>(['discord', 'telegram']);
+
+export function isSourceAdapterPlatform(value: string): value is SourceAdapterPlatform {
+  return sourceAdapterPlatforms.has(value as SourceAdapterPlatform);
+}
 
 export interface SourceAdapterRateLimit {
   windowSeconds: number;
@@ -27,7 +34,67 @@ export interface SourceAdapterPolicySettings {
   platforms: Record<string, SourceAdapterPlatformPolicy>;
 }
 
+export interface SourceAdapterIdentityContext {
+  platform: string;
+  targetId: string;
+  threadId?: string | null;
+  groupIds?: string[];
+  userId: string;
+}
+
+export interface ResolvedSourceAdapterPolicy {
+  mode: SourceAdapterAccessMode;
+  capabilities: string[];
+  rateLimit: SourceAdapterRateLimit;
+  matchedRules: string[];
+}
+
 const accessModes = new Set<SourceAdapterAccessMode>(['off', 'readonly', 'run-approved', 'full']);
+const policyCacheTtlMs = 1_000;
+const policyCache = new Map<string, { value: SourceAdapterPolicySettings; expiresAt: number }>();
+const disabledPlatformPolicy: SourceAdapterPlatformPolicy = {
+  defaultMode: 'off',
+  defaultRateLimit: { windowSeconds: 60, maxRequests: 1 },
+  targets: {},
+  groups: {},
+  users: {},
+};
+
+export function sourceAdapterCapabilitiesForMode(mode: SourceAdapterAccessMode): string[] {
+  switch (mode) {
+    case 'off':
+      return [];
+    case 'readonly':
+      return ['chat.read', 'memory.read', 'requests.read', 'artifacts.read'];
+    case 'run-approved':
+      return [
+        'chat.read',
+        'memory.read',
+        'requests.read',
+        'artifacts.read',
+        'tasks.run_existing',
+        'workflows.run_existing',
+        'requests.create',
+      ];
+    case 'full':
+      return [
+        'chat.read',
+        'memory.read',
+        'requests.read',
+        'artifacts.read',
+        'tasks.run_existing',
+        'workflows.run_existing',
+        'requests.create',
+        'adapter.send_message',
+        'memory.write',
+        'knowledge.write',
+        'memory.promote_doc',
+        'skills.author',
+        'tasks.author',
+        'workflows.author',
+      ];
+  }
+}
 
 export const defaultSourceAdapterPolicy: SourceAdapterPolicySettings = {
   platforms: {
@@ -195,6 +262,50 @@ export function mergeSourceAdapterPolicy(
   return normalizeSourceAdapterPolicy({ platforms });
 }
 
+function applySourceAdapterPolicyRule(
+  current: ResolvedSourceAdapterPolicy,
+  rule: SourceAdapterPolicyRule | undefined,
+  matchedRule: string,
+): ResolvedSourceAdapterPolicy {
+  if (!rule) return current;
+  const mode = rule.mode ?? current.mode;
+  const modeChanged = Boolean(rule.mode && rule.mode !== current.mode);
+  return {
+    mode,
+    capabilities: rule.capabilities ?? (modeChanged ? sourceAdapterCapabilitiesForMode(mode) : current.capabilities),
+    rateLimit: {
+      windowSeconds: rule.rateLimit?.windowSeconds ?? current.rateLimit.windowSeconds,
+      maxRequests: rule.rateLimit?.maxRequests ?? current.rateLimit.maxRequests,
+    },
+    matchedRules: [...current.matchedRules, matchedRule],
+  };
+}
+
+export function resolveSourceAdapterPolicy(
+  settings: SourceAdapterPolicySettings,
+  context: SourceAdapterIdentityContext,
+): ResolvedSourceAdapterPolicy {
+  const platform = settings.platforms[context.platform]
+    ?? defaultSourceAdapterPolicy.platforms[context.platform]
+    ?? disabledPlatformPolicy;
+  let resolved: ResolvedSourceAdapterPolicy = {
+    mode: platform.defaultMode,
+    capabilities: sourceAdapterCapabilitiesForMode(platform.defaultMode),
+    rateLimit: platform.defaultRateLimit,
+    matchedRules: ['default'],
+  };
+
+  resolved = applySourceAdapterPolicyRule(resolved, platform.targets[context.targetId], `target:${context.targetId}`);
+  if (context.threadId) {
+    resolved = applySourceAdapterPolicyRule(resolved, platform.targets[context.threadId], `target:${context.threadId}`);
+  }
+  for (const groupId of context.groupIds ?? []) {
+    resolved = applySourceAdapterPolicyRule(resolved, platform.groups[groupId], `group:${groupId}`);
+  }
+  resolved = applySourceAdapterPolicyRule(resolved, platform.users[context.userId], `user:${context.userId}`);
+  return resolved;
+}
+
 export function getSourceAdapterPolicyPath(config: AppConfig) {
   return path.resolve(config.dataRoot, 'source-adapter-policy.json');
 }
@@ -209,13 +320,21 @@ export function ensureSourceAdapterPolicyFile(config: AppConfig) {
 }
 
 export function readSourceAdapterPolicy(config: AppConfig): SourceAdapterPolicySettings {
-  ensureSourceAdapterPolicyFile(config);
-  try {
-    const fileContents = fs.readFileSync(getSourceAdapterPolicyPath(config), 'utf8');
-    return normalizeSourceAdapterPolicy(JSON.parse(fileContents));
-  } catch {
-    return defaultSourceAdapterPolicy;
+  const filePath = getSourceAdapterPolicyPath(config);
+  const cached = policyCache.get(filePath);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
   }
+  ensureSourceAdapterPolicyFile(config);
+  let value: SourceAdapterPolicySettings;
+  try {
+    const fileContents = fs.readFileSync(filePath, 'utf8');
+    value = normalizeSourceAdapterPolicy(JSON.parse(fileContents));
+  } catch {
+    value = defaultSourceAdapterPolicy;
+  }
+  policyCache.set(filePath, { value, expiresAt: Date.now() + policyCacheTtlMs });
+  return value;
 }
 
 export function writeSourceAdapterPolicy(config: AppConfig, value: unknown): SourceAdapterPolicySettings {
@@ -223,5 +342,6 @@ export function writeSourceAdapterPolicy(config: AppConfig, value: unknown): Sou
   const filePath = getSourceAdapterPolicyPath(config);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
+  policyCache.set(filePath, { value: normalized, expiresAt: Date.now() + policyCacheTtlMs });
   return normalized;
 }

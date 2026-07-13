@@ -6,6 +6,8 @@ type SkillRecord = {
   name: string;
   path: string;
   description: string;
+  requiredCapabilities: string[];
+  requiredToolsets: string[];
   downloadPath?: string;
   source: 'prism-memory' | 'app-api';
 };
@@ -16,8 +18,84 @@ type SkillIndexResponse = {
     path?: string;
     description?: string | null;
     downloadPath?: string;
+    requiredCapabilities?: unknown;
+    requiredToolsets?: unknown;
   }>;
 };
+
+const CAPABILITY_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/;
+
+function normalizeCapabilityRequirements(value: unknown) {
+  const entries = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  return Array.from(new Set(entries
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter((entry) => CAPABILITY_KEY_PATTERN.test(entry))));
+}
+
+export function capabilityRequirementsFromSkillMarkdown(content: string) {
+  const lines = content.split(/\r?\n/);
+  if (lines[0]?.trim() !== '---') return [];
+  let activeKey = false;
+  const values: string[] = [];
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    if (trimmed === '---') break;
+    const keyMatch = trimmed.match(/^(gateway-capabilities|gatewayCapabilities|requiredCapabilities):\s*(.*)$/);
+    if (keyMatch) {
+      activeKey = true;
+      const inline = keyMatch[2].trim();
+      if (inline.startsWith('[') && inline.endsWith(']')) {
+        values.push(...inline.slice(1, -1).split(',').map((entry) => entry.trim().replace(/^['"]|['"]$/g, '')));
+      } else if (inline) {
+        values.push(...inline.split(',').map((entry) => entry.trim().replace(/^['"]|['"]$/g, '')));
+      }
+      continue;
+    }
+    if (activeKey) {
+      const item = trimmed.match(/^-\s+(.+)$/);
+      if (item) {
+        values.push(item[1].trim().replace(/^['"]|['"]$/g, ''));
+        continue;
+      }
+      if (trimmed && !line.startsWith(' ') && !line.startsWith('\t')) activeKey = false;
+    }
+  }
+  return normalizeCapabilityRequirements(values);
+}
+
+export function toolsetRequirementsFromSkillMarkdown(content: string) {
+  const lines = content.split(/\r?\n/);
+  if (lines[0]?.trim() !== '---') return [];
+  let activeKey = false;
+  const values: string[] = [];
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    if (trimmed === '---') break;
+    const keyMatch = trimmed.match(/^(gateway-toolsets|gatewayToolsets):\s*(.*)$/);
+    if (keyMatch) {
+      activeKey = true;
+      const inline = keyMatch[2].trim();
+      if (inline.startsWith('[') && inline.endsWith(']')) {
+        values.push(...inline.slice(1, -1).split(',').map((entry) => entry.trim().replace(/^['"]|['"]$/g, '')));
+      } else if (inline) {
+        values.push(...inline.split(',').map((entry) => entry.trim().replace(/^['"]|['"]$/g, '')));
+      }
+      continue;
+    }
+    if (activeKey) {
+      const item = trimmed.match(/^-\s+(.+)$/);
+      if (item) {
+        values.push(item[1].trim().replace(/^['"]|['"]$/g, ''));
+        continue;
+      }
+      if (trimmed && !line.startsWith(' ') && !line.startsWith('\t')) activeKey = false;
+    }
+  }
+  return normalizeCapabilityRequirements(values);
+}
 
 type SkillCacheEntry = {
   content: string;
@@ -71,7 +149,14 @@ async function appApiRequest(path: string) {
 
 function normalizeSkillRecord(
   source: SkillRecord['source'],
-  entry: { name?: string; path?: string; description?: string | null; downloadPath?: string },
+  entry: {
+    name?: string;
+    path?: string;
+    description?: string | null;
+    downloadPath?: string;
+    requiredCapabilities?: unknown;
+    requiredToolsets?: unknown;
+  },
 ): SkillRecord | null {
   if (typeof entry.name !== 'string' || !entry.name.trim()) {
     return null;
@@ -81,6 +166,8 @@ function normalizeSkillRecord(
     name: entry.name.trim(),
     path: typeof entry.path === 'string' ? entry.path : '',
     description: typeof entry.description === 'string' ? entry.description : '',
+    requiredCapabilities: normalizeCapabilityRequirements(entry.requiredCapabilities),
+    requiredToolsets: normalizeCapabilityRequirements(entry.requiredToolsets),
     downloadPath: typeof entry.downloadPath === 'string' ? entry.downloadPath : undefined,
     source,
   } satisfies SkillRecord;
@@ -339,12 +426,12 @@ export async function loadRelevantPrismSkills(prompt: string, metadata?: Record<
   if (!availableSkills.length) {
     return {
       availableSkills: [] as SkillRecord[],
-      selectedSkills: [] as Array<{ name: string; content: string }>,
+      selectedSkills: [] as Array<{ name: string; content: string; requiredCapabilities: string[]; requiredToolsets: string[] }>,
     };
   }
 
   const requested = new Set(requestedSkillNames(prompt, metadata));
-  const selectedSkills: Array<{ name: string; content: string }> = [];
+  const selectedSkills: Array<{ name: string; content: string; requiredCapabilities: string[]; requiredToolsets: string[] }> = [];
 
   for (const skill of availableSkills) {
     if (!requested.has(skill.name)) {
@@ -355,6 +442,14 @@ export async function loadRelevantPrismSkills(prompt: string, metadata?: Record<
     selectedSkills.push({
       name: skill.name,
       content,
+      requiredCapabilities: Array.from(new Set([
+        ...skill.requiredCapabilities,
+        ...capabilityRequirementsFromSkillMarkdown(content),
+      ])),
+      requiredToolsets: Array.from(new Set([
+        ...skill.requiredToolsets,
+        ...toolsetRequirementsFromSkillMarkdown(content),
+      ])),
     });
   }
 

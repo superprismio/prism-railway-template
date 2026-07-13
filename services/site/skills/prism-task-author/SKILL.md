@@ -13,6 +13,8 @@ Task authoring rules:
 4. Use `taskType="script-runner"` for deterministic watchdogs, pollers, API checks, checkpoint updates, and other jobs that need more logic than one HTTP POST.
 5. Store replayable natural-language instructions in `instructionConfig.prompt` for `codex-prompt` and `workflow-runner` tasks.
 6. Store optional skill names in `instructionConfig.requestedSkills`.
+   Capability requirements declared by those skills are resolved automatically
+   at runtime; do not duplicate them in task configuration.
 7. Store schedule in `scheduleCron` using standard five-field cron syntax.
 8. Default new tasks to `enabled=false` unless the user explicitly asks to enable it after review.
 9. Do not store arbitrary JavaScript, Python, or shell code in the task row.
@@ -24,6 +26,9 @@ Task authoring rules:
 15. When a task creates a request from an outside system, attach that source as a request external ref when the API is available. Examples: GitHub issue collector tasks attach the source issue, Discord support triage tasks attach the source message or thread, and publishing tasks attach the final CMS post.
 16. For `workflow-runner` tasks, include `inputConfig.request.estimatedHumanHours` when the request scope is predictable. Estimate the whole request, including expected human gates, review/approval time, coordination, and likely loopbacks. Choose one bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`.
 17. For Portal email queue dispatch, create an `http-post` task with key `portal-notification-email-dispatch`, schedule `*/5 * * * *`, method `POST`, URL `https://portal.raidguild.org/api/notifications/email/run`, `Authorization: Bearer ${PORTAL_TASK_SECRET}`, body `{ "limit": 50 }`, retry attempts `3`, exponential backoff, and `timeoutMs: 30000`. Do not create a recurring `codex-prompt` task for five-minute email dispatch.
+18. Before removing a legacy integration secret, run Prism Doctor and test every
+    enabled task that requests the migrated skill or starts an affected
+    workflow.
 
 Workflow-runner request types must use one of: `bug`, `feature`, `issue`, `content`, `design`, `config`, or `ops`. Use `issue` for imported GitHub issues or issue-like support intake when the source item itself is the request.
 

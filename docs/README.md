@@ -26,6 +26,7 @@ Design notes and system direction:
 - [Site API Consolidation Plan](architecture/site-api-consolidation-plan.md)
 - [Site-Owned Task Scripts](architecture/site-owned-task-scripts.md)
 - [Tasks Workflow Plan](architecture/tasks-workflow-plan.md)
+- [Runtime Adapter Contract](architecture/runtime-adapter-contract.md)
 - [Workflows](architecture/workflows.md)
 
 ## Features
@@ -41,6 +42,9 @@ Feature-specific behavior and UI notes:
 - [LLM Usage Tracking And Budgets](features/llm-usage-tracking-and-budgets.md)
 - [Member Roles](features/member-roles.md)
 - [Memory Explorer UI](features/memory-explorer-ui.md)
+- [Prism Capability Gateway](features/prism-capability-gateway.md)
+- [Prism Gateway MVP Implementation Plan](features/prism-gateway-mvp-implementation-plan.md)
+- [Prism Gateway Post-MVP Handoff](features/prism-gateway-post-mvp-handoff.md)
 - [Prism Stack Landing Page](features/prism-stack-landing-page.md)
 
 ## Operations
@@ -53,6 +57,8 @@ Setup, deployment, and runtime operations:
 - [Local VPS Deployment](operations/local-vps-deployment.md)
 - [Railway Env Checklist](operations/railway-env-checklist.md)
 - [Railway Setup](operations/railway-setup.md)
+- [Prism Gateway Migration](operations/prism-gateway-migration.md)
+- [Prism Gateway Backup, Restore, And Key Rotation](operations/prism-gateway-backup-restore.md)
 - [Template Deploy Runbook](operations/template-deploy-runbook.md)
 
 ## Research

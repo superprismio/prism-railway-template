@@ -25,6 +25,15 @@ Current workflow checks:
 - non-terminal non-loop steps have a valid forward `next`;
 - loop steps have `loop.target`, `next`, and positive `loop.maxIterations`;
 - referenced step keys exist.
+- referenced skills exist;
+- skill-declared Gateway capabilities exist and are enabled;
+- direct workflow Gateway capabilities exist and are enabled.
+- skill-declared Gateway toolsets exist, are enabled, and reference an active
+  credential connection;
+- direct workflow Gateway toolsets exist, are enabled, and reference an active
+  credential connection.
+
+Doctor does not infer downstream RBAC or duplicate provider policy.
 
 When summarizing a report:
 
@@ -32,7 +41,9 @@ When summarizing a report:
 2. Call out enabled hooks or tasks that reference workflows with failures.
 3. Separate built-in workflow drift from custom instance workflow drift.
 4. Recommend a small repair order.
-5. Mention that Doctor did not mutate content.
+5. Treat a missing capability as a blocker to removing the corresponding legacy
+   runtime credential.
+6. Mention that Doctor did not mutate content.
 
 Useful commands:
 

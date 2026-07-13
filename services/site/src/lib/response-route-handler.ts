@@ -22,15 +22,20 @@ import {
   listAgentMessages,
   listRequestExternalRefs,
   loadConfig,
+  requestRuntimeResponse,
   updateAgentSession,
   updateAgentRun,
   updateAgentResponseJob,
   updateChangeRequest,
   updateWorkflowRun,
+  type RuntimeResponse,
+  type RuntimeTraceEntry,
 } from "@/lib/app-core"
 
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
+import { listEnabledGatewayToolsetsOrEmpty, listInteractiveGatewayCapabilitiesOrEmpty } from "@/lib/prism-gateway"
+import type { GatewayCapabilityDescriptor } from "@/lib/prism-gateway-policy"
 import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
 
@@ -79,45 +84,7 @@ type ResponseInputMessage = {
   content: string
 }
 
-type RuntimeTraceEntry = {
-  at: string
-  kind: string
-  message: string
-}
-
-type RuntimeResponsePayload = {
-  ok?: boolean
-  error?: string
-  id?: string | null
-  model?: string | null
-  provider?: string | null
-  responseText?: string
-  output_text?: string
-  thread_id?: string | null
-  branchName?: string | null
-  commitSha?: string | null
-  branchUrl?: string | null
-  baseBranch?: string | null
-  baseCommitSha?: string | null
-  trace?: Array<{ at?: string; kind?: string; message?: string }>
-}
-
-type RuntimeJobPayload = {
-  ok?: boolean
-  jobId?: string
-  job?: {
-    id?: string
-    status?: string
-    response?: RuntimeResponsePayload | null
-    error?: string | null
-    threadId?: string | null
-    trace?: Array<{ at?: string; kind?: string; message?: string }>
-  }
-  response?: RuntimeResponsePayload | null
-  error?: string | null
-  thread_id?: string | null
-  trace?: Array<{ at?: string; kind?: string; message?: string }>
-}
+type RuntimeResponsePayload = RuntimeResponse
 
 type RuntimeError = Error & {
   codexThreadId?: string | null
@@ -233,30 +200,6 @@ function formatTraceSummary(trace: RuntimeTraceEntry[] | undefined) {
     .join("\n")
 }
 
-function describeRuntimeFetchFailure(error: unknown) {
-  if (!(error instanceof Error)) {
-    return "fetch failed"
-  }
-
-  const cause = error.cause
-  if (cause && typeof cause === "object") {
-    const record = cause as Record<string, unknown>
-    const code = typeof record.code === "string" ? record.code : null
-    const causeMessage = typeof record.message === "string" ? record.message : null
-    if (code && causeMessage) {
-      return `${error.message}:${code}:${causeMessage}`
-    }
-    if (code) {
-      return `${error.message}:${code}`
-    }
-    if (causeMessage) {
-      return `${error.message}:${causeMessage}`
-    }
-  }
-
-  return error.message || "fetch failed"
-}
-
 function normalizeWorkflowOutcomeStatus(value: unknown): WorkflowOutcomeStatus | null {
   if (typeof value !== "string") return null
   const normalized = value.trim().toLowerCase().replace(/-/g, "_")
@@ -317,10 +260,6 @@ function workflowOutcomeInstruction() {
   ].join(" ")
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 function runtimeRequestTimeoutMs() {
   const parsed = Number.parseInt(process.env.CODEX_RUNTIME_TIMEOUT_MS ?? "", 10)
   if (Number.isFinite(parsed) && parsed > 0) {
@@ -336,19 +275,6 @@ function readPositiveInteger(value: unknown, fallback: number) {
 
 function maxAutoContinueSteps() {
   return Math.min(readPositiveInteger(process.env.PRISM_WORKFLOW_MAX_AUTO_CONTINUE_STEPS, 100), 100)
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: controller.signal,
-    })
-  } finally {
-    clearTimeout(timeout)
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -402,6 +328,34 @@ function requestedSkillsFromAgentConfig(config: unknown) {
   return skills.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim())
 }
 
+function requestedCapabilitiesFromAgentConfig(config: unknown) {
+  if (!isRecord(config)) return []
+  const capabilities = Array.isArray(config.gatewayCapabilities)
+    ? config.gatewayCapabilities
+    : Array.isArray(config.capabilities)
+      ? config.capabilities
+      : []
+  return Array.from(new Set(capabilities
+    .map((entry) => {
+      if (typeof entry === "string") return entry.trim()
+      if (isRecord(entry) && typeof entry.key === "string") return entry.key.trim()
+      return ""
+    })
+    .filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key))))
+}
+
+function requestedToolsetsFromAgentConfig(config: unknown) {
+  if (!isRecord(config)) return []
+  const toolsets = Array.isArray(config.gatewayToolsets)
+    ? config.gatewayToolsets
+    : Array.isArray(config.toolsets)
+      ? config.toolsets
+      : []
+  return Array.from(new Set(toolsets
+    .map((entry) => typeof entry === "string" ? entry.trim() : isRecord(entry) && typeof entry.key === "string" ? entry.key.trim() : "")
+    .filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key))))
+}
+
 function summarizeGitPushState(trace: RuntimeTraceEntry[] | undefined) {
   if (!Array.isArray(trace) || !trace.length) {
     return {
@@ -440,11 +394,14 @@ function summarizeGitPushState(trace: RuntimeTraceEntry[] | undefined) {
   }
 }
 
-async function requestCodexRuntimeResponse(input: {
+async function requestPrismRuntimeResponse(input: {
   prompt: string
   sessionId: string
-  codexThreadId?: string | null
+  continuationId?: string | null
   recentHistory: Array<{ role: string; content: string }>
+  capabilities?: Array<string | GatewayCapabilityDescriptor>
+  toolsets?: Array<{ key: string; protocol?: "openapi" | "mcp" | "http" | "adapter" }>
+  gatewayContext?: Record<string, string | undefined>
   metadata: Record<string, unknown>
   onProgress?: (progress: {
     status: string
@@ -453,167 +410,22 @@ async function requestCodexRuntimeResponse(input: {
     trace: RuntimeTraceEntry[]
   }) => void
 }) {
-  const config = loadConfig()
-  if (!config.codexRuntimeBaseUrl) {
-    throw new Error("CODEX_RUNTIME_BASE_URL_MISSING")
-  }
-
-  const runtimeInput = {
+  const requestedSkills = Array.isArray(input.metadata.requestedSkills)
+    ? input.metadata.requestedSkills.filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim()))
+    : []
+  return requestRuntimeResponse({
     prompt: input.prompt,
     sessionId: input.sessionId,
-    codexThreadId: input.codexThreadId ?? null,
+    continuationId: input.continuationId ?? null,
     recentHistory: input.recentHistory,
+    skills: requestedSkills,
+    capabilities: input.capabilities,
+    toolsets: input.toolsets ?? [],
+    context: input.gatewayContext,
     metadata: input.metadata,
-  }
-  const runtimeJobsUrl = `${config.codexRuntimeBaseUrl}/v1/responses/jobs`
-  const runtimeUrl = `${config.codexRuntimeBaseUrl}/v1/responses`
-  let jobId: string | null = null
-  const startedAt = Date.now()
-  const timeoutMs = runtimeRequestTimeoutMs()
-  const remainingTimeoutMs = () => Math.max(1, timeoutMs - (Date.now() - startedAt))
-
-  try {
-    const submitResponse = await fetchWithTimeout(runtimeJobsUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(runtimeInput),
-    }, Math.min(30_000, timeoutMs))
-
-    if (submitResponse.status !== 404) {
-      const submitPayload = (await submitResponse.json().catch(() => null)) as RuntimeJobPayload | null
-      if (!submitResponse.ok) {
-        throw new Error(
-          `CODEX_RUNTIME_JOB_CREATE_FAILED:${submitResponse.status}:${submitPayload?.error || "Unknown codex runtime error"}`,
-        )
-      }
-
-      jobId = typeof submitPayload?.jobId === "string" ? submitPayload.jobId : null
-      if (!jobId) {
-        throw new Error("CODEX_RUNTIME_JOB_CREATE_INVALID_RESPONSE")
-      }
-
-      const pollUrl = `${runtimeJobsUrl}/${encodeURIComponent(jobId)}`
-      for (;;) {
-        if (Date.now() - startedAt >= timeoutMs) {
-          throw new Error(`CODEX_RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`)
-        }
-        await sleep(2000)
-        const pollResponse = await fetchWithTimeout(
-          pollUrl,
-          { cache: "no-store" },
-          Math.min(30_000, remainingTimeoutMs()),
-        )
-        const pollPayload = (await pollResponse.json().catch(() => null)) as RuntimeJobPayload | null
-
-        if (!pollResponse.ok) {
-          throw new Error(
-            `CODEX_RUNTIME_JOB_POLL_FAILED:${pollResponse.status}:${pollPayload?.error || "Unknown codex runtime error"}`,
-          )
-        }
-
-        const status = typeof pollPayload?.job?.status === "string" ? pollPayload.job.status : ""
-        const trace = Array.isArray(pollPayload?.trace)
-          ? pollPayload.trace
-              .map((entry) => ({
-                at: typeof entry?.at === "string" ? entry.at : new Date().toISOString(),
-                kind: typeof entry?.kind === "string" ? entry.kind : "runtime",
-                message: typeof entry?.message === "string" ? entry.message : "",
-              }))
-              .filter((entry) => entry.message.trim())
-          : []
-        input.onProgress?.({
-          status,
-          runtimeJobId: jobId,
-          threadId:
-            pollPayload?.thread_id ??
-            pollPayload?.job?.threadId ??
-            null,
-          trace,
-        })
-        if (status === "queued" || status === "running") {
-          continue
-        }
-
-        if (status === "succeeded") {
-          const payload = pollPayload?.response ?? pollPayload?.job?.response ?? null
-          if (!payload) {
-            throw new Error("CODEX_RUNTIME_JOB_INVALID_RESPONSE")
-          }
-          return payload
-        }
-
-        const error = new Error(
-          `CODEX_RUNTIME_REQUEST_FAILED:500:${pollPayload?.error || pollPayload?.job?.error || "Unknown codex runtime error"}`,
-        ) as RuntimeError
-        error.codexThreadId =
-          pollPayload?.thread_id ??
-          pollPayload?.job?.threadId ??
-          null
-        error.trace = trace
-        throw error
-      }
-    }
-  } catch (error) {
-    if (jobId) {
-      throw error
-    }
-    const message = describeRuntimeFetchFailure(error)
-    console.warn(JSON.stringify({
-      event: "codex_runtime.job_path_unavailable",
-      url: runtimeJobsUrl,
-      error: message,
-    }))
-  }
-
-  let response: Response
-  try {
-    response = await fetchWithTimeout(runtimeUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(runtimeInput),
-    }, Math.max(1, remainingTimeoutMs()))
-  } catch (error) {
-    const message = describeRuntimeFetchFailure(error)
-    console.warn(JSON.stringify({
-      event: "codex_runtime.fetch_failed",
-      url: runtimeUrl,
-      error: message,
-    }))
-    throw new Error(`CODEX_RUNTIME_FETCH_FAILED:${message}`)
-  }
-
-  const payload = (await response.json().catch(() => null)) as RuntimeResponsePayload | null
-
-  if (!response.ok) {
-    const error = new Error(
-      `CODEX_RUNTIME_REQUEST_FAILED:${response.status}:${payload?.error || "Unknown codex runtime error"}`,
-    ) as RuntimeError
-    error.codexThreadId = payload?.thread_id ?? null
-    error.branchName = payload?.branchName ?? null
-    error.commitSha = payload?.commitSha ?? null
-    error.baseBranch = payload?.baseBranch ?? null
-    error.baseCommitSha = payload?.baseCommitSha ?? null
-    error.trace = Array.isArray(payload?.trace)
-      ? payload.trace
-          .map((entry) => ({
-            at: typeof entry?.at === "string" ? entry.at : new Date().toISOString(),
-            kind: typeof entry?.kind === "string" ? entry.kind : "runtime",
-            message: typeof entry?.message === "string" ? entry.message : "",
-          }))
-          .filter((entry) => entry.message.trim())
-      : []
-    throw error
-  }
-
-  if (!payload) {
-    throw new Error("CODEX_RUNTIME_INVALID_RESPONSE")
-  }
-
-  return payload
+    timeoutMs: runtimeRequestTimeoutMs(),
+    onProgress: input.onProgress,
+  })
 }
 
 function isTerminalWorkflowStep(step: Record<string, unknown> | null | undefined) {
@@ -645,6 +457,9 @@ function workflowAgentRunResult(input: {
     workflowStepKey: input.workflowStepKey,
     sessionId: input.sessionId,
     autoContinued: input.autoContinued === true,
+    runtimeContinuationId: input.runtimeResponse.thread_id ?? null,
+    runtimeKey: input.runtimeResponse.runtimeKey,
+    runtimeProvider: input.runtimeResponse.provider,
     codexThreadId: input.runtimeResponse.thread_id ?? null,
     branchName: input.runtimeResponse.branchName ?? null,
     commitSha: input.runtimeResponse.commitSha ?? null,
@@ -1046,6 +861,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     parseNullableString(body.linked_change_request_id ?? body.linkedChangeRequestId) ?? null
   const linkedTargetEnvironmentId =
     parseNullableString(body.linked_target_environment_id ?? body.linkedTargetEnvironmentId) ?? null
+  const requestedRuntimeProfileKey =
+    parseNullableString(body.runtime_profile_key ?? body.runtimeProfileKey ?? body.runtime_key ?? body.runtimeKey) ?? null
   const inputMessages = parseResponseInputMessages(body.input)
   const latestUserMessage = [...inputMessages].reverse().find((entry) => entry.role === "user") ?? null
 
@@ -1224,6 +1041,24 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       ...requestedSkillsFromAgentConfig(workflowAgentConfig),
     ]),
   )
+  const workflowRequestedCapabilities = requestedCapabilitiesFromAgentConfig(workflowAgentConfig)
+    .map((key): GatewayCapabilityDescriptor => ({ key }))
+  const interactiveCapabilities = actorType === "admin"
+    ? await listInteractiveGatewayCapabilitiesOrEmpty("full")
+    : []
+  const requestedCapabilities = Array.from(new Map([
+    ...workflowRequestedCapabilities,
+    ...interactiveCapabilities,
+  ].map((capability) => [capability.key, capability])).values())
+  const enabledToolsets = await listEnabledGatewayToolsetsOrEmpty()
+  const workflowRequestedToolsets = requestedToolsetsFromAgentConfig(workflowAgentConfig).map((key) =>
+    enabledToolsets.find((toolset) => toolset.key === key) ?? { key },
+  )
+  const interactiveToolsets = actorType === "admin" ? enabledToolsets : []
+  const requestedToolsets = Array.from(new Map([
+    ...workflowRequestedToolsets,
+    ...interactiveToolsets,
+  ].map((toolset) => [toolset.key, toolset])).values())
 
   createAgentMessage({
     sessionId: session.id,
@@ -1405,24 +1240,39 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   }
 
   try {
-    const runtimeResponse = await requestCodexRuntimeResponse({
+    const runtimeResponse = await requestPrismRuntimeResponse({
       prompt: latestUserMessage.content,
       sessionId: session.id,
-      codexThreadId: typeof session.meta?.codexThreadId === "string" ? session.meta.codexThreadId : null,
+      continuationId:
+        typeof session.meta?.runtimeContinuationId === "string"
+          ? session.meta.runtimeContinuationId
+          : typeof session.meta?.codexThreadId === "string"
+            ? session.meta.codexThreadId
+            : null,
       recentHistory,
+      capabilities: requestedCapabilities,
+      toolsets: requestedToolsets,
+      gatewayContext: {
+        delegatedActorId: actorType === "admin" ? "admin-console" : undefined,
+        requestId: activeLinkedChangeRequestId ?? undefined,
+        workflowRunId: linkedWorkflowRun?.id ?? undefined,
+        workflowStepKey: runnableStepKey ?? undefined,
+      },
       metadata: {
         transport: "site",
-          requestedSkills,
-          workflow: linkedWorkflow
-            ? {
-                key: linkedWorkflow.key,
-                name: linkedWorkflow.name,
-                currentStepKey: runnableStepKey,
-                action: workflowAction,
-                agentConfig: workflowAgentConfig,
-                stepInstruction: workflowStepInstruction,
-              }
-            : null,
+        runtimeProfileKey: requestedRuntimeProfileKey,
+        sessionRuntimeKey: typeof session.meta?.runtimeKey === "string" ? session.meta.runtimeKey : null,
+        requestedSkills,
+        workflow: linkedWorkflow
+          ? {
+              key: linkedWorkflow.key,
+              name: linkedWorkflow.name,
+              currentStepKey: runnableStepKey,
+              action: workflowAction,
+              agentConfig: workflowAgentConfig,
+              stepInstruction: workflowStepInstruction,
+            }
+          : null,
         linkedChangeRequestId: activeLinkedChangeRequestId,
         linkedTargetEnvironmentId: activeLinkedTargetEnvironmentId,
         linkedTargetApp,
@@ -1483,6 +1333,10 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       meta: {
         ...session.meta,
         transport: "site",
+        runtimeContinuationId:
+          runtimeResponse.thread_id ?? session.meta?.runtimeContinuationId ?? session.meta?.codexThreadId ?? null,
+        runtimeKey: runtimeResponse.runtimeKey,
+        runtimeProvider: runtimeResponse.provider,
         codexThreadId: runtimeResponse.thread_id ?? session.meta?.codexThreadId ?? null,
         codexProvider: runtimeResponse.provider ?? "codex-cli",
       },
@@ -1497,6 +1351,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       content: responseText,
       meta: {
         transport: "site",
+        runtimeContinuationId: runtimeResponse.thread_id ?? null,
+        runtimeKey: runtimeResponse.runtimeKey,
+        runtimeProvider: runtimeResponse.provider,
         codexThreadId: runtimeResponse.thread_id ?? null,
       },
     })
@@ -1544,7 +1401,12 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       let continuationStep: Record<string, unknown> | null = nextAutoContinueStep
       let continuationThreadId =
         runtimeResponse.thread_id ??
-        (typeof session.meta?.codexThreadId === "string" ? session.meta.codexThreadId : null)
+        (typeof session.meta?.runtimeContinuationId === "string"
+          ? session.meta.runtimeContinuationId
+          : typeof session.meta?.codexThreadId === "string"
+            ? session.meta.codexThreadId
+            : null)
+      let continuationRuntimeKey = runtimeResponse.runtimeKey
       let continuationHistory = [
         ...recentHistory,
         { role: "user", content: latestUserMessage.content },
@@ -1607,6 +1469,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             ...requestedSkillsFromAgentConfig(continuationAgentConfig),
           ]),
         )
+        const continuationCapabilities = requestedCapabilitiesFromAgentConfig(continuationAgentConfig)
         const continuationPrompt = [
           `Automatically continue workflow step ${continuationStepKey} for request #${latestRequest.requestNumber}: ${latestRequest.title}.`,
           `Step label: ${typeof continuationStep.label === "string" ? continuationStep.label : continuationStepKey}.`,
@@ -1617,13 +1480,21 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         ].join("\n")
 
         try {
-          const continuationResponse = await requestCodexRuntimeResponse({
+          const continuationResponse = await requestPrismRuntimeResponse({
             prompt: continuationPrompt,
             sessionId: session.id,
-            codexThreadId: continuationThreadId,
+            continuationId: continuationThreadId,
             recentHistory: continuationHistory,
+            capabilities: continuationCapabilities,
+            gatewayContext: {
+              requestId: activeLinkedChangeRequestId,
+              workflowRunId: latestRun.id,
+              workflowStepKey: continuationStepKey,
+            },
             metadata: {
               transport: "site",
+              runtimeProfileKey: requestedRuntimeProfileKey,
+              sessionRuntimeKey: continuationRuntimeKey,
               requestedSkills: continuationRequestedSkills,
               workflow: linkedWorkflow
                 ? {
@@ -1673,12 +1544,16 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           const continuationOutcome = parseWorkflowOutcomeFromResponseText(continuationText)
 
           continuationThreadId = continuationResponse.thread_id ?? continuationThreadId
+          continuationRuntimeKey = continuationResponse.runtimeKey
           updateAgentSession(session.id, {
             linkedChangeRequestId: activeLinkedChangeRequestId,
             linkedTargetEnvironmentId: activeLinkedTargetEnvironmentId,
             meta: {
               ...session.meta,
               transport: "site",
+              runtimeContinuationId: continuationThreadId,
+              runtimeKey: continuationResponse.runtimeKey,
+              runtimeProvider: continuationResponse.provider,
               codexThreadId: continuationThreadId,
               codexProvider: continuationResponse.provider ?? "codex-cli",
             },
@@ -1692,6 +1567,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             content: continuationText,
             meta: {
               transport: "site",
+              runtimeContinuationId: continuationThreadId,
+              runtimeKey: continuationResponse.runtimeKey,
+              runtimeProvider: continuationResponse.provider,
               codexThreadId: continuationThreadId,
               workflowStepKey: continuationStepKey,
               autoContinued: true,
@@ -1811,6 +1689,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       output_text: responseText,
       session_id: updatedSession?.id ?? session.id,
       metadata: {
+        runtime_continuation_id: runtimeResponse.thread_id ?? null,
+        runtime_key: runtimeResponse.runtimeKey,
+        runtime_provider: runtimeResponse.provider,
         codex_thread_id: runtimeResponse.thread_id ?? null,
         trace: Array.isArray(runtimeResponse.trace) ? runtimeResponse.trace : [],
         auto_continued_steps: autoContinuedSteps,

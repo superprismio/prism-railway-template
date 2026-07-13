@@ -5,6 +5,8 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
 import { loadRelevantPrismSkills } from './prism-skills.js';
+import { gatewayClient, runtimeCapabilitySessions, runtimeToolsetSessions } from './runtime-gateway.js';
+import { mergeSkillCapabilityRequirements } from './capability-requirements.js';
 
 type HistoryEntry = {
   role: string;
@@ -53,8 +55,24 @@ export type CodexRuntimeInput = {
   recentHistory: HistoryEntry[];
   sessionId: string;
   codexThreadId?: string | null;
+  capabilities?: RuntimeCapabilityDescriptor[];
+  toolsets?: RuntimeToolsetDescriptor[];
+  gatewayContext?: Record<string, string>;
   metadata?: Record<string, unknown>;
+  signal?: AbortSignal;
   onTrace?: (trace: CodexRuntimeResult['trace']) => void;
+};
+
+export type RuntimeToolsetDescriptor = {
+  key: string;
+  protocol?: "openapi" | "mcp" | "http" | "adapter";
+};
+
+export type RuntimeCapabilityDescriptor = {
+  key: string;
+  mode?: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
 };
 
 export type CodexRuntimeResult = {
@@ -172,15 +190,15 @@ function looksLikeGitHubAuthError(message: string) {
   );
 }
 
-async function inspectGitHubRepoAccess(repoUrl: string): Promise<GitHubRepoAccess | null> {
+async function inspectGitHubRepoAccess(repoUrl: string, githubToken: string | null): Promise<GitHubRepoAccess | null> {
   const parsed = parseGitHubRepoSlug(repoUrl);
-  if (!parsed || !config.githubToken) {
+  if (!parsed || !githubToken) {
     return null;
   }
 
   const response = await fetch(`https://api.github.com/repos/${parsed.slug}`, {
     headers: {
-      Authorization: `Bearer ${config.githubToken}`,
+      Authorization: `Bearer ${githubToken}`,
       'User-Agent': 'prism-codex-runtime',
       Accept: 'application/vnd.github+json',
     },
@@ -221,6 +239,7 @@ async function normalizeGitHubRepoError(
   repoUrl: string,
   operation: 'clone' | 'fetch' | 'push',
   error: unknown,
+  githubToken: string | null,
 ): Promise<Error> {
   const message = error instanceof Error ? error.message : String(error);
   if (!looksLikeGitHubAuthError(message)) {
@@ -228,7 +247,7 @@ async function normalizeGitHubRepoError(
   }
 
   const parsed = parseGitHubRepoSlug(repoUrl);
-  const access = await inspectGitHubRepoAccess(repoUrl);
+  const access = await inspectGitHubRepoAccess(repoUrl, githubToken);
   const repoSlug = access?.repoSlug || parsed?.slug || repoUrl;
   const login = access?.login || 'configured GitHub token';
 
@@ -255,16 +274,16 @@ async function normalizeGitHubRepoError(
   );
 }
 
-function buildGitHubAuthArgs(repoUrl: string) {
+function buildGitHubAuthArgs(repoUrl: string, githubToken: string | null) {
   if (!repoUrl.startsWith('https://github.com/')) {
     return [];
   }
 
-  if (!config.githubToken) {
+  if (!githubToken) {
     throw new Error('TARGET_REPO_AUTH_MISSING:GITHUB_TOKEN');
   }
 
-  const basicAuth = Buffer.from(`x-access-token:${config.githubToken}`).toString('base64');
+  const basicAuth = Buffer.from(`x-access-token:${githubToken}`).toString('base64');
   return ['-c', `http.extraheader=AUTHORIZATION: basic ${basicAuth}`];
 }
 
@@ -275,6 +294,7 @@ function isGitHubHttpsRepo(repoUrl: string) {
 async function runGitHubReadCommand(
   repoUrl: string,
   gitArgs: string[],
+  githubToken: string | null,
   options: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
@@ -289,17 +309,18 @@ async function runGitHubReadCommand(
     await runCommand(['git', ...gitArgs], options);
     return;
   } catch (error) {
-    if (!config.githubToken) {
+    if (!githubToken) {
       throw error;
     }
   }
 
-  await runCommand(['git', ...buildGitHubAuthArgs(repoUrl), ...gitArgs], options);
+  await runCommand(['git', ...buildGitHubAuthArgs(repoUrl, githubToken), ...gitArgs], options);
 }
 
 async function runGitHubReadCapture(
   repoUrl: string,
   gitArgs: string[],
+  githubToken: string | null,
   options: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
@@ -312,12 +333,12 @@ async function runGitHubReadCapture(
   try {
     return await runCommandCapture(['git', ...gitArgs], options);
   } catch (error) {
-    if (!config.githubToken) {
+    if (!githubToken) {
       throw error;
     }
   }
 
-  return await runCommandCapture(['git', ...buildGitHubAuthArgs(repoUrl), ...gitArgs], options);
+  return await runCommandCapture(['git', ...buildGitHubAuthArgs(repoUrl, githubToken), ...gitArgs], options);
 }
 
 async function runCommand(
@@ -462,6 +483,7 @@ type PreparedExecutionWorkspace = {
 async function prepareExecutionWorkspace(
   input: CodexRuntimeInput,
   trace: CodexRuntimeResult['trace'],
+  githubToken: string | null,
 ) : Promise<PreparedExecutionWorkspace> {
   if (!shouldHydrateExternalWorkspace(input.metadata)) {
     return {
@@ -517,15 +539,15 @@ async function prepareExecutionWorkspace(
         '--single-branch',
         targetApp.repoUrl,
         workspacePath,
-      ]);
+      ], githubToken);
     } catch (error) {
-      throw await normalizeGitHubRepoError(targetApp.repoUrl, 'clone', error);
+      throw await normalizeGitHubRepoError(targetApp.repoUrl, 'clone', error, githubToken);
     }
   } else {
     appendTrace(trace, 'workspace.reuse', `Reusing existing workspace ${workspacePath}`);
     const remoteOriginUrl = targetApp.repoUrl;
     await runCommand(['git', 'remote', 'set-url', 'origin', remoteOriginUrl], { cwd: workspacePath }).catch(() => undefined);
-    await runGitHubReadCommand(remoteOriginUrl, ['fetch', 'origin', repoBranch, changeRequestBranch], { cwd: workspacePath }).catch((error) => {
+    await runGitHubReadCommand(remoteOriginUrl, ['fetch', 'origin', repoBranch, changeRequestBranch], githubToken, { cwd: workspacePath }).catch((error) => {
       appendTrace(trace, 'workspace.fetch_failed', error instanceof Error ? error.message : 'git fetch failed');
     });
   }
@@ -586,10 +608,11 @@ async function gitHasChanges(cwd: string) {
   return Boolean(status.trim());
 }
 
-async function remoteBranchExists(repoUrl: string, branchName: string, cwd: string) {
+async function remoteBranchExists(repoUrl: string, branchName: string, cwd: string, githubToken: string | null) {
   const output = await runGitHubReadCapture(
     repoUrl,
     ['ls-remote', '--heads', repoUrl, branchName],
+    githubToken,
     { cwd },
   ).catch(() => '');
   return Boolean(output.trim());
@@ -606,6 +629,7 @@ async function finalizeGitWorkspace(
   input: CodexRuntimeInput,
   preparedWorkspace: PreparedExecutionWorkspace,
   trace: CodexRuntimeResult['trace'],
+  githubToken: string | null,
 ) {
   if (!preparedWorkspace.repoUrl || preparedWorkspace.workspacePath === config.codexWorkspaceRoot) {
     return await captureGitState(
@@ -633,14 +657,14 @@ async function finalizeGitWorkspace(
   appendTrace(trace, 'git.push', `Pushing ${currentBranch} to origin`);
   try {
     await runCommand(
-      ['git', ...buildGitHubAuthArgs(preparedWorkspace.repoUrl), 'push', '-u', 'origin', currentBranch],
+      ['git', ...buildGitHubAuthArgs(preparedWorkspace.repoUrl, githubToken), 'push', '-u', 'origin', currentBranch],
       { cwd: workspacePath },
     );
   } catch (error) {
-    throw await normalizeGitHubRepoError(preparedWorkspace.repoUrl, 'push', error);
+    throw await normalizeGitHubRepoError(preparedWorkspace.repoUrl, 'push', error, githubToken);
   }
 
-  const pushed = await remoteBranchExists(preparedWorkspace.repoUrl, currentBranch, workspacePath);
+  const pushed = await remoteBranchExists(preparedWorkspace.repoUrl, currentBranch, workspacePath, githubToken);
   if (!pushed) {
     throw new Error(`GIT_PUSH_VERIFICATION_FAILED:${currentBranch}`);
   }
@@ -653,12 +677,17 @@ async function finalizeGitWorkspace(
   };
 }
 
-async function buildPrompt(input: CodexRuntimeInput, isResume: boolean) {
+type LoadedPrismSkills = Awaited<ReturnType<typeof loadRelevantPrismSkills>>;
+
+function buildPrompt(
+  input: CodexRuntimeInput,
+  isResume: boolean,
+  prismSkills: LoadedPrismSkills,
+) {
   const history = input.recentHistory
     .slice(-12)
     .map((entry) => `${entry.role === 'assistant' ? 'Assistant' : 'User'}: ${entry.content}`)
     .join('\n');
-  const prismSkills = await loadRelevantPrismSkills(input.prompt, input.metadata);
   const availableSkillsSummary = prismSkills.availableSkills.length
     ? prismSkills.availableSkills
       .map((skill) => `${skill.name}: ${skill.description}`)
@@ -681,6 +710,42 @@ async function buildPrompt(input: CodexRuntimeInput, isResume: boolean) {
 
   if (input.metadata && Object.keys(input.metadata).length) {
     sections.push(`Session metadata: ${JSON.stringify(input.metadata)}`);
+  }
+
+  if (input.capabilities?.length) {
+    sections.push(
+      '',
+      'Organization capabilities assigned to this runtime job:',
+      input.capabilities.map((capability) => JSON.stringify(capability)).join('\n'),
+      'Invoke an assigned capability by POSTing JSON shaped as {"capability":"...","input":{...}} to $PRISM_RUNTIME_CAPABILITY_URL with header x-runtime-capability-token: $PRISM_RUNTIME_CAPABILITY_TOKEN.',
+      'Follow each capability inputSchema. Include every required property and do not guess that a rejected request is a provider configuration failure when required input was omitted.',
+      'Never print, persist, or return the runtime capability token.',
+    );
+  }
+
+  const callableToolsets = input.toolsets?.filter((toolset) => toolset.protocol !== 'adapter') ?? [];
+  const adapterToolsets = input.toolsets?.filter((toolset) => toolset.protocol === 'adapter') ?? [];
+
+  if (callableToolsets.length) {
+    sections.push(
+      '',
+      'Organization toolset profiles assigned to this runtime job:',
+      callableToolsets.map((toolset) => JSON.stringify(toolset)).join('\n'),
+      'Use an assigned profile by POSTing to $PRISM_RUNTIME_TOOLSET_URL with header x-runtime-toolset-token: $PRISM_RUNTIME_TOOLSET_TOKEN. For HTTP/OpenAPI profiles use {"toolset":"...","action":"describe"} or {"toolset":"...","action":"request","request":{"method":"GET","path":"/api/...","query":{},"body":{}}}. For MCP profiles, describe returns tools/list and calls use {"toolset":"...","action":"request","request":{"tool":"tool_name","arguments":{}}}.',
+      'Use Node.js built-in fetch for these local HTTP calls; curl may not be installed in the runtime image.',
+      'The destination and credential are fixed by Gateway, while method, same-origin path, query, and body remain under your control. Never print, persist, or return the runtime toolset token.',
+    );
+  }
+
+  if (adapterToolsets.length) {
+    sections.push(
+      '',
+      'Organization compatibility credential profiles assigned to this runtime job:',
+      adapterToolsets.map((toolset) => JSON.stringify(toolset)).join('\n'),
+      'Gateway has already injected these profiles under their conventional environment variable names for this child job. Use the existing skill, CLI, SDK, or provider API exactly as instructed.',
+      'Adapter profiles are not HTTP or MCP destinations. Do not invoke them through $PRISM_RUNTIME_TOOLSET_URL and do not attempt to resolve any adapter discovery URL.',
+      'Never print, persist, or return leased credential values.',
+    );
   }
 
   if (availableSkillsSummary) {
@@ -788,10 +853,33 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   const outputFile = path.join(os.tmpdir(), `codex-runtime-${randomUUID()}.txt`);
   const isResume = Boolean(input.codexThreadId);
   const trace: CodexRuntimeResult['trace'] = [];
-  const preparedWorkspace = await prepareExecutionWorkspace(input, trace);
+  const prismSkills = await loadRelevantPrismSkills(input.prompt, input.metadata);
+  const effectiveCapabilities = mergeSkillCapabilityRequirements(
+    input.capabilities ?? [],
+    prismSkills.selectedSkills,
+  );
+  const effectiveToolsets = Array.from(new Map<string, RuntimeToolsetDescriptor>([
+    ...(input.toolsets ?? []),
+    ...prismSkills.selectedSkills.flatMap((skill) => skill.requiredToolsets.map((key) => ({ key }))),
+  ].map((toolset) => [toolset.key, toolset])).values());
+  const lease = effectiveToolsets.length
+    ? await gatewayClient.leaseToolsets({
+        toolsets: effectiveToolsets.map((toolset) => toolset.key),
+        context: input.gatewayContext || {},
+      })
+    : { env: {}, leasedToolsets: [] };
+  const leasedKeys = new Set(lease.leasedToolsets);
+  const resolvedToolsets = effectiveToolsets.map((toolset) =>
+    leasedKeys.has(toolset.key) ? { ...toolset, protocol: 'adapter' as const } : toolset,
+  );
+  const adapterToolsets = resolvedToolsets.filter((toolset) => toolset.protocol === 'adapter');
+  const callableToolsets = resolvedToolsets.filter((toolset) => toolset.protocol !== 'adapter');
+  const leasedEnv = lease.env;
+  const githubToken = leasedEnv.TARGET_REPO_GITHUB_TOKEN || config.githubToken;
+  const preparedWorkspace = await prepareExecutionWorkspace(input, trace, githubToken);
   input.onTrace?.([...trace]);
   const executionWorkspaceRoot = preparedWorkspace.workspacePath;
-  const prompt = await buildPrompt(input, isResume);
+  const prompt = buildPrompt({ ...input, capabilities: effectiveCapabilities, toolsets: resolvedToolsets }, isResume, prismSkills);
   const args = isResume
     ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
     : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile, '-C', executionWorkspaceRoot];
@@ -806,8 +894,9 @@ async function runCodexProcess(input: CodexRuntimeInput) {
 
   args.push(prompt);
 
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
+    ...leasedEnv,
     GIT_AUTHOR_NAME: config.gitAuthorName,
     GIT_AUTHOR_EMAIL: config.gitAuthorEmail,
     GIT_COMMITTER_NAME: config.gitCommitterName,
@@ -815,21 +904,47 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     ...(config.codexHome ? { CODEX_HOME: config.codexHome } : {}),
     ...(config.appApiBaseUrl ? { PRISM_AGENT_API_BASE_URL: config.appApiBaseUrl } : {}),
     ...(config.appServiceToken ? { PRISM_AGENT_SERVICE_TOKEN: config.appServiceToken } : {}),
-    ...(config.githubToken
+    ...(githubToken
       ? {
-          TARGET_REPO_GITHUB_TOKEN: config.githubToken,
-          GITHUB_TOKEN: process.env.GITHUB_TOKEN?.trim() || config.githubToken,
-          GH_TOKEN: process.env.GH_TOKEN?.trim() || config.githubToken,
+          TARGET_REPO_GITHUB_TOKEN: githubToken,
+          GITHUB_TOKEN: process.env.GITHUB_TOKEN?.trim() || githubToken,
+          GH_TOKEN: process.env.GH_TOKEN?.trim() || githubToken,
         }
       : {}),
   };
+  delete env.PRISM_GATEWAY_TOKEN;
+  const capabilityToken = effectiveCapabilities.length
+    ? runtimeCapabilitySessions.create(
+        effectiveCapabilities.map((capability) => capability.key),
+        input.gatewayContext || {},
+        config.codexRuntimeTimeoutMs + 60_000,
+      )
+    : null;
+  if (capabilityToken) {
+    env.PRISM_RUNTIME_CAPABILITY_URL = `http://127.0.0.1:${config.port}/v1/runtime/capabilities/invoke`;
+    env.PRISM_RUNTIME_CAPABILITY_TOKEN = capabilityToken;
+    env.PRISM_RUNTIME_CAPABILITIES = effectiveCapabilities.map((capability) => capability.key).join(',');
+  }
+  const toolsetToken = callableToolsets.length
+    ? runtimeToolsetSessions.create(
+        callableToolsets.map((toolset) => toolset.key),
+        input.gatewayContext || {},
+        config.codexRuntimeTimeoutMs + 60_000,
+      )
+    : null;
+  if (toolsetToken) {
+    env.PRISM_RUNTIME_TOOLSET_URL = `http://127.0.0.1:${config.port}/v1/runtime/toolsets/invoke`;
+    env.PRISM_RUNTIME_TOOLSET_TOKEN = toolsetToken;
+    env.PRISM_RUNTIME_TOOLSETS = callableToolsets.map((toolset) => toolset.key).join(',');
+  }
 
   console.log(
     `[codex-runtime] spawn resume=${isResume ? 'yes' : 'no'} session=${input.sessionId} workspace=${executionWorkspaceRoot}`,
   );
 
-  return await new Promise<CodexRuntimeResult>((resolve, reject) => {
-    const child = spawn(config.codexBinary, args, {
+  try {
+    return await new Promise<CodexRuntimeResult>((resolve, reject) => {
+      const child = spawn(config.codexBinary, args, {
       cwd: executionWorkspaceRoot,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -846,6 +961,24 @@ async function runCodexProcess(input: CodexRuntimeInput) {
 
     recordTrace('run.started', isResume ? 'Resuming Codex thread' : 'Starting Codex thread');
 
+    const cancelRun = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      input.signal?.removeEventListener('abort', cancelRun);
+      child.kill('SIGTERM');
+      const forceKill = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }, 5_000);
+      forceKill.unref();
+      void fs.unlink(outputFile).catch(() => undefined);
+      recordTrace('run.canceled', 'Codex runtime job was canceled');
+      const error = new Error('RUNTIME_JOB_CANCELED') as CodexRuntimeError;
+      error.codexThreadId = threadId;
+      error.trace = trace;
+      reject(error);
+    };
+
     const timeout = setTimeout(() => {
       if (settled) return;
       settled = true;
@@ -856,6 +989,12 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       recordTrace('run.timeout', 'Codex runtime timed out before completion');
       reject(error);
     }, config.codexRuntimeTimeoutMs);
+
+    if (input.signal?.aborted) {
+      cancelRun();
+      return;
+    }
+    input.signal?.addEventListener('abort', cancelRun, { once: true });
 
     child.stdout.on('data', (chunk) => {
       stdoutBuffer += String(chunk);
@@ -903,6 +1042,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      input.signal?.removeEventListener('abort', cancelRun);
       const runtimeError = error as CodexRuntimeError;
       runtimeError.codexThreadId = threadId;
       runtimeError.trace = trace;
@@ -913,6 +1053,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      input.signal?.removeEventListener('abort', cancelRun);
 
       try {
         const outputText = await fs.readFile(outputFile, 'utf8').catch(() => '');
@@ -944,7 +1085,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
           recordTrace('run.empty_tolerated', 'Codex completed without assistant text; returning task fallback text');
         }
         recordTrace('run.completed', 'Codex completed successfully');
-        const finalGitState = await finalizeGitWorkspace(input, preparedWorkspace, trace).catch((error) => {
+        const finalGitState = await finalizeGitWorkspace(input, preparedWorkspace, trace, githubToken).catch((error) => {
           recordTrace('git.finalize_failed', error instanceof Error ? error.message : 'git finalize failed');
           throw error;
         });
@@ -964,7 +1105,11 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         reject(error);
       }
     });
-  });
+    });
+  } finally {
+    if (capabilityToken) runtimeCapabilitySessions.revoke(capabilityToken);
+    if (toolsetToken) runtimeToolsetSessions.revoke(toolsetToken);
+  }
 }
 
 export async function generateCodexCliReply(input: CodexRuntimeInput) {

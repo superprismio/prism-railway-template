@@ -181,7 +181,7 @@ export async function POST(request: Request) {
         {
           ok: false,
           error: `Workflow manifest not found at ${manifestPath}`,
-          hint: 'To create a workflow from Codex Runtime, POST {"key","manifest","files"} to /agent/workflows. Codex Runtime cannot write the site service volume directly.',
+          hint: 'To create a workflow from a runtime adapter, POST {"key","manifest","files"} to /agent/workflows. Runtime adapters cannot write the site service volume directly.',
         },
         { status: 404 },
       );

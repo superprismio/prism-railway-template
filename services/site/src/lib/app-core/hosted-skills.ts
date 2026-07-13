@@ -2,11 +2,14 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import matter from 'gray-matter';
 
 export interface HostedSkillSummary {
   name: string;
   path: string;
   description: string | null;
+  requiredCapabilities: string[];
+  requiredToolsets: string[];
   source: 'site' | 'source' | 'custom';
   kind: 'built-in' | 'source' | 'custom';
   readOnly: boolean;
@@ -18,6 +21,46 @@ export interface HostedSkillSummary {
 }
 
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const CAPABILITY_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/;
+
+export function readSkillCapabilityRequirements(content: string) {
+  try {
+    const data = matter(content).data as Record<string, unknown>;
+    const metadata = data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
+      ? data.metadata as Record<string, unknown>
+      : {};
+    const value = metadata['gateway-capabilities']
+      ?? metadata.gatewayCapabilities
+      ?? metadata.requiredCapabilities
+      ?? data['gateway-capabilities']
+      ?? data.gatewayCapabilities
+      ?? data.requiredCapabilities;
+    const entries = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+    return Array.from(new Set(entries
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter((entry) => CAPABILITY_KEY_PATTERN.test(entry))));
+  } catch {
+    return [];
+  }
+}
+
+export function readSkillToolsetRequirements(content: string) {
+  try {
+    const data = matter(content).data as Record<string, unknown>;
+    const metadata = data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
+      ? data.metadata as Record<string, unknown>
+      : {};
+    const value = metadata['gateway-toolsets'] ?? metadata.gatewayToolsets ?? data['gateway-toolsets'] ?? data.gatewayToolsets;
+    const entries = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+    return Array.from(new Set(entries
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter((entry) => CAPABILITY_KEY_PATTERN.test(entry))));
+  } catch {
+    return [];
+  }
+}
 
 function readSkillDescription(skillFilePath: string) {
   const lines = fs.readFileSync(skillFilePath, 'utf8').split(/\r?\n/);
@@ -110,6 +153,8 @@ function listSkillsFromRoot(
         name: entry.name,
         path: source === 'custom' ? skillDir : path.relative(repoRoot, skillDir),
         description: readSkillDescription(skillFilePath),
+        requiredCapabilities: readSkillCapabilityRequirements(fs.readFileSync(skillFilePath, 'utf8')),
+        requiredToolsets: readSkillToolsetRequirements(fs.readFileSync(skillFilePath, 'utf8')),
         source,
         kind,
         readOnly: kind !== 'custom',
@@ -255,6 +300,8 @@ export function upsertCustomSkill(customSkillsRoot: string, skillName: string, c
     name: normalizedSkillName,
     path: skillDir,
     description: readSkillDescription(skillFilePath),
+    requiredCapabilities: readSkillCapabilityRequirements(content),
+    requiredToolsets: readSkillToolsetRequirements(content),
     source: 'custom',
     kind: 'custom',
     readOnly: false,
@@ -273,6 +320,8 @@ export function deleteCustomSkill(customSkillsRoot: string, skillName: string) {
     name: normalizedSkillName,
     path: skillDir,
     description: readSkillDescription(skillFilePath),
+    requiredCapabilities: readSkillCapabilityRequirements(fs.readFileSync(skillFilePath, 'utf8')),
+    requiredToolsets: readSkillToolsetRequirements(fs.readFileSync(skillFilePath, 'utf8')),
     source: 'custom',
     kind: 'custom',
     readOnly: false,

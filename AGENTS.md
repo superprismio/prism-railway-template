@@ -46,6 +46,11 @@ Send service auth as:
 - `POST /agent/workflows`
 - `GET /agent/hooks`
 - `POST /agent/hooks`
+- `GET /agent/runtime-profiles`
+- `POST /agent/runtime-profiles`
+- `GET /agent/runtime-profiles/:key`
+- `PATCH /agent/runtime-profiles/:key`
+- `DELETE /agent/runtime-profiles/:key`
 - `GET /agent/hooks/:key`
 - `PATCH /agent/hooks/:key`
 - `DELETE /agent/hooks/:key`
@@ -64,10 +69,34 @@ Send service auth as:
 - `PATCH /agent/site-content/branding`
 - `GET /agent/source-adapter-policy`
 - `PATCH /agent/source-adapter-policy`
+- `GET /agent/gateway`
+- `POST /agent/gateway/connections`
+- `POST /agent/gateway/integrations`
+- `GET /agent/gateway/toolsets`
+- `POST /agent/gateway/toolsets`
+- `POST /agent/gateway/capabilities`
+- `PATCH /agent/gateway/capabilities/:key`
+- `POST /agent/gateway/capabilities/:key/test`
 
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
 
+For runtime adapter registration, default selection, or routing metadata, use
+`/agent/runtime-profiles`. Runtime profiles contain adapter URLs and features,
+not provider credentials. The first configured profile becomes the default;
+setting `isDefault: true` moves the default to that profile.
+
 For source adapter access rules, use `/agent/source-adapter-policy`. Policies are platform-scoped. Use `platforms.discord.targets` for Discord channels or threads, `platforms.discord.groups` for Discord role IDs, and `platforms.discord.users` for Discord user IDs. Use `platforms.telegram.targets` for Telegram chat/group/channel IDs and `platforms.telegram.users` for Telegram user IDs. Telegram DMs are disabled by default unless explicitly enabled in adapter env/config.
+
+For Gateway integration setup and troubleshooting, use the built-in
+`prism-gateway-author` skill. Gateway agent routes accept non-secret
+configuration only. Never ask for or send credentials through chat or
+`/agent/*`; create a pending connection and direct the admin to the returned
+Settings credential URL.
+
+Assigned runtime toolsets use short-lived runtime-local tokens. The runtime
+interface supports `describe` for the canonical API description and `request`
+for flexible same-origin method/path/query/body calls. Provider credentials and
+destination origins are never runtime inputs.
 
 For questions like "what happened to request #10?" or "what artifacts did request #10 create?", do not use `/admin/board`. Use:
 
@@ -124,6 +153,35 @@ Examples:
 - Workflow create/update/reasoning: use `prism-workflow-author`, then `GET /agent/workflows` or `POST /agent/workflows`.
 - Task create/update/reasoning: use `prism-task-author`, then `GET /agent/tasks` or `POST /agent/tasks`.
 - Skill create/update/reasoning: use `prism-skill-author`, then `GET /agent/skills` or `POST /agent/skills`.
+
+Instance-owned deterministic workflows may declare required Gateway toolsets in
+`SKILL.md` frontmatter:
+
+```yaml
+metadata:
+  gateway-toolsets:
+    - crm.admin
+```
+
+Existing narrow wrappers continue to use `metadata.gateway-capabilities` during
+migration. Do not create one narrow capability per route or collection for a
+broad OpenAPI/MCP integration.
+
+Do not add Prism-specific Gateway metadata to generic or externally sourced
+skills merely to make interactive access work. Admin Console and full-access
+source contexts receive enabled organization toolsets from Site policy.
+
+Codex Runtime adds Gateway requirements to the job-scoped session when it
+selects the skill. Workflows should reference the skill through
+`agentConfig.skills`; tasks should request it through
+`instructionConfig.requestedSkills`. Do not duplicate requirement lists in each
+workflow, task, or hook. Keep `agentConfig.gatewayCapabilities` only for direct
+narrow compatibility calls.
+
+Before removing a legacy integration secret from Codex Runtime, run Prism
+Doctor and exercise every enabled workflow, task, and hook that uses the
+migrated skill. Keep the old credential available until the Gateway path passes
+those instance checks.
 
 ## Output Adapter Delivery
 

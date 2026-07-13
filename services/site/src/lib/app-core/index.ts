@@ -18,11 +18,17 @@ export {
 export { readSiteContent, writeSiteContent, normalizeSiteContent, type SiteContent } from './site-content';
 export {
   defaultSourceAdapterPolicy,
+  isSourceAdapterPlatform,
   readSourceAdapterPolicy,
   writeSourceAdapterPolicy,
   normalizeSourceAdapterPolicy,
   mergeSourceAdapterPolicy,
+  resolveSourceAdapterPolicy,
+  sourceAdapterCapabilitiesForMode,
   type SourceAdapterAccessMode,
+  type SourceAdapterPlatform,
+  type ResolvedSourceAdapterPolicy,
+  type SourceAdapterIdentityContext,
   type SourceAdapterPolicySettings,
 } from './source-adapter-policy';
 export {
@@ -76,6 +82,24 @@ export {
 export { transcribeCaptureChunk, transcribeCaptureSession } from './capture-transcription';
 export { summarizeCaptureSession, type CaptureSummary } from './capture-summary';
 export { recapCaptureSession, type CaptureRecap } from './capture-recap';
+export {
+  deleteRuntimeProfile,
+  ensureBootstrapRuntimeProfile,
+  getRuntimeProfile,
+  listRuntimeProfiles,
+  prismRuntimeContractVersion,
+  resolveRuntimeProfile,
+  upsertRuntimeProfile,
+  type RuntimeProfileRecord,
+  type UpsertRuntimeProfileInput,
+} from './runtime-profiles';
+export {
+  requestRuntimeResponse,
+  requestRuntimeResponseWithProfile,
+  type RuntimeRequestInput,
+  type RuntimeResponse,
+  type RuntimeTraceEntry,
+} from './runtime-client';
 export { promoteMeetingSummaryToMemory, publicMemoryArtifactUrl, type MeetingMemoryPromotionResult } from './meeting-memory';
 export { readRecordingSummaryProfile, recordingSummaryProfileSkillName } from './recording-summary-profile';
 export {

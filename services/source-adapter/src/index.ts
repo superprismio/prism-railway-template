@@ -1032,11 +1032,82 @@ async function appendSessionMessage(input: {
   });
 }
 
+type RuntimeCapabilityDescriptor = {
+  key: string;
+  mode?: string;
+  description?: string;
+  inputSchema?: JsonObject;
+};
+
+type RuntimeToolsetDescriptor = {
+  key: string;
+  protocol?: "openapi" | "mcp" | "http" | "adapter";
+};
+
+async function resolveInteractiveGatewayAccess(input: {
+  platform: "discord" | "telegram";
+  targetId: string;
+  threadId?: string | null;
+  groupIds?: string[];
+  userId: string;
+}): Promise<{ capabilities: RuntimeCapabilityDescriptor[]; toolsets: RuntimeToolsetDescriptor[] }> {
+  try {
+    const payload = await appApiRequest("/agent/gateway/interactive-capabilities", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    const descriptors = Array.isArray(payload.capabilityDescriptors)
+      ? payload.capabilityDescriptors
+      : Array.isArray(payload.capabilities)
+        ? payload.capabilities
+        : [];
+    const normalized = descriptors.flatMap((entry): RuntimeCapabilityDescriptor[] => {
+      if (typeof entry === "string") {
+        const key = entry.trim();
+        return /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key) ? [{ key }] : [];
+      }
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const record = entry as JsonObject;
+      const key = typeof record.key === "string" ? record.key.trim() : "";
+      if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key)) return [];
+      const inputSchema = record.inputSchema && typeof record.inputSchema === "object" && !Array.isArray(record.inputSchema)
+        ? record.inputSchema as JsonObject
+        : undefined;
+      return [{
+        key,
+        ...(typeof record.mode === "string" ? { mode: record.mode.slice(0, 40) } : {}),
+        ...(typeof record.description === "string" ? { description: record.description.slice(0, 500) } : {}),
+        ...(inputSchema ? { inputSchema } : {}),
+      }];
+    });
+    const toolsets = (Array.isArray(payload.toolsets) ? payload.toolsets : []).flatMap((entry): RuntimeToolsetDescriptor[] => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const record = entry as JsonObject;
+      const key = typeof record.key === "string" ? record.key.trim() : "";
+      if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key)) return [];
+      const protocol = record.protocol === "openapi" || record.protocol === "mcp" || record.protocol === "http" || record.protocol === "adapter"
+        ? record.protocol
+        : undefined;
+      return [{ key, ...(protocol ? { protocol } : {}) }];
+    });
+    return {
+      capabilities: Array.from(new Map(normalized.map((descriptor) => [descriptor.key, descriptor])).values()),
+      toolsets: Array.from(new Map(toolsets.map((descriptor) => [descriptor.key, descriptor])).values()),
+    };
+  } catch (error) {
+    console.warn("[source-adapter] interactive Gateway access unavailable; continuing without it", describeError(error));
+    return { capabilities: [], toolsets: [] };
+  }
+}
+
 async function codexRuntimeRequest(input: {
   prompt: string;
   sessionId: string;
   codexThreadId: string | null;
   recentHistory: Array<{ role: string; content: string }>;
+  capabilities?: RuntimeCapabilityDescriptor[];
+  toolsets?: RuntimeToolsetDescriptor[];
+  gatewayContext?: JsonObject;
   metadata: JsonObject;
 }): Promise<{ responseText: string; codexThreadId: string | null }> {
   const timeoutMs = adapterConfig().codexRuntimeRequestTimeoutSeconds * 1000;
@@ -1045,6 +1116,9 @@ async function codexRuntimeRequest(input: {
     sessionId: input.sessionId,
     codexThreadId: input.codexThreadId,
     recentHistory: input.recentHistory,
+    capabilities: input.capabilities ?? [],
+    toolsets: input.toolsets ?? [],
+    context: input.gatewayContext ?? {},
     metadata: input.metadata,
   };
   const runtimeBase = codexRuntimeBaseUrl();
@@ -1749,6 +1823,11 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       : null) ||
     (typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
+  const gatewayAccess = await resolveInteractiveGatewayAccess({
+    platform: "telegram",
+    targetId: transport.chatId,
+    userId: transport.authorId,
+  });
 
   const stopTyping = startTypingHeartbeat(transport.sendTyping);
   const clearThinking = transport.sendThinkingMessage
@@ -1763,6 +1842,11 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       sessionId: String(session.id),
       codexThreadId,
       recentHistory,
+      capabilities: gatewayAccess.capabilities,
+      toolsets: gatewayAccess.toolsets,
+      gatewayContext: {
+        delegatedActorId: `telegram:${transport.authorId}`,
+      },
       metadata: {
         transport: "telegram",
         telegramChatId: transport.chatId,
@@ -2726,6 +2810,13 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
       ? String((existingSession.meta as JsonObject).codexThreadId)
       : null) ||
     (typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
+  const gatewayAccess = await resolveInteractiveGatewayAccess({
+    platform: "discord",
+    targetId: transport.channelId,
+    threadId: transport.threadId,
+    groupIds: transport.authorRoleIds,
+    userId: transport.authorId,
+  });
 
   const runAndSendCodexReply = async () => {
     const stopTyping = startTypingHeartbeat(transport.sendTyping);
@@ -2736,6 +2827,11 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         sessionId: String(session.id),
         codexThreadId,
         recentHistory,
+        capabilities: gatewayAccess.capabilities,
+        toolsets: gatewayAccess.toolsets,
+        gatewayContext: {
+          delegatedActorId: `discord:${transport.authorId}`,
+        },
         metadata: {
           transport: "discord",
           discordGuildId: transport.guildId,
