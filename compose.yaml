@@ -50,7 +50,7 @@ services:
   site:
     build:
       context: .
-      dockerfile: services/site/Dockerfile
+      dockerfile: docker/site.Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: production
