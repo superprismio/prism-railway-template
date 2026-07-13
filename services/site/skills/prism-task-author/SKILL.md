@@ -163,6 +163,9 @@ Script runner task shape:
     "timeoutMs": 60000
   },
   "instructionConfig": {},
+  "agentConfig": {
+    "gatewayToolsets": ["example.read"]
+  },
   "outputConfig": {
     "outputDestinations": [
       {
@@ -176,7 +179,15 @@ Script runner task shape:
 }
 ```
 
-For script-runner tasks, the script itself must be a site-owned task script available through `/agent/task-scripts/:key/content`. Do not rely on local Codex Runtime files, repo-only files, or task-runner env registries for scheduled execution. The task row only references `scriptKey` and passes structured params. Scripts should write JSON to stdout and may include `shouldNotify:false` to suppress configured output delivery for healthy/no-op runs.
+For script-runner tasks, the script itself must be a site-owned task script available through `/agent/task-scripts/:key/content`. Do not rely on local Codex Runtime files, repo-only files, or task-runner env registries for scheduled execution. The task row only references `scriptKey` and passes structured non-secret params. Scripts should write JSON to stdout and may include `shouldNotify:false` to suppress configured output delivery for healthy/no-op runs.
+
+When a script needs an organization credential, bind an adapter connected
+service in Gateway and declare its profile key in
+`agentConfig.gatewayToolsets`. Read the profile's leased environment variable
+from `process.env` in the script. Never store credentials in
+`inputConfig.params`, task-script content, or output. The lease exists only in
+the script child process and the task must fail when an assigned lease cannot be
+obtained.
 
 Create or update a task script before creating the scheduled task:
 

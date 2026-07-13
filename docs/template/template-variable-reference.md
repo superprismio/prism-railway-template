@@ -59,7 +59,7 @@ Use this while filling out the Railway template composer.
 | `GATEWAY_PREVIOUS_MASTER_KEY_VERSION` | empty | Version for the temporary previous root key. | Yes |
 | `GATEWAY_SITE_TOKEN` | `${{ secret(64) }}` | Caller-specific token for server-side Site administration calls. | No |
 | `GATEWAY_CODEX_RUNTIME_TOKEN` | `${{ secret(64) }}` | Caller-specific token for Codex Runtime connected-service use and job-scoped leases. | No |
-| `GATEWAY_TASK_RUNNER_TOKEN` | `${{ secret(64) }}` | Caller-specific token when Task Runner later invokes Gateway directly. | Yes |
+| `GATEWAY_TASK_RUNNER_TOKEN` | `${{ secret(64) }}` | Caller-specific token for Task Runner job-scoped credential leases. | No |
 
 ## Discord Adapter
 
@@ -143,6 +143,9 @@ Use this while filling out the Railway template composer.
 | `PRISM_MEMORY_BASE_URL` | `http://${{prism-memory.RAILWAY_PRIVATE_DOMAIN}}:${{prism-memory.PORT}}` | Private URL for Prism Memory. References the memory service port. | No |
 | `PRISM_API_KEY` | `${{prism-memory.PRISM_API_KEY}}` | Prism Memory API key reference. | No |
 | `CODEX_RUNTIME_BASE_URL` | `http://${{codex-runtime.RAILWAY_PRIVATE_DOMAIN}}:${{codex-runtime.PORT}}` | Private URL for Codex Runtime. References the runtime service port. | No |
+| `PRISM_GATEWAY_ENABLED` | `true` | Enables job-scoped Gateway credential leases for assigned script-runner tasks. | Yes |
+| `PRISM_GATEWAY_BASE_URL` | `http://${{prism-gateway.RAILWAY_PRIVATE_DOMAIN}}:${{prism-gateway.PORT}}` | Private Gateway URL. | Yes |
+| `PRISM_GATEWAY_TOKEN` | `${{prism-gateway.GATEWAY_TASK_RUNNER_TOKEN}}` | Task Runner caller token for Gateway leases. | Yes |
 
 ## Discord Sync Cron
 

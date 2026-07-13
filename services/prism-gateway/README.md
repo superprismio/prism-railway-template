@@ -47,7 +47,9 @@ x-gateway-token: <caller-specific-token>
 ```
 
 Connection, connected-service, and operations mutations require the Site caller
-token. Runtime and Task Runner tokens cannot use admin routes. Provider secret
+token. Runtime and Task Runner tokens cannot use admin routes. Runtime callers
+and Task Runner can lease adapter connected services; Task Runner uses leases
+only for assigned script-job child processes. Provider secret
 values are accepted on connection create or credential replacement and are
 never returned by connection, catalog, audit, or health responses.
 

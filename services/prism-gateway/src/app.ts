@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
-import { gatewayAuth, requireRuntimeCaller, requireSiteCaller } from "./auth.js";
+import { gatewayAuth, requireLeaseCaller, requireRuntimeCaller, requireSiteCaller } from "./auth.js";
 import { GatewayInvoker } from "./invoke.js";
 import { GatewayStore, GatewayStoreError } from "./store.js";
 import { GatewayDriverError } from "./http-json-read.js";
@@ -358,7 +358,7 @@ export function createGatewayApp(dependencies: AppDependencies) {
   app.post("/toolsets/:key/describe", asyncRoute(async (request, response) => relayToolset(request, response, true)));
   app.post("/toolsets/:key/request", asyncRoute(async (request, response) => relayToolset(request, response, false)));
 
-  app.post("/toolsets/lease", requireRuntimeCaller, (request, response) => {
+  app.post("/toolsets/lease", requireLeaseCaller, (request, response) => {
     const body = request.body as Record<string, unknown>;
     const keys = Array.isArray(body.toolsets)
       ? Array.from(new Set(body.toolsets.filter((key): key is string => typeof key === "string" && /^[a-z][a-z0-9.-]{1,119}$/.test(key))))
