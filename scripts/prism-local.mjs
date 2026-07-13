@@ -18,6 +18,8 @@ const dataRoot = path.join(instanceRoot, "data");
 const envPath = path.join(instanceRoot, "local.env");
 const runtimePidPath = path.join(instanceRoot, "codex-runtime.pid");
 const runtimeLogPath = path.join(instanceRoot, "codex-runtime.log");
+const grokRuntimePidPath = path.join(instanceRoot, "grok-runtime.pid");
+const grokRuntimeLogPath = path.join(instanceRoot, "grok-runtime.log");
 const composePath = path.join(repoRoot, "compose.yaml");
 
 function randomSecret(bytes = 32) {
@@ -34,6 +36,7 @@ function initialConfig() {
     PRISM_LOCAL_DATA_DIR: dataRoot,
     SITE_PORT: "3100",
     CODEX_RUNTIME_PORT: "3030",
+    GROK_RUNTIME_PORT: "3031",
     PRISM_API_PORT: "8788",
     PRISM_GATEWAY_PORT: "8794",
     TASK_RUNNER_PORT: "8790",
@@ -48,6 +51,7 @@ function initialConfig() {
     GATEWAY_TASK_RUNNER_TOKEN: randomSecret(),
     TASK_RUNNER_TOKEN: randomSecret(),
     CODEX_HOME: process.env.CODEX_HOME || path.join(os.homedir(), ".codex"),
+    GROK_HOME: process.env.GROK_HOME || path.join(os.homedir(), ".grok"),
   };
 }
 
@@ -140,10 +144,21 @@ function resolveHostCodexBinary(config = {}) {
   return findExecutable(configured?.trim() || "codex", { excludeNodeModules: !configured });
 }
 
+function resolveHostGrokBinary(config = {}) {
+  const configured = config.GROK_BIN || process.env.PRISM_LOCAL_GROK_BIN || process.env.GROK_BIN;
+  return findExecutable(configured?.trim() || "grok", { excludeNodeModules: !configured });
+}
+
 function codexVersion(codexBinary) {
   if (!codexBinary) return null;
   const result = spawnSync(codexBinary, ["--version"], { encoding: "utf8" });
   return result.status === 0 ? result.stdout.trim() : null;
+}
+
+function grokVersion(grokBinary) {
+  if (!grokBinary) return null;
+  const result = spawnSync(grokBinary, ["--version"], { encoding: "utf8" });
+  return result.status === 0 ? result.stdout.trim().replace(/\s+/g, " ") : null;
 }
 
 function run(command, args, options = {}) {
@@ -166,9 +181,9 @@ function runCompose(args, options = {}) {
   run("docker", composeArgs(args), options);
 }
 
-function readManagedPid() {
-  if (!fs.existsSync(runtimePidPath)) return null;
-  const pid = Number.parseInt(fs.readFileSync(runtimePidPath, "utf8").trim(), 10);
+function readManagedPid(pidPath = runtimePidPath) {
+  if (!fs.existsSync(pidPath)) return null;
+  const pid = Number.parseInt(fs.readFileSync(pidPath, "utf8").trim(), 10);
   return Number.isFinite(pid) && pid > 0 ? pid : null;
 }
 
@@ -181,10 +196,10 @@ function pidIsRunning(pid) {
   }
 }
 
-function cleanStalePid() {
-  const pid = readManagedPid();
+function cleanStalePid(pidPath = runtimePidPath) {
+  const pid = readManagedPid(pidPath);
   if (pid && pidIsRunning(pid)) return pid;
-  fs.rmSync(runtimePidPath, { force: true });
+  fs.rmSync(pidPath, { force: true });
   return null;
 }
 
@@ -227,6 +242,21 @@ function runtimeEnvironment(config, codexBinary) {
     PRISM_GATEWAY_BASE_URL: `http://127.0.0.1:${config.PRISM_GATEWAY_PORT}`,
     PRISM_GATEWAY_TOKEN: config.GATEWAY_CODEX_RUNTIME_TOKEN,
     PRISM_RUNTIME_KEY: "codex-default",
+  };
+}
+
+function grokRuntimeEnvironment(config, grokBinary) {
+  return {
+    ...process.env,
+    NODE_ENV: "production",
+    PORT: config.GROK_RUNTIME_PORT || "3031",
+    GROK_HOME: config.GROK_HOME || path.join(os.homedir(), ".grok"),
+    GROK_BIN: grokBinary,
+    GROK_WORKSPACE_ROOT: repoRoot,
+    APP_API_BASE_URL: `http://127.0.0.1:${config.SITE_PORT}`,
+    APP_API_SERVICE_TOKEN: config.INTERNAL_SERVICE_TOKEN,
+    INTERNAL_SERVICE_TOKEN: config.INTERNAL_SERVICE_TOKEN,
+    PRISM_RUNTIME_KEY: "grok-local",
   };
 }
 
@@ -275,8 +305,52 @@ async function startRuntime(config) {
   console.log(`Codex runtime adapter started (pid ${child.pid}).`);
 }
 
-async function stopRuntime() {
-  const pid = cleanStalePid();
+async function startGrokRuntime(config) {
+  const grokBinary = resolveHostGrokBinary(config);
+  if (!grokBinary) {
+    console.log("Grok CLI not detected; skipping the optional Grok runtime adapter.");
+    return false;
+  }
+  const existingPid = cleanStalePid(grokRuntimePidPath);
+  if (existingPid) {
+    console.log(`Grok runtime already running (pid ${existingPid}).`);
+    return true;
+  }
+
+  const port = config.GROK_RUNTIME_PORT || "3031";
+  const runtimeUrl = `http://127.0.0.1:${port}/health`;
+  const existingHealth = await fetchHealth("grok-runtime", runtimeUrl);
+  if (existingHealth.ok) {
+    console.log(`Using an existing Grok runtime at ${runtimeUrl}.`);
+    return true;
+  }
+
+  console.log("Building the host Grok runtime adapter...");
+  console.log(`Using host Grok CLI: ${grokBinary} (${grokVersion(grokBinary) || "version unknown"})`);
+  run("npm", ["run", "build", "--workspace", "@prism-railway/contracts"]);
+  run("npm", ["run", "build", "--workspace", "@prism-railway/grok-runtime"]);
+  const logFd = fs.openSync(grokRuntimeLogPath, "a", 0o600);
+  const child = spawn(process.execPath, [path.join(repoRoot, "services/grok-runtime/dist/index.js")], {
+    cwd: repoRoot,
+    env: grokRuntimeEnvironment(config, grokBinary),
+    detached: true,
+    stdio: ["ignore", logFd, logFd],
+  });
+  child.unref();
+  fs.closeSync(logFd);
+  fs.writeFileSync(grokRuntimePidPath, `${child.pid}\n`, { mode: 0o600 });
+  try {
+    await waitForHealth("grok-runtime", runtimeUrl, 30_000);
+  } catch (error) {
+    await stopManagedRuntime(grokRuntimePidPath, "Grok runtime adapter");
+    throw new Error(`${error instanceof Error ? error.message : String(error)}. See ${grokRuntimeLogPath}`);
+  }
+  console.log(`Grok runtime adapter started (pid ${child.pid}).`);
+  return true;
+}
+
+async function stopManagedRuntime(pidPath, label) {
+  const pid = cleanStalePid(pidPath);
   if (!pid) return;
   try {
     process.kill(-pid, "SIGTERM");
@@ -294,18 +368,50 @@ async function stopRuntime() {
       process.kill(pid, "SIGKILL");
     }
   }
-  fs.rmSync(runtimePidPath, { force: true });
-  console.log("Codex runtime adapter stopped.");
+  fs.rmSync(pidPath, { force: true });
+  console.log(`${label} stopped.`);
+}
+
+async function stopRuntime() {
+  await stopManagedRuntime(runtimePidPath, "Codex runtime adapter");
 }
 
 function serviceUrls(config) {
-  return [
+  const urls = [
     ["site", `http://127.0.0.1:${config.SITE_PORT}/api/health`],
     ["gateway", `http://127.0.0.1:${config.PRISM_GATEWAY_PORT}/health`],
     ["memory", `http://127.0.0.1:${config.PRISM_API_PORT}/health`],
     ["task-runner", `http://127.0.0.1:${config.TASK_RUNNER_PORT}/health`],
     ["codex-runtime", `http://127.0.0.1:${config.CODEX_RUNTIME_PORT}/health`],
   ];
+  if (resolveHostGrokBinary(config)) {
+    urls.push(["grok-runtime", `http://127.0.0.1:${config.GROK_RUNTIME_PORT || "3031"}/health`]);
+  }
+  return urls;
+}
+
+async function registerGrokRuntimeProfile(config) {
+  const response = await fetch(`http://127.0.0.1:${config.SITE_PORT}/agent/runtime-profiles`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-service-token": config.INTERNAL_SERVICE_TOKEN,
+    },
+    body: JSON.stringify({
+      key: "grok-local",
+      name: "Grok Build Local",
+      adapter: "grok-build",
+      baseUrl: `http://host.docker.internal:${config.GROK_RUNTIME_PORT || "3031"}`,
+      enabled: true,
+      contractVersion: "2026-07-10",
+      features: ["repository", "shell", "site-hosted-skills", "continuations", "cancellation"],
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Could not register Grok runtime profile: ${response.status}:${body.slice(0, 500)}`);
+  }
+  console.log("grok-local: registered with Site");
 }
 
 async function initCommand() {
@@ -322,14 +428,17 @@ async function upCommand() {
   const { config } = ensureConfig();
   runCompose(["up", "-d", "--build"]);
   await startRuntime(config);
+  const grokStarted = await startGrokRuntime(config);
   for (const [name, url] of serviceUrls(config)) {
     await waitForHealth(name, url);
     console.log(`${name}: healthy`);
   }
+  if (grokStarted) await registerGrokRuntimeProfile(config);
   console.log(`Prism is available at http://127.0.0.1:${config.SITE_PORT}`);
 }
 
 async function downCommand() {
+  await stopManagedRuntime(grokRuntimePidPath, "Grok runtime adapter");
   await stopRuntime();
   if (fs.existsSync(envPath) && commandExists("docker")) runCompose(["down"]);
 }
@@ -353,6 +462,7 @@ async function doctorCommand() {
   const checks = [];
   const config = parseEnvFile();
   const codexBinary = resolveHostCodexBinary(config || {});
+  const grokBinary = resolveHostGrokBinary(config || {});
   checks.push(["docker", commandExists("docker"), "Install Docker with the Compose plugin."]);
   const compose = spawnSync("docker", ["compose", "version"], { stdio: "ignore" }).status === 0;
   checks.push(["docker compose", compose, "Install the Docker Compose plugin."]);
@@ -362,6 +472,15 @@ async function doctorCommand() {
     Boolean(codexBinary),
     "Install Codex CLI and run `codex login`.",
   ]);
+  if (grokBinary) {
+    checks.push([
+      `host Grok CLI (${grokVersion(grokBinary) || "version unknown"}; ${grokBinary})`,
+      true,
+      "",
+    ]);
+  } else {
+    console.log("info host Grok CLI not installed; Grok runtime is optional.");
+  }
   checks.push(["local config", fs.existsSync(envPath), "Run `prism local init`."]);
 
   for (const [name, ok, help] of checks) {
@@ -383,6 +502,14 @@ function logsCommand(service) {
       return;
     }
     run("tail", ["-n", "200", "-f", runtimeLogPath]);
+    return;
+  }
+  if (service === "grok" || service === "grok-runtime") {
+    if (!fs.existsSync(grokRuntimeLogPath)) {
+      console.log(`No Grok runtime log exists at ${grokRuntimeLogPath}.`);
+      return;
+    }
+    run("tail", ["-n", "200", "-f", grokRuntimeLogPath]);
     return;
   }
   runCompose(["logs", "-f", "--tail", "200", ...(service ? [service] : [])]);

@@ -23,6 +23,8 @@ Implemented in the first slice:
 - normalized runtime job submission, polling, and cancellation routes
 - Site-owned runtime profiles with environment bootstrap and agent/admin APIs
 - profile-aware Site Console, workflow, and capture-summary runtime routing
+- an optional host-native Grok Build adapter with automatic local registration
+- explicit Grok runtime selection, cancellation, Site-hosted skills, and session continuity
 - Gateway wiring for Site, Task Runner, and the host runtime
 - contributor startup coverage for Gateway and Task Runner
 - health-gated startup and full-stack restart persistence validation
@@ -30,9 +32,9 @@ Implemented in the first slice:
 Still pending:
 
 - runtime pairing and short-lived assignment credentials
-- a second runtime adapter such as Grok Build
 - Task Runner and Source Adapter migration to Site-owned runtime selection
 - first-run and Settings runtime selection UI
+- Gateway capability/toolset brokering and isolated target workspaces for Grok
 - optional communication/media Compose profile
 - backup, restore, reset, and packaged CLI distribution
 
@@ -393,10 +395,10 @@ distribution.
 
 ### Slice 4: Additional Runtime Adapter
 
-- Implement Grok Build or another harness through the same contract.
-- Prefer a structured streaming or agent protocol where available.
-- Verify cancel, session continuity, workspace access, and normalized errors.
-- Demonstrate runtime selection without changing a workflow definition.
+- [x] Implement Grok Build through the same contract using headless JSON output.
+- [x] Verify cancellation, session continuity, host workspace access, and normalized errors.
+- [x] Demonstrate explicit runtime selection without changing the runtime job contract.
+- [ ] Add Gateway capability/toolset sessions and isolated target workspace assignment.
 
 ### Slice 5: Guided Setup
 
@@ -435,8 +437,8 @@ The local MVP is complete when a new operator can:
 
 - Should the first packaged CLI be a Node workspace package, a standalone
   binary, or a thin shell wrapper around Compose?
-- Which structured Grok Build interface is most stable for the second adapter:
-  streaming JSON, ACP, or another supported protocol?
+- When should the Grok adapter move from headless JSON output to streaming JSON
+  or ACP if those interfaces provide materially better progress reporting?
 - Should local runtime registration be push-based from the bridge or discovered
   by Site through a loopback endpoint?
 - What is the minimum supported Docker/Podman and operating-system matrix?

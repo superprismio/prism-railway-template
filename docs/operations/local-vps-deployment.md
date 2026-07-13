@@ -39,8 +39,10 @@ Those Railway features are conveniences, not hard requirements.
 ### One-command local instance
 
 The Compose-backed local instance keeps the Prism control plane in containers
-and runs Codex Runtime as a host-native runtime adapter so it can use the
-operator's existing Codex authentication and local repositories.
+and runs AI harness adapters on the host so they can use the operator's normal
+authentication and local repositories. Codex is required and remains the
+default. An authenticated Grok Build CLI is detected and registered as the
+optional `grok-local` profile.
 
 Prerequisites:
 
@@ -48,6 +50,7 @@ Prerequisites:
 - Docker with the Compose plugin
 - repository dependencies installed with `npm install`
 - Codex CLI installed and authenticated
+- optional: Grok Build CLI installed and authenticated
 
 Initialize and start:
 
@@ -69,6 +72,12 @@ npm run local:doctor
 npm run local:logs
 npm run local:down
 ```
+
+When Grok is available, `local:up` starts it on port `3031` and adds a
+non-default runtime profile. Select `grok-local` for a Site response, workflow,
+or task through runtime routing metadata. Use `npm run local:logs -- grok` for
+its adapter log. Runtime provider credentials remain in `~/.codex` and
+`~/.grok`; Prism does not copy them into its local instance directory.
 
 Set `PRISM_LOCAL_INSTANCE` to operate more than one named local instance, or
 `PRISM_LOCAL_HOME` to move local instance data. The Compose services bind to
@@ -110,6 +119,7 @@ Default local ports:
 
 - `site`: `3100`
 - `codex-runtime`: `3030`
+- `grok-runtime`: `3031` when Grok is installed
 - `prism-memory`: `8788`
 - `discord-adapter`: `8789`
 - `task-runner`: `8790`

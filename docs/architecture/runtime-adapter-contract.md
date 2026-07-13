@@ -49,16 +49,16 @@ Shared TypeScript types live in `packages/contracts/src/index.ts`.
 
 ### Current Adapter Discovery
 
-Codex Runtime exposes an additive discovery manifest:
+Codex Runtime and the local Grok Build adapter expose an additive discovery manifest:
 
 ```text
 GET /v1/runtime/manifest
 ```
 
-The manifest reports runtime identity, contract version, compatibility endpoint
-paths, normalized job endpoints, and features that are actually implemented.
-Codex Runtime supports the normalized routes below, including cancellation,
-while retaining `/v1/responses/jobs` for callers that have not migrated yet.
+The manifest reports runtime identity, contract version, endpoint paths, and
+features that are actually implemented. Codex Runtime retains
+`/v1/responses/jobs` for callers that have not migrated yet. Grok Runtime uses
+only the normalized routes and wraps the host CLI's headless JSON mode.
 
 ## Required Routes
 
@@ -250,6 +250,8 @@ tokens remain bootstrap variables and are never returned to the browser.
 
 ## First Proof
 
-The contract is proven when the same Site-owned job envelope can be accepted by
-Codex Runtime and a minimal second adapter without Site changing its workflow or
-skill model. Building the second adapter is not part of the gateway MVP.
+The first proof passed locally on 2026-07-13: the same Site-owned job envelope
+was routed to Codex Runtime and Grok Runtime, and Site resumed the returned Grok
+session ID on a second turn. Grok Runtime currently supports Site-hosted skills,
+host repository/shell access, cancellation, and continuations. It does not yet
+claim Gateway toolsets or isolated workspace assignment.
