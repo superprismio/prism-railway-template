@@ -56,10 +56,9 @@ GET /v1/runtime/manifest
 ```
 
 The manifest reports runtime identity, contract version, compatibility endpoint
-paths, and features that are actually implemented. The first local stack slice
-continues to use the existing `/v1/responses/jobs` routes and advertises
-cancellation as unsupported. It must not claim the normalized routes below
-until they are implemented.
+paths, normalized job endpoints, and features that are actually implemented.
+Codex Runtime supports the normalized routes below, including cancellation,
+while retaining `/v1/responses/jobs` for callers that have not migrated yet.
 
 ## Required Routes
 

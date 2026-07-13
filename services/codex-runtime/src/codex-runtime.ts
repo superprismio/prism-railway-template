@@ -59,6 +59,7 @@ export type CodexRuntimeInput = {
   toolsets?: RuntimeToolsetDescriptor[];
   gatewayContext?: Record<string, string>;
   metadata?: Record<string, unknown>;
+  signal?: AbortSignal;
   onTrace?: (trace: CodexRuntimeResult['trace']) => void;
 };
 
@@ -960,6 +961,24 @@ async function runCodexProcess(input: CodexRuntimeInput) {
 
     recordTrace('run.started', isResume ? 'Resuming Codex thread' : 'Starting Codex thread');
 
+    const cancelRun = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      input.signal?.removeEventListener('abort', cancelRun);
+      child.kill('SIGTERM');
+      const forceKill = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }, 5_000);
+      forceKill.unref();
+      void fs.unlink(outputFile).catch(() => undefined);
+      recordTrace('run.canceled', 'Codex runtime job was canceled');
+      const error = new Error('RUNTIME_JOB_CANCELED') as CodexRuntimeError;
+      error.codexThreadId = threadId;
+      error.trace = trace;
+      reject(error);
+    };
+
     const timeout = setTimeout(() => {
       if (settled) return;
       settled = true;
@@ -970,6 +989,12 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       recordTrace('run.timeout', 'Codex runtime timed out before completion');
       reject(error);
     }, config.codexRuntimeTimeoutMs);
+
+    if (input.signal?.aborted) {
+      cancelRun();
+      return;
+    }
+    input.signal?.addEventListener('abort', cancelRun, { once: true });
 
     child.stdout.on('data', (chunk) => {
       stdoutBuffer += String(chunk);
@@ -1017,6 +1042,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      input.signal?.removeEventListener('abort', cancelRun);
       const runtimeError = error as CodexRuntimeError;
       runtimeError.codexThreadId = threadId;
       runtimeError.trace = trace;
@@ -1027,6 +1053,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      input.signal?.removeEventListener('abort', cancelRun);
 
       try {
         const outputText = await fs.readFile(outputFile, 'utf8').catch(() => '');

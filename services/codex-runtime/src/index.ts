@@ -14,14 +14,20 @@ import { gatewayClient, runtimeCapabilitySessions, runtimeToolsetSessions } from
 const startedAt = new Date();
 const app = express();
 const responseJobs = new Map<string, RuntimeResponseJob>();
+const responseJobAbortControllers = new Map<string, AbortController>();
+const runtimeContractVersion = '2026-07-10' as const;
+const runtimeKey = process.env.PRISM_RUNTIME_KEY?.trim() || 'codex-default';
 
 app.use(express.json({ limit: '1mb' }));
 
 type RuntimeRequestBody = {
+  contractVersion?: unknown;
   prompt?: unknown;
   sessionId?: unknown;
+  continuationId?: unknown;
   codexThreadId?: unknown;
   recentHistory?: Array<{ role?: unknown; content?: unknown }>;
+  skills?: unknown;
   capabilities?: unknown;
   toolsets?: unknown;
   context?: unknown;
@@ -47,7 +53,7 @@ type RuntimeResponsePayload = {
 
 type RuntimeResponseJob = {
   id: string;
-  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
   input: {
     prompt: string;
     sessionId: string;
@@ -89,10 +95,22 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
     return null;
   }
 
+  const metadata = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
+    ? body.metadata
+    : {};
+  const requestedSkills = normalizeRuntimeSkills(body.skills);
+  const existingRequestedSkills = Array.isArray(metadata.requestedSkills)
+    ? metadata.requestedSkills.filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()))
+    : [];
+
   return {
     prompt,
     sessionId,
-    codexThreadId: typeof body.codexThreadId === 'string' ? body.codexThreadId.trim() : null,
+    codexThreadId: typeof body.continuationId === 'string'
+      ? body.continuationId.trim()
+      : typeof body.codexThreadId === 'string'
+        ? body.codexThreadId.trim()
+        : null,
     recentHistory: Array.isArray(body.recentHistory)
       ? body.recentHistory
         .map((entry) => ({
@@ -104,7 +122,9 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
     capabilities: normalizeRuntimeCapabilities(body.capabilities),
     toolsets: normalizeRuntimeToolsets(body.toolsets),
     gatewayContext: normalizeGatewayContext(body.context),
-    metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+    metadata: requestedSkills.length
+      ? { ...metadata, requestedSkills: Array.from(new Set([...existingRequestedSkills, ...requestedSkills])) }
+      : metadata,
   };
 }
 
@@ -112,6 +132,21 @@ type RuntimeToolsetDescriptor = {
   key: string;
   protocol?: "openapi" | "mcp" | "http" | "adapter";
 };
+
+function normalizeRuntimeSkills(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.flatMap((entry): string[] => {
+    const record = entry && typeof entry === 'object' && !Array.isArray(entry)
+      ? entry as Record<string, unknown>
+      : {};
+    const name = typeof entry === 'string'
+      ? entry.trim()
+      : typeof record.name === 'string'
+        ? record.name.trim()
+        : '';
+    return name && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,119}$/.test(name) ? [name] : [];
+  })));
+}
 
 function normalizeRuntimeToolsets(value: unknown): RuntimeToolsetDescriptor[] {
   if (!Array.isArray(value)) return [];
@@ -159,9 +194,12 @@ function normalizeGatewayContext(value: unknown) {
   const input = value as Record<string, unknown>;
   const allowedKeys = [
     'delegatedActorId',
+    'initiatedBy',
+    'orgId',
     'requestId',
     'workflowRunId',
     'workflowStepKey',
+    'taskRunId',
   ];
   return Object.fromEntries(allowedKeys.flatMap((key) => {
     const candidate = input[key];
@@ -209,20 +247,104 @@ function errorPayload(error: unknown) {
 
 function pruneResponseJobs() {
   const completed = [...responseJobs.values()]
-    .filter((job) => job.status === 'succeeded' || job.status === 'failed')
+    .filter((job) => job.status === 'succeeded' || job.status === 'failed' || job.status === 'canceled')
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   while (responseJobs.size > 100 && completed.length) {
     const job = completed.shift();
-    if (job) responseJobs.delete(job.id);
+    if (job) {
+      responseJobs.delete(job.id);
+      responseJobAbortControllers.delete(job.id);
+    }
   }
+}
+
+function createResponseJob(input: NonNullable<ReturnType<typeof normalizeRuntimeRequest>>) {
+  const jobId = randomUUID();
+  const now = new Date().toISOString();
+  const job: RuntimeResponseJob = {
+    id: jobId,
+    status: 'queued',
+    input,
+    response: null,
+    error: null,
+    threadId: input.codexThreadId,
+    trace: [],
+    createdAt: now,
+    startedAt: null,
+    finishedAt: null,
+  };
+  responseJobs.set(jobId, job);
+  responseJobAbortControllers.set(jobId, new AbortController());
+  void runResponseJob(jobId);
+  return job;
+}
+
+function normalizedError(message: string | null, status: RuntimeResponseJob['status']) {
+  if (!message && status !== 'canceled') return null;
+  const safeMessage = message || 'Runtime job was canceled';
+  const code = status === 'canceled'
+    ? 'RUNTIME_JOB_CANCELED'
+    : safeMessage.match(/^([A-Z][A-Z0-9_]+)/)?.[1] || 'RUNTIME_JOB_FAILED';
+  return {
+    code,
+    message: safeMessage,
+    retryable: code === 'CODEX_RUNTIME_TIMEOUT' || code === 'CODEX_RUNTIME_FETCH_FAILED',
+  };
+}
+
+function normalizedJob(job: RuntimeResponseJob) {
+  const response = job.response;
+  return {
+    id: job.id,
+    runtimeKey,
+    adapter: 'codex-cli',
+    status: job.status,
+    createdAt: job.createdAt,
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt,
+    result: response
+      ? {
+          responseText: response.responseText,
+          continuationId: response.thread_id,
+          artifacts: [],
+          providerMetadata: {
+            model: response.model,
+            branchName: response.branchName,
+            commitSha: response.commitSha,
+            branchUrl: response.branchUrl,
+            baseBranch: response.baseBranch,
+            baseCommitSha: response.baseCommitSha,
+          },
+        }
+      : null,
+    error: normalizedError(job.error, job.status),
+    trace: job.trace,
+  };
+}
+
+function cancelResponseJob(job: RuntimeResponseJob) {
+  if (job.status === 'queued' || job.status === 'running') {
+    job.status = 'canceled';
+    job.error = 'RUNTIME_JOB_CANCELED';
+    job.finishedAt = new Date().toISOString();
+    job.trace = [
+      ...job.trace,
+      { at: job.finishedAt, kind: 'run.cancel_requested', message: 'Runtime job cancellation was requested' },
+    ];
+    responseJobAbortControllers.get(job.id)?.abort();
+  }
+  return job;
 }
 
 async function runResponseJob(jobId: string) {
   const job = responseJobs.get(jobId);
   if (!job) return;
 
+  if (job.status === 'canceled') return;
+
   job.status = 'running';
   job.startedAt = new Date().toISOString();
+  const abortController = responseJobAbortControllers.get(jobId);
 
   try {
     const result = await generateCodexCliReply({
@@ -231,22 +353,25 @@ async function runResponseJob(jobId: string) {
         ...job.input.gatewayContext,
         runtimeJobId: job.id,
       },
+      signal: abortController?.signal,
       onTrace: (trace) => {
-        job.trace = [...trace];
+        if (!abortController?.signal.aborted) job.trace = [...trace];
       },
     });
+    if (abortController?.signal.aborted) return;
     job.response = responsePayloadFromResult(result, job.input.sessionId);
     job.threadId = result.codexThreadId;
     job.trace = result.trace;
     job.status = 'succeeded';
   } catch (error) {
+    if (abortController?.signal.aborted) return;
     const payload = errorPayload(error);
     job.error = payload.error;
     job.threadId = payload.thread_id;
     job.trace = payload.trace;
     job.status = 'failed';
   } finally {
-    job.finishedAt = new Date().toISOString();
+    job.finishedAt ??= new Date().toISOString();
     pruneResponseJobs();
   }
 }
@@ -273,9 +398,9 @@ app.get('/codex/health', (_req, res) => {
 app.get('/v1/runtime/manifest', (_req, res) => {
   res.json({
     ok: true,
-    contractVersion: '2026-07-10',
+    contractVersion: runtimeContractVersion,
     runtime: {
-      key: process.env.PRISM_RUNTIME_KEY?.trim() || 'codex-default',
+      key: runtimeKey,
       adapter: 'codex-cli',
       service: 'codex-runtime',
     },
@@ -284,17 +409,40 @@ app.get('/v1/runtime/manifest', (_req, res) => {
       synchronousResponses: '/v1/responses',
       responseJobs: '/v1/responses/jobs',
       responseJob: '/v1/responses/jobs/:jobId',
+      runtimeCapabilities: '/v1/runtime/capabilities',
+      runtimeJobs: '/v1/runtime/jobs',
+      runtimeJob: '/v1/runtime/jobs/:jobId',
+      cancelRuntimeJob: '/v1/runtime/jobs/:jobId/cancel',
     },
     features: {
       synchronousResponses: true,
       asynchronousJobs: true,
-      cancellation: false,
+      cancellation: true,
       sessionContinuity: true,
       traceEvents: true,
       gatewayCapabilities: true,
       gatewayToolsets: true,
       workspaceAssignment: true,
     },
+  });
+});
+
+app.get('/v1/runtime/capabilities', (_req, res) => {
+  res.json({
+    contractVersion: runtimeContractVersion,
+    runtimeKey,
+    adapter: 'codex-cli',
+    features: [
+      'repository',
+      'shell',
+      'site-hosted-skills',
+      'continuations',
+      'gateway-capabilities',
+      'gateway-toolsets',
+      'workspace-assignment',
+      'trace-events',
+      'cancellation',
+    ],
   });
 });
 
@@ -384,26 +532,12 @@ app.post('/v1/responses/jobs', (req, res) => {
     return;
   }
 
-  const jobId = randomUUID();
-  const now = new Date().toISOString();
-  responseJobs.set(jobId, {
-    id: jobId,
-    status: 'queued',
-    input,
-    response: null,
-    error: null,
-    threadId: input.codexThreadId,
-    trace: [],
-    createdAt: now,
-    startedAt: null,
-    finishedAt: null,
-  });
-  void runResponseJob(jobId);
+  const job = createResponseJob(input);
 
   res.status(202).json({
     ok: true,
-    jobId,
-    job: responseJobs.get(jobId),
+    jobId: job.id,
+    job,
   });
 });
 
@@ -422,6 +556,69 @@ app.get('/v1/responses/jobs/:jobId', (req, res) => {
     thread_id: job.threadId,
     trace: job.trace,
   });
+});
+
+app.post('/v1/runtime/jobs', (req, res) => {
+  const body = req.body as RuntimeRequestBody;
+  if (body?.contractVersion !== runtimeContractVersion) {
+    res.status(400).json({
+      ok: false,
+      error: {
+        code: 'RUNTIME_CONTRACT_VERSION_UNSUPPORTED',
+        message: `contractVersion must be ${runtimeContractVersion}`,
+        retryable: false,
+      },
+    });
+    return;
+  }
+
+  const input = normalizeRuntimeRequest(body);
+  if (!input) {
+    res.status(400).json({
+      ok: false,
+      error: {
+        code: 'RUNTIME_JOB_INPUT_INVALID',
+        message: 'prompt and sessionId are required',
+        retryable: false,
+      },
+    });
+    return;
+  }
+
+  const job = createResponseJob(input);
+  res.status(202).json({ ok: true, jobId: job.id, job: normalizedJob(job) });
+});
+
+app.get('/v1/runtime/jobs/:jobId', (req, res) => {
+  const job = responseJobs.get(req.params.jobId);
+  if (!job) {
+    res.status(404).json({
+      ok: false,
+      error: {
+        code: 'RUNTIME_JOB_NOT_FOUND',
+        message: 'Runtime job not found',
+        retryable: false,
+      },
+    });
+    return;
+  }
+  res.json({ ok: job.status !== 'failed', job: normalizedJob(job) });
+});
+
+app.post('/v1/runtime/jobs/:jobId/cancel', (req, res) => {
+  const job = responseJobs.get(req.params.jobId);
+  if (!job) {
+    res.status(404).json({
+      ok: false,
+      error: {
+        code: 'RUNTIME_JOB_NOT_FOUND',
+        message: 'Runtime job not found',
+        retryable: false,
+      },
+    });
+    return;
+  }
+  res.json({ ok: true, job: normalizedJob(cancelResponseJob(job)) });
 });
 
 app.listen(config.port, '0.0.0.0', () => {

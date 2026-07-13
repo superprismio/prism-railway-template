@@ -20,15 +20,15 @@ Implemented in the first slice:
 - a production Site container built from the repository lockfile
 - host-native Codex Runtime startup using the operator's existing `CODEX_HOME`
 - runtime discovery through `GET /v1/runtime/manifest`
+- normalized runtime job submission, polling, and cancellation routes
 - Gateway wiring for Site, Task Runner, and the host runtime
 - contributor startup coverage for Gateway and Task Runner
 - health-gated startup and full-stack restart persistence validation
 
 Still pending:
 
-- normalized `/v1/runtime/jobs` routes and Site-owned runtime profiles
+- Site-owned runtime profiles
 - runtime pairing and short-lived assignment credentials
-- cancellation support
 - a second runtime adapter such as Grok Build
 - optional communication/media Compose profile
 - backup, restore, reset, and packaged CLI distribution
