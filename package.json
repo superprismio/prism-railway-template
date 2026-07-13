@@ -14,6 +14,7 @@
     "dev:local": "bash scripts/dev-local-stack.sh",
     "local:init": "node scripts/prism-local.mjs init",
     "local:up": "node scripts/prism-local.mjs up",
+    "local:site": "node scripts/prism-local.mjs site",
     "local:down": "node scripts/prism-local.mjs down",
     "local:status": "node scripts/prism-local.mjs status",
     "local:doctor": "node scripts/prism-local.mjs doctor",

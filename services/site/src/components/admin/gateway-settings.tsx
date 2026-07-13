@@ -9,10 +9,8 @@ import {
   useTransition,
 } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import {
   Activity,
-  BotMessageSquare,
   KeyRound,
   Link2,
   Plus,
@@ -446,17 +444,11 @@ export function GatewaySettings() {
         </div>
       ) : null}
 
-      <section className="flex flex-col gap-3 border-y border-border/60 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <section className="border-y border-border/60 py-4">
         <p className="text-sm text-muted-foreground">
-          Store secrets securely, then add a connection and configure a connected
-          service through Prism Console.
+          Store credentials securely here. Use Prism Console to configure connected
+          services.
         </p>
-        <Button asChild size="sm" variant="outline">
-          <Link href="/admin?tab=codex-console">
-            <BotMessageSquare className="h-4 w-4" />
-            Open Prism Console
-          </Link>
-        </Button>
       </section>
 
       <section className="grid gap-3">

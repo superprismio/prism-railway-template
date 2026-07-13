@@ -568,6 +568,14 @@ async function upCommand() {
   console.log(`Prism is available at http://127.0.0.1:${config.SITE_PORT}`);
 }
 
+async function siteCommand() {
+  if (!commandExists("docker")) throw new Error("Docker is required for `prism local site`.");
+  const { config } = await ensureConfig();
+  runCompose(["up", "-d", "--build", "--no-deps", "site"]);
+  await waitForHealth("site", `http://127.0.0.1:${config.SITE_PORT}/api/health`);
+  console.log(`Site refreshed at http://127.0.0.1:${config.SITE_PORT}`);
+}
+
 async function downCommand() {
   await stopManagedRuntime(grokRuntimePidPath, "Grok runtime adapter");
   await stopRuntime();
@@ -666,7 +674,7 @@ async function openCommand() {
 }
 
 function usage() {
-  console.log(`Usage: prism-local <command>\n\nCommands:\n  init\n  up\n  down\n  status\n  doctor\n  logs [service]\n  open`);
+  console.log(`Usage: prism-local <command>\n\nCommands:\n  init\n  up\n  site\n  down\n  status\n  doctor\n  logs [service]\n  open`);
 }
 
 const [command = "help", argument] = process.argv.slice(2);
@@ -674,6 +682,7 @@ const [command = "help", argument] = process.argv.slice(2);
 try {
   if (command === "init") await initCommand();
   else if (command === "up") await upCommand();
+  else if (command === "site") await siteCommand();
   else if (command === "down") await downCommand();
   else if (command === "status") await statusCommand();
   else if (command === "doctor") await doctorCommand();
