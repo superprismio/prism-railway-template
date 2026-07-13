@@ -13,11 +13,8 @@ import {
   Activity,
   KeyRound,
   Link2,
-  Play,
   Plus,
   RefreshCw,
-  ShieldCheck,
-  SlidersHorizontal,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -51,7 +48,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { plausibleQueryInputSchema } from "@/lib/gateway-presets";
 import {
   gatewayEnvImportDefinitions,
   parseEnvText,
@@ -64,7 +60,6 @@ type GatewayConnection = {
   label: string;
   authType: string;
   status: string;
-  capabilityKeys: string[];
   toolsetKeys: string[];
   secretNames: string[];
   lastUsedAt: string | null;
@@ -78,25 +73,6 @@ type GatewayToolset = {
   enabled: boolean;
   lastDiscoveredAt: string | null;
   discoveryError: string | null;
-};
-
-type GatewayCapability = {
-  key: string;
-  driverKey: string;
-  connectionId: string | null;
-  provider: string;
-  description: string;
-  enabled: boolean;
-  riskLevel: string;
-  driverConfig: Record<string, unknown>;
-};
-
-type GatewayGrant = {
-  id: string;
-  subjectType: string;
-  subjectId: string;
-  capabilityKey: string;
-  allowed: boolean;
 };
 
 type GatewayAuditEvent = {
@@ -118,18 +94,13 @@ type GatewayOverview = {
   health?: {
     database?: { ok?: boolean; migrations?: number };
     catalog?: {
-      drivers?: number;
-      capabilities?: number;
       toolsets?: number;
       connections?: number;
       auditEvents?: number;
     };
   };
-  drivers?: Array<{ key: string; description: string }>;
   connections?: GatewayConnection[];
   toolsets?: GatewayToolset[];
-  capabilities?: GatewayCapability[];
-  grants?: GatewayGrant[];
   auditEvents?: GatewayAuditEvent[];
 };
 
@@ -139,21 +110,6 @@ type ConnectionDraft = {
   authType: "bearer" | "api-key";
   secretName: string;
   secretValue: string;
-};
-
-type CapabilityDraft = {
-  key: string;
-  connectionId: string;
-  description: string;
-  baseUrl: string;
-  pathTemplate: string;
-  method: "GET" | "POST";
-  allowedQueryParams: string;
-  allowedJsonBodyParams: string;
-  staticJsonBody: string;
-  authType: "bearer" | "api-key";
-  secretName: string;
-  headerName: string;
 };
 
 type PendingCredentialDraft = {
@@ -169,21 +125,6 @@ const emptyConnection: ConnectionDraft = {
   authType: "bearer",
   secretName: "apiKey",
   secretValue: "",
-};
-
-const emptyCapability: CapabilityDraft = {
-  key: "",
-  connectionId: "",
-  description: "",
-  baseUrl: "",
-  pathTemplate: "/",
-  method: "GET",
-  allowedQueryParams: "",
-  allowedJsonBodyParams: "",
-  staticJsonBody: "{}",
-  authType: "bearer",
-  secretName: "apiKey",
-  headerName: "X-Api-Key",
 };
 
 function formatDate(value: string | null | undefined) {
@@ -232,6 +173,10 @@ function connectionStatusLabel(status: string) {
   return status;
 }
 
+function auditSubjectLabel(value: string) {
+  return value.startsWith("toolset:") ? value.slice("toolset:".length) : value;
+}
+
 export function GatewaySettings() {
   const searchParams = useSearchParams();
   const [overview, setOverview] = useState<GatewayOverview | null>(null);
@@ -252,19 +197,6 @@ export function GatewaySettings() {
   const [envImportText, setEnvImportText] = useState("");
   const [revokeConnection, setRevokeConnection] =
     useState<GatewayConnection | null>(null);
-  const [capabilityDialog, setCapabilityDialog] = useState(false);
-  const [capabilityDraft, setCapabilityDraft] = useState(emptyCapability);
-  const [testCapability, setTestCapability] =
-    useState<GatewayCapability | null>(null);
-  const [testInput, setTestInput] = useState("{}");
-  const [testResult, setTestResult] = useState<string | null>(null);
-  const [grantDialog, setGrantDialog] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [grantCapability, setGrantCapability] = useState("");
-  const [grantSubjectType, setGrantSubjectType] = useState<
-    "runtime" | "service"
-  >("runtime");
-  const [grantSubjectId, setGrantSubjectId] = useState("codex-default");
   const [focusedConnectionId, setFocusedConnectionId] = useState<string | null>(null);
   const handledCredentialTarget = useRef("");
 
@@ -486,106 +418,6 @@ export function GatewaySettings() {
     });
   }
 
-  function createCapability() {
-    const connection = activeConnections.find(
-      (item) => item.id === capabilityDraft.connectionId,
-    );
-    if (!connection) return;
-    mutate(async () => {
-      let staticJsonBody: Record<string, unknown> = {};
-      if (capabilityDraft.method === "POST") {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(capabilityDraft.staticJsonBody);
-        } catch {
-          throw new Error("Fixed JSON body must be valid JSON");
-        }
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-          throw new Error("Fixed JSON body must be a JSON object");
-        }
-        staticJsonBody = parsed as Record<string, unknown>;
-      }
-      await adminRequest("/admin/gateway/capabilities", {
-        method: "POST",
-        body: JSON.stringify({
-          key: capabilityDraft.key.trim(),
-          driverKey: "http-json.read",
-          connectionId: connection.id,
-          provider: connection.provider,
-          description: capabilityDraft.description.trim(),
-          inputSchema:
-            capabilityDraft.key.trim() === "plausible.stats.query"
-              ? plausibleQueryInputSchema
-              : null,
-          driverConfig: {
-            baseUrl: capabilityDraft.baseUrl.trim(),
-            pathTemplate: capabilityDraft.pathTemplate.trim(),
-            method: capabilityDraft.method,
-            allowedQueryParams:
-              capabilityDraft.method === "GET"
-                ? capabilityDraft.allowedQueryParams
-                    .split(",")
-                    .map((value) => value.trim())
-                    .filter(Boolean)
-                : [],
-            allowedJsonBodyParams:
-              capabilityDraft.method === "POST"
-                ? capabilityDraft.allowedJsonBodyParams
-                    .split(",")
-                    .map((value) => value.trim())
-                    .filter(Boolean)
-                : [],
-            staticJsonBody,
-            auth:
-              capabilityDraft.authType === "bearer"
-                ? {
-                    type: "bearer",
-                    secretName: capabilityDraft.secretName.trim(),
-                  }
-                : {
-                    type: "api-key",
-                    secretName: capabilityDraft.secretName.trim(),
-                    headerName: capabilityDraft.headerName.trim(),
-                  },
-            timeoutMs: 10000,
-            maxResponseBytes: 1000000,
-          },
-        }),
-      });
-      setCapabilityDialog(false);
-      setCapabilityDraft(emptyCapability);
-    });
-  }
-
-  function applyPlausiblePreset() {
-    setCapabilityDraft((draft) => ({
-      ...draft,
-      key: "plausible.stats.query",
-      description: "Read scoped analytics from the Plausible Stats API.",
-      baseUrl: "https://plausible.io",
-      pathTemplate: "/api/v2/query",
-      method: "POST",
-      allowedQueryParams: "",
-      allowedJsonBodyParams:
-        "site_id, metrics, date_range, dimensions, filters, include, pagination",
-      staticJsonBody: "{}",
-      authType: "bearer",
-      secretName: "apiKey",
-    }));
-  }
-
-  function toggleCapability(capability: GatewayCapability, enabled: boolean) {
-    mutate(async () => {
-      await adminRequest(
-        `/admin/gateway/capabilities/${encodeURIComponent(capability.key)}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ enabled }),
-        },
-      );
-    });
-  }
-
   function toggleToolset(toolset: GatewayToolset, enabled: boolean) {
     mutate(async () => {
       await adminRequest(
@@ -595,47 +427,6 @@ export function GatewaySettings() {
           body: JSON.stringify({ enabled }),
         },
       );
-    });
-  }
-
-  function runCapabilityTest() {
-    if (!testCapability) return;
-    mutate(async () => {
-      let input: unknown;
-      try {
-        input = JSON.parse(testInput);
-      } catch {
-        throw new Error("Test input must be valid JSON");
-      }
-      const payload = await adminRequest(
-        `/admin/gateway/capabilities/${encodeURIComponent(testCapability.key)}/test`,
-        {
-          method: "POST",
-          body: JSON.stringify({ input }),
-        },
-      );
-      setTestResult(JSON.stringify(payload, null, 2).slice(0, 12000));
-    });
-  }
-
-  function saveGrant() {
-    mutate(async () => {
-      const id =
-        `${grantSubjectType}-${grantSubjectId}-${grantCapability}`.replace(
-          /[^a-zA-Z0-9_.:-]/g,
-          "-",
-        );
-      await adminRequest(`/admin/gateway/grants/${encodeURIComponent(id)}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          subjectType: grantSubjectType,
-          subjectId: grantSubjectId.trim(),
-          capabilityKey: grantCapability,
-          allowed: true,
-          policy: {},
-        }),
-      });
-      setGrantDialog(false);
     });
   }
 
@@ -671,16 +462,6 @@ export function GatewaySettings() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setAdvancedOpen((current) => !current)}
-              aria-pressed={advancedOpen}
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-              Advanced
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
               onClick={() => void load()}
               disabled={isPending}
               title="Refresh Gateway"
@@ -690,19 +471,15 @@ export function GatewaySettings() {
             </Button>
           </div>
         </div>
-        <div className="grid border border-border/70 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid border border-border/70 sm:grid-cols-3">
           {[
-            ["Drivers", overview?.health?.catalog?.drivers ?? 0],
             ["Connections", overview?.health?.catalog?.connections ?? 0],
-            ["Access profiles", overview?.health?.catalog?.toolsets ?? 0],
+            ["Connected services", overview?.health?.catalog?.toolsets ?? 0],
             ["Audit events", overview?.health?.catalog?.auditEvents ?? 0],
-            ...(advancedOpen
-              ? [["Legacy capabilities", overview?.health?.catalog?.capabilities ?? 0]]
-              : []),
           ].map(([label, value]) => (
             <div
               key={String(label)}
-              className="border-b border-border/70 p-4 last:border-b-0 sm:border-r sm:[&:nth-child(2n)]:border-r-0 lg:border-b-0 lg:[&:nth-child(2n)]:border-r lg:last:border-r-0"
+              className="border-b border-border/70 p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"
             >
               <p className="text-xs font-medium uppercase text-muted-foreground">
                 {label}
@@ -727,7 +504,7 @@ export function GatewaySettings() {
               disabled={!overview?.reachable}
             >
               <Upload />
-              Import environment
+              Migrate existing secrets
             </Button>
             {incompleteConnections.length ? (
               <Button
@@ -757,8 +534,7 @@ export function GatewaySettings() {
                 <TableHead>Connection</TableHead>
                 <TableHead>Provider</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Access profiles</TableHead>
-                {advancedOpen ? <TableHead>Legacy capabilities</TableHead> : null}
+                <TableHead>Connected services</TableHead>
                 <TableHead>Last used</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -782,8 +558,11 @@ export function GatewaySettings() {
                       {connectionStatusLabel(connection.status)}
                     </Badge>
                   </TableCell>
-                  <TableCell>{connection.toolsetKeys?.length ?? 0}</TableCell>
-                  {advancedOpen ? <TableCell>{connection.capabilityKeys.length}</TableCell> : null}
+                  <TableCell>
+                    {connection.toolsetKeys?.length
+                      ? connection.toolsetKeys.join(", ")
+                      : "Not connected"}
+                  </TableCell>
                   <TableCell>{formatDate(connection.lastUsedAt)}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
@@ -812,7 +591,7 @@ export function GatewaySettings() {
               {!overview?.connections?.length ? (
                 <TableRow>
                   <TableCell
-                    colSpan={advancedOpen ? 7 : 6}
+                    colSpan={6}
                     className="h-20 text-center text-muted-foreground"
                   >
                     No connections.
@@ -827,13 +606,13 @@ export function GatewaySettings() {
       <section className="grid gap-3 border-t border-border/60 pt-5">
         <h4 className="flex items-center gap-2 font-medium">
           <Link2 className="h-4 w-4" />
-          Access profiles
+          Connected services
         </h4>
         <div className="overflow-x-auto border border-border/70">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Access profile</TableHead>
+                <TableHead>Service</TableHead>
                 <TableHead>Connection</TableHead>
                 <TableHead>Protocol</TableHead>
                 <TableHead>Discovery</TableHead>
@@ -892,7 +671,7 @@ export function GatewaySettings() {
                     colSpan={5}
                     className="h-20 text-center text-muted-foreground"
                   >
-                    No access profiles.
+                    No connected services.
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -900,157 +679,6 @@ export function GatewaySettings() {
           </Table>
         </div>
       </section>
-
-      {advancedOpen ? <>
-      <section className="grid gap-3 border-t border-border/60 pt-5">
-        <div className="flex items-center justify-between gap-3">
-          <h4 className="flex items-center gap-2 font-medium">
-            <Link2 className="h-4 w-4" />
-            Legacy capabilities
-          </h4>
-          <Button
-            size="sm"
-            onClick={() => setCapabilityDialog(true)}
-            disabled={!activeConnections.length}
-          >
-            <Plus />
-            Add capability
-          </Button>
-        </div>
-        <div className="overflow-x-auto border border-border/70">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Capability</TableHead>
-                <TableHead>Provider</TableHead>
-                <TableHead>Driver</TableHead>
-                <TableHead>Risk</TableHead>
-                <TableHead>Enabled</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(overview?.capabilities ?? []).map((capability) => (
-                <TableRow key={capability.key}>
-                  <TableCell>
-                    <div className="font-medium">{capability.key}</div>
-                    <div className="max-w-[360px] truncate text-xs text-muted-foreground">
-                      {capability.description}
-                    </div>
-                  </TableCell>
-                  <TableCell>{capability.provider}</TableCell>
-                  <TableCell>
-                    <div>{capability.driverKey}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {String(capability.driverConfig.method ?? "GET")}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{capability.riskLevel}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Switch
-                      checked={capability.enabled}
-                      onCheckedChange={(enabled) =>
-                        toggleCapability(capability, enabled)
-                      }
-                      disabled={isPending}
-                      aria-label={`Toggle ${capability.key}`}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex justify-end">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setTestCapability(capability);
-                          setTestInput("{}");
-                          setTestResult(null);
-                        }}
-                        disabled={!capability.enabled}
-                      >
-                        <Play />
-                        Test
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!overview?.capabilities?.length ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="h-20 text-center text-muted-foreground"
-                  >
-                    No capabilities.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-        </div>
-      </section>
-
-      <section className="grid gap-3 border-t border-border/60 pt-5">
-        <div className="flex items-center justify-between gap-3">
-          <h4 className="flex items-center gap-2 font-medium">
-            <ShieldCheck className="h-4 w-4" />
-            Grants
-          </h4>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setGrantDialog(true)}
-            disabled={!overview?.capabilities?.length}
-          >
-            <Plus />
-            Add grant
-          </Button>
-        </div>
-        <div className="overflow-x-auto border border-border/70">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Subject</TableHead>
-                <TableHead>Capability</TableHead>
-                <TableHead>Decision</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(overview?.grants ?? []).map((grant) => (
-                <TableRow key={grant.id}>
-                  <TableCell>
-                    <div className="font-medium">{grant.subjectId}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {grant.subjectType}
-                    </div>
-                  </TableCell>
-                  <TableCell>{grant.capabilityKey}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={grant.allowed ? "secondary" : "destructive"}
-                    >
-                      {grant.allowed ? "Allow" : "Deny"}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!overview?.grants?.length ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={3}
-                    className="h-20 text-center text-muted-foreground"
-                  >
-                    No grants. Invocation is denied by default.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-        </div>
-      </section>
-      </> : null}
 
       <section className="grid gap-3 border-t border-border/60 pt-5">
         <h4 className="flex items-center gap-2 font-medium">
@@ -1062,7 +690,7 @@ export function GatewaySettings() {
             <TableHeader>
               <TableRow>
                 <TableHead>Time</TableHead>
-                <TableHead>Capability</TableHead>
+                <TableHead>Service or action</TableHead>
                 <TableHead>Caller</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Decision</TableHead>
@@ -1075,7 +703,7 @@ export function GatewaySettings() {
                   <TableCell className="whitespace-nowrap">
                     {formatDate(event.createdAt)}
                   </TableCell>
-                  <TableCell>{event.capabilityKey}</TableCell>
+                  <TableCell>{auditSubjectLabel(event.capabilityKey)}</TableCell>
                   <TableCell>{event.authenticatedCallerId}</TableCell>
                   <TableCell>
                     <Badge variant={statusVariant(event.status)}>
@@ -1214,9 +842,11 @@ export function GatewaySettings() {
       >
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Import Railway environment</DialogTitle>
+            <DialogTitle>Migrate existing secrets</DialogTitle>
             <DialogDescription>
-              Paste the Codex Runtime environment and review recognized credentials.
+              Paste an environment block copied from the existing runtime. Recognized
+              credentials are encrypted in Gateway connections; Railway variables and
+              non-secret configuration are not changed.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -1239,7 +869,6 @@ export function GatewaySettings() {
                       <TableHead>Integration</TableHead>
                       <TableHead>Credentials</TableHead>
                       <TableHead>Connection</TableHead>
-                      <TableHead>Migration</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1257,17 +886,12 @@ export function GatewaySettings() {
                           </TableCell>
                           <TableCell>{credentialNames.length}</TableCell>
                           <TableCell>{existing ? "Update" : "Create"}</TableCell>
-                          <TableCell>
-                            <Badge variant={definition.readiness === "ready" ? "secondary" : "outline"}>
-                              {definition.readiness === "ready" ? "Ready" : "Adapter required"}
-                            </Badge>
-                          </TableCell>
                         </TableRow>
                       );
                     })}
                     {!envImportGroups.length ? (
                       <TableRow>
-                        <TableCell colSpan={4} className="h-16 text-center text-muted-foreground">
+                        <TableCell colSpan={3} className="h-16 text-center text-muted-foreground">
                           No recognized integration credentials.
                         </TableCell>
                       </TableRow>
@@ -1276,14 +900,14 @@ export function GatewaySettings() {
                 </Table>
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
-                <Badge variant="outline">Retained configuration: {retainedImportNames.length}</Badge>
+                <Badge variant="outline">Configuration left in runtime: {retainedImportNames.length}</Badge>
                 <Badge variant={unknownSensitiveImportNames.length ? "destructive" : "outline"}>
-                  Unknown sensitive: {unknownSensitiveImportNames.length}
+                  Unsupported secret variables: {unknownSensitiveImportNames.length}
                 </Badge>
               </div>
               {unknownSensitiveImportNames.length ? (
                 <div className="text-sm text-destructive">
-                  Review before import: {unknownSensitiveImportNames.join(", ")}
+                  Remove unsupported secret variables before importing: {unknownSensitiveImportNames.join(", ")}
                 </div>
               ) : null}
             </div>
@@ -1496,333 +1120,6 @@ export function GatewaySettings() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={capabilityDialog} onOpenChange={setCapabilityDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add read capability</DialogTitle>
-            <DialogDescription>
-              Bind a fixed HTTPS JSON endpoint to an encrypted connection.
-            </DialogDescription>
-          </DialogHeader>
-          <div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={applyPlausiblePreset}
-            >
-              Use Plausible preset
-            </Button>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Capability key</Label>
-              <Input
-                value={capabilityDraft.key}
-                onChange={(event) =>
-                  setCapabilityDraft((draft) => ({
-                    ...draft,
-                    key: event.target.value,
-                  }))
-                }
-                placeholder="analytics.query"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Connection</Label>
-              <Select
-                value={capabilityDraft.connectionId}
-                onValueChange={(value) =>
-                  setCapabilityDraft((draft) => ({
-                    ...draft,
-                    connectionId: value,
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select connection" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeConnections.map((connection) => (
-                    <SelectItem key={connection.id} value={connection.id}>
-                      {connection.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Description</Label>
-              <Input
-                value={capabilityDraft.description}
-                onChange={(event) =>
-                  setCapabilityDraft((draft) => ({
-                    ...draft,
-                    description: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>HTTPS origin</Label>
-              <Input
-                value={capabilityDraft.baseUrl}
-                onChange={(event) =>
-                  setCapabilityDraft((draft) => ({
-                    ...draft,
-                    baseUrl: event.target.value,
-                  }))
-                }
-                placeholder="https://api.example.org"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Request method</Label>
-              <Select
-                value={capabilityDraft.method}
-                onValueChange={(value: "GET" | "POST") =>
-                  setCapabilityDraft((draft) => ({ ...draft, method: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="GET">GET with query parameters</SelectItem>
-                  <SelectItem value="POST">POST with JSON body</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Path</Label>
-              <Input
-                value={capabilityDraft.pathTemplate}
-                onChange={(event) =>
-                  setCapabilityDraft((draft) => ({
-                    ...draft,
-                    pathTemplate: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            {capabilityDraft.method === "GET" ? (
-              <div className="space-y-2 sm:col-span-2">
-                <Label>Allowed query parameters</Label>
-                <Input
-                  value={capabilityDraft.allowedQueryParams}
-                  onChange={(event) =>
-                    setCapabilityDraft((draft) => ({
-                      ...draft,
-                      allowedQueryParams: event.target.value,
-                    }))
-                  }
-                  placeholder="period, metric"
-                />
-              </div>
-            ) : (
-              <>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label>Fixed JSON body</Label>
-                  <Textarea
-                    className="min-h-24 font-mono text-xs"
-                    value={capabilityDraft.staticJsonBody}
-                    onChange={(event) =>
-                      setCapabilityDraft((draft) => ({
-                        ...draft,
-                        staticJsonBody: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label>Allowed JSON fields</Label>
-                  <Input
-                    value={capabilityDraft.allowedJsonBodyParams}
-                    onChange={(event) =>
-                      setCapabilityDraft((draft) => ({
-                        ...draft,
-                        allowedJsonBodyParams: event.target.value,
-                      }))
-                    }
-                    placeholder="metrics, date_range, dimensions"
-                  />
-                </div>
-              </>
-            )}
-            <div className="space-y-2">
-              <Label>Authentication</Label>
-              <Select
-                value={capabilityDraft.authType}
-                onValueChange={(value: "bearer" | "api-key") =>
-                  setCapabilityDraft((draft) => ({ ...draft, authType: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bearer">Bearer token</SelectItem>
-                  <SelectItem value="api-key">API key header</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Secret name</Label>
-              <Input
-                value={capabilityDraft.secretName}
-                onChange={(event) =>
-                  setCapabilityDraft((draft) => ({
-                    ...draft,
-                    secretName: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            {capabilityDraft.authType === "api-key" ? (
-              <div className="space-y-2 sm:col-span-2">
-                <Label>Header name</Label>
-                <Input
-                  value={capabilityDraft.headerName}
-                  onChange={(event) =>
-                    setCapabilityDraft((draft) => ({
-                      ...draft,
-                      headerName: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-            ) : null}
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setCapabilityDialog(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={createCapability}
-              disabled={
-                isPending ||
-                !capabilityDraft.key.trim() ||
-                !capabilityDraft.connectionId ||
-                !capabilityDraft.description.trim() ||
-                !capabilityDraft.baseUrl.trim() ||
-                !capabilityDraft.pathTemplate.trim()
-              }
-            >
-              Add capability
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(testCapability)}
-        onOpenChange={(open) => {
-          if (!open) setTestCapability(null);
-        }}
-      >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Test {testCapability?.key}</DialogTitle>
-            <DialogDescription>
-              Run as a Site admin test and record an audit event.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label>Input JSON</Label>
-            <Textarea
-              className="min-h-28 font-mono text-xs"
-              value={testInput}
-              onChange={(event) => setTestInput(event.target.value)}
-            />
-          </div>
-          {testResult ? (
-            <pre className="max-h-64 overflow-auto border border-border bg-muted/20 p-3 text-xs">
-              {testResult}
-            </pre>
-          ) : null}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTestCapability(null)}>
-              Close
-            </Button>
-            <Button onClick={runCapabilityTest} disabled={isPending}>
-              <Play />
-              Run test
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={grantDialog} onOpenChange={setGrantDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add capability grant</DialogTitle>
-            <DialogDescription>
-              Allow a runtime or service to invoke one capability.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4">
-            <div className="space-y-2">
-              <Label>Capability</Label>
-              <Select
-                value={grantCapability}
-                onValueChange={setGrantCapability}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select capability" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(overview?.capabilities ?? []).map((capability) => (
-                    <SelectItem key={capability.key} value={capability.key}>
-                      {capability.key}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Subject type</Label>
-                <Select
-                  value={grantSubjectType}
-                  onValueChange={(value: "runtime" | "service") =>
-                    setGrantSubjectType(value)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="runtime">Runtime</SelectItem>
-                    <SelectItem value="service">Service</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Subject ID</Label>
-                <Input
-                  value={grantSubjectId}
-                  onChange={(event) => setGrantSubjectId(event.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setGrantDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={saveGrant}
-              disabled={isPending || !grantCapability || !grantSubjectId.trim()}
-            >
-              <ShieldCheck />
-              Add grant
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

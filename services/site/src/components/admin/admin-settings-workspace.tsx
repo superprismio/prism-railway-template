@@ -155,8 +155,8 @@ const settingsViewOptions: Array<{
   {
     value: "gateway",
     label: "Gateway",
-    title: "Capability Gateway",
-    description: "Connections, capability grants, tests, and audit history.",
+    title: "Gateway",
+    description: "Encrypted connections, connected services, and usage history.",
   },
   {
     value: "docs",
