@@ -23,6 +23,15 @@ function text(value: unknown, maxLength = 200) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
+function configuredOrigin(value: unknown) {
+  if (typeof value !== "string") return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
 function credentialResponse(request: Request, connection: GatewayConnection, defaultSecretName: string) {
   const connectionId = typeof connection.id === "string" ? connection.id : "";
   const secretNames = Array.isArray(connection.secretNames)
@@ -70,6 +79,7 @@ export async function POST(request: Request) {
     const existingToolset = toolsets.find((toolset) => toolset.key === toolsetKey);
     if (existingToolset) {
       const connection = connections.find((candidate) => candidate.id === existingToolset.connectionId) ?? {};
+      const currentOrigin = configuredOrigin(existingToolset.discoveryUrl);
       return NextResponse.json({
         ok: true,
         existing: true,
@@ -78,8 +88,8 @@ export async function POST(request: Request) {
         toolset: existingToolset,
         ...credentialResponse(request, connection, preset.secretName),
         requestedOrigin: origin,
-        configuredOrigin: existingToolset.discoveryUrl ?? null,
-        requiresReview: Boolean(existingToolset.discoveryUrl && existingToolset.discoveryUrl !== origin),
+        configuredOrigin: currentOrigin,
+        requiresReview: Boolean(currentOrigin && currentOrigin !== origin),
         nextStep: existingToolset.enabled === true
           ? "The integration already exists and is enabled."
           : "Add or replace the credential in Settings, then enable the access profile.",
