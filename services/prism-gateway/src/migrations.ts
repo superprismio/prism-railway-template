@@ -146,4 +146,35 @@ export const gatewayMigrations: GatewayMigration[] = [
       ALTER TABLE toolset_profiles ADD COLUMN env_bindings_json TEXT NOT NULL DEFAULT '{}';
     `,
   },
+  {
+    name: "005_stored_credentials",
+    sql: `
+      CREATE TABLE stored_credentials (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        source TEXT NOT NULL,
+        encrypted_value TEXT NOT NULL,
+        nonce TEXT NOT NULL,
+        auth_tag TEXT NOT NULL,
+        key_version TEXT NOT NULL,
+        associated_data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE stored_credential_bindings (
+        connection_id TEXT NOT NULL,
+        secret_name TEXT NOT NULL,
+        stored_credential_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(connection_id, secret_name),
+        FOREIGN KEY(connection_id) REFERENCES integration_connections(id) ON DELETE CASCADE,
+        FOREIGN KEY(stored_credential_id) REFERENCES stored_credentials(id) ON DELETE RESTRICT
+      );
+
+      CREATE INDEX stored_credential_bindings_credential_idx
+        ON stored_credential_bindings(stored_credential_id);
+    `,
+  },
 ];

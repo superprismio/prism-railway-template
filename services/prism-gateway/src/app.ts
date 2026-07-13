@@ -42,6 +42,57 @@ function credentialsField(value: unknown) {
   return credentials;
 }
 
+function isProtectedStoredCredentialName(name: string) {
+  return name.startsWith("RAILWAY_")
+    || name.startsWith("GATEWAY_")
+    || name.startsWith("PRISM_")
+    || name.startsWith("BAK_")
+    || name === "INTERNAL_SERVICE_TOKEN"
+    || name === "APP_API_SERVICE_TOKEN"
+    || name === "PRISM_AGENT_SERVICE_TOKEN"
+    || name === "TASK_RUNNER_TOKEN"
+    || name === "COMMUNICATION_ADAPTER_TOKEN"
+    || /_PRISM_API_(?:READ_)?KEY$/.test(name)
+    || /^CODEX_(?:ACCESS|REFRESH|ID)_TOKEN$/.test(name);
+}
+
+function storedCredentialsField(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new GatewayStoreError("STORED_CREDENTIALS_INVALID", 400);
+  }
+  const credentials: Record<string, string> = {};
+  for (const [name, candidate] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof candidate !== "string" || !candidate) {
+      throw new GatewayStoreError("STORED_CREDENTIAL_INVALID", 400);
+    }
+    credentials[name] = candidate;
+  }
+  if (Object.keys(credentials).length === 0 || Object.keys(credentials).length > 100) {
+    throw new GatewayStoreError("STORED_CREDENTIALS_INVALID", 400);
+  }
+  if (Object.keys(credentials).some(isProtectedStoredCredentialName)) {
+    throw new GatewayStoreError("STORED_CREDENTIAL_PROTECTED", 400);
+  }
+  return credentials;
+}
+
+function storedCredentialBindingsField(value: unknown) {
+  const input = recordField(value, "STORED_CREDENTIAL_BINDINGS_INVALID");
+  const bindings: Record<string, string> = {};
+  for (const [secretName, storedName] of Object.entries(input)) {
+    if (
+      !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(secretName)
+      || typeof storedName !== "string"
+      || !/^[A-Z_][A-Z0-9_]{0,119}$/.test(storedName)
+    ) throw new GatewayStoreError("STORED_CREDENTIAL_BINDING_INVALID", 400);
+    bindings[secretName] = storedName;
+  }
+  if (!Object.keys(bindings).length || Object.keys(bindings).length > 20) {
+    throw new GatewayStoreError("STORED_CREDENTIAL_BINDINGS_INVALID", 400);
+  }
+  return bindings;
+}
+
 function envBindingsField(value: unknown) {
   if (value === undefined) return {};
   const input = recordField(value, "TOOLSET_ENV_BINDINGS_INVALID");
@@ -409,6 +460,19 @@ export function createGatewayApp(dependencies: AppDependencies) {
     response.json({ ok: true, connections: dependencies.store.listConnections() });
   });
 
+  app.get("/credentials", requireSiteCaller, (_request, response) => {
+    response.json({ ok: true, credentials: dependencies.store.listStoredCredentials() });
+  });
+
+  app.post("/credentials/import", requireSiteCaller, (request, response) => {
+    const body = request.body as Record<string, unknown>;
+    const credentials = dependencies.store.upsertStoredCredentials(
+      storedCredentialsField(body.credentials),
+      "environment-import",
+    );
+    response.status(201).json({ ok: true, credentials });
+  });
+
   app.post("/connections", requireSiteCaller, (request, response) => {
     const body = request.body as Record<string, unknown>;
     const connection = dependencies.store.createConnection({
@@ -425,6 +489,15 @@ export function createGatewayApp(dependencies: AppDependencies) {
     const connection = dependencies.store.replaceConnectionCredentials(
       routeParam(request.params.id),
       credentialsField(body.credentials),
+    );
+    response.json({ ok: true, connection });
+  });
+
+  app.put("/connections/:id/credentials/from-store", requireSiteCaller, (request, response) => {
+    const body = request.body as Record<string, unknown>;
+    const connection = dependencies.store.bindStoredCredentials(
+      routeParam(request.params.id),
+      storedCredentialBindingsField(body.bindings),
     );
     response.json({ ok: true, connection });
   });

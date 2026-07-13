@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  gatewayEnvImportDefinitions,
-  ignoredSensitiveGatewayEnvNames,
+  gatewayCredentialImportNames,
+  gatewayImportableEnvNames,
   parseEnvText,
+  protectedGatewayEnvNames,
 } from "./gateway-env-import";
 
 test("environment import parses exports, quotes, and values containing equals", () => {
@@ -23,34 +24,36 @@ INVALID LINE
   );
 });
 
-test("environment import definitions keep X and S3 credential groups together", () => {
-  const x = gatewayEnvImportDefinitions.find((definition) => definition.key === "x.admin");
-  const storage = gatewayEnvImportDefinitions.find((definition) => definition.key === "storage.s3");
-  assert.deepEqual(Object.keys(x?.credentialVariables ?? {}).sort(), [
-    "X_ACCESS_TOKEN",
-    "X_ACCESS_TOKEN_SECRET",
-    "X_API_KEY",
-    "X_API_SECRET",
-    "X_BEARER_TOKEN",
-    "X_CONSUMER_KEY",
-    "X_CONSUMER_SECRET",
+test("generic credential import accepts instance secrets and protects platform credentials", () => {
+  const parsed = {
+    GRAPH_API_KEY: "graph",
+    PINATA_JWT_TOKEN: "pinata",
+    PRIVATE_KEY: "wallet",
+    PRISM_API_KEY: "platform",
+    PRISM_MEMORY_OPS_KEY: "platform-ops",
+    RAIDGUILD_PRISM_API_READ_KEY: "platform-read",
+    PRISM_GATEWAY_TOKEN: "gateway",
+    RAILWAY_PROJECT_TOKEN: "railway",
+    BAK_CODEX_ACCESS_TOKEN: "backup",
+    GRAPH_URL: "https://example.org",
+  };
+  assert.deepEqual(gatewayCredentialImportNames(parsed), [
+    "GRAPH_API_KEY",
+    "PINATA_JWT_TOKEN",
+    "PRIVATE_KEY",
   ]);
-  assert.deepEqual(Object.keys(storage?.credentialVariables ?? {}).sort(), [
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
+  assert.deepEqual(gatewayImportableEnvNames(parsed), [
+    "GRAPH_API_KEY",
+    "PINATA_JWT_TOKEN",
+    "PRIVATE_KEY",
+    "GRAPH_URL",
   ]);
-});
-
-test("environment import identifies unsupported secrets without classifying retained or recognized values", () => {
-  assert.deepEqual(
-    ignoredSensitiveGatewayEnvNames({
-      BAK_CODEX_ACCESS_TOKEN: "backup",
-      GRAPH_API_KEY: "graph",
-      TARGET_REPO_GITHUB_TOKEN: "github",
-      PRISM_API_KEY: "prism",
-      PRISM_RUNTIME_KEY: "runtime",
-      RAILWAY_PROJECT_TOKEN: "railway",
-    }),
-    ["BAK_CODEX_ACCESS_TOKEN", "GRAPH_API_KEY"],
-  );
+  assert.deepEqual(protectedGatewayEnvNames(parsed), [
+    "PRISM_API_KEY",
+    "PRISM_MEMORY_OPS_KEY",
+    "RAIDGUILD_PRISM_API_READ_KEY",
+    "PRISM_GATEWAY_TOKEN",
+    "RAILWAY_PROJECT_TOKEN",
+    "BAK_CODEX_ACCESS_TOKEN",
+  ]);
 });

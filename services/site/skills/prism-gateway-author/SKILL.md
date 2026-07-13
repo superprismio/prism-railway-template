@@ -58,6 +58,26 @@ Use `GET /agent/gateway` to read the redacted catalog, connections,
 toolsets, legacy capabilities, grants, and recent audit. Stored credential values are never
 returned.
 
+Imported credentials are independent from connections. Use
+`GET /agent/gateway/credentials` to list their names and metadata. To attach
+stored credentials to a connection without handling plaintext, call:
+
+```http
+PUT /agent/gateway/connections/<connection-id>/credentials/from-store
+```
+
+```json
+{
+  "bindings": {
+    "apiToken": "INSTANCE_API_TOKEN"
+  }
+}
+```
+
+The keys are connection-local secret names used by the toolset authentication
+recipe; the values are stored credential names. Never ask the admin to re-enter
+an already stored credential.
+
 ## Configure An Integration
 
 1. Inspect the catalog and reuse an active connection when appropriate.
@@ -92,9 +112,10 @@ a disabled fixed-origin HTTP toolset.
 }
 ```
 
-The response includes `credentialUrl` and `credentialPath`. Give the admin that
-link and say the credential must be entered in Settings. Never offer to accept
-the credential in chat.
+If a suitable credential already exists in `GET /agent/gateway/credentials`,
+bind it through the value-free route above. Otherwise, the response includes
+`credentialUrl` and `credentialPath`; give the admin that link and say the
+credential must be entered in Settings. Never offer to accept it in chat.
 
 For an existing connection, construct the same stable Settings path from its
 redacted catalog record:

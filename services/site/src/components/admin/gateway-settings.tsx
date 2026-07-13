@@ -21,6 +21,7 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -49,11 +50,19 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  gatewayEnvImportDefinitions,
-  ignoredSensitiveGatewayEnvNames,
+  gatewayCredentialImportNames,
+  gatewayImportableEnvNames,
   parseEnvText,
-  retainedGatewayEnvVariables,
+  protectedGatewayEnvNames,
 } from "@/lib/gateway-env-import";
+
+type GatewayStoredCredential = {
+  id: string;
+  name: string;
+  source: string;
+  createdAt: string;
+  updatedAt: string;
+};
 
 type GatewayConnection = {
   id: string;
@@ -100,6 +109,7 @@ type GatewayOverview = {
       auditEvents?: number;
     };
   };
+  credentials?: GatewayStoredCredential[];
   connections?: GatewayConnection[];
   toolsets?: GatewayToolset[];
   auditEvents?: GatewayAuditEvent[];
@@ -196,6 +206,7 @@ export function GatewaySettings() {
   >({});
   const [envImportDialog, setEnvImportDialog] = useState(false);
   const [envImportText, setEnvImportText] = useState("");
+  const [envImportSelectedNames, setEnvImportSelectedNames] = useState<string[]>([]);
   const [revokeConnection, setRevokeConnection] =
     useState<GatewayConnection | null>(null);
   const [focusedConnectionId, setFocusedConnectionId] = useState<string | null>(null);
@@ -233,18 +244,13 @@ export function GatewaySettings() {
     [activeConnections],
   );
   const parsedEnvImport = useMemo(() => parseEnvText(envImportText), [envImportText]);
-  const envImportGroups = useMemo(
-    () => gatewayEnvImportDefinitions.filter((definition) =>
-      Object.keys(definition.credentialVariables).some((name) => parsedEnvImport[name]),
-    ),
+  const envImportableNames = useMemo(
+    () => gatewayImportableEnvNames(parsedEnvImport),
     [parsedEnvImport],
   );
-  const retainedImportNames = Object.keys(parsedEnvImport).filter((name) =>
-    retainedGatewayEnvVariables.has(name) || gatewayEnvImportDefinitions.some(
-      (definition) => definition.configurationVariables.includes(name),
-    ),
-  );
-  const ignoredSensitiveImportNames = ignoredSensitiveGatewayEnvNames(parsedEnvImport);
+  const selectedEnvImportNames = envImportSelectedNames.filter((name) => envImportableNames.includes(name));
+  const protectedEnvImportNames = protectedGatewayEnvNames(parsedEnvImport);
+  const skippedEnvImportCount = envImportableNames.length - selectedEnvImportNames.length;
 
   const requestedConnectionId = searchParams.get("connection")?.trim() || "";
   const requestedConnectionAction = searchParams.get("action")?.trim() || "";
@@ -368,20 +374,16 @@ export function GatewaySettings() {
 
   function importEnvironment() {
     mutate(async () => {
-      await adminRequest("/admin/gateway/connections/import", {
+      await adminRequest("/admin/gateway/credentials/import", {
         method: "POST",
         body: JSON.stringify({
-          entries: envImportGroups.map((definition) => ({
-            key: definition.key,
-            values: Object.fromEntries(
-              Object.keys(definition.credentialVariables)
-                .filter((name) => parsedEnvImport[name])
-                .map((name) => [name, parsedEnvImport[name]]),
-            ),
-          })),
+          credentials: Object.fromEntries(
+            selectedEnvImportNames.map((name) => [name, parsedEnvImport[name]]),
+          ),
         }),
       });
       setEnvImportText("");
+      setEnvImportSelectedNames([]);
       setEnvImportDialog(false);
     });
   }
@@ -466,8 +468,9 @@ export function GatewaySettings() {
             </Button>
           </div>
         </div>
-        <div className="grid border border-border/70 sm:grid-cols-3">
+        <div className="grid border border-border/70 sm:grid-cols-4">
           {[
+            ["Stored credentials", overview?.credentials?.length ?? 0],
             ["Connections", overview?.health?.catalog?.connections ?? 0],
             ["Connected services", overview?.health?.catalog?.toolsets ?? 0],
             ["Audit events", overview?.health?.catalog?.auditEvents ?? 0],
@@ -489,18 +492,54 @@ export function GatewaySettings() {
         <div className="flex items-center justify-between gap-3">
           <h4 className="flex items-center gap-2 font-medium">
             <KeyRound className="h-4 w-4" />
+            Stored credentials
+          </h4>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setEnvImportDialog(true)}
+            disabled={!overview?.reachable}
+          >
+            <Upload />
+            Import environment
+          </Button>
+        </div>
+        <div className="overflow-x-auto border border-border/70">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Credential</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Updated</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(overview?.credentials ?? []).map((credential) => (
+                <TableRow key={credential.id}>
+                  <TableCell className="font-mono text-xs">{credential.name}</TableCell>
+                  <TableCell>{credential.source === "environment-import" ? "Environment import" : credential.source}</TableCell>
+                  <TableCell>{formatDate(credential.updatedAt)}</TableCell>
+                </TableRow>
+              ))}
+              {!overview?.credentials?.length ? (
+                <TableRow>
+                  <TableCell colSpan={3} className="h-20 text-center text-muted-foreground">
+                    No stored credentials.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </div>
+      </section>
+
+      <section className="grid gap-3 border-t border-border/60 pt-5">
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="flex items-center gap-2 font-medium">
+            <Link2 className="h-4 w-4" />
             Connections
           </h4>
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setEnvImportDialog(true)}
-              disabled={!overview?.reachable}
-            >
-              <Upload />
-              Migrate existing secrets
-            </Button>
             {incompleteConnections.length ? (
               <Button
                 size="sm"
@@ -832,16 +871,18 @@ export function GatewaySettings() {
         open={envImportDialog}
         onOpenChange={(open) => {
           setEnvImportDialog(open);
-          if (!open) setEnvImportText("");
+          if (!open) {
+            setEnvImportText("");
+            setEnvImportSelectedNames([]);
+          }
         }}
       >
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Migrate existing secrets</DialogTitle>
+            <DialogTitle>Import environment credentials</DialogTitle>
             <DialogDescription>
-              Paste an environment block copied from the existing runtime. Recognized
-              credentials are encrypted in Gateway connections; Railway variables and
-              non-secret configuration are not changed.
+              Paste an environment block copied from the existing runtime. Credential-like
+              values are encrypted independently; connections and Railway variables are not changed.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -849,7 +890,16 @@ export function GatewaySettings() {
             <Textarea
               className="min-h-48 font-mono text-xs"
               value={envImportText}
-              onChange={(event) => setEnvImportText(event.target.value)}
+              onChange={(event) => {
+                const value = event.target.value;
+                const parsed = parseEnvText(value);
+                const wasEmpty = Object.keys(parsedEnvImport).length === 0;
+                const importableNames = gatewayImportableEnvNames(parsed);
+                setEnvImportText(value);
+                setEnvImportSelectedNames((current) => wasEmpty
+                  ? gatewayCredentialImportNames(parsed)
+                  : current.filter((name) => importableNames.includes(name)));
+              }}
               placeholder="NAME=value"
               autoComplete="off"
               spellCheck={false}
@@ -861,33 +911,40 @@ export function GatewaySettings() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Integration</TableHead>
-                      <TableHead>Credentials</TableHead>
-                      <TableHead>Connection</TableHead>
+                      <TableHead>Credential</TableHead>
+                      <TableHead>Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {envImportGroups.map((definition) => {
-                      const credentialNames = Object.keys(definition.credentialVariables)
-                        .filter((name) => parsedEnvImport[name]);
-                      const existing = activeConnections.find(
-                        (connection) => connection.provider === definition.provider,
-                      );
-                      return (
-                        <TableRow key={definition.key}>
-                          <TableCell>
-                            <div className="font-medium">{definition.label}</div>
-                            <div className="text-xs text-muted-foreground">{definition.key}</div>
-                          </TableCell>
-                          <TableCell>{credentialNames.length}</TableCell>
-                          <TableCell>{existing ? "Update" : "Create"}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {!envImportGroups.length ? (
+                    {envImportableNames.map((name) => (
+                      <TableRow key={name}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              checked={selectedEnvImportNames.includes(name)}
+                              onCheckedChange={(checked) => {
+                                setEnvImportSelectedNames((current) => checked === true
+                                  ? Array.from(new Set([...current, name]))
+                                  : current.filter((candidate) => candidate !== name));
+                              }}
+                              aria-label={`Import ${name}`}
+                            />
+                            <span className="font-mono text-xs">{name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {selectedEnvImportNames.includes(name)
+                            ? (overview?.credentials ?? []).some((credential) => credential.name === name)
+                              ? "Replace stored value"
+                              : "Store encrypted value"
+                            : "Leave in runtime"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {!envImportableNames.length ? (
                       <TableRow>
-                        <TableCell colSpan={3} className="h-16 text-center text-muted-foreground">
-                          No recognized integration credentials.
+                        <TableCell colSpan={2} className="h-16 text-center text-muted-foreground">
+                          No importable variables found.
                         </TableCell>
                       </TableRow>
                     ) : null}
@@ -895,14 +952,15 @@ export function GatewaySettings() {
                 </Table>
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
-                <Badge variant="outline">Configuration left in runtime: {retainedImportNames.length}</Badge>
+                <Badge variant="outline">Credentials selected: {selectedEnvImportNames.length}</Badge>
+                <Badge variant="outline">Not selected: {skippedEnvImportCount}</Badge>
                 <Badge variant="outline">
-                  Ignored secret variables: {ignoredSensitiveImportNames.length}
+                  Protected platform variables: {protectedEnvImportNames.length}
                 </Badge>
               </div>
-              {ignoredSensitiveImportNames.length ? (
+              {protectedEnvImportNames.length ? (
                 <div className="text-sm text-muted-foreground">
-                  Not imported; these variables remain in the runtime: {ignoredSensitiveImportNames.join(", ")}
+                  Not imported; these variables remain in the runtime: {protectedEnvImportNames.join(", ")}
                 </div>
               ) : null}
             </div>
@@ -913,7 +971,7 @@ export function GatewaySettings() {
             </Button>
             <Button
               onClick={importEnvironment}
-              disabled={isPending || !envImportGroups.length}
+              disabled={isPending || !selectedEnvImportNames.length}
             >
               Import credentials
             </Button>

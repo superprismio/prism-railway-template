@@ -196,10 +196,11 @@ export async function getPrismGatewayOverview() {
     return { ...status, reachable: false };
   }
 
-  const [health, drivers, connections, toolsets, capabilities, grants, audit] =
+  const [health, drivers, credentials, connections, toolsets, capabilities, grants, audit] =
     await Promise.all([
       prismGatewayRequest("/health"),
       prismGatewayRequest("/connector-drivers"),
+      prismGatewayRequest("/credentials"),
       prismGatewayRequest("/connections"),
       prismGatewayRequest("/toolsets"),
       prismGatewayRequest("/capabilities"),
@@ -212,6 +213,7 @@ export async function getPrismGatewayOverview() {
     reachable: true,
     health,
     drivers: drivers.drivers ?? [],
+    credentials: credentials.credentials ?? [],
     connections: connections.connections ?? [],
     toolsets: toolsets.toolsets ?? [],
     capabilities: capabilities.capabilities ?? [],

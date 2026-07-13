@@ -5,6 +5,7 @@ import { isForbiddenHostname } from "./network.js";
 import type {
   GatewayCapability,
   GatewayConnection,
+  GatewayStoredCredential,
   GatewayAuditEvent,
   GatewayCaller,
   GatewayGrant,
@@ -72,6 +73,14 @@ type SecretRow = EncryptedSecret & {
   id?: string;
   connection_id?: string;
   secret_name: string;
+};
+
+type StoredCredentialRow = EncryptedSecret & {
+  id: string;
+  name: string;
+  source: GatewayStoredCredential["source"];
+  created_at: string;
+  updated_at: string;
 };
 
 type GrantRow = {
@@ -315,8 +324,11 @@ function connectionFromRow(
   row: ConnectionRow,
 ): GatewayConnection {
   const secretNames = (db.prepare(
-    "SELECT secret_name AS name FROM encrypted_secrets WHERE connection_id = ? ORDER BY secret_name",
-  ).all(row.id) as Array<{ name: string }>).map((entry) => entry.name);
+    `SELECT secret_name AS name FROM encrypted_secrets WHERE connection_id = ?
+     UNION
+     SELECT secret_name AS name FROM stored_credential_bindings WHERE connection_id = ?
+     ORDER BY name`,
+  ).all(row.id, row.id) as Array<{ name: string }>).map((entry) => entry.name);
   const capabilityKeys = (db.prepare(
     "SELECT key FROM capabilities WHERE connection_id = ? ORDER BY key",
   ).all(row.id) as Array<{ key: string }>).map((entry) => entry.key);
@@ -334,6 +346,16 @@ function connectionFromRow(
     secretNames,
     lastTestedAt: row.last_tested_at,
     lastUsedAt: row.last_used_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function storedCredentialFromRow(row: StoredCredentialRow): GatewayStoredCredential {
+  return {
+    id: row.id,
+    name: row.name,
+    source: row.source,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -427,10 +449,20 @@ export class GatewayStore {
   }
 
   encryptionStatus() {
-    const versions = this.db.prepare(`
+    const connectionVersions = this.db.prepare(`
       SELECT key_version AS keyVersion, COUNT(*) AS count
       FROM encrypted_secrets GROUP BY key_version ORDER BY key_version
     `).all() as Array<{ keyVersion: string; count: number }>;
+    const storedVersions = this.db.prepare(`
+      SELECT key_version AS keyVersion, COUNT(*) AS count
+      FROM stored_credentials GROUP BY key_version ORDER BY key_version
+    `).all() as Array<{ keyVersion: string; count: number }>;
+    const versionCounts = new Map<string, number>();
+    for (const entry of [...connectionVersions, ...storedVersions]) {
+      versionCounts.set(entry.keyVersion, (versionCounts.get(entry.keyVersion) ?? 0) + entry.count);
+    }
+    const versions = Array.from(versionCounts, ([keyVersion, count]) => ({ keyVersion, count }))
+      .sort((left, right) => left.keyVersion.localeCompare(right.keyVersion));
     const rows = this.db.prepare(`
       SELECT connection_id, secret_name, encrypted_value AS encryptedValue,
         nonce, auth_tag AS authTag, key_version AS keyVersion,
@@ -448,6 +480,28 @@ export class GatewayStore {
         decryptSecret(row, {
           connectionId: row.connection_id,
           secretName: row.secret_name,
+          key,
+        });
+      } catch {
+        unreadableSecretCount += 1;
+      }
+    }
+    const storedRows = this.db.prepare(`
+      SELECT id, name, source, encrypted_value AS encryptedValue,
+        nonce, auth_tag AS authTag, key_version AS keyVersion,
+        associated_data_json AS associatedDataJson, created_at, updated_at
+      FROM stored_credentials
+    `).all() as StoredCredentialRow[];
+    for (const row of storedRows) {
+      const key = this.decryptionKeys.get(row.keyVersion);
+      if (!key) {
+        unreadableSecretCount += 1;
+        continue;
+      }
+      try {
+        decryptSecret(row, {
+          connectionId: `stored:${row.id}`,
+          secretName: row.name,
           key,
         });
       } catch {
@@ -474,6 +528,13 @@ export class GatewayStore {
       FROM encrypted_secrets ORDER BY connection_id, secret_name
     `).all() as Required<SecretRow>[];
     const pending = rows.filter((row) => row.keyVersion !== this.encryption.keyVersion);
+    const storedRows = this.db.prepare(`
+      SELECT id, name, source, encrypted_value AS encryptedValue,
+        nonce, auth_tag AS authTag, key_version AS keyVersion,
+        associated_data_json AS associatedDataJson, created_at, updated_at
+      FROM stored_credentials ORDER BY name
+    `).all() as StoredCredentialRow[];
+    const storedPending = storedRows.filter((row) => row.keyVersion !== this.encryption.keyVersion);
 
     const update = this.db.prepare(`
       UPDATE encrypted_secrets
@@ -506,8 +567,42 @@ export class GatewayStore {
           row.id,
         );
       }
+      const updateStored = this.db.prepare(`
+        UPDATE stored_credentials
+        SET encrypted_value = ?, nonce = ?, auth_tag = ?, key_version = ?,
+          associated_data_json = ?, updated_at = ?
+        WHERE id = ?
+      `);
+      for (const row of storedPending) {
+        const previousKey = this.decryptionKeys.get(row.keyVersion);
+        if (!previousKey) throw new GatewayStoreError("ENCRYPTION_KEY_VERSION_UNAVAILABLE", 409);
+        const plaintext = decryptSecret(row, {
+          connectionId: `stored:${row.id}`,
+          secretName: row.name,
+          key: previousKey,
+        });
+        const encrypted = encryptSecret(plaintext, {
+          connectionId: `stored:${row.id}`,
+          secretName: row.name,
+          key: this.encryption.key,
+          keyVersion: this.encryption.keyVersion,
+        });
+        updateStored.run(
+          encrypted.encryptedValue,
+          encrypted.nonce,
+          encrypted.authTag,
+          encrypted.keyVersion,
+          encrypted.associatedDataJson,
+          new Date().toISOString(),
+          row.id,
+        );
+      }
     })();
-    return { rotated: pending.length, skipped: rows.length - pending.length, ...this.encryptionStatus() };
+    return {
+      rotated: pending.length + storedPending.length,
+      skipped: rows.length - pending.length + storedRows.length - storedPending.length,
+      ...this.encryptionStatus(),
+    };
   }
 
   seedBuiltInDrivers() {
@@ -551,8 +646,105 @@ export class GatewayStore {
       capabilities: count("capabilities"),
       toolsets: count("toolset_profiles"),
       connections: count("integration_connections"),
+      credentials: count("stored_credentials"),
       auditEvents: count("audit_events"),
     };
+  }
+
+  listStoredCredentials() {
+    return (this.db.prepare(
+      "SELECT * FROM stored_credentials ORDER BY name",
+    ).all() as StoredCredentialRow[]).map(storedCredentialFromRow);
+  }
+
+  upsertStoredCredentials(
+    credentials: Record<string, string>,
+    source: GatewayStoredCredential["source"] = "environment-import",
+  ) {
+    const entries = Object.entries(credentials);
+    if (!entries.length || entries.length > 100) {
+      throw new GatewayStoreError("STORED_CREDENTIALS_INVALID", 400);
+    }
+    const select = this.db.prepare("SELECT id, created_at FROM stored_credentials WHERE name = ?");
+    const upsert = this.db.prepare(`
+      INSERT INTO stored_credentials
+        (id, name, source, encrypted_value, nonce, auth_tag, key_version,
+         associated_data_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(name) DO UPDATE SET
+        source = excluded.source,
+        encrypted_value = excluded.encrypted_value,
+        nonce = excluded.nonce,
+        auth_tag = excluded.auth_tag,
+        key_version = excluded.key_version,
+        associated_data_json = excluded.associated_data_json,
+        updated_at = excluded.updated_at
+    `);
+    const imported: GatewayStoredCredential[] = [];
+    this.db.transaction(() => {
+      for (const [name, value] of entries) {
+        if (!/^[A-Z_][A-Z0-9_]{0,119}$/.test(name) || !value || value.length > 100_000) {
+          throw new GatewayStoreError("STORED_CREDENTIAL_INVALID", 400);
+        }
+        const existing = select.get(name) as { id: string; created_at: string } | undefined;
+        const id = existing?.id ?? randomUUID();
+        const now = new Date().toISOString();
+        const encrypted = encryptSecret(value, {
+          connectionId: `stored:${id}`,
+          secretName: name,
+          keyVersion: this.encryption.keyVersion,
+          key: this.encryption.key,
+        });
+        upsert.run(
+          id, name, source, encrypted.encryptedValue, encrypted.nonce,
+          encrypted.authTag, encrypted.keyVersion, encrypted.associatedDataJson,
+          existing?.created_at ?? now, now,
+        );
+        const row = this.db.prepare("SELECT * FROM stored_credentials WHERE id = ?").get(id) as StoredCredentialRow;
+        imported.push(storedCredentialFromRow(row));
+      }
+    })();
+    return imported;
+  }
+
+  bindStoredCredentials(connectionId: string, bindings: Record<string, string>) {
+    const connection = this.getConnection(connectionId);
+    if (!connection || connection.status === "revoked") {
+      throw new GatewayStoreError("CONNECTION_UNAVAILABLE", 404);
+    }
+    const entries = Object.entries(bindings);
+    if (!entries.length || entries.length > 20) {
+      throw new GatewayStoreError("STORED_CREDENTIAL_BINDINGS_INVALID", 400);
+    }
+    const resolved = entries.map(([secretName, storedName]) => {
+      if (!/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(secretName) || !/^[A-Z_][A-Z0-9_]{0,119}$/.test(storedName)) {
+        throw new GatewayStoreError("STORED_CREDENTIAL_BINDING_INVALID", 400);
+      }
+      const stored = this.db.prepare(
+        "SELECT id FROM stored_credentials WHERE name = ?",
+      ).get(storedName) as { id: string } | undefined;
+      if (!stored) throw new GatewayStoreError("STORED_CREDENTIAL_NOT_FOUND", 404);
+      return { secretName, storedCredentialId: stored.id };
+    });
+    const now = new Date().toISOString();
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM encrypted_secrets WHERE connection_id = ?").run(connectionId);
+      this.db.prepare("DELETE FROM stored_credential_bindings WHERE connection_id = ?").run(connectionId);
+      const insert = this.db.prepare(`
+        INSERT INTO stored_credential_bindings
+          (connection_id, secret_name, stored_credential_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      for (const binding of resolved) {
+        insert.run(connectionId, binding.secretName, binding.storedCredentialId, now, now);
+      }
+      this.db.prepare(`
+        UPDATE integration_connections
+        SET status = 'untested', last_tested_at = NULL, updated_at = ?
+        WHERE id = ?
+      `).run(now, connectionId);
+    })();
+    return this.getConnection(connectionId)!;
   }
 
   listToolsetProfiles() {
@@ -675,6 +867,7 @@ export class GatewayStore {
     const now = new Date().toISOString();
     this.db.transaction(() => {
       this.db.prepare("DELETE FROM encrypted_secrets WHERE connection_id = ?").run(id);
+      this.db.prepare("DELETE FROM stored_credential_bindings WHERE connection_id = ?").run(id);
       this.writeCredentials(id, entries, now);
       this.db.prepare(`
         UPDATE integration_connections
@@ -690,6 +883,7 @@ export class GatewayStore {
     const now = new Date().toISOString();
     this.db.transaction(() => {
       this.db.prepare("DELETE FROM encrypted_secrets WHERE connection_id = ?").run(id);
+      this.db.prepare("DELETE FROM stored_credential_bindings WHERE connection_id = ?").run(id);
       this.db.prepare(`
         UPDATE integration_connections SET status = 'revoked', updated_at = ? WHERE id = ?
       `).run(now, id);
@@ -709,7 +903,7 @@ export class GatewayStore {
         associated_data_json AS associatedDataJson
       FROM encrypted_secrets WHERE connection_id = ? ORDER BY secret_name
     `).all(id) as SecretRow[];
-    return Object.fromEntries(rows.map((row) => [
+    const credentials: Record<string, string> = Object.fromEntries(rows.map((row) => [
       row.secret_name,
       decryptSecret(row, {
         connectionId: id,
@@ -718,6 +912,27 @@ export class GatewayStore {
           ?? (() => { throw new GatewayStoreError("ENCRYPTION_KEY_VERSION_UNAVAILABLE", 503); })(),
       }),
     ]));
+    const bindings = this.db.prepare(`
+      SELECT b.secret_name, c.id, c.name, c.source,
+        c.encrypted_value AS encryptedValue, c.nonce,
+        c.auth_tag AS authTag, c.key_version AS keyVersion,
+        c.associated_data_json AS associatedDataJson,
+        c.created_at, c.updated_at
+      FROM stored_credential_bindings b
+      JOIN stored_credentials c ON c.id = b.stored_credential_id
+      WHERE b.connection_id = ?
+      ORDER BY b.secret_name
+    `).all(id) as Array<StoredCredentialRow & { secret_name: string }>;
+    for (const binding of bindings) {
+      const key = this.decryptionKeys.get(binding.keyVersion);
+      if (!key) throw new GatewayStoreError("ENCRYPTION_KEY_VERSION_UNAVAILABLE", 503);
+      credentials[binding.secret_name] = decryptSecret(binding, {
+        connectionId: `stored:${binding.id}`,
+        secretName: binding.name,
+        key,
+      });
+    }
+    return credentials;
   }
 
   private writeCredentials(id: string, entries: Array<[string, string]>, now: string) {
