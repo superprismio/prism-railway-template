@@ -28,6 +28,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GatewaySettings } from "@/components/admin/gateway-settings";
+import { RuntimeSettings } from "@/components/admin/runtime-settings";
 import {
   Card,
   CardContent,
@@ -115,7 +116,7 @@ type SourceAdapterPolicySettings = {
   platforms: Record<string, SourceAdapterPlatformPolicy>;
 };
 
-type SettingsView = "status" | "config" | "gateway" | "docs";
+type SettingsView = "status" | "config" | "runtimes" | "gateway" | "docs";
 
 type RepositoryTargetDraft = {
   name: string;
@@ -146,6 +147,12 @@ const settingsViewOptions: Array<{
       "Instance identity, access policy, repository targets, and members.",
   },
   {
+    value: "runtimes",
+    label: "Runtimes",
+    title: "Runtime Profiles",
+    description: "Default routing, adapter health, and supported runtime features.",
+  },
+  {
     value: "gateway",
     label: "Gateway",
     title: "Capability Gateway",
@@ -164,6 +171,7 @@ function isSettingsView(value: string | null): value is SettingsView {
   return (
     value === "status" ||
     value === "config" ||
+    value === "runtimes" ||
     value === "gateway" ||
     value === "docs"
   );
@@ -2047,6 +2055,8 @@ export function AdminSettingsWorkspace({
         ) : null}
 
         {activeView === "gateway" ? <GatewaySettings /> : null}
+
+        {activeView === "runtimes" ? <RuntimeSettings /> : null}
 
         {activeView === "docs" ? <EnvironmentInstructions /> : null}
       </section>

@@ -25,6 +25,8 @@ Implemented in the first slice:
 - profile-aware Site Console, workflow, and capture-summary runtime routing
 - an optional host-native Grok Build adapter with automatic local registration
 - explicit Grok runtime selection, cancellation, Site-hosted skills, and session continuity
+- first-run runtime detection with a persisted default profile selection
+- Runtime Settings for default routing, enablement, health, and feature discovery
 - Gateway wiring for Site, Task Runner, and the host runtime
 - contributor startup coverage for Gateway and Task Runner
 - health-gated startup and full-stack restart persistence validation
@@ -33,7 +35,6 @@ Still pending:
 
 - runtime pairing and short-lived assignment credentials
 - Task Runner and Source Adapter migration to Site-owned runtime selection
-- first-run and Settings runtime selection UI
 - Gateway capability/toolset brokering and isolated target workspaces for Grok
 - optional communication/media Compose profile
 - backup, restore, reset, and packaged CLI distribution
@@ -186,9 +187,13 @@ The expected first run is:
 ```text
 1. Install Docker and at least one supported AI harness.
 2. Authenticate that harness, for example with `codex login`.
-3. Run `prism local up`.
-4. Open the local Site URL and create the first admin account.
+3. Run `prism local up` and select a default when multiple runtimes are detected.
+4. Open the local Site URL and sign in with the generated admin credentials.
 5. Complete instance setup through Prism Console and Settings > Gateway.
+
+The selected runtime is persisted in the private local instance configuration.
+Chat, tasks, and workflows inherit it automatically. An admin can later change
+the default or disable another profile under Settings > Runtimes.
 ```
 
 The supervisor should generate and persist the following without asking the

@@ -40,17 +40,16 @@ Those Railway features are conveniences, not hard requirements.
 
 The Compose-backed local instance keeps the Prism control plane in containers
 and runs AI harness adapters on the host so they can use the operator's normal
-authentication and local repositories. Codex is required and remains the
-default. An authenticated Grok Build CLI is detected and registered as the
-optional `grok-local` profile.
+authentication and local repositories. At least one authenticated Codex CLI or
+Grok Build installation is required. Detected adapters are registered
+automatically, and the first-run selection becomes the default profile.
 
 Prerequisites:
 
 - Node.js 20 or newer
 - Docker with the Compose plugin
 - repository dependencies installed with `npm install`
-- Codex CLI installed and authenticated
-- optional: Grok Build CLI installed and authenticated
+- at least one supported runtime: Codex CLI or Grok Build, installed and authenticated
 
 Initialize and start:
 
@@ -73,11 +72,15 @@ npm run local:logs
 npm run local:down
 ```
 
-When Grok is available, `local:up` starts it on port `3031` and adds a
-non-default runtime profile. Select `grok-local` for a Site response, workflow,
-or task through runtime routing metadata. Use `npm run local:logs -- grok` for
-its adapter log. Runtime provider credentials remain in `~/.codex` and
-`~/.grok`; Prism does not copy them into its local instance directory.
+When both runtimes are available, `local:init` or the first `local:up` asks
+which should be the default. Non-interactive setup chooses the first detected
+runtime unless `PRISM_LOCAL_DEFAULT_RUNTIME=codex-default` or
+`PRISM_LOCAL_DEFAULT_RUNTIME=grok-local` is set. Change the active default later
+under **Settings > Runtimes**. Use `npm run local:logs -- grok` for the Grok
+adapter log. Runtime provider credentials remain in `~/.codex` and `~/.grok`;
+Prism does not copy them into its local instance directory.
+After initial registration, Site owns the active default, so changes made in
+Settings survive later `local:up` restarts.
 
 Set `PRISM_LOCAL_INSTANCE` to operate more than one named local instance, or
 `PRISM_LOCAL_HOME` to move local instance data. The Compose services bind to
