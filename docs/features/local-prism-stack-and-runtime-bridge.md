@@ -407,7 +407,8 @@ distribution.
 
 ### Slice 5: Guided Setup
 
-- Add first-run runtime selection and setup status.
+- [x] Add first-run runtime detection, default selection, and Runtime Settings.
+- [x] Preserve Settings-owned default changes across local restarts.
 - Add Console guidance for missing configuration.
 - Deep-link credential requirements to Settings > Gateway.
 - Add setup and integration smoke checks.
@@ -427,7 +428,7 @@ The local MVP is complete when a new operator can:
 
 1. Start a persistent Prism control plane with one command.
 2. Open Site without manually authoring internal tokens or service URLs.
-3. Pair an already authenticated local Codex CLI runtime.
+3. Register an already authenticated local Codex CLI or Grok Build runtime.
 4. Ask a normal question in Prism Console and receive a response.
 5. Add one provider credential through Settings > Gateway without exposing it
    to chat or the runtime's durable environment.
@@ -437,6 +438,77 @@ The local MVP is complete when a new operator can:
 9. Diagnose a missing dependency or failed service with `prism local doctor`.
 10. Build and smoke-test the unchanged Railway deployment path from the same
     commit.
+
+## Future Runtime And Provider Direction
+
+The local MVP supports Codex CLI and Grok Build. Do not add more harnesses until
+the current lifecycle, routing, and provider-profile behavior is stable. Likely
+future adapters, in priority order, are Claude Code, Droid, and then an open
+harness such as Goose. Gemini CLI, OpenCode, and other command-line agents can
+be evaluated against the same runtime contract when there is a concrete user
+need.
+
+Keep harness and inference-provider configuration separate:
+
+```text
+Prism runtime profile
+  -> harness adapter (Codex, Grok, Claude Code, Droid)
+      -> harness profile
+          -> hosted or local model provider
+              -> selected model
+```
+
+Venice, OpenAI-compatible services, Ollama, and LM Studio are model providers,
+not Prism runtimes. A hosted provider API key does not replace a harness because
+it does not supply workspace tools, shell execution, permissions, skills, or
+session behavior. Local models follow the same structure but normally require
+only a provider base URL and model selection, not a secret.
+
+A future runtime profile may include non-secret, server-controlled adapter
+configuration such as:
+
+```json
+{
+  "key": "codex-ollama",
+  "adapter": "codex-cli",
+  "baseUrl": "http://host.docker.internal:3030",
+  "adapterConfig": {
+    "cliProfile": "ollama",
+    "model": "qwen3-coder"
+  }
+}
+```
+
+The runtime `baseUrl` continues to identify the Prism adapter. The Ollama,
+Venice, or other inference endpoint belongs to the harness profile. For Codex,
+the adapter should eventually support a configured CLI profile per job instead
+of relying on one effective provider configuration for the whole process.
+
+For personal local use, provider credentials may remain in the host harness's
+normal credential environment. For an organization-managed hosted provider,
+keep the upstream key in server-side custody and eventually route inference
+through a self-hosted model proxy or short-lived credential flow. Do not place
+raw provider keys in runtime profile records, workflow manifests, or chat.
+
+### Optional Prism-Native Harness
+
+A small Prism-native harness may be useful later as a baseline and fallback
+that does not require Codex, Claude Code, Grok, or Droid. Its first version
+should be deliberately narrow:
+
+- `exec`, `resume`, `serve`, and `doctor` CLI commands
+- JSON and streaming JSON output
+- OpenAI Responses, OpenAI-compatible chat, Ollama, and LM Studio providers
+- SQLite-backed sessions
+- file read/search, patch, constrained shell, and Gateway invocation tools
+- cancellation, timeout, workspace assignment, and trace events
+
+Do not initially reproduce browser automation, multi-agent orchestration,
+complex approval systems, or the full behavior of mature coding harnesses. Use
+an established provider and tool-loop library rather than implementing every
+model protocol directly. Revisit this only after another external harness
+adapter has tested the normalized runtime contract or when a concrete
+deployment needs a dependency-light fallback.
 
 ## Open Questions
 
@@ -453,12 +525,20 @@ The local MVP is complete when a new operator can:
   defaults?
 - When should Site-signed job assignments replace static local pairing
   credentials?
+- Should provider selection be applied per job through adapter configuration or
+  by running one adapter process per harness profile?
+- Which external harness should validate the contract next: Claude Code or
+  Droid?
 
 ## Decision Summary
 
 - Use one-command orchestration, not one monolithic container.
 - Use Compose for the local Prism control plane.
 - Keep AI harnesses host-native behind a shared runtime bridge.
+- Keep Codex CLI and Grok Build as the local MVP harnesses.
+- Treat local and hosted model providers as harness profiles, not new runtime
+  adapters.
+- Defer a Prism-native harness until the external adapter contract is proven.
 - Generate internal bootstrap configuration automatically.
 - Use chat for non-secret configuration after startup.
 - Use Settings > Gateway for provider secret entry and rotation.
