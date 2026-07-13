@@ -128,6 +128,65 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     assert.deepEqual(connection.secretNames, ["apiKey"]);
     assert.equal(store.getConnectionCredentials(connectionId).apiKey, plaintext);
 
+    const protectedImport = await jsonRequest(baseUrl, "/credentials/import", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
+      body: JSON.stringify({ credentials: { PRISM_GATEWAY_TOKEN: "must-not-store" } }),
+    });
+    assert.equal(protectedImport.response.status, 400);
+    assert.equal(protectedImport.body.error, "STORED_CREDENTIAL_PROTECTED");
+    const protectedPrismImport = await jsonRequest(baseUrl, "/credentials/import", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
+      body: JSON.stringify({ credentials: { PRISM_MEMORY_OPS_KEY: "must-not-store" } }),
+    });
+    assert.equal(protectedPrismImport.response.status, 400);
+    assert.equal(protectedPrismImport.body.error, "STORED_CREDENTIAL_PROTECTED");
+
+    const storedPlaintext = "instance-graph-secret";
+    const importedCredentials = await jsonRequest(baseUrl, "/credentials/import", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
+      body: JSON.stringify({ credentials: { GRAPH_API_KEY: storedPlaintext } }),
+    });
+    assert.equal(importedCredentials.response.status, 201);
+    assert.equal(importedCredentials.text.includes(storedPlaintext), false);
+    assert.deepEqual(
+      (importedCredentials.body.credentials as Array<Record<string, unknown>>).map((entry) => entry.name),
+      ["GRAPH_API_KEY"],
+    );
+    const runtimeCannotListCredentials = await jsonRequest(baseUrl, "/credentials", {
+      headers: { "x-gateway-token": codexToken },
+    });
+    assert.equal(runtimeCannotListCredentials.response.status, 403);
+    const listedCredentials = await jsonRequest(baseUrl, "/credentials", {
+      headers: { "x-gateway-token": siteToken },
+    });
+    assert.deepEqual(
+      (listedCredentials.body.credentials as Array<Record<string, unknown>>).map((entry) => entry.name),
+      ["GRAPH_API_KEY"],
+    );
+    assert.equal(listedCredentials.text.includes(storedPlaintext), false);
+
+    const boundCredential = await jsonRequest(
+      baseUrl,
+      `/connections/${encodeURIComponent(connectionId)}/credentials/from-store`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json", "x-gateway-token": siteToken },
+        body: JSON.stringify({ bindings: { apiKey: "GRAPH_API_KEY" } }),
+      },
+    );
+    assert.equal(boundCredential.response.status, 200);
+    assert.equal(boundCredential.text.includes(storedPlaintext), false);
+    assert.equal(store.getConnectionCredentials(connectionId).apiKey, storedPlaintext);
+    store.upsertStoredCredentials({ GRAPH_API_KEY: "rotated-instance-graph-secret" });
+    assert.equal(
+      store.getConnectionCredentials(connectionId).apiKey,
+      "rotated-instance-graph-secret",
+    );
+    store.upsertStoredCredentials({ GRAPH_API_KEY: plaintext });
+
     const privateToolset = await jsonRequest(baseUrl, "/toolsets", {
       method: "POST",
       headers: {
@@ -270,8 +329,8 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     assert.equal((toolsetUpdated.body.toolset as Record<string, unknown>).enabled, false);
 
     const encryptedRow = db.prepare(
-      "SELECT encrypted_value AS encryptedValue FROM encrypted_secrets WHERE connection_id = ?",
-    ).get(connectionId) as { encryptedValue: string };
+      "SELECT encrypted_value AS encryptedValue FROM stored_credentials WHERE name = ?",
+    ).get("GRAPH_API_KEY") as { encryptedValue: string };
     assert.notEqual(encryptedRow.encryptedValue, plaintext);
 
     const privateCapability = await jsonRequest(baseUrl, "/capabilities", {
@@ -494,8 +553,16 @@ test("gateway backup and master-key rotation preserve encrypted credentials", as
     authType: "api-key",
     credentials: { apiKey: "credential-survives-rotation" },
   });
+  oldStore.upsertStoredCredentials({ OPS_API_KEY: "stored-credential-survives-rotation" });
+  const boundConnection = oldStore.createConnection({
+    provider: "stored-provider",
+    label: "Stored operations test",
+    authType: "api-key",
+    credentials: {},
+  });
+  oldStore.bindStoredCredentials(boundConnection.id, { apiKey: "OPS_API_KEY" });
   const mismatchedStore = new GatewayStore(db, { key: newKey, keyVersion: "ops-v1" });
-  assert.equal(mismatchedStore.encryptionStatus().unreadableSecretCount, 1);
+  assert.equal(mismatchedStore.encryptionStatus().unreadableSecretCount, 2);
   const config: GatewayConfig = {
     port: 0,
     dbPath,
@@ -524,6 +591,10 @@ test("gateway backup and master-key rotation preserve encrypted credentials", as
   try {
     assert.equal(store.encryptionStatus().rotationRequired, true);
     assert.equal(store.getConnectionCredentials(connection.id).apiKey, "credential-survives-rotation");
+    assert.equal(
+      store.getConnectionCredentials(boundConnection.id).apiKey,
+      "stored-credential-survives-rotation",
+    );
 
     const unauthorized = await jsonRequest(baseUrl, "/ops/rotate-master-key", { method: "POST" });
     assert.equal(unauthorized.response.status, 401);
@@ -533,7 +604,7 @@ test("gateway backup and master-key rotation preserve encrypted credentials", as
       headers: { "x-gateway-token": siteToken },
     });
     assert.equal(rotated.response.status, 200);
-    assert.equal((rotated.body.rotation as Record<string, unknown>).rotated, 1);
+    assert.equal((rotated.body.rotation as Record<string, unknown>).rotated, 2);
     assert.equal(store.encryptionStatus().rotationRequired, false);
 
     const repeated = await jsonRequest(baseUrl, "/ops/rotate-master-key", {
@@ -563,6 +634,10 @@ test("gateway backup and master-key rotation preserve encrypted credentials", as
       assert.equal(
         restoredStore.getConnectionCredentials(connection.id).apiKey,
         "credential-survives-rotation",
+      );
+      assert.equal(
+        restoredStore.getConnectionCredentials(boundConnection.id).apiKey,
+        "stored-credential-survives-rotation",
       );
     } finally {
       restoredDb.close();

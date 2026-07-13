@@ -29,6 +29,14 @@ export type GatewayConnection = {
   updatedAt: string;
 };
 
+export type GatewayStoredCredential = {
+  id: string;
+  name: string;
+  source: "environment-import" | "admin";
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type GatewayToolsetProfile = {
   key: string;
   connectionId: string;

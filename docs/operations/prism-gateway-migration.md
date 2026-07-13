@@ -314,13 +314,20 @@ others silently.
 
 For an existing instance with many Codex Runtime variables, use **Import
 environment** in Gateway Settings. Paste the Railway `.env` export into the
-browser dialog. The browser parser groups allowlisted credentials, identifies
-configuration that must remain available, and lists unsupported sensitive
-variables as ignored without submitting their values. Ignored variables remain
-in the runtime until a reviewed import mapping or adapter exists. The server
-upserts encrypted connections from fixed definitions and does not return secret values. An imported connection
-marked `adapter required` is custody-only: do not remove its legacy variable
-until its runtime adapter, skill migration, and post-removal smoke test pass.
+browser dialog. Secret-like names are selected by default; review the list and
+explicitly select any unusually named integration credential. Selected values
+are stored independently from connections under their original names. Prism bootstrap tokens, Gateway caller
+and encryption material, Railway variables, runtime authentication, and backup
+variables are protected and remain in Railway. Non-secret configuration also
+remains in Railway.
+
+After import, create connections only when configuring a connected service.
+Bind a stored credential to the connection by name inside Gateway; the connection
+resolves the current stored value at use time, so later credential replacement
+does not require rebinding. No plaintext passes through chat or an agent route.
+Do not remove a legacy runtime variable until
+its connection or compatibility adapter, skill migration, and post-removal
+smoke test pass.
 
 The connected-service declaration is a dependency, not a downstream permission model.
 Codex Runtime adds skill requirements to a short-lived Gateway session; Gateway
