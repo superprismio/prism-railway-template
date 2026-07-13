@@ -105,6 +105,47 @@ function commandExists(command) {
   return spawnSync(command, ["--version"], { stdio: "ignore" }).status === 0;
 }
 
+function findExecutable(command, { excludeNodeModules = false } = {}) {
+  if (command.includes(path.sep)) {
+    try {
+      fs.accessSync(command, fs.constants.X_OK);
+      return path.resolve(command);
+    } catch {
+      return null;
+    }
+  }
+
+  const extensions = process.platform === "win32"
+    ? (process.env.PATHEXT || ".EXE;.CMD;.BAT").split(";")
+    : [""];
+  for (const directory of (process.env.PATH || "").split(path.delimiter)) {
+    if (!directory) continue;
+    const normalized = path.resolve(directory);
+    if (excludeNodeModules && normalized.includes(`${path.sep}node_modules${path.sep}.bin`)) continue;
+    for (const extension of extensions) {
+      const candidate = path.join(normalized, `${command}${extension.toLowerCase()}`);
+      try {
+        fs.accessSync(candidate, fs.constants.X_OK);
+        return candidate;
+      } catch {
+        // Continue searching PATH.
+      }
+    }
+  }
+  return null;
+}
+
+function resolveHostCodexBinary(config = {}) {
+  const configured = config.CODEX_BIN || process.env.PRISM_LOCAL_CODEX_BIN || process.env.CODEX_BIN;
+  return findExecutable(configured?.trim() || "codex", { excludeNodeModules: !configured });
+}
+
+function codexVersion(codexBinary) {
+  if (!codexBinary) return null;
+  const result = spawnSync(codexBinary, ["--version"], { encoding: "utf8" });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: repoRoot,
@@ -167,12 +208,13 @@ async function waitForHealth(name, url, timeoutMs = 90_000) {
   throw new Error(`${name} did not become healthy at ${url}`);
 }
 
-function runtimeEnvironment(config) {
+function runtimeEnvironment(config, codexBinary) {
   return {
     ...process.env,
     NODE_ENV: "production",
     PORT: config.CODEX_RUNTIME_PORT,
     CODEX_HOME: config.CODEX_HOME,
+    CODEX_BIN: codexBinary,
     CODEX_WORKSPACE_ROOT: repoRoot,
     CODEX_TARGET_WORKSPACE_ROOT: path.join(dataRoot, "runtime-workspaces"),
     APP_API_BASE_URL: `http://127.0.0.1:${config.SITE_PORT}`,
@@ -202,20 +244,22 @@ async function startRuntime(config) {
     return;
   }
 
-  if (!commandExists("codex")) {
-    throw new Error("Codex CLI is not available on PATH. Install and authenticate it before running Prism local.");
+  const codexBinary = resolveHostCodexBinary(config);
+  if (!codexBinary) {
+    throw new Error("A host Codex CLI is not available on PATH. Install and authenticate it before running Prism local.");
   }
   if (!fs.existsSync(path.join(repoRoot, "node_modules"))) {
     throw new Error("Repository dependencies are missing. Run `npm install` before `prism local up`.");
   }
 
   console.log("Building the host Codex runtime adapter...");
+  console.log(`Using host Codex CLI: ${codexBinary} (${codexVersion(codexBinary) || "version unknown"})`);
   run("npm", ["run", "build", "--workspace", "@prism-railway/codex-runtime"]);
   fs.mkdirSync(path.join(dataRoot, "runtime-workspaces"), { recursive: true, mode: 0o700 });
   const logFd = fs.openSync(runtimeLogPath, "a", 0o600);
   const child = spawn(process.execPath, [path.join(repoRoot, "services/codex-runtime/dist/index.js")], {
     cwd: repoRoot,
-    env: runtimeEnvironment(config),
+    env: runtimeEnvironment(config, codexBinary),
     detached: true,
     stdio: ["ignore", logFd, logFd],
   });
@@ -307,17 +351,22 @@ async function statusCommand() {
 
 async function doctorCommand() {
   const checks = [];
+  const config = parseEnvFile();
+  const codexBinary = resolveHostCodexBinary(config || {});
   checks.push(["docker", commandExists("docker"), "Install Docker with the Compose plugin."]);
   const compose = spawnSync("docker", ["compose", "version"], { stdio: "ignore" }).status === 0;
   checks.push(["docker compose", compose, "Install the Docker Compose plugin."]);
   checks.push(["node >= 20", Number(process.versions.node.split(".")[0]) >= 20, `Current Node is ${process.versions.node}.`]);
-  checks.push(["codex CLI", commandExists("codex"), "Install Codex CLI and run `codex login`."]);
+  checks.push([
+    `host codex CLI${codexBinary ? ` (${codexVersion(codexBinary) || "version unknown"}; ${codexBinary})` : ""}`,
+    Boolean(codexBinary),
+    "Install Codex CLI and run `codex login`.",
+  ]);
   checks.push(["local config", fs.existsSync(envPath), "Run `prism local init`."]);
 
   for (const [name, ok, help] of checks) {
     console.log(`${ok ? "ok  " : "fail"} ${name}${ok ? "" : `: ${help}`}`);
   }
-  const config = parseEnvFile();
   if (config) {
     for (const result of await Promise.all(serviceUrls(config).map(([name, url]) => fetchHealth(name, url)))) {
       console.log(`${result.ok ? "ok  " : "warn"} ${result.name} health${result.status ? ` (${result.status})` : ""}`);
