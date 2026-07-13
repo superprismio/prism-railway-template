@@ -560,6 +560,20 @@ function mergeRequestedSkills(siteTask: AppTask): string[] {
   return Array.from(new Set([...instructionSkills, ...agentSkills]));
 }
 
+function requestedGatewayKeysFromConfig(
+  config: Record<string, unknown>,
+  keys: string[],
+): Array<{ key: string }> {
+  const raw = keys.map((key) => config[key]).find(Array.isArray);
+  if (!raw) return [];
+  const normalized = raw.flatMap((entry) => {
+    if (typeof entry === "string") return [entry.trim()];
+    if (isRecord(entry) && typeof entry.key === "string") return [entry.key.trim()];
+    return [];
+  }).filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key));
+  return Array.from(new Set(normalized)).map((key) => ({ key }));
+}
+
 function outputDestinationsFromConfig(config: Record<string, unknown>): OutputDestination[] {
   const raw = config.outputDestinations ?? config.output_destinations;
   if (!Array.isArray(raw)) {
@@ -767,6 +781,17 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
         sessionId: `scheduled-task:${siteTask.key}:${Date.now()}`,
         codexThreadId: null,
         recentHistory: [],
+        capabilities: requestedGatewayKeysFromConfig(siteTask.agentConfig, [
+          "gatewayCapabilities",
+          "gateway_capabilities",
+          "capabilities",
+        ]),
+        toolsets: requestedGatewayKeysFromConfig(siteTask.agentConfig, [
+          "gatewayToolsets",
+          "gateway_toolsets",
+          "toolsets",
+        ]),
+        context: { delegatedActorId: `task:${siteTask.key}` },
         metadata: {
           transport: "task-runner",
           taskKey: siteTask.key,

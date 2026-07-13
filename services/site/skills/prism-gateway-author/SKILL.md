@@ -47,13 +47,15 @@ Do not compensate for missing provider documentation by rebuilding the API as
 dozens of compatibility capabilities. The assigned agent can inspect the
 canonical document and use flexible same-origin requests.
 
-Use narrow capabilities only for intentionally small wrappers such as Plausible
-query, Arcade reads, or a deliberately restricted CRM contact read.
+Use fixed-origin HTTP toolsets when a provider has no useful OpenAPI or MCP
+document. Plausible and Arcade are normal examples: create one profile per
+credential and destination origin, then let the assigned agent select paths and
+request bodies. Do not model their routes as separate capabilities.
 
 ## Inspect
 
 Use `GET /agent/gateway` to read the redacted catalog, connections,
-capabilities, grants, and recent audit. Stored credential values are never
+toolsets, legacy capabilities, grants, and recent audit. Stored credential values are never
 returned.
 
 ## Configure An Integration
@@ -74,9 +76,9 @@ POST /agent/gateway/integrations
 }
 ```
 
-This idempotent call returns existing configuration when the standard
-capability already exists. Otherwise it creates a pending connection, disabled
-capability, input schema, and default runtime grant.
+This idempotent call returns existing configuration when the standard toolset
+already exists. Otherwise it creates or reuses a pending connection and creates
+a disabled fixed-origin HTTP toolset.
 
 3. For providers without a preset, create a pending connection with
 `POST /agent/gateway/connections`:
@@ -102,74 +104,57 @@ redacted catalog record:
 ```
 
 Use the connection's existing `secretNames[0]` when present; otherwise use the
-secret name required by the capability authentication mapping.
+secret name required by the toolset authentication mapping.
 
-4. Create non-secret capability configuration with
-`POST /agent/gateway/capabilities`. Chat-created capabilities are disabled by
-default. Include `enabled: true` only when binding to a connection that already
-has a tested credential. Site creates the default runtime grant automatically.
+4. Create non-secret profile configuration with
+`POST /agent/gateway/toolsets`. Chat-created toolsets are disabled by default.
 5. Stop and ask the admin to use the credential link. Do not repeatedly test a
 pending connection with no credential.
-6. After the admin confirms, test representative non-destructive input with
-`POST /agent/gateway/capabilities/<key>/test` and body `{"input": {...}}`.
-7. On success, enable it with
-`PATCH /agent/gateway/capabilities/<key>` and body `{"enabled": true}`.
+6. After the admin confirms, enable the toolset in Settings and exercise a
+representative non-destructive request through an assigned runtime job.
 
-Report the capability key, connection label, test result, and follow-up needed.
+Report the toolset key, connection label, test result, and follow-up needed.
 Do not claim setup succeeded before the test passes.
 
-## Bind Narrow Compatibility Skills And Workflows
+## Bind Skills And Workflows
 
-After enabling a capability, identify the skill that owns the provider
-operation and use `prism-skill-author` or `prism-skill-source-author` to declare
-the key in its `SKILL.md` frontmatter:
+For an instance-owned deterministic job, identify the skill that owns the
+provider operation and use `prism-skill-author` to declare the profile in its
+`SKILL.md` frontmatter:
 
 ```yaml
 metadata:
-  gateway-capabilities:
-    - plausible.stats.query
+  gateway-toolsets:
+    - plausible.analytics
 ```
 
 Workflows inherit these requirements through `agentConfig.skills`, and tasks
 inherit them through `instructionConfig.requestedSkills`. Do not duplicate the
-capability list in each caller. Keep a direct
-`agentConfig.gatewayCapabilities` entry only when the workflow step invokes the
-capability without an owning skill.
+toolset list in each caller. A direct `agentConfig.gatewayToolsets` entry is
+acceptable when a deterministic task or workflow has no owning skill.
 
 Run Prism Doctor after binding the skill and before removing any legacy runtime
 credential. Exercise every enabled workflow, task, hook, and interactive path
 that uses the integration; Gateway configuration alone is not proof that the
 migration is complete.
 
-Do not add `metadata.gateway-toolsets` to generic or source-managed skills just
+Do not add Gateway metadata to generic or source-managed skills just
 to make interactive access work. Site policy assigns enabled profiles to Admin
 Console and full-access source contexts. Use metadata only for instance-owned
-deterministic workflows that must declare a hard dependency. Existing
-`metadata.gateway-capabilities` remains the narrow compatibility form.
+deterministic jobs that must declare a hard dependency.
 
 ## Plausible Preset
 
-Always use the `plausible` integration preset. It owns the v2 endpoint,
-allowlists, input schema, bearer mapping, timeout, and response limit. Supply
-only the instance HTTPS origin and optional label. Do not recreate the preset
-through the generic capability route.
+Always use the `plausible` integration preset. It creates the
+`plausible.analytics` fixed-origin HTTP toolset and bearer mapping. Supply only
+the instance HTTPS origin and optional label.
 
-## NextCRM Contact Read Preset
+## Legacy Compatibility
 
-Use the `nextcrm-contact-read` preset to migrate the narrow contact-read path:
-
-```json
-{
-  "preset": "nextcrm-contact-read",
-  "label": "NextCRM",
-  "origin": "https://crm.example.org"
-}
-```
-
-It creates `crm.contact.read` through the constrained `mcp-tool.call` driver.
-The only available operations are `list`, `get`, and `search`, mapped to fixed
-NextCRM contact-read tools. Never recreate this as a broad MCP passthrough or
-allow callers to supply MCP tool names.
+`POST /agent/gateway/capabilities` and `metadata.gateway-capabilities` remain
+available only for existing narrow wrappers during migration. Do not create a
+new capability when an HTTP, OpenAPI, MCP, or adapter toolset can preserve the
+provider surface. These controls are under Advanced in Settings.
 
 ## Safety
 

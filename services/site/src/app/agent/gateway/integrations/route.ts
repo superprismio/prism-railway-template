@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import {
   gatewayCredentialPath,
-  nextcrmContactReadCapability,
   nextcrmGatewayPreset,
+  nextcrmGatewayToolset,
   normalizeGatewayPresetOrigin,
-  plausibleGatewayCapability,
   plausibleGatewayPreset,
+  plausibleGatewayToolset,
 } from "@/lib/gateway-presets";
 import { requireServiceAccess } from "@/lib/internal-service";
 import {
-  createGatewayCapabilityWithDefaultGrant,
   getPrismGatewayOverview,
   prismGatewayRequest,
   PrismGatewayError,
@@ -18,6 +17,7 @@ import { publicUrlFromRequest } from "@/lib/public-url";
 
 type GatewayConnection = { id?: unknown; label?: unknown; secretNames?: unknown };
 type GatewayCapability = { key?: unknown; connectionId?: unknown; driverConfig?: unknown; enabled?: unknown };
+type GatewayToolset = { key?: unknown; connectionId?: unknown; protocol?: unknown; discoveryUrl?: unknown; enabled?: unknown };
 
 function text(value: unknown, maxLength = 200) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -59,59 +59,62 @@ export async function POST(request: Request) {
   let pendingConnectionId = "";
   try {
     const overview = await getPrismGatewayOverview();
-    const overviewRecord = overview as { capabilities?: unknown; connections?: unknown };
+    const overviewRecord = overview as unknown as { capabilities?: unknown; connections?: unknown; toolsets?: unknown };
     const capabilities = Array.isArray(overviewRecord.capabilities) ? overviewRecord.capabilities as GatewayCapability[] : [];
     const connections = Array.isArray(overviewRecord.connections) ? overviewRecord.connections as GatewayConnection[] : [];
-    const existingCapability = capabilities.find((capability) => capability.key === preset.capabilityKey);
-    if (existingCapability) {
-      const connection = connections.find((candidate) => candidate.id === existingCapability.connectionId) ?? {};
-      const driverConfig = existingCapability.driverConfig && typeof existingCapability.driverConfig === "object" && !Array.isArray(existingCapability.driverConfig)
-        ? existingCapability.driverConfig as Record<string, unknown>
-        : {};
-      const configuredOrigin = typeof driverConfig.baseUrl === "string" ? driverConfig.baseUrl : null;
+    const toolsets = Array.isArray(overviewRecord.toolsets)
+      ? overviewRecord.toolsets as GatewayToolset[]
+      : [];
+
+    const toolsetKey = preset.toolsetKey;
+    const existingToolset = toolsets.find((toolset) => toolset.key === toolsetKey);
+    if (existingToolset) {
+      const connection = connections.find((candidate) => candidate.id === existingToolset.connectionId) ?? {};
       return NextResponse.json({
         ok: true,
         existing: true,
         preset: preset.key,
         connection,
-        capability: existingCapability,
+        toolset: existingToolset,
         ...credentialResponse(request, connection, preset.secretName),
         requestedOrigin: origin,
-        configuredOrigin,
-        requiresReview: Boolean(configuredOrigin && configuredOrigin !== origin),
-        nextStep: existingCapability.enabled === true
-          ? "The integration already exists and is enabled. Test it before changing configuration."
-          : "Add or replace the credential in Settings, then test and enable the capability.",
+        configuredOrigin: existingToolset.discoveryUrl ?? null,
+        requiresReview: Boolean(existingToolset.discoveryUrl && existingToolset.discoveryUrl !== origin),
+        nextStep: existingToolset.enabled === true
+          ? "The integration already exists and is enabled."
+          : "Add or replace the credential in Settings, then enable the access profile.",
       });
     }
 
-    const connectionResult = await prismGatewayRequest<{ connection?: GatewayConnection }>("/connections", {
+    const legacyCapability = capabilities.find((capability) => capability.key === preset.capabilityKey);
+    let connection = connections.find((candidate) => candidate.id === legacyCapability?.connectionId) ?? null;
+    if (!connection) {
+      const connectionResult = await prismGatewayRequest<{ connection?: GatewayConnection }>("/connections", {
+        method: "POST",
+        body: JSON.stringify({ provider: preset.provider, label, authType: preset.authType, credentials: {} }),
+      });
+      connection = connectionResult.connection ?? null;
+      pendingConnectionId = typeof connection?.id === "string" ? connection.id : "";
+    }
+    const connectionId = typeof connection?.id === "string" ? connection.id : "";
+    if (!connectionId) throw new PrismGatewayError("GATEWAY_CONNECTION_RESPONSE_INVALID", 502);
+    const activeConnection: GatewayConnection = connection ?? { id: connectionId };
+    const toolset = preset.key === plausibleGatewayPreset.key
+      ? plausibleGatewayToolset({ connectionId, origin, enabled: false })
+      : nextcrmGatewayToolset({ connectionId, origin, enabled: false });
+    const toolsetResult = await prismGatewayRequest("/toolsets", {
       method: "POST",
-      body: JSON.stringify({
-        provider: preset.provider,
-        label,
-        authType: preset.authType,
-        credentials: {},
-      }),
+      body: JSON.stringify(toolset),
     });
-    const connection = connectionResult.connection ?? {};
-    pendingConnectionId = typeof connection.id === "string" ? connection.id : "";
-    if (!pendingConnectionId) throw new PrismGatewayError("GATEWAY_CONNECTION_RESPONSE_INVALID", 502);
-
-    const capability = preset.key === plausibleGatewayPreset.key
-      ? plausibleGatewayCapability({ connectionId: pendingConnectionId, origin })
-      : nextcrmContactReadCapability({ connectionId: pendingConnectionId, origin });
-    const capabilityResult = await createGatewayCapabilityWithDefaultGrant(capability);
     return NextResponse.json({
       ok: true,
       existing: false,
+      migratedFromCapability: Boolean(legacyCapability),
       preset: preset.key,
-      connection,
-      capability: capabilityResult.capability ?? null,
-      defaultRuntimeGrant: capabilityResult.defaultRuntimeGrant ?? null,
-      warning: capabilityResult.warning ?? null,
-      ...credentialResponse(request, connection, preset.secretName),
-      nextStep: "Add the credential in Settings, then test representative input and enable the capability.",
+      connection: activeConnection,
+      toolset: toolsetResult.toolset ?? null,
+      ...credentialResponse(request, activeConnection, preset.secretName),
+      nextStep: "Add or replace the credential in Settings, then enable the access profile.",
     }, { status: 201 });
   } catch (error) {
     if (pendingConnectionId) {

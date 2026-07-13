@@ -17,6 +17,7 @@ import {
   Plus,
   RefreshCw,
   ShieldCheck,
+  SlidersHorizontal,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -258,6 +259,7 @@ export function GatewaySettings() {
   const [testInput, setTestInput] = useState("{}");
   const [testResult, setTestResult] = useState<string | null>(null);
   const [grantDialog, setGrantDialog] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [grantCapability, setGrantCapability] = useState("");
   const [grantSubjectType, setGrantSubjectType] = useState<
     "runtime" | "service"
@@ -669,6 +671,16 @@ export function GatewaySettings() {
               type="button"
               variant="outline"
               size="sm"
+              onClick={() => setAdvancedOpen((current) => !current)}
+              aria-pressed={advancedOpen}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              Advanced
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={() => void load()}
               disabled={isPending}
               title="Refresh Gateway"
@@ -678,13 +690,15 @@ export function GatewaySettings() {
             </Button>
           </div>
         </div>
-        <div className="grid border border-border/70 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid border border-border/70 sm:grid-cols-2 lg:grid-cols-4">
           {[
             ["Drivers", overview?.health?.catalog?.drivers ?? 0],
             ["Connections", overview?.health?.catalog?.connections ?? 0],
-            ["Toolsets", overview?.health?.catalog?.toolsets ?? 0],
-            ["Legacy capabilities", overview?.health?.catalog?.capabilities ?? 0],
+            ["Access profiles", overview?.health?.catalog?.toolsets ?? 0],
             ["Audit events", overview?.health?.catalog?.auditEvents ?? 0],
+            ...(advancedOpen
+              ? [["Legacy capabilities", overview?.health?.catalog?.capabilities ?? 0]]
+              : []),
           ].map(([label, value]) => (
             <div
               key={String(label)}
@@ -743,8 +757,8 @@ export function GatewaySettings() {
                 <TableHead>Connection</TableHead>
                 <TableHead>Provider</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Toolsets</TableHead>
-                <TableHead>Legacy capabilities</TableHead>
+                <TableHead>Access profiles</TableHead>
+                {advancedOpen ? <TableHead>Legacy capabilities</TableHead> : null}
                 <TableHead>Last used</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -769,7 +783,7 @@ export function GatewaySettings() {
                     </Badge>
                   </TableCell>
                   <TableCell>{connection.toolsetKeys?.length ?? 0}</TableCell>
-                  <TableCell>{connection.capabilityKeys.length}</TableCell>
+                  {advancedOpen ? <TableCell>{connection.capabilityKeys.length}</TableCell> : null}
                   <TableCell>{formatDate(connection.lastUsedAt)}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
@@ -798,7 +812,7 @@ export function GatewaySettings() {
               {!overview?.connections?.length ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={advancedOpen ? 7 : 6}
                     className="h-20 text-center text-muted-foreground"
                   >
                     No connections.
@@ -813,13 +827,13 @@ export function GatewaySettings() {
       <section className="grid gap-3 border-t border-border/60 pt-5">
         <h4 className="flex items-center gap-2 font-medium">
           <Link2 className="h-4 w-4" />
-          Toolsets
+          Access profiles
         </h4>
         <div className="overflow-x-auto border border-border/70">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Toolset</TableHead>
+                <TableHead>Access profile</TableHead>
                 <TableHead>Connection</TableHead>
                 <TableHead>Protocol</TableHead>
                 <TableHead>Discovery</TableHead>
@@ -878,7 +892,7 @@ export function GatewaySettings() {
                     colSpan={5}
                     className="h-20 text-center text-muted-foreground"
                   >
-                    No toolsets.
+                    No access profiles.
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -887,6 +901,7 @@ export function GatewaySettings() {
         </div>
       </section>
 
+      {advancedOpen ? <>
       <section className="grid gap-3 border-t border-border/60 pt-5">
         <div className="flex items-center justify-between gap-3">
           <h4 className="flex items-center gap-2 font-medium">
@@ -1035,6 +1050,7 @@ export function GatewaySettings() {
           </Table>
         </div>
       </section>
+      </> : null}
 
       <section className="grid gap-3 border-t border-border/60 pt-5">
         <h4 className="flex items-center gap-2 font-medium">
