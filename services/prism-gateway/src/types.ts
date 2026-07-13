@@ -10,6 +10,7 @@ export type GatewayConfig = {
   dbPath: string;
   masterKey: Buffer;
   masterKeyVersion: string;
+  previousMasterKeys: Array<{ key: Buffer; keyVersion: string }>;
   callers: GatewayCaller[];
 };
 

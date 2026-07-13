@@ -53,12 +53,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
   if (!masterKeyValue) {
     throw new Error("GATEWAY_MASTER_ENCRYPTION_KEY is required");
   }
+  const masterKeyVersion = env.GATEWAY_MASTER_KEY_VERSION?.trim() || "v1";
+  const previousMasterKeyValue = env.GATEWAY_PREVIOUS_MASTER_ENCRYPTION_KEY?.trim() || "";
+  const previousMasterKeyVersion = env.GATEWAY_PREVIOUS_MASTER_KEY_VERSION?.trim() || "";
+  if (Boolean(previousMasterKeyValue) !== Boolean(previousMasterKeyVersion)) {
+    throw new Error("GATEWAY_PREVIOUS_MASTER_ENCRYPTION_KEY and GATEWAY_PREVIOUS_MASTER_KEY_VERSION must be set together");
+  }
+  if (previousMasterKeyVersion && previousMasterKeyVersion === masterKeyVersion) {
+    throw new Error("Gateway current and previous master key versions must differ");
+  }
 
   return {
     port: positiveInteger(env.PORT, 8794),
     dbPath: env.GATEWAY_DB_PATH?.trim() || path.resolve(dataRoot, "prism-gateway.sqlite"),
     masterKey: parseMasterKey(masterKeyValue),
-    masterKeyVersion: env.GATEWAY_MASTER_KEY_VERSION?.trim() || "v1",
+    masterKeyVersion,
+    previousMasterKeys: previousMasterKeyValue
+      ? [{ key: parseMasterKey(previousMasterKeyValue), keyVersion: previousMasterKeyVersion }]
+      : [],
     callers,
   };
 }

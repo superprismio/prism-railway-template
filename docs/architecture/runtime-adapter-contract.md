@@ -1,6 +1,6 @@
 # Prism Runtime Adapter Contract
 
-Status: implementation in progress
+Status: v1 implemented by Codex Runtime and local Grok Runtime
 
 Related plan: [Prism Gateway MVP Implementation Plan](../features/prism-gateway-mvp-implementation-plan.md)
 
@@ -64,6 +64,7 @@ only the normalized routes and wraps the host CLI's headless JSON mode.
 
 ```text
 GET  /health
+GET  /v1/runtime/manifest
 GET  /v1/runtime/capabilities
 POST /v1/runtime/jobs
 GET  /v1/runtime/jobs/:jobId
@@ -112,6 +113,16 @@ GET  /v1/responses/jobs/:jobId
 }
 ```
 
+`contractVersion` is required and must equal the adapter's advertised version.
+`prompt` and `sessionId` are required non-empty strings. Unknown optional fields
+may be ignored for forward compatibility, but an adapter must reject malformed
+known fields instead of guessing their meaning.
+
+Submission returns HTTP `202` with `PrismRuntimeJobAcceptedResponse`. Poll and
+cancel return the normalized job envelope. A terminal job is immutable except
+for redacted diagnostic trace additions; late harness output must not change a
+`canceled` job to `succeeded`.
+
 The adapter must not treat `delegatedActorId` or `initiatedBy` as authenticated
 runtime identity. Service authentication establishes the adapter caller. The
 delegation context explains on whose behalf the job is running.
@@ -157,6 +168,12 @@ Errors must include a stable code, a safe message, and whether retry is
 appropriate. Provider-specific failures may be retained in redacted metadata,
 but callers should not need to parse Codex-specific strings.
 
+Adapter process crashes, CLI exit codes, malformed provider output, and timeout
+failures must become a terminal `failed` job when the adapter can persist that
+state. Transport-level `5xx` responses are reserved for requests that could not
+be accepted or read; callers should poll an accepted job rather than resubmit it
+blindly.
+
 ## Runtime Features And Organization Toolsets
 
 `GET /v1/runtime/capabilities` describes execution features, not organizational
@@ -173,14 +190,23 @@ image-input
 gateway-toolsets
 ```
 
-The runtime request lists the Gateway toolset profiles assigned to that job.
+The runtime request lists the Gateway connected-service keys assigned to that job.
 Site resolves those assignments from Console context, source-adapter policy,
-runtime profile, workflow, task, and selected skills. Gateway verifies the
-short-lived session assignment and brokers the associated credential.
+runtime profile, workflow, task, and selected skills.
 
 The downstream service remains authoritative for the credential's RBAC and
-request validation. Runtime adapters must not receive the long-lived provider
-credential.
+request validation. OpenAPI, MCP, and HTTP connected services are proxied so the
+runtime does not receive the provider credential. An `adapter` connected service
+is an explicit compatibility mode: Gateway leases selected values into the
+assigned trusted child job because its CLI or SDK requires environment
+credentials. The long-lived Gateway caller token is never passed to that child.
+
+In v1, Codex Runtime authenticates to Gateway with its caller-specific service
+token and requests the connected services assigned in the job envelope. Site
+and source policy are the assignment authority. Site-signed short-lived
+assignment assertions are a future hardening step, not a v1 guarantee. Grok
+Runtime advertises no Gateway support and must not claim to have used assigned
+connected services.
 
 During migration, adapters may continue to accept the existing `capabilities`
 array for narrow compatibility wrappers. New broad integrations should use
@@ -193,9 +219,10 @@ requested skills from authenticated Site agent routes or receive stable skill
 references. Skills should not be copied into runtime-specific persistent
 storage as the canonical version.
 
-Gateway is the source of truth for credential-backed organization toolset
-profiles. Runtime adapters receive discovered OpenAPI/MCP tools or fixed-origin
-HTTP access for assigned profiles, not underlying provider credentials.
+Gateway is the source of truth for credential-backed organization connections
+and connected services. Runtime adapters receive discovered OpenAPI/MCP tools or
+fixed-origin HTTP access for assigned services. Only the documented trusted
+`adapter` compatibility mode exposes selected provider values to a child job.
 
 Gateway toolsets bind credentials to a configured origin; they do not restrict
 an assigned agent to a Gateway-owned operation catalog. Method, path, query, and
@@ -217,6 +244,36 @@ remain on the Codex Runtime volume.
 `POST /v1/runtime/jobs/:jobId/cancel` is idempotent. It should request
 cancellation from the underlying runtime and return the latest normalized job.
 Late runtime completion must not overwrite a canceled Site agent run.
+
+Canceling an unknown job returns `404`. Canceling a terminal job returns that
+job unchanged. Adapters should terminate the underlying process promptly, but
+the normalized canceled state is authoritative even when a harness cannot be
+interrupted immediately.
+
+## Continuations
+
+`continuationId` is opaque to Site and belongs to the selected runtime profile.
+Site must clear it when a session changes runtime profiles. An adapter that does
+not advertise `continuations` ignores a null continuation and must reject a
+non-null continuation rather than silently starting an unrelated session.
+
+`recentHistory` is fallback conversational context, not a substitute for the
+runtime's continuation state. Adapters must not assume both contain identical
+history.
+
+## Authentication And Secret Boundary
+
+The contract does not standardize one deployment transport credential. Railway
+services use private networking and their configured service authentication;
+the local bridge binds to loopback and uses generated instance configuration.
+Regardless of transport:
+
+- runtime profile responses must never expose service tokens
+- job prompts and metadata must not contain provider credentials
+- Site-hosted skill URLs must use the authenticated agent surface
+- traces and normalized errors must redact tokens, authorization headers, and
+  leased environment values
+- each adapter must advertise only features it actually implements
 
 ## Runtime Profiles
 
@@ -255,3 +312,12 @@ was routed to Codex Runtime and Grok Runtime, and Site resumed the returned Grok
 session ID on a second turn. Grok Runtime currently supports Site-hosted skills,
 host repository/shell access, cancellation, and continuations. It does not yet
 claim Gateway toolsets or isolated workspace assignment.
+
+## V1 Completion Boundary
+
+The v1 operation contract is complete for job submission, polling,
+cancellation, continuations, feature discovery, Site-owned runtime selection,
+and normalized results across Codex and Grok. Deferred changes that require a
+new contract version or additive manifest feature include streaming events,
+runtime pairing, signed job assignments, isolated workspace grants, and a
+generic hosted-model harness.

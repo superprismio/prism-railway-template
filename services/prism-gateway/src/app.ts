@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { gatewayAuth, requireRuntimeCaller, requireSiteCaller } from "./auth.js";
 import { GatewayInvoker } from "./invoke.js";
@@ -142,6 +144,13 @@ function asyncRoute(
   };
 }
 
+async function sha256File(filename: string) {
+  const hash = createHash("sha256");
+  const stream = fs.createReadStream(filename);
+  for await (const chunk of stream) hash.update(chunk);
+  return hash.digest("hex");
+}
+
 export function createGatewayApp(dependencies: AppDependencies) {
   const app = express();
   const startedAt = dependencies.startedAt || new Date();
@@ -150,8 +159,10 @@ export function createGatewayApp(dependencies: AppDependencies) {
 
   app.get("/health", (_request, response) => {
     const quickCheck = dependencies.db.pragma("quick_check", { simple: true });
-    response.json({
-      ok: quickCheck === "ok",
+    const encryption = dependencies.store.encryptionStatus();
+    const ok = quickCheck === "ok" && encryption.unreadableSecretCount === 0;
+    response.status(ok ? 200 : 503).json({
+      ok,
       service: "prism-gateway",
       startedAt: startedAt.toISOString(),
       uptimeSeconds: Math.floor((Date.now() - startedAt.getTime()) / 1000),
@@ -160,11 +171,44 @@ export function createGatewayApp(dependencies: AppDependencies) {
         migrations: dependencies.migrationCount,
       },
       catalog: dependencies.store.stats(),
+      encryption,
       callersConfigured: dependencies.config.callers.map((caller) => caller.id),
     });
   });
 
   app.use(gatewayAuth(dependencies.config.callers));
+
+  app.post("/ops/backup", requireSiteCaller, asyncRoute(async (_request, response) => {
+    const backupDirectory = path.join(path.dirname(dependencies.config.dbPath), "backups");
+    fs.mkdirSync(backupDirectory, { recursive: true, mode: 0o700 });
+    const createdAt = new Date().toISOString();
+    const stamp = createdAt.replace(/[:.]/g, "-");
+    const filename = `prism-gateway-${stamp}.sqlite`;
+    const backupPath = path.join(backupDirectory, filename);
+    await dependencies.db.backup(backupPath);
+    await fs.promises.chmod(backupPath, 0o600);
+    const { size: bytes } = await fs.promises.stat(backupPath);
+    const sha256 = await sha256File(backupPath);
+    const encryption = dependencies.store.encryptionStatus();
+    const manifest = {
+      formatVersion: 1,
+      createdAt,
+      database: filename,
+      bytes,
+      sha256,
+      currentKeyVersion: encryption.currentKeyVersion,
+      encryptedSecretVersions: encryption.versions,
+    };
+    const manifestFilename = `${filename}.json`;
+    const manifestPath = path.join(backupDirectory, manifestFilename);
+    await fs.promises.writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+    response.json({ ok: true, backup: { ...manifest, manifest: manifestFilename, directory: "backups" } });
+  }));
+
+  app.post("/ops/rotate-master-key", requireSiteCaller, (_request, response) => {
+    const result = dependencies.store.rotateEncryptionKey();
+    response.json({ ok: true, rotation: result });
+  });
 
   app.get("/connector-drivers", (_request, response) => {
     response.json({ ok: true, drivers: dependencies.store.listDrivers() });

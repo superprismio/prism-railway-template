@@ -26,7 +26,7 @@ Use this while filling out the Railway template composer.
 | `NODE_ENV` | `production` | Runtime environment for the site service. | No |
 | `NEXT_PUBLIC_API_BASE_URL` | `https://${{api.RAILWAY_PUBLIC_DOMAIN}}` | Browser-facing API URL used by the site. | No |
 | `API_INTERNAL_BASE_URL` | `https://${{api.RAILWAY_PUBLIC_DOMAIN}}` | Server-side API URL used by the site. | No |
-| `PRISM_GATEWAY_ENABLED` | `false` | Shows and enables Gateway administration only after Gateway health is verified. | Yes |
+| `PRISM_GATEWAY_ENABLED` | `true` | Shows Gateway connection administration. Set false only when Gateway is intentionally omitted. | Yes |
 | `PRISM_GATEWAY_BASE_URL` | `http://${{prism-gateway.RAILWAY_PRIVATE_DOMAIN}}:${{prism-gateway.PORT}}` | Private Gateway URL used by Site server routes. | Yes |
 | `PRISM_GATEWAY_TOKEN` | `${{prism-gateway.GATEWAY_SITE_TOKEN}}` | Site-specific Gateway caller token. Never expose it to browser code. | Yes |
 
@@ -53,10 +53,12 @@ Use this while filling out the Railway template composer.
 | --- | --- | --- | --- |
 | `PORT` | `8794` | Port the Gateway service listens on. | No |
 | `NODE_ENV` | `production` | Runtime environment for Gateway. | No |
-| `GATEWAY_MASTER_ENCRYPTION_KEY` | `${{ secret(32) }}` | Root key used to encrypt connection credentials. Changing it invalidates stored credentials until rotation support exists. | No |
+| `GATEWAY_MASTER_ENCRYPTION_KEY` | `${{ secret(32) }}` | Current root key used to encrypt connection credentials. Never replace it without the key-rotation runbook. | No |
 | `GATEWAY_MASTER_KEY_VERSION` | `v1` | Version recorded with encrypted credential rows. | No |
+| `GATEWAY_PREVIOUS_MASTER_ENCRYPTION_KEY` | empty | Previous root key used temporarily during a documented rotation. Set together with its version, then remove after re-encryption. | Yes |
+| `GATEWAY_PREVIOUS_MASTER_KEY_VERSION` | empty | Version for the temporary previous root key. | Yes |
 | `GATEWAY_SITE_TOKEN` | `${{ secret(64) }}` | Caller-specific token for server-side Site administration calls. | No |
-| `GATEWAY_CODEX_RUNTIME_TOKEN` | `${{ secret(64) }}` | Caller-specific token for Codex Runtime capability calls. | No |
+| `GATEWAY_CODEX_RUNTIME_TOKEN` | `${{ secret(64) }}` | Caller-specific token for Codex Runtime connected-service use and job-scoped leases. | No |
 | `GATEWAY_TASK_RUNNER_TOKEN` | `${{ secret(64) }}` | Caller-specific token when Task Runner later invokes Gateway directly. | Yes |
 
 ## Discord Adapter
@@ -118,7 +120,7 @@ Use this while filling out the Railway template composer.
 | `APP_API_SERVICE_TOKEN` | `${{site.INTERNAL_SERVICE_TOKEN}}` | Internal site service token reference. | No |
 | `COMMUNICATION_ADAPTER_BASE_URL` | `http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}` | Private URL for communication adapter destination lookup and direct message sends from Codex agents. | No |
 | `COMMUNICATION_ADAPTER_TOKEN` | `${{discord-adapter.SOURCE_ADAPTER_TOKEN}}` | Shared adapter token sent as `X-Adapter-Token` for direct communication adapter calls. | No |
-| `PRISM_GATEWAY_ENABLED` | `false` | Enables Gateway-backed capability calls after the connection and policy path is tested. | Yes |
+| `PRISM_GATEWAY_ENABLED` | `true` | Enables assigned Gateway connected services and job-scoped compatibility leases. | Yes |
 | `PRISM_GATEWAY_BASE_URL` | `http://${{prism-gateway.RAILWAY_PRIVATE_DOMAIN}}:${{prism-gateway.PORT}}` | Private Gateway URL. | Yes |
 | `PRISM_GATEWAY_TOKEN` | `${{prism-gateway.GATEWAY_CODEX_RUNTIME_TOKEN}}` | Codex Runtime caller token for Gateway. | Yes |
 | `PRISM_RUNTIME_KEY` | `codex-default` | Stable runtime identity associated with Gateway calls. | Yes |

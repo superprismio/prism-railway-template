@@ -4,6 +4,9 @@ Status: active migration runbook
 
 Related plan: [Prism Gateway MVP Implementation Plan](../features/prism-gateway-mvp-implementation-plan.md)
 
+Backup, restore, and encryption operations:
+[Prism Gateway Backup, Restore, and Key Rotation](./prism-gateway-backup-restore.md)
+
 Use this runbook for both the production pilot on an existing Prism instance and
 the later Railway template update. The migration is additive until one
 integration has been proven through Gateway and deliberately removed from its
@@ -21,6 +24,8 @@ old runtime environment.
 - Keep the old direct integration configured until the gateway path passes its
   smoke test, then remove it in a separate change.
 - Back up the Site volume before applying a Site database migration.
+- Create a Gateway snapshot before credential migration or key rotation, and
+  preserve its matching encryption-key version outside the Gateway volume.
 
 ## Read-Only Preflight
 
@@ -65,6 +70,9 @@ For the first production pilot, confirm:
 | `NODE_ENV` | literal `production` | yes | Runtime mode. |
 | `PORT` | literal `8794` | yes | Internal service port. |
 | `GATEWAY_MASTER_ENCRYPTION_KEY` | generated secret | yes | Root key remains in Railway. Never expose through Site. |
+| `GATEWAY_MASTER_KEY_VERSION` | literal `v1` | yes | Stable identifier written into encrypted rows and backup manifests. |
+| `GATEWAY_PREVIOUS_MASTER_ENCRYPTION_KEY` | prior secret | rotation only | Set only with the previous version during the two-key rotation procedure. |
+| `GATEWAY_PREVIOUS_MASTER_KEY_VERSION` | prior version | rotation only | Remove with the previous key after re-encryption is verified. |
 | `GATEWAY_SITE_TOKEN` | generated secret | yes | Authenticates server-side Site calls. |
 | `GATEWAY_CODEX_RUNTIME_TOKEN` | generated secret | yes | Authenticates Codex Runtime toolset calls. |
 | `GATEWAY_TASK_RUNNER_TOKEN` | generated secret | later | Add when task-runner invokes Gateway directly. |
@@ -132,10 +140,9 @@ The read-only inventory of `prism-stack` on 2026-07-10 found:
   transcription
 - no Plausible credential on the active production services
 
-The provisional first removal candidate is a narrow `crm.contact.read`
-capability backed by the existing CRM connection. Verify the provider endpoint
-and token scope before migration; do not expose a broad MCP credential to the
-Gateway merely to satisfy this milestone.
+New integrations should use a connection plus one or more connected services.
+The earlier narrow capability/grant model remains only for compatibility with
+already migrated wrappers; it is not the normal setup path.
 
 No variable values were read into this document. Run the preflight again before
 implementation because Railway state may change.
@@ -237,9 +244,9 @@ Recommended order:
    separation directly.
 4. Point only Site at the working branch with Gateway disabled.
 5. Enable Site Gateway settings and add/test one instance connection and
-   toolset profile.
+   connected service.
 6. Point only Codex Runtime at the working branch with Gateway disabled.
-7. Assign one toolset profile to Codex Runtime.
+7. Assign one connected-service key to Codex Runtime.
 8. Invoke one discovered operation/tool and verify the result, trace ID, and
    audit event.
 9. Restart and redeploy Gateway, then repeat the invocation to prove encrypted
@@ -260,7 +267,7 @@ The first pilot must demonstrate:
 - Request JSON cannot override authenticated caller identity.
 - Secret create responses never return plaintext.
 - Secret values are absent from logs, audit input/output summaries, and errors.
-- A valid assigned toolset operation succeeds with a stable trace ID.
+- A valid assigned connected-service operation succeeds with a stable trace ID.
 - An unassigned profile creates a denial audit event and does not call the
   provider.
 - A Gateway restart preserves the encrypted connection and audit history.
@@ -275,20 +282,20 @@ Move credentials one at a time:
 1. Inventory the skills, workflows, tasks, hooks, and console use that depend on
    the credential. Do not infer this only from Railway variable names.
 2. Create a Gateway connection through Site Settings.
-3. Create and test a toolset profile backed by the connection's OpenAPI, MCP, or
+3. Create and test a connected service backed by the connection's OpenAPI, MCP, or
    fixed-origin HTTP surface without changing runtime behavior.
 4. Declare the profile once in each integration skill's `SKILL.md` frontmatter
    under `metadata.gateway-toolsets`.
 5. Ensure workflow steps reference the skill through `agentConfig.skills` and
    tasks request it through `instructionConfig.requestedSkills`. Do not copy the
    profile list into every workflow, task, or hook.
-6. Keep existing `metadata.gateway-capabilities` and
-   `agentConfig.gatewayCapabilities` only for narrow compatibility wrappers.
-7. Assign the corresponding toolset profile through Site/runtime/source policy.
+6. Do not add new `metadata.gateway-capabilities` or grants. Retain existing
+   entries only while a narrow compatibility wrapper still depends on them.
+7. Assign the corresponding connected-service key through Site/runtime/source policy.
 8. Deploy Site, Codex Runtime, and Task Runner with Gateway-requirement-aware Doctor
    checks before changing any legacy environment variable.
 9. Run Prism Doctor. Repair missing skill references and missing or disabled
-   toolset profiles before proceeding.
+   connected services before proceeding.
 10. Exercise console use plus every enabled workflow, task, and hook identified
     in the inventory. Compare normalized output with the old path.
 11. Confirm audit and latency records for each execution path.
@@ -314,7 +321,7 @@ fixed definitions and does not return secret values. An imported connection
 marked `adapter required` is custody-only: do not remove its legacy variable
 until its runtime adapter, skill migration, and post-removal smoke test pass.
 
-The toolset declaration is a dependency, not a downstream permission model.
+The connected-service declaration is a dependency, not a downstream permission model.
 Codex Runtime adds skill requirements to a short-lived Gateway session; Gateway
 verifies profile assignment, while the downstream identity enforces its native
 RBAC. This keeps skills and workflows portable without reproducing provider
@@ -322,7 +329,7 @@ permissions in Gateway.
 
 ### Instance Upgrade Checklist
 
-Apply this checklist to existing instances when the capability-aware runtime is
+Apply this checklist to existing instances when the Gateway-aware runtime is
 introduced:
 
 - deploy the new Site and Codex Runtime while all legacy secrets remain present
@@ -336,9 +343,25 @@ introduced:
 - remove one legacy credential at a time and rerun the same checks
 
 Older workflows do not require a manifest rewrite merely because they use a
-skill. Once the selected skill declares its toolset requirements, Codex Runtime
-resolves them automatically. Existing direct capability entries remain valid as
-compatibility wrappers.
+skill. Once the selected skill declares its connected-service requirements,
+Codex Runtime resolves them automatically. Existing direct capability entries
+remain valid only as compatibility wrappers.
+
+## Operations Acceptance
+
+Before removing the last direct credential for an instance:
+
+1. Call `POST /ops/backup`, retain the SQLite file and manifest, and verify the
+   snapshot can be opened with `quick_check=ok` using the matching key version.
+2. Restart Gateway and confirm connection, connected-service, and audit state
+   persists.
+3. Verify `GET /health` reports no unavailable encryption versions.
+4. Exercise a representative proxied connected service and compatibility lease.
+5. Record who owns snapshot retention and the matching deployment secrets.
+
+Run one key-rotation drill in a disposable or staging instance before rotating a
+production instance. Do not test rotation for the first time against the only
+copy of an instance database.
 
 Do not begin with wallet private keys, broad object-storage credentials, social
 publishing credentials, or repository write tokens.
@@ -376,7 +399,7 @@ After the production pilot is stable:
 6. Generate a new Railway template revision.
 7. Deploy that revision into a clean test project.
 8. Complete Site bootstrap and Codex device authentication.
-9. Add an instance-specific connection and toolset profile through Settings,
+9. Add an instance-specific connection and connected service through Settings,
    then run the Gateway smoke checks.
 10. Update the template variable reference and user-facing service docs.
 
@@ -406,4 +429,5 @@ bash scripts/railway-setup-prism-gateway.sh \
 
 It defaults to a read-only plan. Add `--apply` to provision missing resources
 without deploying, or `--deploy` to provision and deploy the current checkout.
-The service remains disabled at Site and Codex Runtime callers after setup.
+The setup command deliberately leaves Site and Codex Runtime disabled so an
+operator can verify health and create the first connection before enabling both.

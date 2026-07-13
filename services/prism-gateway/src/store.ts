@@ -69,6 +69,8 @@ type ToolsetProfileRow = {
 };
 
 type SecretRow = EncryptedSecret & {
+  id?: string;
+  connection_id?: string;
   secret_name: string;
 };
 
@@ -408,10 +410,105 @@ function auditFromRow(row: AuditRow): GatewayAuditEvent {
 }
 
 export class GatewayStore {
+  private readonly decryptionKeys: Map<string, Buffer>;
+
   constructor(
     private readonly db: Database.Database,
-    private readonly encryption: { key: Buffer; keyVersion: string },
-  ) {}
+    private readonly encryption: {
+      key: Buffer;
+      keyVersion: string;
+      previousKeys?: Array<{ key: Buffer; keyVersion: string }>;
+    },
+  ) {
+    this.decryptionKeys = new Map([
+      [encryption.keyVersion, encryption.key],
+      ...(encryption.previousKeys ?? []).map((entry) => [entry.keyVersion, entry.key] as const),
+    ]);
+  }
+
+  encryptionStatus() {
+    const versions = this.db.prepare(`
+      SELECT key_version AS keyVersion, COUNT(*) AS count
+      FROM encrypted_secrets GROUP BY key_version ORDER BY key_version
+    `).all() as Array<{ keyVersion: string; count: number }>;
+    const rows = this.db.prepare(`
+      SELECT connection_id, secret_name, encrypted_value AS encryptedValue,
+        nonce, auth_tag AS authTag, key_version AS keyVersion,
+        associated_data_json AS associatedDataJson
+      FROM encrypted_secrets
+    `).all() as Array<SecretRow & { connection_id: string }>;
+    let unreadableSecretCount = 0;
+    for (const row of rows) {
+      const key = this.decryptionKeys.get(row.keyVersion);
+      if (!key) {
+        unreadableSecretCount += 1;
+        continue;
+      }
+      try {
+        decryptSecret(row, {
+          connectionId: row.connection_id,
+          secretName: row.secret_name,
+          key,
+        });
+      } catch {
+        unreadableSecretCount += 1;
+      }
+    }
+    return {
+      currentKeyVersion: this.encryption.keyVersion,
+      encryptedSecretCount: versions.reduce((total, entry) => total + entry.count, 0),
+      unreadableSecretCount,
+      versions,
+      rotationRequired: versions.some((entry) => entry.keyVersion !== this.encryption.keyVersion),
+      unavailableVersions: versions
+        .map((entry) => entry.keyVersion)
+        .filter((version) => !this.decryptionKeys.has(version)),
+    };
+  }
+
+  rotateEncryptionKey() {
+    const rows = this.db.prepare(`
+      SELECT id, connection_id, secret_name, encrypted_value AS encryptedValue,
+        nonce, auth_tag AS authTag, key_version AS keyVersion,
+        associated_data_json AS associatedDataJson
+      FROM encrypted_secrets ORDER BY connection_id, secret_name
+    `).all() as Required<SecretRow>[];
+    const pending = rows.filter((row) => row.keyVersion !== this.encryption.keyVersion);
+
+    const update = this.db.prepare(`
+      UPDATE encrypted_secrets
+      SET encrypted_value = ?, nonce = ?, auth_tag = ?, key_version = ?,
+        associated_data_json = ?, updated_at = ?
+      WHERE id = ?
+    `);
+    this.db.transaction(() => {
+      for (const row of pending) {
+        const previousKey = this.decryptionKeys.get(row.keyVersion);
+        if (!previousKey) throw new GatewayStoreError("ENCRYPTION_KEY_VERSION_UNAVAILABLE", 409);
+        const plaintext = decryptSecret(row, {
+          connectionId: row.connection_id,
+          secretName: row.secret_name,
+          key: previousKey,
+        });
+        const encrypted = encryptSecret(plaintext, {
+          connectionId: row.connection_id,
+          secretName: row.secret_name,
+          key: this.encryption.key,
+          keyVersion: this.encryption.keyVersion,
+        });
+        update.run(
+          encrypted.encryptedValue,
+          encrypted.nonce,
+          encrypted.authTag,
+          encrypted.keyVersion,
+          encrypted.associatedDataJson,
+          new Date().toISOString(),
+          row.id,
+        );
+      }
+    })();
+    return { rotated: pending.length, skipped: rows.length - pending.length, ...this.encryptionStatus() };
+  }
 
   seedBuiltInDrivers() {
     const now = new Date().toISOString();
@@ -614,7 +711,12 @@ export class GatewayStore {
     `).all(id) as SecretRow[];
     return Object.fromEntries(rows.map((row) => [
       row.secret_name,
-      decryptSecret(row, { connectionId: id, secretName: row.secret_name, key: this.encryption.key }),
+      decryptSecret(row, {
+        connectionId: id,
+        secretName: row.secret_name,
+        key: this.decryptionKeys.get(row.keyVersion)
+          ?? (() => { throw new GatewayStoreError("ENCRYPTION_KEY_VERSION_UNAVAILABLE", 503); })(),
+      }),
     ]));
   }
 

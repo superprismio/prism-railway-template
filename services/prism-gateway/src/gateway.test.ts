@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
@@ -37,6 +37,7 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     dbPath: path.join(root, "gateway.sqlite"),
     masterKey: randomBytes(32),
     masterKeyVersion: "test-v1",
+    previousMasterKeys: [],
     callers: [
       { id: "site", kind: "service", runtimeKey: null, token: siteToken },
       { id: "codex-runtime", kind: "runtime", runtimeKey: "codex-test", token: codexToken },
@@ -472,6 +473,100 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     assert.equal(revoked.response.status, 200);
     assert.equal((revoked.body.connection as Record<string, unknown>).status, "revoked");
     assert.deepEqual(store.getConnectionCredentials(connectionId), {});
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("gateway backup and master-key rotation preserve encrypted credentials", async () => {
+  const root = mkdtempSync(path.join(tmpdir(), "prism-gateway-ops-test-"));
+  const dbPath = path.join(root, "gateway.sqlite");
+  const oldKey = randomBytes(32);
+  const newKey = randomBytes(32);
+  const db = openGatewayDatabase(dbPath);
+  const migrations = runGatewayMigrations(db);
+  const oldStore = new GatewayStore(db, { key: oldKey, keyVersion: "ops-v1" });
+  const connection = oldStore.createConnection({
+    provider: "test-provider",
+    label: "Operations test",
+    authType: "api-key",
+    credentials: { apiKey: "credential-survives-rotation" },
+  });
+  const mismatchedStore = new GatewayStore(db, { key: newKey, keyVersion: "ops-v1" });
+  assert.equal(mismatchedStore.encryptionStatus().unreadableSecretCount, 1);
+  const config: GatewayConfig = {
+    port: 0,
+    dbPath,
+    masterKey: newKey,
+    masterKeyVersion: "ops-v2",
+    previousMasterKeys: [{ key: oldKey, keyVersion: "ops-v1" }],
+    callers: [{ id: "site", kind: "service", runtimeKey: null, token: siteToken }],
+  };
+  const store = new GatewayStore(db, {
+    key: newKey,
+    keyVersion: "ops-v2",
+    previousKeys: config.previousMasterKeys,
+  });
+  const app = createGatewayApp({
+    config,
+    db,
+    store,
+    invoker: new GatewayInvoker(store),
+    migrationCount: migrations.totalKnown,
+  });
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const address = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  try {
+    assert.equal(store.encryptionStatus().rotationRequired, true);
+    assert.equal(store.getConnectionCredentials(connection.id).apiKey, "credential-survives-rotation");
+
+    const unauthorized = await jsonRequest(baseUrl, "/ops/rotate-master-key", { method: "POST" });
+    assert.equal(unauthorized.response.status, 401);
+
+    const rotated = await jsonRequest(baseUrl, "/ops/rotate-master-key", {
+      method: "POST",
+      headers: { "x-gateway-token": siteToken },
+    });
+    assert.equal(rotated.response.status, 200);
+    assert.equal((rotated.body.rotation as Record<string, unknown>).rotated, 1);
+    assert.equal(store.encryptionStatus().rotationRequired, false);
+
+    const repeated = await jsonRequest(baseUrl, "/ops/rotate-master-key", {
+      method: "POST",
+      headers: { "x-gateway-token": siteToken },
+    });
+    assert.equal((repeated.body.rotation as Record<string, unknown>).rotated, 0);
+
+    const backup = await jsonRequest(baseUrl, "/ops/backup", {
+      method: "POST",
+      headers: { "x-gateway-token": siteToken },
+    });
+    assert.equal(backup.response.status, 200);
+    const details = backup.body.backup as Record<string, unknown>;
+    const backupPath = path.join(root, "backups", String(details.database));
+    const manifestPath = path.join(root, "backups", String(details.manifest));
+    assert.equal(existsSync(backupPath), true);
+    assert.equal(existsSync(manifestPath), true);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+    assert.equal(manifest.currentKeyVersion, "ops-v2");
+    assert.match(String(manifest.sha256), /^[a-f0-9]{64}$/);
+
+    const restoredDb = openGatewayDatabase(backupPath);
+    try {
+      const restoredStore = new GatewayStore(restoredDb, { key: newKey, keyVersion: "ops-v2" });
+      assert.equal(restoredDb.pragma("quick_check", { simple: true }), "ok");
+      assert.equal(
+        restoredStore.getConnectionCredentials(connection.id).apiKey,
+        "credential-survives-rotation",
+      );
+    } finally {
+      restoredDb.close();
+    }
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     db.close();

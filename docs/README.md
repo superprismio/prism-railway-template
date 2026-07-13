@@ -58,6 +58,7 @@ Setup, deployment, and runtime operations:
 - [Railway Env Checklist](operations/railway-env-checklist.md)
 - [Railway Setup](operations/railway-setup.md)
 - [Prism Gateway Migration](operations/prism-gateway-migration.md)
+- [Prism Gateway Backup, Restore, And Key Rotation](operations/prism-gateway-backup-restore.md)
 - [Template Deploy Runbook](operations/template-deploy-runbook.md)
 
 ## Research

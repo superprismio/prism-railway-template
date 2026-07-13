@@ -1,6 +1,6 @@
 # Local Prism Stack And Runtime Bridge
 
-Status: implementation in progress
+Status: local MVP implemented; distribution hardening in progress
 
 Depends on: [Prism Capability Gateway](prism-capability-gateway.md)
 
@@ -35,7 +35,7 @@ Still pending:
 
 - runtime pairing and short-lived assignment credentials
 - Task Runner and Source Adapter migration to Site-owned runtime selection
-- Gateway capability/toolset brokering and isolated target workspaces for Grok
+- short-lived Gateway assignment assertions and isolated target workspaces
 - optional communication/media Compose profile
 - backup, restore, reset, and packaged CLI distribution
 
@@ -275,7 +275,7 @@ The default Compose profile should include:
 | Service | Default | Persistent state |
 | --- | --- | --- |
 | Site | yes | SQLite, instance content, request artifacts |
-| Prism Gateway | yes | encrypted connections, profiles, grants, audit |
+| Prism Gateway | yes | encrypted connections, connected services, audit |
 | Prism Memory | yes | memory database and artifact storage |
 | Task Runner | yes | no unique durable state unless implementation requires it |
 | Communication Adapter | no | adapter state and recordings when enabled |
@@ -314,6 +314,7 @@ Target commands:
 
 ```text
 prism local up
+prism local site
 prism local down
 prism local status
 prism local logs [service]
@@ -322,6 +323,11 @@ prism local open
 prism local runtime list
 prism local runtime add <adapter>
 ```
+
+`prism local site` is the targeted development refresh: it rebuilds and
+restarts only Site while leaving Gateway, Memory, Task Runner, and host runtime
+bridges running. Codex CLI is the default host runtime; Grok Build is optional
+and appears only when installed and authenticated on the host.
 
 `doctor` should check container availability, image/build state, occupied
 ports, volume write access, service health, runtime authentication, bridge
@@ -403,7 +409,7 @@ distribution.
 - [x] Implement Grok Build through the same contract using headless JSON output.
 - [x] Verify cancellation, session continuity, host workspace access, and normalized errors.
 - [x] Demonstrate explicit runtime selection without changing the runtime job contract.
-- [ ] Add Gateway capability/toolset sessions and isolated target workspace assignment.
+- [ ] Add short-lived Gateway assignment assertions and isolated target workspace assignment.
 
 ### Slice 5: Guided Setup
 

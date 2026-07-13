@@ -10,6 +10,7 @@ const migrations = runGatewayMigrations(db);
 const store = new GatewayStore(db, {
   key: config.masterKey,
   keyVersion: config.masterKeyVersion,
+  previousKeys: config.previousMasterKeys,
 });
 store.seedBuiltInDrivers();
 const invoker = new GatewayInvoker(store);

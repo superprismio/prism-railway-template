@@ -17,7 +17,7 @@ Production-proven access modes:
 
 - fixed-origin authenticated HTTP/OpenAPI relay
 - broad Streamable HTTP MCP discovery and tool calls
-- narrow compatibility capabilities retained from the prototype
+- narrow legacy capabilities retained only for migrated prototype wrappers
 - trusted-runtime, job-scoped environment leases for existing CLIs and SDKs
 
 Adapter leases preserve the existing trusted Codex boundary. They remove
@@ -58,12 +58,13 @@ auth, and model-provider auth remain with their owning services.
 
 ### Before Broad Template Rollout
 
-- Add Prism Doctor checks for missing, disabled, or protocol-mismatched profiles.
-- Add a documented Gateway SQLite backup/restore drill and verify Railway volume
-  recovery with the matching master encryption key.
-- Add master-key rotation and re-encryption support; losing the current key makes
-  encrypted connection rows unrecoverable.
-- Finish template migration documentation for adding the Gateway service,
+- [x] Add Prism Doctor checks for missing, disabled, or protocol-mismatched
+  connected services.
+- [x] Add authenticated SQLite snapshots with checksums and encryption-version
+  manifests, plus a tested offline restore runbook.
+- [x] Add transactional, idempotent master-key rotation with current/previous
+  key support and health diagnostics for unavailable versions.
+- [x] Finish template migration documentation for adding the Gateway service,
   volume, caller tokens, and Site/Runtime references to existing instances.
 - Add end-to-end tests for Console, workflow, task, Discord full-access, and
   read-only policy assignment.
@@ -82,8 +83,9 @@ auth, and model-provider auth remain with their owning services.
 
 - Add provider-aware health checks or a runtime callback so `leased` can be
   distinguished from downstream-authenticated health without overstating it.
-- Show profile protocol, bindings, assignment sources, and last successful use
-  in an Advanced Settings view.
+- Keep normal Settings focused on Connections and Connected Services. Put
+  protocol, bindings, assignment sources, and legacy capabilities in Advanced
+  diagnostics only when operators need them.
 - Add audit filtering/export, retention settings, and redacted diagnostics.
 - Generalize the environment import manifest so instances can add mappings
   without changing template source.
@@ -111,7 +113,7 @@ auth, and model-provider auth remain with their owning services.
 
 Before merging a Gateway change, verify:
 
-1. Gateway, Site, Codex Runtime, and source-adapter test suites pass.
+1. Gateway, Site, Codex Runtime, Task Runner, and source-adapter test suites pass.
 2. Missing/invalid caller tokens are rejected.
 3. HTTP origin and auth cannot be overridden.
 4. MCP describe and a read-only tool call succeed.
@@ -121,10 +123,13 @@ Before merging a Gateway change, verify:
 8. An unassigned/read-only source context does not receive admin profiles.
 9. Audit records contain no credential values or argument bodies.
 10. Restart persistence and post-removal provider behavior still pass.
+11. A snapshot opens cleanly and decrypts credentials with its documented key.
+12. A rotation drill re-encrypts old rows, is idempotent, and leaves health clean
+    after the previous key is removed.
 
 ## Recommended Next Slice
 
-Do not expand provider adapters first. The next highest-value slice is assignment
-attestation plus Doctor checks, followed by backup/key-rotation operations. That
-makes the current broad functionality safer to reuse with additional runtimes
-and additional Prism instances without changing the easy-mode user experience.
+Do not expand provider adapters first. Doctor and the operations contract are
+complete. The next highest-value security slice is assignment attestation and
+short-lived job sessions, after the rollout regression matrix has been exercised
+on a clean instance and the existing `prism-stack` instance.
