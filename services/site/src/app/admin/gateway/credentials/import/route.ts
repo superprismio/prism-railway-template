@@ -11,11 +11,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Invalid credential import" }, { status: 400 });
   }
   const credentials = body.credentials as Record<string, unknown>;
-  if (
-    Object.keys(credentials).length === 0
-    || Object.keys(credentials).length > 100
-    || Object.keys(credentials).some(isProtectedGatewayEnvName)
-  ) return NextResponse.json({ ok: false, error: "Protected credentials cannot be imported" }, { status: 400 });
+  const names = Object.keys(credentials);
+  if (names.length === 0 || names.length > 100) {
+    return NextResponse.json({ ok: false, error: "Credential import must contain 1 to 100 values" }, { status: 400 });
+  }
+  if (names.some(isProtectedGatewayEnvName)) {
+    return NextResponse.json({ ok: false, error: "Protected credentials cannot be imported" }, { status: 400 });
+  }
   try {
     return NextResponse.json(await prismGatewayRequest("/credentials/import", {
       method: "POST",

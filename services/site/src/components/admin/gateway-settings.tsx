@@ -893,8 +893,12 @@ export function GatewaySettings() {
               onChange={(event) => {
                 const value = event.target.value;
                 const parsed = parseEnvText(value);
+                const wasEmpty = Object.keys(parsedEnvImport).length === 0;
+                const importableNames = gatewayImportableEnvNames(parsed);
                 setEnvImportText(value);
-                setEnvImportSelectedNames(gatewayCredentialImportNames(parsed));
+                setEnvImportSelectedNames((current) => wasEmpty
+                  ? gatewayCredentialImportNames(parsed)
+                  : current.filter((name) => importableNames.includes(name)));
               }}
               placeholder="NAME=value"
               autoComplete="off"
@@ -919,7 +923,7 @@ export function GatewaySettings() {
                             <Checkbox
                               checked={selectedEnvImportNames.includes(name)}
                               onCheckedChange={(checked) => {
-                                setEnvImportSelectedNames((current) => checked
+                                setEnvImportSelectedNames((current) => checked === true
                                   ? Array.from(new Set([...current, name]))
                                   : current.filter((candidate) => candidate !== name));
                               }}

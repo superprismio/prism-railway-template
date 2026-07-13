@@ -747,23 +747,6 @@ export class GatewayStore {
     return this.getConnection(connectionId)!;
   }
 
-  private getStoredCredentialValue(name: string) {
-    const row = this.db.prepare(`
-      SELECT id, name, source, encrypted_value AS encryptedValue,
-        nonce, auth_tag AS authTag, key_version AS keyVersion,
-        associated_data_json AS associatedDataJson, created_at, updated_at
-      FROM stored_credentials WHERE name = ?
-    `).get(name) as StoredCredentialRow | undefined;
-    if (!row) throw new GatewayStoreError("STORED_CREDENTIAL_NOT_FOUND", 404);
-    const key = this.decryptionKeys.get(row.keyVersion);
-    if (!key) throw new GatewayStoreError("ENCRYPTION_KEY_VERSION_UNAVAILABLE", 503);
-    return decryptSecret(row, {
-      connectionId: `stored:${row.id}`,
-      secretName: row.name,
-      key,
-    });
-  }
-
   listToolsetProfiles() {
     return (this.db.prepare("SELECT * FROM toolset_profiles ORDER BY key").all() as ToolsetProfileRow[])
       .map(toolsetProfileFromRow);
@@ -930,14 +913,24 @@ export class GatewayStore {
       }),
     ]));
     const bindings = this.db.prepare(`
-      SELECT b.secret_name, c.name
+      SELECT b.secret_name, c.id, c.name, c.source,
+        c.encrypted_value AS encryptedValue, c.nonce,
+        c.auth_tag AS authTag, c.key_version AS keyVersion,
+        c.associated_data_json AS associatedDataJson,
+        c.created_at, c.updated_at
       FROM stored_credential_bindings b
       JOIN stored_credentials c ON c.id = b.stored_credential_id
       WHERE b.connection_id = ?
       ORDER BY b.secret_name
-    `).all(id) as Array<{ secret_name: string; name: string }>;
+    `).all(id) as Array<StoredCredentialRow & { secret_name: string }>;
     for (const binding of bindings) {
-      credentials[binding.secret_name] = this.getStoredCredentialValue(binding.name);
+      const key = this.decryptionKeys.get(binding.keyVersion);
+      if (!key) throw new GatewayStoreError("ENCRYPTION_KEY_VERSION_UNAVAILABLE", 503);
+      credentials[binding.secret_name] = decryptSecret(binding, {
+        connectionId: `stored:${binding.id}`,
+        secretName: binding.name,
+        key,
+      });
     }
     return credentials;
   }

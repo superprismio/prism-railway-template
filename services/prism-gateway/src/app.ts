@@ -57,8 +57,17 @@ function isProtectedStoredCredentialName(name: string) {
 }
 
 function storedCredentialsField(value: unknown) {
-  const credentials = credentialsField(value);
-  if (Object.keys(credentials).length > 100) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new GatewayStoreError("STORED_CREDENTIALS_INVALID", 400);
+  }
+  const credentials: Record<string, string> = {};
+  for (const [name, candidate] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof candidate !== "string" || !candidate) {
+      throw new GatewayStoreError("STORED_CREDENTIAL_INVALID", 400);
+    }
+    credentials[name] = candidate;
+  }
+  if (Object.keys(credentials).length === 0 || Object.keys(credentials).length > 100) {
     throw new GatewayStoreError("STORED_CREDENTIALS_INVALID", 400);
   }
   if (Object.keys(credentials).some(isProtectedStoredCredentialName)) {

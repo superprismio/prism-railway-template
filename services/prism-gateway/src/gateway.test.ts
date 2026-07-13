@@ -142,6 +142,20 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(protectedPrismImport.response.status, 400);
     assert.equal(protectedPrismImport.body.error, "STORED_CREDENTIAL_PROTECTED");
+    const emptyImport = await jsonRequest(baseUrl, "/credentials/import", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
+      body: JSON.stringify({ credentials: {} }),
+    });
+    assert.equal(emptyImport.response.status, 400);
+    assert.equal(emptyImport.body.error, "STORED_CREDENTIALS_INVALID");
+    const malformedImport = await jsonRequest(baseUrl, "/credentials/import", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
+      body: JSON.stringify({ credentials: { GRAPH_API_KEY: 42 } }),
+    });
+    assert.equal(malformedImport.response.status, 400);
+    assert.equal(malformedImport.body.error, "STORED_CREDENTIAL_INVALID");
 
     const storedPlaintext = "instance-graph-secret";
     const importedCredentials = await jsonRequest(baseUrl, "/credentials/import", {
