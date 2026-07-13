@@ -1,10 +1,30 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  defaultSourceAdapterPolicy,
+  isSourceAdapterPlatform,
   normalizeSourceAdapterPolicy,
   resolveSourceAdapterPolicy,
   sourceAdapterCapabilitiesForMode,
 } from "./source-adapter-policy";
+
+test("source policy recognizes only adapter platforms implemented by the route", () => {
+  assert.equal(isSourceAdapterPlatform("discord"), true);
+  assert.equal(isSourceAdapterPlatform("telegram"), true);
+  assert.equal(isSourceAdapterPlatform("slack"), false);
+  assert.equal(isSourceAdapterPlatform("unknown"), false);
+});
+
+test("source policy fails closed for an unknown platform", () => {
+  const resolved = resolveSourceAdapterPolicy(defaultSourceAdapterPolicy, {
+    platform: "unknown",
+    targetId: "channel",
+    userId: "user",
+  });
+  assert.equal(resolved.mode, "off");
+  assert.deepEqual(resolved.capabilities, []);
+  assert.deepEqual(resolved.matchedRules, ["default"]);
+});
 
 test("source policy preserves target, thread, group, and user override order", () => {
   const policy = normalizeSourceAdapterPolicy({

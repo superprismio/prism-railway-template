@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   loadConfig,
+  isSourceAdapterPlatform,
   readSourceAdapterPolicy,
   resolveSourceAdapterPolicy,
 } from "@/lib/app-core";
@@ -22,6 +23,9 @@ export async function POST(request: Request) {
   const userId = stringField(body?.userId);
   if (!platform || !targetId || !userId) {
     return NextResponse.json({ ok: false, error: "SOURCE_IDENTITY_REQUIRED" }, { status: 400 });
+  }
+  if (!isSourceAdapterPlatform(platform)) {
+    return NextResponse.json({ ok: false, error: "SOURCE_PLATFORM_UNSUPPORTED" }, { status: 400 });
   }
 
   const resolved = resolveSourceAdapterPolicy(readSourceAdapterPolicy(loadConfig()), {

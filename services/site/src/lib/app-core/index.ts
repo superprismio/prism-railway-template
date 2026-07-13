@@ -18,6 +18,7 @@ export {
 export { readSiteContent, writeSiteContent, normalizeSiteContent, type SiteContent } from './site-content';
 export {
   defaultSourceAdapterPolicy,
+  isSourceAdapterPlatform,
   readSourceAdapterPolicy,
   writeSourceAdapterPolicy,
   normalizeSourceAdapterPolicy,
@@ -25,6 +26,7 @@ export {
   resolveSourceAdapterPolicy,
   sourceAdapterCapabilitiesForMode,
   type SourceAdapterAccessMode,
+  type SourceAdapterPlatform,
   type ResolvedSourceAdapterPolicy,
   type SourceAdapterIdentityContext,
   type SourceAdapterPolicySettings,

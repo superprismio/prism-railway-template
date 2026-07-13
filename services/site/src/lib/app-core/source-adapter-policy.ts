@@ -3,6 +3,13 @@ import path from 'node:path';
 import type { AppConfig } from './config';
 
 export type SourceAdapterAccessMode = 'off' | 'readonly' | 'run-approved' | 'full';
+export type SourceAdapterPlatform = 'discord' | 'telegram';
+
+const sourceAdapterPlatforms = new Set<SourceAdapterPlatform>(['discord', 'telegram']);
+
+export function isSourceAdapterPlatform(value: string): value is SourceAdapterPlatform {
+  return sourceAdapterPlatforms.has(value as SourceAdapterPlatform);
+}
 
 export interface SourceAdapterRateLimit {
   windowSeconds: number;
@@ -43,6 +50,13 @@ export interface ResolvedSourceAdapterPolicy {
 }
 
 const accessModes = new Set<SourceAdapterAccessMode>(['off', 'readonly', 'run-approved', 'full']);
+const disabledPlatformPolicy: SourceAdapterPlatformPolicy = {
+  defaultMode: 'off',
+  defaultRateLimit: { windowSeconds: 60, maxRequests: 1 },
+  targets: {},
+  groups: {},
+  users: {},
+};
 
 export function sourceAdapterCapabilitiesForMode(mode: SourceAdapterAccessMode): string[] {
   switch (mode) {
@@ -271,7 +285,7 @@ export function resolveSourceAdapterPolicy(
 ): ResolvedSourceAdapterPolicy {
   const platform = settings.platforms[context.platform]
     ?? defaultSourceAdapterPolicy.platforms[context.platform]
-    ?? defaultSourceAdapterPolicy.platforms.discord;
+    ?? disabledPlatformPolicy;
   let resolved: ResolvedSourceAdapterPolicy = {
     mode: platform.defaultMode,
     capabilities: sourceAdapterCapabilitiesForMode(platform.defaultMode),
