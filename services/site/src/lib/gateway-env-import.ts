@@ -102,6 +102,22 @@ export const retainedGatewayEnvVariables = new Set([
   "VENICE_API_KEY",
 ]);
 
+export function ignoredSensitiveGatewayEnvNames(parsed: Record<string, string>) {
+  const classifiedNames = new Set(gatewayEnvImportDefinitions.flatMap((definition) => [
+    ...Object.keys(definition.credentialVariables),
+    ...definition.configurationVariables,
+  ]));
+
+  return Object.keys(parsed).filter(
+    (name) =>
+      /(KEY|TOKEN|SECRET|PASSWORD|PRIVATE)/.test(name) &&
+      !classifiedNames.has(name) &&
+      !retainedGatewayEnvVariables.has(name) &&
+      name !== "PRISM_RUNTIME_KEY" &&
+      !name.startsWith("RAILWAY_"),
+  );
+}
+
 export function parseEnvText(value: string) {
   const parsed: Record<string, string> = {};
   for (const rawLine of value.split(/\r?\n/)) {
