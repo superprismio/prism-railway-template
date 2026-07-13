@@ -1,12 +1,35 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
   defaultSourceAdapterPolicy,
   isSourceAdapterPlatform,
   normalizeSourceAdapterPolicy,
+  readSourceAdapterPolicy,
   resolveSourceAdapterPolicy,
   sourceAdapterCapabilitiesForMode,
+  writeSourceAdapterPolicy,
 } from "./source-adapter-policy";
+import type { AppConfig } from "./config";
+
+test("source policy reads are cached and writes refresh the cached value", () => {
+  const dataRoot = mkdtempSync(path.join(tmpdir(), "prism-source-policy-test-"));
+  const config = { dataRoot } as AppConfig;
+  try {
+    const initial = readSourceAdapterPolicy(config);
+    assert.strictEqual(readSourceAdapterPolicy(config), initial);
+
+    const updated = writeSourceAdapterPolicy(config, {
+      platforms: { telegram: { defaultMode: "readonly" } },
+    });
+    assert.strictEqual(readSourceAdapterPolicy(config), updated);
+    assert.equal(updated.platforms.telegram.defaultMode, "readonly");
+  } finally {
+    rmSync(dataRoot, { recursive: true, force: true });
+  }
+});
 
 test("source policy recognizes only adapter platforms implemented by the route", () => {
   assert.equal(isSourceAdapterPlatform("discord"), true);

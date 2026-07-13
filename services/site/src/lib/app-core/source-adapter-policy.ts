@@ -50,6 +50,8 @@ export interface ResolvedSourceAdapterPolicy {
 }
 
 const accessModes = new Set<SourceAdapterAccessMode>(['off', 'readonly', 'run-approved', 'full']);
+const policyCacheTtlMs = 1_000;
+const policyCache = new Map<string, { value: SourceAdapterPolicySettings; expiresAt: number }>();
 const disabledPlatformPolicy: SourceAdapterPlatformPolicy = {
   defaultMode: 'off',
   defaultRateLimit: { windowSeconds: 60, maxRequests: 1 },
@@ -318,13 +320,21 @@ export function ensureSourceAdapterPolicyFile(config: AppConfig) {
 }
 
 export function readSourceAdapterPolicy(config: AppConfig): SourceAdapterPolicySettings {
-  ensureSourceAdapterPolicyFile(config);
-  try {
-    const fileContents = fs.readFileSync(getSourceAdapterPolicyPath(config), 'utf8');
-    return normalizeSourceAdapterPolicy(JSON.parse(fileContents));
-  } catch {
-    return defaultSourceAdapterPolicy;
+  const filePath = getSourceAdapterPolicyPath(config);
+  const cached = policyCache.get(filePath);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
   }
+  ensureSourceAdapterPolicyFile(config);
+  let value: SourceAdapterPolicySettings;
+  try {
+    const fileContents = fs.readFileSync(filePath, 'utf8');
+    value = normalizeSourceAdapterPolicy(JSON.parse(fileContents));
+  } catch {
+    value = defaultSourceAdapterPolicy;
+  }
+  policyCache.set(filePath, { value, expiresAt: Date.now() + policyCacheTtlMs });
+  return value;
 }
 
 export function writeSourceAdapterPolicy(config: AppConfig, value: unknown): SourceAdapterPolicySettings {
@@ -332,5 +342,6 @@ export function writeSourceAdapterPolicy(config: AppConfig, value: unknown): Sou
   const filePath = getSourceAdapterPolicyPath(config);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
+  policyCache.set(filePath, { value: normalized, expiresAt: Date.now() + policyCacheTtlMs });
   return normalized;
 }
