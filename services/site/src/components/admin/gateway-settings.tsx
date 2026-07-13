@@ -64,8 +64,19 @@ type GatewayConnection = {
   authType: string;
   status: string;
   capabilityKeys: string[];
+  toolsetKeys: string[];
   secretNames: string[];
   lastUsedAt: string | null;
+};
+
+type GatewayToolset = {
+  key: string;
+  connectionId: string;
+  protocol: "openapi" | "mcp" | "http" | "adapter";
+  description: string;
+  enabled: boolean;
+  lastDiscoveredAt: string | null;
+  discoveryError: string | null;
 };
 
 type GatewayCapability = {
@@ -108,12 +119,14 @@ type GatewayOverview = {
     catalog?: {
       drivers?: number;
       capabilities?: number;
+      toolsets?: number;
       connections?: number;
       auditEvents?: number;
     };
   };
   drivers?: Array<{ key: string; description: string }>;
   connections?: GatewayConnection[];
+  toolsets?: GatewayToolset[];
   capabilities?: GatewayCapability[];
   grants?: GatewayGrant[];
   auditEvents?: GatewayAuditEvent[];
@@ -207,6 +220,15 @@ function statusVariant(status: string) {
   if (status === "failed" || status === "denied" || status === "unhealthy")
     return "destructive" as const;
   return "outline" as const;
+}
+
+function connectionStatusLabel(status: string) {
+  if (status === "healthy") return "Verified";
+  if (status === "leased") return "Lease used";
+  if (status === "untested") return "Not verified";
+  if (status === "unhealthy") return "Failed";
+  if (status === "revoked") return "Revoked";
+  return status;
 }
 
 export function GatewaySettings() {
@@ -562,6 +584,18 @@ export function GatewaySettings() {
     });
   }
 
+  function toggleToolset(toolset: GatewayToolset, enabled: boolean) {
+    mutate(async () => {
+      await adminRequest(
+        `/admin/gateway/toolsets/${encodeURIComponent(toolset.key)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ enabled }),
+        },
+      );
+    });
+  }
+
   function runCapabilityTest() {
     if (!testCapability) return;
     mutate(async () => {
@@ -644,11 +678,12 @@ export function GatewaySettings() {
             </Button>
           </div>
         </div>
-        <div className="grid border border-border/70 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid border border-border/70 sm:grid-cols-2 lg:grid-cols-5">
           {[
             ["Drivers", overview?.health?.catalog?.drivers ?? 0],
             ["Connections", overview?.health?.catalog?.connections ?? 0],
-            ["Capabilities", overview?.health?.catalog?.capabilities ?? 0],
+            ["Toolsets", overview?.health?.catalog?.toolsets ?? 0],
+            ["Legacy capabilities", overview?.health?.catalog?.capabilities ?? 0],
             ["Audit events", overview?.health?.catalog?.auditEvents ?? 0],
           ].map(([label, value]) => (
             <div
@@ -708,7 +743,8 @@ export function GatewaySettings() {
                 <TableHead>Connection</TableHead>
                 <TableHead>Provider</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Capabilities</TableHead>
+                <TableHead>Toolsets</TableHead>
+                <TableHead>Legacy capabilities</TableHead>
                 <TableHead>Last used</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -729,9 +765,10 @@ export function GatewaySettings() {
                   <TableCell>{connection.provider}</TableCell>
                   <TableCell>
                     <Badge variant={statusVariant(connection.status)}>
-                      {connection.status}
+                      {connectionStatusLabel(connection.status)}
                     </Badge>
                   </TableCell>
+                  <TableCell>{connection.toolsetKeys?.length ?? 0}</TableCell>
                   <TableCell>{connection.capabilityKeys.length}</TableCell>
                   <TableCell>{formatDate(connection.lastUsedAt)}</TableCell>
                   <TableCell>
@@ -761,7 +798,7 @@ export function GatewaySettings() {
               {!overview?.connections?.length ? (
                 <TableRow>
                   <TableCell
-                    colSpan={6}
+                    colSpan={7}
                     className="h-20 text-center text-muted-foreground"
                   >
                     No connections.
@@ -774,10 +811,87 @@ export function GatewaySettings() {
       </section>
 
       <section className="grid gap-3 border-t border-border/60 pt-5">
+        <h4 className="flex items-center gap-2 font-medium">
+          <Link2 className="h-4 w-4" />
+          Toolsets
+        </h4>
+        <div className="overflow-x-auto border border-border/70">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Toolset</TableHead>
+                <TableHead>Connection</TableHead>
+                <TableHead>Protocol</TableHead>
+                <TableHead>Discovery</TableHead>
+                <TableHead>Enabled</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(overview?.toolsets ?? []).map((toolset) => {
+                const connection = overview?.connections?.find(
+                  (candidate) => candidate.id === toolset.connectionId,
+                );
+                return (
+                  <TableRow key={toolset.key}>
+                    <TableCell>
+                      <div className="font-medium">{toolset.key}</div>
+                      <div className="max-w-[360px] truncate text-xs text-muted-foreground">
+                        {toolset.description}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div>{connection?.label ?? toolset.connectionId}</div>
+                      {connection ? (
+                        <div className="text-xs text-muted-foreground">
+                          {connection.provider}
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{toolset.protocol}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {toolset.discoveryError ? (
+                        <Badge variant="destructive">Failed</Badge>
+                      ) : toolset.lastDiscoveredAt ? (
+                        formatDate(toolset.lastDiscoveredAt)
+                      ) : toolset.protocol === "openapi" || toolset.protocol === "mcp" ? (
+                        "Not run"
+                      ) : (
+                        "Not required"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={toolset.enabled}
+                        onCheckedChange={(enabled) => toggleToolset(toolset, enabled)}
+                        disabled={isPending || connection?.status === "revoked"}
+                        aria-label={`Toggle ${toolset.key}`}
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {!overview?.toolsets?.length ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={5}
+                    className="h-20 text-center text-muted-foreground"
+                  >
+                    No toolsets.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </div>
+      </section>
+
+      <section className="grid gap-3 border-t border-border/60 pt-5">
         <div className="flex items-center justify-between gap-3">
           <h4 className="flex items-center gap-2 font-medium">
             <Link2 className="h-4 w-4" />
-            Capabilities
+            Legacy capabilities
           </h4>
           <Button
             size="sm"

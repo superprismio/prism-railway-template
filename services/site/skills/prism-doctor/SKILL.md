@@ -28,11 +28,12 @@ Current workflow checks:
 - referenced skills exist;
 - skill-declared Gateway capabilities exist and are enabled;
 - direct workflow Gateway capabilities exist and are enabled.
+- skill-declared Gateway toolsets exist, are enabled, and reference an active
+  credential connection;
+- direct workflow Gateway toolsets exist, are enabled, and reference an active
+  credential connection.
 
-The current implementation checks narrow compatibility capabilities. Extend the
-same dependency checks to `metadata.gateway-toolsets` when toolset profiles are
-implemented; do not infer downstream RBAC or duplicate provider policy in
-Doctor.
+Doctor does not infer downstream RBAC or duplicate provider policy.
 
 When summarizing a report:
 

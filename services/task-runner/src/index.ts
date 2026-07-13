@@ -1523,6 +1523,17 @@ function doctorAgentConfigCapabilities(value: unknown) {
   return doctorStringList(value.gatewayCapabilities ?? value.gateway_capabilities ?? value.capabilities);
 }
 
+function doctorAgentConfigToolsets(value: unknown) {
+  if (!isRecord(value)) return [];
+  const toolsets = value.gatewayToolsets ?? value.gateway_toolsets ?? value.toolsets;
+  if (!Array.isArray(toolsets)) return [];
+  return Array.from(new Set(toolsets.flatMap((entry) => {
+    if (typeof entry === "string" && entry.trim()) return [entry.trim()];
+    if (isRecord(entry) && typeof entry.key === "string" && entry.key.trim()) return [entry.key.trim()];
+    return [];
+  })));
+}
+
 function doctorWorkflowDependencies(workflow: Record<string, unknown>) {
   const definition = isRecord(workflow.definition) ? workflow.definition : {};
   const steps = Array.isArray(definition.steps) ? definition.steps.filter(isRecord) : [];
@@ -1534,6 +1545,10 @@ function doctorWorkflowDependencies(workflow: Record<string, unknown>) {
     directCapabilities: Array.from(new Set([
       ...doctorAgentConfigCapabilities(definition.agentConfig ?? definition.agent_config),
       ...steps.flatMap((step) => doctorAgentConfigCapabilities(step.agentConfig ?? step.agent_config)),
+    ])),
+    directToolsets: Array.from(new Set([
+      ...doctorAgentConfigToolsets(definition.agentConfig ?? definition.agent_config),
+      ...steps.flatMap((step) => doctorAgentConfigToolsets(step.agentConfig ?? step.agent_config)),
     ])),
   };
 }
@@ -1612,6 +1627,101 @@ function doctorCapabilityDependencyFindings(input: {
       });
     }
   }
+  return findings;
+}
+
+function doctorToolsetDependencyFindings(input: {
+  workflows: Record<string, unknown>[];
+  skills: Record<string, unknown>[];
+  toolsets: Record<string, unknown>[];
+  connections: Record<string, unknown>[];
+}) {
+  const findings: DoctorFinding[] = [];
+  const skillsByName = new Map(input.skills.map((skill) => [
+    typeof skill.name === "string" ? skill.name : "",
+    skill,
+  ]));
+  const toolsetsByKey = new Map(input.toolsets
+    .filter((toolset) => typeof toolset.key === "string")
+    .map((toolset) => [String(toolset.key), toolset]));
+  const connectionsById = new Map(input.connections
+    .filter((connection) => typeof connection.id === "string")
+    .map((connection) => [String(connection.id), connection]));
+
+  function unavailableReason(toolsetKey: string) {
+    const toolset = toolsetsByKey.get(toolsetKey);
+    if (!toolset) return "missing";
+    if (toolset.enabled !== true) return "disabled";
+    const connectionId = typeof toolset.connectionId === "string" ? toolset.connectionId : "";
+    const connection = connectionId ? connectionsById.get(connectionId) : null;
+    if (!connection) return "connection missing";
+    if (connection.status === "revoked") return "connection revoked";
+    return null;
+  }
+
+  function addFinding(inputFinding: {
+    check: string;
+    subjectType: "skill" | "workflow";
+    subjectKey: string;
+    toolsetKey: string;
+    skillName?: string;
+  }) {
+    const reason = unavailableReason(inputFinding.toolsetKey);
+    if (!reason) return;
+    findings.push({
+      check: inputFinding.check,
+      status: "failed",
+      subjectType: inputFinding.subjectType,
+      subjectKey: inputFinding.subjectKey,
+      expected: `Required Gateway toolset is enabled and connected: ${inputFinding.toolsetKey}.`,
+      observed: `Required Gateway toolset ${inputFinding.toolsetKey} is unavailable: ${reason}.`,
+      recommendation: "Configure and enable the toolset and its credential connection before removing the legacy runtime credential.",
+      evidence: {
+        toolsetKey: inputFinding.toolsetKey,
+        ...(inputFinding.skillName ? { skillName: inputFinding.skillName } : {}),
+        reason,
+      },
+    });
+  }
+
+  for (const skill of input.skills) {
+    const skillName = typeof skill.name === "string" && skill.name.trim() ? skill.name.trim() : "unknown-skill";
+    for (const toolsetKey of doctorStringList(skill.requiredToolsets ?? skill.required_toolsets)) {
+      addFinding({
+        check: "skill-required-toolset-available",
+        subjectType: "skill",
+        subjectKey: skillName,
+        toolsetKey,
+      });
+    }
+  }
+
+  for (const workflow of input.workflows) {
+    const workflowKey = workflowKeyFromRecord(workflow);
+    const dependencies = doctorWorkflowDependencies(workflow);
+    for (const skillName of dependencies.skills) {
+      const skill = skillsByName.get(skillName);
+      if (!skill) continue;
+      for (const toolsetKey of doctorStringList(skill.requiredToolsets ?? skill.required_toolsets)) {
+        addFinding({
+          check: "workflow-skill-toolset-available",
+          subjectType: "workflow",
+          subjectKey: workflowKey,
+          toolsetKey,
+          skillName,
+        });
+      }
+    }
+    for (const toolsetKey of dependencies.directToolsets) {
+      addFinding({
+        check: "workflow-direct-toolset-available",
+        subjectType: "workflow",
+        subjectKey: workflowKey,
+        toolsetKey,
+      });
+    }
+  }
+
   return findings;
 }
 
@@ -1872,12 +1982,20 @@ async function runPrismDoctorTask(): Promise<TaskRunResult> {
   const skills = doctorMergeSkills(hostedSkills, runtimeSkills);
   const gateway = isRecord(gatewayPayload.gateway) ? gatewayPayload.gateway : {};
   const gatewayCapabilities = Array.isArray(gateway.capabilities) ? gateway.capabilities.filter(isRecord) : [];
+  const gatewayToolsets = Array.isArray(gateway.toolsets) ? gateway.toolsets.filter(isRecord) : [];
+  const gatewayConnections = Array.isArray(gateway.connections) ? gateway.connections.filter(isRecord) : [];
   const enabledCapabilities = new Set(gatewayCapabilities
     .filter((capability) => capability.enabled === true && typeof capability.key === "string")
     .map((capability) => String(capability.key)));
   const initialFindings = [
     ...workflows.flatMap(doctorWorkflowFindings),
     ...doctorCapabilityDependencyFindings({ workflows, skills, enabledCapabilities }),
+    ...doctorToolsetDependencyFindings({
+      workflows,
+      skills,
+      toolsets: gatewayToolsets,
+      connections: gatewayConnections,
+    }),
   ];
   const workflowsWithFindings = new Set(initialFindings
     .filter((finding) => finding.subjectType === "workflow")
