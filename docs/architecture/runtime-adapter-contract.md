@@ -4,6 +4,8 @@ Status: pre-implementation contract
 
 Related plan: [Prism Gateway MVP Implementation Plan](../features/prism-gateway-mvp-implementation-plan.md)
 
+Related feature: [Local Prism Stack And Runtime Bridge](../features/local-prism-stack-and-runtime-bridge.md)
+
 ## Purpose
 
 Make Codex Runtime one replaceable execution adapter instead of a hard-coded
@@ -44,6 +46,20 @@ The initial contract version is:
 ```
 
 Shared TypeScript types live in `packages/contracts/src/index.ts`.
+
+### Current Adapter Discovery
+
+Codex Runtime exposes an additive discovery manifest:
+
+```text
+GET /v1/runtime/manifest
+```
+
+The manifest reports runtime identity, contract version, compatibility endpoint
+paths, and features that are actually implemented. The first local stack slice
+continues to use the existing `/v1/responses/jobs` routes and advertises
+cancellation as unsupported. It must not claim the normalized routes below
+until they are implemented.
 
 ## Required Routes
 

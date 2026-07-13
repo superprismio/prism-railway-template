@@ -1,11 +1,37 @@
 # Local Prism Stack And Runtime Bridge
 
-Status: future feature spec
+Status: implementation in progress
 
 Depends on: [Prism Capability Gateway](prism-capability-gateway.md)
 
 Related operations guide:
 [Local And VPS Deployment](../operations/local-vps-deployment.md)
+
+## Implementation Progress
+
+Implemented in the first slice:
+
+- `prism local` lifecycle commands for init, up, down, status, logs, doctor,
+  and browser open
+- generated per-instance internal credentials with restrictive file
+  permissions
+- a Compose control plane for Site, Gateway, Memory, and Task Runner
+- persistent local data directories and loopback-only published ports
+- a production Site container built from the repository lockfile
+- host-native Codex Runtime startup using the operator's existing `CODEX_HOME`
+- runtime discovery through `GET /v1/runtime/manifest`
+- Gateway wiring for Site, Task Runner, and the host runtime
+- contributor startup coverage for Gateway and Task Runner
+- health-gated startup and full-stack restart persistence validation
+
+Still pending:
+
+- normalized `/v1/runtime/jobs` routes and Site-owned runtime profiles
+- runtime pairing and short-lived assignment credentials
+- cancellation support
+- a second runtime adapter such as Grok Build
+- optional communication/media Compose profile
+- backup, restore, reset, and packaged CLI distribution
 
 ## Purpose
 

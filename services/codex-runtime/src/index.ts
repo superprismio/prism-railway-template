@@ -270,6 +270,34 @@ app.get('/codex/health', (_req, res) => {
   res.json({ ok: true, provider: 'codex-cli' });
 });
 
+app.get('/v1/runtime/manifest', (_req, res) => {
+  res.json({
+    ok: true,
+    contractVersion: '2026-07-10',
+    runtime: {
+      key: process.env.PRISM_RUNTIME_KEY?.trim() || 'codex-default',
+      adapter: 'codex-cli',
+      service: 'codex-runtime',
+    },
+    endpoints: {
+      health: '/health',
+      synchronousResponses: '/v1/responses',
+      responseJobs: '/v1/responses/jobs',
+      responseJob: '/v1/responses/jobs/:jobId',
+    },
+    features: {
+      synchronousResponses: true,
+      asynchronousJobs: true,
+      cancellation: false,
+      sessionContinuity: true,
+      traceEvents: true,
+      gatewayCapabilities: true,
+      gatewayToolsets: true,
+      workspaceAssignment: true,
+    },
+  });
+});
+
 app.get('/skills', async (_req, res) => {
   try {
     const skills = await listPrismSkills();

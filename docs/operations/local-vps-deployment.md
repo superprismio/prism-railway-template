@@ -36,6 +36,46 @@ Those Railway features are conveniences, not hard requirements.
 
 ## Local Development
 
+### One-command local instance
+
+The Compose-backed local instance keeps the Prism control plane in containers
+and runs Codex Runtime as a host-native runtime adapter so it can use the
+operator's existing Codex authentication and local repositories.
+
+Prerequisites:
+
+- Node.js 20 or newer
+- Docker with the Compose plugin
+- repository dependencies installed with `npm install`
+- Codex CLI installed and authenticated
+
+Initialize and start:
+
+```bash
+npm run local:init
+npm run local:up
+```
+
+The first command prints the generated local admin credentials once. Internal
+service tokens and encryption keys are written with restrictive permissions
+under `~/.local/share/prism/instances/default`. Provider credentials are not
+stored there; add them through **Settings > Gateway** after login.
+
+Common lifecycle commands:
+
+```bash
+npm run local:status
+npm run local:doctor
+npm run local:logs
+npm run local:down
+```
+
+Set `PRISM_LOCAL_INSTANCE` to operate more than one named local instance, or
+`PRISM_LOCAL_HOME` to move local instance data. The Compose services bind to
+loopback by default.
+
+### Contributor development
+
 Use the repo bootstrap first:
 
 ```bash
@@ -72,6 +112,8 @@ Default local ports:
 - `codex-runtime`: `3030`
 - `prism-memory`: `8788`
 - `discord-adapter`: `8789`
+- `task-runner`: `8790`
+- `prism-gateway`: `8794`
 
 Run the whole stack:
 
