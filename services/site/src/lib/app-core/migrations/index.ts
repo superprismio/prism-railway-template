@@ -27,6 +27,7 @@ import { simpleChangeRequestReviewGateMigration } from './027_simple_change_requ
 import { recordingTranscriptWorkflowMigration } from './028_recording_transcript_workflow';
 import { recordingTranscriptPortalMemoryMigration } from './029_recording_transcript_portal_memory';
 import { recordingWorkflowDownstreamHandoffMigration } from './030_recording_workflow_downstream_handoff';
+import { runtimeProfilesMigration } from './031_runtime_profiles';
 
 export interface Migration {
   name: string;
@@ -63,4 +64,5 @@ export const migrations: Migration[] = [
   recordingTranscriptWorkflowMigration,
   recordingTranscriptPortalMemoryMigration,
   recordingWorkflowDownstreamHandoffMigration,
+  runtimeProfilesMigration,
 ];

@@ -21,15 +21,18 @@ Implemented in the first slice:
 - host-native Codex Runtime startup using the operator's existing `CODEX_HOME`
 - runtime discovery through `GET /v1/runtime/manifest`
 - normalized runtime job submission, polling, and cancellation routes
+- Site-owned runtime profiles with environment bootstrap and agent/admin APIs
+- profile-aware Site Console, workflow, and capture-summary runtime routing
 - Gateway wiring for Site, Task Runner, and the host runtime
 - contributor startup coverage for Gateway and Task Runner
 - health-gated startup and full-stack restart persistence validation
 
 Still pending:
 
-- Site-owned runtime profiles
 - runtime pairing and short-lived assignment credentials
 - a second runtime adapter such as Grok Build
+- Task Runner and Source Adapter migration to Site-owned runtime selection
+- first-run and Settings runtime selection UI
 - optional communication/media Compose profile
 - backup, restore, reset, and packaged CLI distribution
 

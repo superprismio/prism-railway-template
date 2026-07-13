@@ -1,6 +1,6 @@
 # Prism Runtime Adapter Contract
 
-Status: pre-implementation contract
+Status: implementation in progress
 
 Related plan: [Prism Gateway MVP Implementation Plan](../features/prism-gateway-mvp-implementation-plan.md)
 
@@ -220,7 +220,7 @@ Late runtime completion must not overwrite a canceled Site agent run.
 
 ## Runtime Profiles
 
-Site should eventually store profiles shaped like:
+Site stores profiles shaped like:
 
 ```json
 {
@@ -232,8 +232,10 @@ Site should eventually store profiles shaped like:
 }
 ```
 
-The profile stores routing and feature metadata. Service tokens remain Railway
-bootstrap variables and are never returned to the browser.
+The profile stores routing and feature metadata in Site SQLite. On migration,
+Site bootstraps `codex-default` from `CODEX_RUNTIME_BASE_URL` only when no
+profiles exist; subsequent profile configuration is database-owned. Service
+tokens remain bootstrap variables and are never returned to the browser.
 
 ## Migration Rules
 
