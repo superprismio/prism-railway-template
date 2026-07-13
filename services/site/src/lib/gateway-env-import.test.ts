@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { gatewayEnvImportDefinitions, parseEnvText } from "./gateway-env-import";
+import {
+  gatewayEnvImportDefinitions,
+  ignoredSensitiveGatewayEnvNames,
+  parseEnvText,
+} from "./gateway-env-import";
 
 test("environment import parses exports, quotes, and values containing equals", () => {
   assert.deepEqual(
@@ -35,4 +39,18 @@ test("environment import definitions keep X and S3 credential groups together", 
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
   ]);
+});
+
+test("environment import identifies unsupported secrets without classifying retained or recognized values", () => {
+  assert.deepEqual(
+    ignoredSensitiveGatewayEnvNames({
+      BAK_CODEX_ACCESS_TOKEN: "backup",
+      GRAPH_API_KEY: "graph",
+      TARGET_REPO_GITHUB_TOKEN: "github",
+      PRISM_API_KEY: "prism",
+      PRISM_RUNTIME_KEY: "runtime",
+      RAILWAY_PROJECT_TOKEN: "railway",
+    }),
+    ["BAK_CODEX_ACCESS_TOKEN", "GRAPH_API_KEY"],
+  );
 });

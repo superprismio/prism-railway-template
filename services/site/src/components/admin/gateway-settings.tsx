@@ -50,6 +50,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   gatewayEnvImportDefinitions,
+  ignoredSensitiveGatewayEnvNames,
   parseEnvText,
   retainedGatewayEnvVariables,
 } from "@/lib/gateway-env-import";
@@ -238,26 +239,12 @@ export function GatewaySettings() {
     ),
     [parsedEnvImport],
   );
-  const classifiedEnvNames = useMemo(
-    () => new Set(gatewayEnvImportDefinitions.flatMap((definition) => [
-      ...Object.keys(definition.credentialVariables),
-      ...definition.configurationVariables,
-    ])),
-    [],
-  );
   const retainedImportNames = Object.keys(parsedEnvImport).filter((name) =>
     retainedGatewayEnvVariables.has(name) || gatewayEnvImportDefinitions.some(
       (definition) => definition.configurationVariables.includes(name),
     ),
   );
-  const unknownSensitiveImportNames = Object.keys(parsedEnvImport).filter(
-    (name) =>
-      /(KEY|TOKEN|SECRET|PASSWORD|PRIVATE)/.test(name) &&
-      !classifiedEnvNames.has(name) &&
-      !retainedGatewayEnvVariables.has(name) &&
-      name !== "PRISM_RUNTIME_KEY" &&
-      !name.startsWith("RAILWAY_"),
-  );
+  const ignoredSensitiveImportNames = ignoredSensitiveGatewayEnvNames(parsedEnvImport);
 
   const requestedConnectionId = searchParams.get("connection")?.trim() || "";
   const requestedConnectionAction = searchParams.get("action")?.trim() || "";
@@ -909,13 +896,13 @@ export function GatewaySettings() {
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
                 <Badge variant="outline">Configuration left in runtime: {retainedImportNames.length}</Badge>
-                <Badge variant={unknownSensitiveImportNames.length ? "destructive" : "outline"}>
-                  Unsupported secret variables: {unknownSensitiveImportNames.length}
+                <Badge variant="outline">
+                  Ignored secret variables: {ignoredSensitiveImportNames.length}
                 </Badge>
               </div>
-              {unknownSensitiveImportNames.length ? (
-                <div className="text-sm text-destructive">
-                  Remove unsupported secret variables before importing: {unknownSensitiveImportNames.join(", ")}
+              {ignoredSensitiveImportNames.length ? (
+                <div className="text-sm text-muted-foreground">
+                  Not imported; these variables remain in the runtime: {ignoredSensitiveImportNames.join(", ")}
                 </div>
               ) : null}
             </div>
@@ -926,7 +913,7 @@ export function GatewaySettings() {
             </Button>
             <Button
               onClick={importEnvironment}
-              disabled={isPending || !envImportGroups.length || Boolean(unknownSensitiveImportNames.length)}
+              disabled={isPending || !envImportGroups.length}
             >
               Import credentials
             </Button>

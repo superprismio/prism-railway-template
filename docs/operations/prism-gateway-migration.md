@@ -315,9 +315,10 @@ others silently.
 For an existing instance with many Codex Runtime variables, use **Import
 environment** in Gateway Settings. Paste the Railway `.env` export into the
 browser dialog. The browser parser groups allowlisted credentials, identifies
-configuration that must remain available, and blocks submission when an unknown
-sensitive variable needs review. The server upserts encrypted connections from
-fixed definitions and does not return secret values. An imported connection
+configuration that must remain available, and lists unsupported sensitive
+variables as ignored without submitting their values. Ignored variables remain
+in the runtime until a reviewed import mapping or adapter exists. The server
+upserts encrypted connections from fixed definitions and does not return secret values. An imported connection
 marked `adapter required` is custody-only: do not remove its legacy variable
 until its runtime adapter, skill migration, and post-removal smoke test pass.
 
