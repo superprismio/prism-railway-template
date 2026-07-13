@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bot, LoaderCircle, Plus } from "lucide-react";
+import { Bot, Cpu, LoaderCircle, Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,18 @@ type StoredConsoleMessage = {
   id: string;
   role: string;
   content: string;
+};
+
+type ConsoleSession = {
+  meta?: {
+    runtimeKey?: string | null;
+  } | null;
+};
+
+type RuntimeProfile = {
+  key: string;
+  name: string;
+  isDefault: boolean;
 };
 
 type ConsoleTraceEntry = {
@@ -77,6 +89,8 @@ export function CodexConsole({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [activeJobTrace, setActiveJobTrace] = useState<ConsoleTraceEntry[]>([]);
+  const [runtimeProfiles, setRuntimeProfiles] = useState<RuntimeProfile[]>([]);
+  const [sessionRuntimeKey, setSessionRuntimeKey] = useState<string | null>(null);
   const [pollNotice, setPollNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sessionControlsTarget, setSessionControlsTarget] =
@@ -96,6 +110,7 @@ export function CodexConsole({
     );
     const payload = (await response.json()) as {
       ok?: boolean;
+      session?: ConsoleSession;
       messages?: StoredConsoleMessage[];
       error?: string;
     };
@@ -115,8 +130,25 @@ export function CodexConsole({
           }))
       : [];
     setSessionId(targetSessionId);
+    setSessionRuntimeKey(payload.session?.meta?.runtimeKey ?? null);
     setMessages(restoredMessages);
   }, []);
+
+  const loadRuntimeProfiles = useCallback(async () => {
+    const response = await fetch("/admin/runtime-profiles", { cache: "no-store" });
+    if (!response.ok) return;
+    const payload = (await response.json().catch(() => null)) as {
+      profiles?: RuntimeProfile[];
+    } | null;
+    if (Array.isArray(payload?.profiles)) {
+      setRuntimeProfiles(payload.profiles);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isActive) return;
+    void loadRuntimeProfiles();
+  }, [isActive, loadRuntimeProfiles]);
 
   useEffect(() => {
     const storedSessionId = window.localStorage.getItem(
@@ -347,6 +379,7 @@ export function CodexConsole({
     window.localStorage.removeItem(consoleSessionStorageKey);
     setSessionId(null);
     setMessages([]);
+    setSessionRuntimeKey(null);
     setError(null);
     setActiveJobId(null);
     setActiveJobTrace([]);
@@ -357,11 +390,25 @@ export function CodexConsole({
   const visibleTrace = activeJobTrace
     .filter((entry) => entry.message?.trim())
     .slice(-5);
+  const defaultRuntime = runtimeProfiles.find((profile) => profile.isDefault) ?? null;
+  const activeRuntime = sessionRuntimeKey
+    ? runtimeProfiles.find((profile) => profile.key === sessionRuntimeKey) ?? null
+    : defaultRuntime;
+  const activeRuntimeLabel = activeRuntime?.name ?? sessionRuntimeKey ?? null;
 
   const sessionControls = (
     <div className="flex flex-wrap items-center justify-start gap-3 sm:justify-end">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
         <span>{isPending ? "Prism is working..." : null}</span>
+        {activeRuntimeLabel ? (
+          <span className="flex items-center gap-1.5 text-xs text-foreground">
+            <Cpu className="h-4 w-4" />
+            <span>{activeRuntimeLabel}</span>
+            <Badge variant="outline" className="font-normal">
+              {sessionRuntimeKey ? "Session" : "Default"}
+            </Badge>
+          </span>
+        ) : null}
         <span className="flex items-center gap-2 text-xs">
           <Bot className="h-4 w-4" />
           <span>{sessionId ? "Session live" : "New session"}</span>
