@@ -446,8 +446,9 @@ export function GatewaySettings() {
 
       <section className="border-y border-border/60 py-4">
         <p className="text-sm text-muted-foreground">
-          Store credentials securely here. Use Prism Console to configure connected
-          services.
+          Store credentials securely here. In Prism Console, use{" "}
+          <code className="font-mono text-foreground">prism-gateway-author</code> to
+          configure one or more connected services for a connection.
         </p>
       </section>
 
