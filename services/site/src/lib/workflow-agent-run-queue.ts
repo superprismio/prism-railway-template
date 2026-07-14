@@ -18,6 +18,7 @@ import {
 import { handleResponsePost } from "@/lib/response-route-handler"
 import { loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
+import { buildWorkflowAgentRunPrompt } from "@/lib/workflow-agent-run-prompt"
 
 type EnqueueWorkflowAgentRunInput = {
   request: ChangeRequestRecord
@@ -406,7 +407,13 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
     workflowStepKey: runnableStepKey,
     source: "site",
     input: {
-      prompt: input.prompt,
+      prompt: buildWorkflowAgentRunPrompt({
+        requestNumber: input.request.requestNumber,
+        requestTitle: input.request.title,
+        stepKey: runnableStepKey,
+        stepLabel: typeof runnableStep.label === "string" ? runnableStep.label : null,
+        operatorContext: input.prompt,
+      }),
       workflowAction: input.workflowAction ?? null,
       requestedSkills: input.requestedSkills ?? [],
       baseUrl: input.baseUrl ?? null,

@@ -50,6 +50,7 @@ After saving, the skill appears in the admin Skills tab and can be requested by 
 
 Gateway requirements are dependencies, not downstream permissions by
 themselves. Site/source policy assigns a toolset to the job; the downstream
-identity remains authoritative for RBAC. Keep legacy environment-variable
-fallback until the profile or compatibility capability has been tested by every
-enabled workflow/task/hook and interactive path that uses the skill.
+identity remains authoritative for RBAC. HTTP, OpenAPI, and MCP profiles are
+called through the runtime toolset contract and do not expose provider secrets
+as environment variables. Only an `adapter` profile may define environment
+bindings for a CLI or script that cannot use the HTTP/MCP contract.
