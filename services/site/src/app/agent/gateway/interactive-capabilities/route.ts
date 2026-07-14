@@ -11,6 +11,7 @@ import {
   listEnabledGatewayToolsetsOrEmpty,
   listInteractiveGatewayCapabilitiesOrEmpty,
 } from "@/lib/prism-gateway";
+import { interactiveGatewayToolsets } from "@/lib/gateway-toolset-assignment";
 
 function stringField(value: unknown) {
   return typeof value === "string" ? value.trim().slice(0, 200) : "";
@@ -42,12 +43,11 @@ export async function POST(request: Request) {
     userId,
   });
   const capabilityDescriptors = await listInteractiveGatewayCapabilitiesOrEmpty(resolved.mode);
-  const toolsets = resolved.mode === "full"
-    ? Array.from(new Map([
-      ...await listEnabledGatewayToolsetsOrEmpty(),
-      ...await listEnabledGatewayCredentialsOrEmpty(),
-    ].map((entry) => [entry.key, entry])).values())
-    : [];
+  const enabledToolsets = resolved.mode === "full" ? await listEnabledGatewayToolsetsOrEmpty() : [];
+  const toolsets = interactiveGatewayToolsets(
+    enabledToolsets,
+    resolved.mode === "full" ? await listEnabledGatewayCredentialsOrEmpty() : [],
+  );
   return NextResponse.json({
     ok: true,
     profile: resolved.mode === "full" ? "admin" : resolved.mode === "off" ? "off" : "read",

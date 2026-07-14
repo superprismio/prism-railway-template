@@ -39,6 +39,7 @@ import {
   listEnabledGatewayToolsetsOrEmpty,
   listInteractiveGatewayCapabilitiesOrEmpty,
 } from "@/lib/prism-gateway"
+import { interactiveGatewayToolsets } from "@/lib/gateway-toolset-assignment"
 import type { GatewayCapabilityDescriptor } from "@/lib/prism-gateway-policy"
 import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
@@ -1060,10 +1061,11 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     ...workflowRequestedCapabilities,
     ...interactiveCapabilities,
   ].map((capability) => [capability.key, capability])).values())
-  const enabledToolsets = Array.from(new Map([
-    ...await listEnabledGatewayToolsetsOrEmpty(),
-    ...(actorType === "admin" ? await listEnabledGatewayCredentialsOrEmpty() : []),
-  ].map((entry) => [entry.key, entry])).values())
+  const enabledGatewayToolsets = await listEnabledGatewayToolsetsOrEmpty()
+  const enabledToolsets = interactiveGatewayToolsets(
+    enabledGatewayToolsets,
+    actorType === "admin" ? await listEnabledGatewayCredentialsOrEmpty() : [],
+  )
   const workflowRequestedToolsets = requestedToolsetsFromAgentConfig(workflowAgentConfig).map((key) =>
     enabledToolsets.find((toolset) => toolset.key === key) ?? { key },
   )

@@ -106,12 +106,13 @@ export async function listEnabledGatewayToolsetsOrEmpty(): Promise<Array<{
 export async function listEnabledGatewayCredentialsOrEmpty(): Promise<Array<{
   key: string;
   protocol: "adapter";
+  toolsetKeys: string[];
 }>> {
   const status = getPrismGatewayStatus();
   if (!status.enabled || !status.configured) return [];
   try {
     const payload = await prismGatewayRequest<{
-      credentials?: Array<{ key?: unknown; status?: unknown }>;
+      credentials?: Array<{ key?: unknown; status?: unknown; toolsetKeys?: unknown }>;
     }>("/credential-bundles");
     return (payload.credentials ?? []).flatMap((credential) => {
       if (
@@ -119,7 +120,13 @@ export async function listEnabledGatewayCredentialsOrEmpty(): Promise<Array<{
         || credential.key.length === 0
         || credential.status === "revoked"
       ) return [];
-      return [{ key: credential.key, protocol: "adapter" as const }];
+      return [{
+        key: credential.key,
+        protocol: "adapter" as const,
+        toolsetKeys: Array.isArray(credential.toolsetKeys)
+          ? credential.toolsetKeys.filter((key): key is string => typeof key === "string")
+          : [],
+      }];
     });
   } catch (error) {
     console.warn(JSON.stringify({

@@ -68,6 +68,23 @@ export type RuntimeToolsetDescriptor = {
   protocol?: "openapi" | "mcp" | "http" | "adapter";
 };
 
+export function mergeRuntimeToolsets(
+  assigned: RuntimeToolsetDescriptor[],
+  requiredKeys: string[],
+) {
+  const merged = new Map(assigned.map((toolset) => [toolset.key, toolset]));
+  for (const key of requiredKeys) {
+    if (!merged.has(key)) merged.set(key, { key });
+  }
+  return Array.from(merged.values());
+}
+
+export function credentialLeaseToolsetKeys(toolsets: RuntimeToolsetDescriptor[]) {
+  return toolsets
+    .filter((toolset) => toolset.protocol === "adapter" || toolset.protocol === undefined)
+    .map((toolset) => toolset.key);
+}
+
 export type RuntimeCapabilityDescriptor = {
   key: string;
   mode?: string;
@@ -858,13 +875,14 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     input.capabilities ?? [],
     prismSkills.selectedSkills,
   );
-  const effectiveToolsets = Array.from(new Map<string, RuntimeToolsetDescriptor>([
-    ...(input.toolsets ?? []),
-    ...prismSkills.selectedSkills.flatMap((skill) => skill.requiredToolsets.map((key) => ({ key }))),
-  ].map((toolset) => [toolset.key, toolset])).values());
-  const lease = effectiveToolsets.length
+  const effectiveToolsets = mergeRuntimeToolsets(
+    input.toolsets ?? [],
+    prismSkills.selectedSkills.flatMap((skill) => skill.requiredToolsets),
+  );
+  const credentialLeaseKeys = credentialLeaseToolsetKeys(effectiveToolsets);
+  const lease = credentialLeaseKeys.length
     ? await gatewayClient.leaseCredentials({
-        credentials: effectiveToolsets.map((toolset) => toolset.key),
+        credentials: credentialLeaseKeys,
         context: input.gatewayContext || {},
       })
     : { env: {}, environmentOnlyAliases: [] };
