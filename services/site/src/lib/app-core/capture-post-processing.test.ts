@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { captureReadyForAutoDispatch, type AutoDispatchCaptureState } from "./capture-post-processing-state";
+import {
+  captureAutoDispatchFailure,
+  captureReadyForAutoDispatch,
+  type AutoDispatchCaptureState,
+} from "./capture-post-processing-state";
 
 function manifest(overrides: Partial<AutoDispatchCaptureState> = {}): AutoDispatchCaptureState {
   return {
@@ -34,4 +38,18 @@ test("capture waits for every rolling transcript chunk", () => {
 
 test("finalized capture with complete aggregate and chunks is ready", () => {
   assert.equal(captureReadyForAutoDispatch(manifest()), true);
+});
+
+test("aggregate transcription failure is reported without waiting for timeout", () => {
+  assert.equal(
+    captureAutoDispatchFailure(manifest({ transcript: { status: "failed" } })),
+    "CAPTURE_TRANSCRIPTION_FAILED",
+  );
+});
+
+test("chunk transcription failure is reported without waiting for timeout", () => {
+  assert.equal(
+    captureAutoDispatchFailure(manifest({ chunks: [{ transcript: { status: "failed" } }] })),
+    "CAPTURE_CHUNK_TRANSCRIPTION_FAILED",
+  );
 });

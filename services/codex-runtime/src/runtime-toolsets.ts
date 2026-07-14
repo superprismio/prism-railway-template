@@ -18,13 +18,18 @@ export class RuntimeToolsetSessions {
 
   revoke(token: string) { this.sessions.delete(token); }
 
-  async invoke(token: string, toolset: string, action: "describe" | "request", request?: Record<string, unknown>) {
+  assertActive(token: string) {
     const session = this.sessions.get(token);
     if (!session) throw new RuntimeCapabilityError("RUNTIME_TOOLSET_SESSION_INVALID", 401);
     if (session.expiresAt <= this.now()) {
       this.sessions.delete(token);
       throw new RuntimeCapabilityError("RUNTIME_TOOLSET_SESSION_EXPIRED", 401);
     }
+    return session;
+  }
+
+  async invoke(token: string, toolset: string, action: "describe" | "request", request?: Record<string, unknown>) {
+    const session = this.assertActive(token);
     if (!session.keys.has(toolset)) throw new RuntimeCapabilityError("RUNTIME_TOOLSET_NOT_ASSIGNED", 403);
     return this.gatewayClient.toolsetRequest({ toolset, action, request, context: session.context });
   }

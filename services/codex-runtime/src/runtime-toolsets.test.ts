@@ -30,3 +30,16 @@ test("runtime toolset sessions enforce assignment and expiry", async () => {
     (error: unknown) => error instanceof RuntimeCapabilityError && error.code === "RUNTIME_TOOLSET_SESSION_EXPIRED",
   );
 });
+
+test("toolset sessions can be authenticated before parsing a large request", () => {
+  const sessions = new RuntimeToolsetSessions({
+    toolsetRequest: async () => ({ ok: true }),
+  });
+  const token = sessions.create(["portal.admin"], {}, 1_000);
+
+  assert.doesNotThrow(() => sessions.assertActive(token));
+  assert.throws(
+    () => sessions.assertActive("invalid"),
+    (error: unknown) => error instanceof RuntimeCapabilityError && error.code === "RUNTIME_TOOLSET_SESSION_INVALID",
+  );
+});

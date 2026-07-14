@@ -85,6 +85,21 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     const unauthorized = await jsonRequest(baseUrl, "/connections");
     assert.equal(unauthorized.response.status, 401);
 
+    const oversizedBody = JSON.stringify({ padding: "x".repeat(300 * 1024) });
+    const unauthorizedOversized = await fetch(`${baseUrl}/toolsets/portal.admin/request`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: oversizedBody,
+    });
+    assert.equal(unauthorizedOversized.status, 401);
+
+    const authenticatedStandardOversized = await fetch(`${baseUrl}/connections`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
+      body: oversizedBody,
+    });
+    assert.equal(authenticatedStandardOversized.status, 413);
+
     const forbidden = await jsonRequest(baseUrl, "/connections", {
       headers: { "x-gateway-token": codexToken },
     });

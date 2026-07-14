@@ -1,5 +1,5 @@
 import { dispatchCaptureTranscript } from "./capture-dispatch";
-import { captureReadyForAutoDispatch } from "./capture-post-processing-state";
+import { captureAutoDispatchFailure, captureReadyForAutoDispatch } from "./capture-post-processing-state";
 import { getCaptureManifest } from "./capture-storage";
 import { readCaptureDispatchSettings } from "./capture-settings";
 
@@ -32,9 +32,8 @@ async function runCapturePostProcessing(captureId: string, baseUrl: string | nul
     const manifest = await getCaptureManifest(captureId);
     if (!manifest) throw new Error("CAPTURE_NOT_FOUND");
     if (manifest.dispatch?.status === "completed") return;
-    if (manifest.chunks.some((chunk) => chunk.transcript?.status === "failed")) {
-      throw new Error("CAPTURE_CHUNK_TRANSCRIPTION_FAILED");
-    }
+    const transcriptionFailure = captureAutoDispatchFailure(manifest);
+    if (transcriptionFailure) throw new Error(transcriptionFailure);
     if (captureReadyForAutoDispatch(manifest)) {
       await dispatchCaptureTranscript(captureId, { baseUrl, settings });
       return;
