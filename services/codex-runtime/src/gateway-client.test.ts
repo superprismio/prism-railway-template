@@ -107,3 +107,43 @@ test('gateway client leases adapter credentials without changing their names', a
     leasedToolsets: ['storage.s3'],
   });
 });
+
+test('gateway client leases generic credential bundles for trusted runtime jobs', async () => {
+  let observedBody: Record<string, unknown> = {};
+  const client = new PrismGatewayClient(
+    { enabled: true, baseUrl: 'http://prism-gateway.internal:3040', token: 'runtime-secret', timeoutMs: 5000 },
+    (async (url, init) => {
+      assert.equal(String(url), 'http://prism-gateway.internal:3040/credential-bundles/lease');
+      observedBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        ok: true,
+        env: { PLAUSIBLE_API_KEY: 'secret', PLAUSIBLE_BASE_URL: 'https://analytics.example.org' },
+        leasedCredentials: ['plausible'],
+        environmentOnlyAliases: [],
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch,
+  );
+  const lease = await client.leaseCredentials({ credentials: ['plausible.stats'], context: { runtimeJobId: 'job-2' } });
+  assert.deepEqual(observedBody, { credentials: ['plausible.stats'], context: { runtimeJobId: 'job-2' } });
+  assert.deepEqual(lease, {
+    env: { PLAUSIBLE_API_KEY: 'secret', PLAUSIBLE_BASE_URL: 'https://analytics.example.org' },
+    environmentOnlyAliases: [],
+  });
+});
+
+test('gateway client rejects leased runtime bootstrap variables', async () => {
+  const client = new PrismGatewayClient(
+    { enabled: true, baseUrl: 'http://prism-gateway.internal:3040', token: 'runtime-secret', timeoutMs: 5000 },
+    (async () => new Response(JSON.stringify({
+      ok: true,
+      env: { NODE_OPTIONS: '--require=/tmp/untrusted.js' },
+      leasedCredentials: ['unsafe'],
+      environmentOnlyAliases: [],
+    }), { status: 200, headers: { 'content-type': 'application/json' } })) as typeof fetch,
+  );
+
+  await assert.rejects(
+    client.leaseCredentials({ credentials: ['unsafe'] }),
+    (error: unknown) => error instanceof GatewayClientError && error.code === 'PRISM_GATEWAY_LEASE_INVALID',
+  );
+});

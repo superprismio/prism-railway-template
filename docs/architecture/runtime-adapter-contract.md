@@ -174,7 +174,7 @@ state. Transport-level `5xx` responses are reserved for requests that could not
 be accepted or read; callers should poll an accepted job rather than resubmit it
 blindly.
 
-## Runtime Features And Organization Toolsets
+## Runtime Features And Organization Credentials
 
 `GET /v1/runtime/capabilities` describes execution features, not organizational
 tool permissions.
@@ -188,18 +188,18 @@ site-hosted-skills
 continuations
 image-input
 gateway-toolsets
+gateway-credentials
 ```
 
-The runtime request lists the Gateway connected-service keys assigned to that job.
+The runtime request lists the Gateway credential keys assigned to that job.
 Site resolves those assignments from Console context, source-adapter policy,
-runtime profile, workflow, task, and selected skills.
+workflow, task, and optionally instance-owned skills.
 
 The downstream service remains authoritative for the credential's RBAC and
-request validation. OpenAPI, MCP, and HTTP connected services are proxied so the
-runtime does not receive the provider credential. An `adapter` connected service
-is an explicit compatibility mode: Gateway leases selected values into the
-assigned trusted child job because its CLI or SDK requires environment
-credentials. The long-lived Gateway caller token is never passed to that child.
+request validation. Gateway leases selected values and non-secret configuration
+into the assigned trusted child job under conventional environment names. The
+long-lived Gateway caller token is never passed to that child. OpenAPI, MCP,
+HTTP proxy, and adapter profiles remain compatibility or advanced modes.
 
 In v1, Codex Runtime authenticates to Gateway with its caller-specific service
 token and requests the connected services assigned in the job envelope. Site
@@ -208,9 +208,9 @@ assignment assertions are a future hardening step, not a v1 guarantee. Grok
 Runtime advertises no Gateway support and must not claim to have used assigned
 connected services.
 
-During migration, adapters may continue to accept the existing `capabilities`
-array for narrow compatibility wrappers. New broad integrations should use
-`toolsets`.
+During migration, adapters continue to accept existing `toolsets` and
+`capabilities` arrays as aliases. New deterministic jobs should use
+`gatewayCredentials` in instance configuration.
 
 ## Skills And Tools
 
@@ -219,21 +219,16 @@ requested skills from authenticated Site agent routes or receive stable skill
 references. Skills should not be copied into runtime-specific persistent
 storage as the canonical version.
 
-Gateway is the source of truth for credential-backed organization connections
-and connected services. Runtime adapters receive discovered OpenAPI/MCP tools or
-fixed-origin HTTP access for assigned services. Only the documented trusted
-`adapter` compatibility mode exposes selected provider values to a child job.
-
-Gateway toolsets bind credentials to a configured origin; they do not restrict
-an assigned agent to a Gateway-owned operation catalog. Method, path, query, and
-body selection remain runtime concerns, subject to the downstream identity's
-actual permissions.
+Gateway is the source of truth for organization credential bundles and reusable
+non-secret configuration. Trusted runtime adapters receive assigned bundles as
+job-scoped environment variables. Skills, SDKs, CLIs, and downstream APIs retain
+their existing behavior and permissions.
 
 Generic skills remain runtime- and credential-provider agnostic. Site assigns
-enabled toolsets to Admin Console and full-access source contexts through its
-existing policy. Instance-owned deterministic workflows may declare
-`metadata.gateway-toolsets`; existing `metadata.gateway-capabilities`
-declarations remain valid for narrow wrappers.
+active credentials to Admin Console and full-access source contexts through its
+existing policy. Deterministic jobs may declare `gatewayCredentials`, and
+instance-owned skills may declare `metadata.gateway-credentials`. Existing
+toolset and capability declarations remain valid aliases.
 
 Runtime-specific system instructions and bootstrap authentication may remain
 inside the runtime service. For example, Codex CLI device authentication can
@@ -285,7 +280,7 @@ Site stores profiles shaped like:
   "adapter": "codex",
   "baseUrl": "http://codex-runtime.railway.internal:3030",
   "enabled": true,
-  "features": ["repository", "shell", "site-hosted-skills", "gateway-toolsets"]
+  "features": ["repository", "shell", "site-hosted-skills", "gateway-credentials"]
 }
 ```
 

@@ -16,9 +16,12 @@ export type GatewayConfig = {
 
 export type GatewayConnection = {
   id: string;
+  key: string;
   provider: string;
   label: string;
   authType: string;
+  configuration: Record<string, string>;
+  envBindings: Record<string, string>;
   status: "untested" | "leased" | "healthy" | "unhealthy" | "revoked";
   capabilityKeys: string[];
   toolsetKeys: string[];

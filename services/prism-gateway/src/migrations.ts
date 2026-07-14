@@ -177,4 +177,16 @@ export const gatewayMigrations: GatewayMigration[] = [
         ON stored_credential_bindings(stored_credential_id);
     `,
   },
+  {
+    name: "006_credential_bundles",
+    sql: `
+      ALTER TABLE integration_connections ADD COLUMN credential_key TEXT;
+      ALTER TABLE integration_connections ADD COLUMN configuration_json TEXT NOT NULL DEFAULT '{}';
+      ALTER TABLE integration_connections ADD COLUMN env_bindings_json TEXT NOT NULL DEFAULT '{}';
+
+      CREATE UNIQUE INDEX integration_connections_credential_key_idx
+        ON integration_connections(credential_key)
+        WHERE credential_key IS NOT NULL;
+    `,
+  },
 ];

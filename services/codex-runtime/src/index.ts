@@ -438,6 +438,7 @@ app.get('/v1/runtime/capabilities', (_req, res) => {
       'site-hosted-skills',
       'continuations',
       'gateway-capabilities',
+      'gateway-credentials',
       'gateway-toolsets',
       'workspace-assignment',
       'trace-events',

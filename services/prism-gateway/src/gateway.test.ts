@@ -343,6 +343,45 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     assert.equal(taskRunnerLease.response.status, 200);
     assert.deepEqual(taskRunnerLease.body.env, { LEGACY_API_KEY: plaintext });
 
+    const compatibilityCredentialLease = await jsonRequest(baseUrl, "/credential-bundles/lease", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+      body: JSON.stringify({ credentials: ["legacy.env"], context: { runtimeJobId: "job-legacy" } }),
+    });
+    assert.equal(compatibilityCredentialLease.response.status, 200);
+    assert.equal(
+      (compatibilityCredentialLease.body.env as Record<string, unknown>).LEGACY_API_KEY,
+      plaintext,
+    );
+    assert.deepEqual(compatibilityCredentialLease.body.environmentOnlyAliases, ["legacy.env"]);
+
+    // Startup backfill folds existing toolset metadata into the credential bundle.
+    new GatewayStore(db, { key: config.masterKey, keyVersion: config.masterKeyVersion });
+    const migratedCredential = store.getCredential("portal.admin");
+    assert.equal(migratedCredential?.id, connectionId);
+    assert.equal(migratedCredential?.configuration.PORTAL_BASE_URL, "https://portal.example.org");
+    assert.equal(migratedCredential?.configuration.PORTAL_DISCOVERY_URL, "https://portal.example.org/openapi.json");
+    assert.equal(migratedCredential?.envBindings.LEGACY_API_KEY, "apiKey");
+
+    const siteCannotLeaseCredential = await jsonRequest(baseUrl, "/credential-bundles/lease", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
+      body: JSON.stringify({ credentials: ["portal.admin"] }),
+    });
+    assert.equal(siteCannotLeaseCredential.response.status, 403);
+    const credentialLease = await jsonRequest(baseUrl, "/credential-bundles/lease", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+      body: JSON.stringify({ credentials: ["portal.admin"], context: { runtimeJobId: "job-2" } }),
+    });
+    assert.equal(credentialLease.response.status, 200);
+    assert.equal((credentialLease.body.env as Record<string, unknown>).PORTAL_API_KEY, plaintext);
+    assert.equal(
+      (credentialLease.body.env as Record<string, unknown>).PORTAL_BASE_URL,
+      "https://portal.example.org",
+    );
+    assert.deepEqual(credentialLease.body.environmentOnlyAliases, []);
+
     const toolsetUpdated = await jsonRequest(baseUrl, "/toolsets/portal.admin", {
       method: "PATCH",
       headers: {
@@ -534,7 +573,11 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(audit.response.status, 200);
     const events = audit.body.events as Array<Record<string, unknown>>;
-    assert.equal(events.length, 9);
+    assert.equal(events.length, 11);
+    assert.equal(
+      events.some((event) => event.policyDecision === "trusted_runtime_credential_lease"),
+      true,
+    );
     assert.equal(events.some((event) => event.authenticatedCallerId === "task-runner"), true);
     assert.equal(JSON.stringify(events).includes(plaintext), false);
     assert.equal(JSON.stringify(events).includes('"limit":5'), false);

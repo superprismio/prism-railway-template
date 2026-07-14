@@ -788,6 +788,8 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
           "capabilities",
         ]),
         toolsets: requestedGatewayKeysFromConfig(siteTask.agentConfig, [
+          "gatewayCredentials",
+          "gateway_credentials",
           "gatewayToolsets",
           "gateway_toolsets",
           "toolsets",
@@ -862,6 +864,8 @@ async function runSiteTaskScript(input: {
   const outputMaxBytes = scriptRunnerOutputMaxBytes();
   const killGraceMs = scriptRunnerKillGraceMs();
   const gatewayToolsets = requestedGatewayKeysFromConfig(input.siteTask.agentConfig, [
+    "gatewayCredentials",
+    "gateway_credentials",
     "gatewayToolsets",
     "gateway_toolsets",
     "toolsets",
@@ -1566,7 +1570,11 @@ function doctorAgentConfigCapabilities(value: unknown) {
 
 function doctorAgentConfigToolsets(value: unknown) {
   if (!isRecord(value)) return [];
-  const toolsets = value.gatewayToolsets ?? value.gateway_toolsets ?? value.toolsets;
+  const toolsets = value.gatewayCredentials
+    ?? value.gateway_credentials
+    ?? value.gatewayToolsets
+    ?? value.gateway_toolsets
+    ?? value.toolsets;
   if (!Array.isArray(toolsets)) return [];
   return Array.from(new Set(toolsets.flatMap((entry) => {
     if (typeof entry === "string" && entry.trim()) return [entry.trim()];
@@ -1769,7 +1777,11 @@ function doctorToolsetDependencyFindings(input: {
     const agentConfigValue = task.agentConfig ?? task.agent_config;
     const agentConfig = isRecord(agentConfigValue) ? agentConfigValue : {};
     for (const toolsetKey of doctorStringList(
-      agentConfig.gatewayToolsets ?? agentConfig.gateway_toolsets ?? agentConfig.toolsets,
+      agentConfig.gatewayCredentials
+        ?? agentConfig.gateway_credentials
+        ?? agentConfig.gatewayToolsets
+        ?? agentConfig.gateway_toolsets
+        ?? agentConfig.toolsets,
     )) {
       addFinding({
         check: "task-required-toolset-available",
