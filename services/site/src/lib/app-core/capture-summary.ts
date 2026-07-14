@@ -40,7 +40,7 @@ function runtimeTimeoutMs() {
   return 660_000;
 }
 
-export async function codexRuntimeRequest(input: {
+export async function runtimeRequest(input: {
   prompt: string;
   captureId: string;
   metadata: Record<string, unknown>;
@@ -228,7 +228,7 @@ export async function summarizeCaptureSession(captureId: string) {
       transcriptMarkdown: transcript.markdown,
       profile,
     });
-    const parsed = safeJsonParse(await codexRuntimeRequest({
+    const parsed = safeJsonParse(await runtimeRequest({
       prompt,
       captureId,
       metadata: {

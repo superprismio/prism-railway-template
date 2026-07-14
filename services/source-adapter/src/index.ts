@@ -21,6 +21,7 @@ import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { DiscordVoiceManager } from "./voice.js";
 import { sanitizePublicOutput } from "./public-output-sanitizer.js";
+import { requestSiteRuntime } from "./site-runtime.js";
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
 const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -920,18 +921,6 @@ function prismApiKey(): string {
   return apiKey;
 }
 
-function codexRuntimeBaseUrl(): string {
-  const direct = (process.env.CODEX_RUNTIME_BASE_URL ?? "").trim().replace(/\/+$/, "");
-  if (direct) {
-    return direct;
-  }
-  const railway = (process.env.RAILWAY_SERVICE_CODEX_RUNTIME_URL ?? "").trim();
-  if (railway) {
-    return `https://${railway.replace(/\/+$/, "")}`;
-  }
-  throw new Error("CODEX_RUNTIME_BASE_URL is required");
-}
-
 async function appApiRequest(pathname: string, init: RequestInit = {}): Promise<JsonObject> {
   const response = await fetch(`${appApiBaseUrl()}${pathname}`, {
     ...init,
@@ -1100,136 +1089,34 @@ async function resolveInteractiveGatewayAccess(input: {
   }
 }
 
-async function codexRuntimeRequest(input: {
+async function runtimeRequest(input: {
   prompt: string;
   sessionId: string;
-  codexThreadId: string | null;
+  continuationId: string | null;
   recentHistory: Array<{ role: string; content: string }>;
   capabilities?: RuntimeCapabilityDescriptor[];
   toolsets?: RuntimeToolsetDescriptor[];
   gatewayContext?: JsonObject;
   metadata: JsonObject;
-}): Promise<{ responseText: string; codexThreadId: string | null }> {
+}): Promise<{ responseText: string; continuationId: string | null; provider: string | null; runtimeKey: string | null }> {
   const timeoutMs = adapterConfig().codexRuntimeRequestTimeoutSeconds * 1000;
-  const runtimeInput = {
+  const result = await requestSiteRuntime({
     prompt: input.prompt,
     sessionId: input.sessionId,
-    codexThreadId: input.codexThreadId,
+    continuationId: input.continuationId,
     recentHistory: input.recentHistory,
     capabilities: input.capabilities ?? [],
     toolsets: input.toolsets ?? [],
     context: input.gatewayContext ?? {},
     metadata: input.metadata,
+    timeoutMs,
+  });
+  return {
+    responseText: result.responseText,
+    continuationId: result.continuationId,
+    provider: result.provider,
+    runtimeKey: result.runtimeKey,
   };
-  const runtimeBase = codexRuntimeBaseUrl();
-  const startedAt = Date.now();
-  let runtimeJobStarted = false;
-  const remainingTimeoutMs = () => Math.max(1, timeoutMs - (Date.now() - startedAt));
-  const pollRuntimeJob = async (jobId: string) => {
-    for (;;) {
-      if (Date.now() - startedAt >= timeoutMs) {
-        throw new Error(`CODEX_RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`);
-      }
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), Math.min(30_000, remainingTimeoutMs()));
-      try {
-        const response = await fetch(`${runtimeBase}/v1/responses/jobs/${encodeURIComponent(jobId)}`, {
-          signal: controller.signal,
-        });
-        const payload = (await response.json().catch(() => null)) as JsonObject | null;
-        if (!response.ok) {
-          throw new Error(`CODEX_RUNTIME_JOB_POLL_FAILED:${response.status}:${String(payload?.error ?? "").slice(0, 300)}`);
-        }
-        const job = payload?.job && typeof payload.job === "object" ? payload.job as JsonObject : {};
-        const status = typeof job.status === "string" ? job.status : "";
-        if (status === "queued" || status === "running") {
-          continue;
-        }
-        if (status === "succeeded") {
-          const runtimeResponse =
-            payload?.response && typeof payload.response === "object"
-              ? payload.response as JsonObject
-              : job.response && typeof job.response === "object"
-                ? job.response as JsonObject
-                : null;
-          const responseText =
-            typeof runtimeResponse?.responseText === "string"
-              ? runtimeResponse.responseText
-              : typeof runtimeResponse?.output_text === "string"
-                ? runtimeResponse.output_text
-                : "";
-          if (!responseText.trim()) {
-            throw new Error("CODEX_RUNTIME_EMPTY_RESPONSE");
-          }
-          return {
-            responseText: responseText.trim(),
-            codexThreadId: typeof runtimeResponse?.thread_id === "string" ? runtimeResponse.thread_id : null,
-          };
-        }
-        throw new Error(`CODEX_RUNTIME_REQUEST_FAILED:500:${String(payload?.error ?? job.error ?? "Unknown codex runtime error").slice(0, 300)}`);
-      } finally {
-        clearTimeout(timer);
-      }
-    }
-  };
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.min(30_000, timeoutMs));
-    try {
-      const response = await fetch(`${runtimeBase}/v1/responses/jobs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(runtimeInput),
-        signal: controller.signal,
-      });
-      if (response.status !== 404) {
-        const payload = (await response.json().catch(() => null)) as JsonObject | null;
-        if (!response.ok) {
-          throw new Error(`CODEX_RUNTIME_JOB_CREATE_FAILED:${response.status}:${String(payload?.error ?? "").slice(0, 300)}`);
-        }
-        const jobId = typeof payload?.jobId === "string" ? payload.jobId : "";
-        if (!jobId) {
-          throw new Error("CODEX_RUNTIME_JOB_CREATE_INVALID_RESPONSE");
-        }
-        runtimeJobStarted = true;
-        return await pollRuntimeJob(jobId);
-      }
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch (error) {
-    if (runtimeJobStarted) {
-      throw error;
-    }
-    console.warn("[source-adapter] codex runtime job path unavailable", describeError(error));
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), remainingTimeoutMs());
-  try {
-    const response = await fetch(`${runtimeBase}/v1/responses`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(runtimeInput),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new Error(`CODEX_RUNTIME_REQUEST_FAILED:${response.status}:${(await response.text()).slice(0, 300)}`);
-    }
-    const payload = (await response.json()) as JsonObject;
-    const responseText = typeof payload.responseText === "string" ? payload.responseText : typeof payload.output_text === "string" ? payload.output_text : "";
-    if (!responseText.trim()) {
-      throw new Error("CODEX_RUNTIME_EMPTY_RESPONSE");
-    }
-    return {
-      responseText: responseText.trim(),
-      codexThreadId: typeof payload.thread_id === "string" ? payload.thread_id : null,
-    };
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 async function discordApiRequest<T extends JsonValue>(
@@ -1817,11 +1704,20 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
 
   const existingSession = existing?.session && typeof existing.session === "object" ? (existing.session as JsonObject) : {};
   const sessionMeta = session.meta && typeof session.meta === "object" ? (session.meta as JsonObject) : {};
-  let codexThreadId =
-    (typeof existingSession.meta === "object" && existingSession.meta && typeof (existingSession.meta as JsonObject).codexThreadId === "string"
-      ? String((existingSession.meta as JsonObject).codexThreadId)
+  const sessionRuntimeKey =
+    (typeof existingSession.meta === "object" && existingSession.meta && typeof (existingSession.meta as JsonObject).runtimeKey === "string"
+      ? String((existingSession.meta as JsonObject).runtimeKey)
       : null) ||
-    (typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
+    (typeof sessionMeta.runtimeKey === "string" ? sessionMeta.runtimeKey : null);
+  let runtimeContinuationId =
+    (typeof existingSession.meta === "object" && existingSession.meta && typeof (existingSession.meta as JsonObject).runtimeContinuationId === "string"
+      ? String((existingSession.meta as JsonObject).runtimeContinuationId)
+      : typeof existingSession.meta === "object" && existingSession.meta && typeof (existingSession.meta as JsonObject).codexThreadId === "string"
+        ? String((existingSession.meta as JsonObject).codexThreadId)
+      : null) ||
+    (typeof sessionMeta.runtimeContinuationId === "string"
+      ? sessionMeta.runtimeContinuationId
+      : typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
   const gatewayAccess = await resolveInteractiveGatewayAccess({
     platform: "telegram",
@@ -1837,10 +1733,10 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       })
     : async () => undefined;
   try {
-    const result = await codexRuntimeRequest({
+    const result = await runtimeRequest({
       prompt,
       sessionId: String(session.id),
-      codexThreadId,
+      continuationId: runtimeContinuationId,
       recentHistory,
       capabilities: gatewayAccess.capabilities,
       toolsets: gatewayAccess.toolsets,
@@ -1849,6 +1745,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       },
       metadata: {
         transport: "telegram",
+        sessionRuntimeKey,
         telegramChatId: transport.chatId,
         telegramChatType: transport.chatType,
         telegramAuthorId: transport.authorId,
@@ -1872,9 +1769,12 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
           : [],
       },
     });
-    codexThreadId = result.codexThreadId ?? codexThreadId;
+    runtimeContinuationId = result.continuationId ?? runtimeContinuationId;
 
-    if (codexThreadId && codexThreadId !== sessionMeta.codexThreadId) {
+    if (
+      (runtimeContinuationId && runtimeContinuationId !== sessionMeta.runtimeContinuationId) ||
+      (result.runtimeKey && result.runtimeKey !== sessionMeta.runtimeKey)
+    ) {
       await upsertSourceSession({
         source: "telegram",
         contextKey,
@@ -1885,8 +1785,9 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
           chatId: transport.chatId,
           chatType: transport.chatType,
           chatTitle: transport.chatTitle,
-          codexThreadId,
-          codexProvider: "codex-cli",
+          runtimeContinuationId,
+          runtimeKey: result.runtimeKey,
+          runtimeProvider: result.provider,
         },
         lastMessageAt: nowUtcIso(),
       });
@@ -1899,7 +1800,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       source: "telegram",
       sourceMessageId: sent.sourceMessageId,
       content: sent.text,
-      meta: { codexThreadId, redactions: sent.redactions, accessPolicy },
+      meta: { runtimeContinuationId, redactions: sent.redactions, accessPolicy },
       createdAt: nowUtcIso(),
     });
   } catch (error) {
@@ -1914,7 +1815,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       source: "telegram",
       sourceMessageId: sent.sourceMessageId,
       content: sent.text,
-      meta: { codexThreadId, failed: true, redactions: sent.redactions, accessPolicy },
+      meta: { runtimeContinuationId, failed: true, redactions: sent.redactions, accessPolicy },
       createdAt: nowUtcIso(),
     });
   } finally {
@@ -2805,11 +2706,20 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
 
   const existingSession = existing?.session && typeof existing.session === "object" ? (existing.session as JsonObject) : {};
   const sessionMeta = session.meta && typeof session.meta === "object" ? (session.meta as JsonObject) : {};
-  let codexThreadId =
-    (typeof existingSession.meta === "object" && existingSession.meta && typeof (existingSession.meta as JsonObject).codexThreadId === "string"
-      ? String((existingSession.meta as JsonObject).codexThreadId)
+  const sessionRuntimeKey =
+    (typeof existingSession.meta === "object" && existingSession.meta && typeof (existingSession.meta as JsonObject).runtimeKey === "string"
+      ? String((existingSession.meta as JsonObject).runtimeKey)
       : null) ||
-    (typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
+    (typeof sessionMeta.runtimeKey === "string" ? sessionMeta.runtimeKey : null);
+  let runtimeContinuationId =
+    (typeof existingSession.meta === "object" && existingSession.meta && typeof (existingSession.meta as JsonObject).runtimeContinuationId === "string"
+      ? String((existingSession.meta as JsonObject).runtimeContinuationId)
+      : typeof existingSession.meta === "object" && existingSession.meta && typeof (existingSession.meta as JsonObject).codexThreadId === "string"
+        ? String((existingSession.meta as JsonObject).codexThreadId)
+      : null) ||
+    (typeof sessionMeta.runtimeContinuationId === "string"
+      ? sessionMeta.runtimeContinuationId
+      : typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
   const gatewayAccess = await resolveInteractiveGatewayAccess({
     platform: "discord",
     targetId: transport.channelId,
@@ -2818,14 +2728,14 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
     userId: transport.authorId,
   });
 
-  const runAndSendCodexReply = async () => {
+  const runAndSendRuntimeReply = async () => {
     const stopTyping = startTypingHeartbeat(transport.sendTyping);
     try {
       const runtimePrompt = buildDiscordRuntimePrompt(prompt, transport.context);
-      const result = await codexRuntimeRequest({
+      const result = await runtimeRequest({
         prompt: runtimePrompt,
         sessionId: String(session.id),
-        codexThreadId,
+        continuationId: runtimeContinuationId,
         recentHistory,
         capabilities: gatewayAccess.capabilities,
         toolsets: gatewayAccess.toolsets,
@@ -2834,6 +2744,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         },
         metadata: {
           transport: "discord",
+          sessionRuntimeKey,
           discordGuildId: transport.guildId,
           discordChannelId: transport.channelId,
           discordThreadId: transport.threadId,
@@ -2862,9 +2773,12 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         },
       });
       const reply = result.responseText;
-      codexThreadId = result.codexThreadId ?? codexThreadId;
+      runtimeContinuationId = result.continuationId ?? runtimeContinuationId;
 
-      if (codexThreadId && codexThreadId !== sessionMeta.codexThreadId) {
+      if (
+        (runtimeContinuationId && runtimeContinuationId !== sessionMeta.runtimeContinuationId) ||
+        (result.runtimeKey && result.runtimeKey !== sessionMeta.runtimeKey)
+      ) {
         await upsertDiscordSession({
           title: String(session.title ?? `Discord chat: ${prompt.slice(0, 80)}`),
           discordGuildId: transport.guildId,
@@ -2875,8 +2789,9 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
             transport: "discord",
             channelName: transport.channelName,
             threadName: transport.threadName,
-            codexThreadId,
-            codexProvider: "codex-cli",
+            runtimeContinuationId,
+            runtimeKey: result.runtimeKey,
+            runtimeProvider: result.provider,
           },
           lastMessageAt: nowUtcIso(),
         });
@@ -2889,7 +2804,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         source: "discord",
         sourceMessageId: sent.sourceMessageId,
         content: sent.text,
-        meta: { inThread: Boolean(transport.threadId), codexThreadId, redactions: sent.redactions, accessPolicy },
+        meta: { inThread: Boolean(transport.threadId), runtimeContinuationId, redactions: sent.redactions, accessPolicy },
         createdAt: nowUtcIso(),
       });
     } catch (error) {
@@ -2904,7 +2819,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         source: "discord",
         sourceMessageId: sent.sourceMessageId,
         content: sent.text,
-        meta: { inThread: Boolean(transport.threadId), codexThreadId, failed: true, redactions: sent.redactions, accessPolicy },
+        meta: { inThread: Boolean(transport.threadId), runtimeContinuationId, failed: true, redactions: sent.redactions, accessPolicy },
         createdAt: nowUtcIso(),
       });
     } finally {
@@ -2921,14 +2836,14 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
       source: "discord",
       sourceMessageId: sent.sourceMessageId,
       content: sent.text,
-      meta: { inThread: Boolean(transport.threadId), codexThreadId, asyncAck: true, redactions: sent.redactions, accessPolicy },
+      meta: { inThread: Boolean(transport.threadId), runtimeContinuationId, asyncAck: true, redactions: sent.redactions, accessPolicy },
       createdAt: nowUtcIso(),
     });
-    void runAndSendCodexReply();
+    void runAndSendRuntimeReply();
     return;
   }
 
-  await runAndSendCodexReply();
+  await runAndSendRuntimeReply();
 }
 
 async function enqueueDiscordPrompt(queueKey: string, run: () => Promise<void>): Promise<void> {
@@ -3142,10 +3057,10 @@ async function draftPromotedMarkdown(input: {
   ].join("\n");
 
   try {
-    const result = await codexRuntimeRequest({
+    const result = await runtimeRequest({
       prompt,
       sessionId: `discord-promote-doc:${input.threadId ?? input.channelId}`,
-      codexThreadId: null,
+      continuationId: null,
       recentHistory: [],
       metadata: {
         source: "discord-promote-doc",

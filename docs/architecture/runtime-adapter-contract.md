@@ -37,6 +37,11 @@ Site owns runtime profile configuration and chooses the runtime for a workflow,
 task, or console session. The capability gateway does not own runtime job
 scheduling.
 
+Communication adapters do not select or call Codex/Grok services directly.
+They submit chat and utility invocations to Site through
+`POST /agent/runtime/invoke`; Site resolves the requested or default runtime
+profile and uses this contract for the selected adapter.
+
 ## Version
 
 The initial contract version is:

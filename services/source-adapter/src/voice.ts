@@ -24,6 +24,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 import prism from "prism-media";
+import { requestSiteRuntime } from "./site-runtime.js";
 
 const voiceDaveEncryptionRaw = process.env.VOICE_DAVE_ENCRYPTION?.trim().toLowerCase();
 const voiceDaveEncryptionExplicit = Boolean(voiceDaveEncryptionRaw);
@@ -2159,7 +2160,7 @@ export class DiscordVoiceManager {
       transcriptArtifacts.mergedTranscript.slice(0, 120_000),
     ].join("\n");
 
-    const parsed = this.safeJsonParse(await this.codexRuntimeRequest(prompt, metadata.sessionId));
+    const parsed = this.safeJsonParse(await this.runtimeRequest(prompt, metadata.sessionId));
     const summary: SessionSummary = {
       title: typeof parsed?.title === "string" && parsed.title.trim() ? parsed.title.trim() : metadata.metadata.meeting.name || "Meeting Summary",
       tldr: typeof parsed?.tldr === "string" ? parsed.tldr.trim() : "",
@@ -2215,7 +2216,7 @@ export class DiscordVoiceManager {
       transcriptArtifacts.mergedTranscript.slice(0, 120_000),
     ].join("\n");
 
-    const parsed = this.safeJsonParse(await this.codexRuntimeRequest(prompt, `voice-recap-${session.sessionId}`)) as Record<string, unknown>;
+    const parsed = this.safeJsonParse(await this.runtimeRequest(prompt, `voice-recap-${session.sessionId}`)) as Record<string, unknown>;
     const stringArray = (value: unknown) => Array.isArray(value)
       ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim())
       : [];
@@ -2278,19 +2279,7 @@ export class DiscordVoiceManager {
     return content.length <= 1900 ? content : `${content.slice(0, 1850).trim()}\n\n_Recap truncated for Discord._`;
   }
 
-  private codexRuntimeBaseUrl(): string {
-    const direct = (process.env.CODEX_RUNTIME_BASE_URL ?? "").trim().replace(/\/+$/, "");
-    if (direct) {
-      return direct;
-    }
-    const railway = (process.env.RAILWAY_SERVICE_CODEX_RUNTIME_URL ?? "").trim();
-    if (railway) {
-      return `https://${railway.replace(/\/+$/, "")}`;
-    }
-    throw new Error("CODEX_RUNTIME_BASE_URL is required for voice summaries");
-  }
-
-  private codexRuntimeTimeoutMs(): number {
+  private runtimeTimeoutMs(): number {
     const value = Number.parseInt(process.env.CODEX_RUNTIME_REQUEST_TIMEOUT_SECONDS ?? "660", 10);
     if (Number.isFinite(value) && value > 0) {
       return value * 1000;
@@ -2298,124 +2287,20 @@ export class DiscordVoiceManager {
     return 660_000;
   }
 
-  private async codexRuntimeRequest(prompt: string, sessionId: string): Promise<string> {
-    const timeoutMs = this.codexRuntimeTimeoutMs();
-    const runtimeBase = this.codexRuntimeBaseUrl();
-    const runtimeInput = {
+  private async runtimeRequest(prompt: string, sessionId: string): Promise<string> {
+    const result = await requestSiteRuntime({
       prompt,
       sessionId: `voice-summary-${sessionId}`,
-      codexThreadId: null,
+      continuationId: null,
       recentHistory: [],
       metadata: {
         purpose: "voice_meeting_summary",
         source: "discord-voice",
         recordingSessionId: sessionId,
       },
-    };
-    const startedAt = Date.now();
-    let runtimeJobStarted = false;
-    const remainingTimeoutMs = () => Math.max(1, timeoutMs - (Date.now() - startedAt));
-    const pollRuntimeJob = async (jobId: string): Promise<string> => {
-      for (;;) {
-        if (Date.now() - startedAt >= timeoutMs) {
-          throw new Error(`CODEX_RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), Math.min(30_000, remainingTimeoutMs()));
-        try {
-          const response = await fetch(`${runtimeBase}/v1/responses/jobs/${encodeURIComponent(jobId)}`, {
-            signal: controller.signal,
-          });
-          const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-          if (!response.ok) {
-            throw new Error(`CODEX_RUNTIME_JOB_POLL_FAILED:${response.status}:${String(payload?.error ?? "").slice(0, 300)}`);
-          }
-          const job = payload?.job && typeof payload.job === "object" && !Array.isArray(payload.job)
-            ? payload.job as Record<string, unknown>
-            : {};
-          const status = typeof job.status === "string" ? job.status : "";
-          if (status === "queued" || status === "running") {
-            continue;
-          }
-          if (status === "succeeded") {
-            const runtimeResponse =
-              payload?.response && typeof payload.response === "object" && !Array.isArray(payload.response)
-                ? payload.response as Record<string, unknown>
-                : job.response && typeof job.response === "object" && !Array.isArray(job.response)
-                  ? job.response as Record<string, unknown>
-                  : null;
-            const responseText =
-              typeof runtimeResponse?.responseText === "string"
-                ? runtimeResponse.responseText
-                : typeof runtimeResponse?.output_text === "string"
-                  ? runtimeResponse.output_text
-                  : "";
-            if (!responseText.trim()) {
-              throw new Error("CODEX_RUNTIME_EMPTY_RESPONSE");
-            }
-            return responseText.trim();
-          }
-          throw new Error(`CODEX_RUNTIME_REQUEST_FAILED:500:${String(payload?.error ?? job.error ?? "Unknown codex runtime error").slice(0, 300)}`);
-        } finally {
-          clearTimeout(timer);
-        }
-      }
-    };
-
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), Math.min(30_000, timeoutMs));
-      try {
-        const response = await fetch(`${runtimeBase}/v1/responses/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(runtimeInput),
-          signal: controller.signal,
-        });
-        if (response.status !== 404) {
-          const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
-          if (!response.ok) {
-            throw new Error(`CODEX_RUNTIME_JOB_CREATE_FAILED:${response.status}:${String(payload?.error ?? "").slice(0, 300)}`);
-          }
-          const jobId = typeof payload?.jobId === "string" ? payload.jobId : "";
-          if (!jobId) {
-            throw new Error("CODEX_RUNTIME_JOB_CREATE_INVALID_RESPONSE");
-          }
-          runtimeJobStarted = true;
-          return await pollRuntimeJob(jobId);
-        }
-      } finally {
-        clearTimeout(timer);
-      }
-    } catch (error) {
-      if (runtimeJobStarted) {
-        throw error;
-      }
-      console.warn(`[discord-adapter] codex runtime job path unavailable: ${this.describeError(error)}`);
-    }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), remainingTimeoutMs());
-    try {
-      const response = await fetch(`${runtimeBase}/v1/responses`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(runtimeInput),
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        throw new Error(`CODEX_RUNTIME_REQUEST_FAILED:${response.status}:${(await response.text()).slice(0, 300)}`);
-      }
-      const payload = (await response.json()) as { responseText?: string; output_text?: string };
-      const responseText = typeof payload.responseText === "string" ? payload.responseText : typeof payload.output_text === "string" ? payload.output_text : "";
-      if (!responseText.trim()) {
-        throw new Error("CODEX_RUNTIME_EMPTY_RESPONSE");
-      }
-      return responseText.trim();
-    } finally {
-      clearTimeout(timer);
-    }
+      timeoutMs: this.runtimeTimeoutMs(),
+    });
+    return result.responseText;
   }
 
   private voiceTranscriptionApiKey(): string {

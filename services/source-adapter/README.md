@@ -114,7 +114,7 @@ a Telegram group appears in `GET /destinations` after the bot receives an update
 from that group. Private DMs are ignored by default and are not listed unless
 `TELEGRAM_DM_ENABLED=true`.
 
-The same poller can bridge Telegram group chat into Codex Runtime. In groups and
+The same poller can bridge Telegram group chat into Prism's selected runtime. In groups and
 channels the bot responds to `/prism`, `/prism ...`, `/superprism`,
 `/superprism ...`, or messages that mention the bot username. Access is still
 controlled by the site-owned source adapter policy; Telegram defaults to `off`,
@@ -194,7 +194,9 @@ Chat bridge envs:
 - `PRISM_AGENT_SERVICE_TOKEN=...`
 - `APP_API_BASE_URL=https://your-api.up.railway.app`
 - `APP_API_SERVICE_TOKEN=...`
-- `CODEX_RUNTIME_BASE_URL=https://your-codex-runtime.up.railway.app`
+
+The adapter sends chat, summary, recap, and promoted-document model calls to
+`POST /agent/runtime/invoke`; Site resolves the current default runtime profile.
 
 Recording completion hooks reuse the agent API base/token when possible. The
 default hook key is `recording-transcript-completed`:
@@ -336,14 +338,14 @@ redacts common internal Railway URLs, service hosts, token-looking values, priva
 keys, and local filesystem paths.
 
 Readonly Discord and Telegram surfaces also apply a lightweight write-intent
-preflight before Codex Runtime is called. Obvious create/update/send/run requests
+preflight before the selected runtime is called. Obvious create/update/send/run requests
 get a short policy reply instead of model-generated instructions for working
 around the access level.
 
 Notes:
 
 - keep source-specific auth and traversal logic here, not inside `prism-memory`
-- keep shared model/runtime behavior in `codex-runtime`, not in this adapter
+- keep shared model/runtime behavior behind Site runtime profiles, not in this adapter
 - deploy multiple copies of this same directory if you want one adapter service per source
 - the current implementation uses `discord.js` plus the Discord HTTP API for Discord and Telegram Bot API polling for Telegram
 - the stored checkpoint is a sync cursor, not a per-channel high-water mark; the overlap window reduces the chance of missing late-arriving reads across runs
@@ -408,18 +410,23 @@ Use the full local stack when testing voice summaries:
 npm run dev:all
 ```
 
-`scripts/dev-all.sh` starts `codex-runtime` on `3030` and passes `CODEX_RUNTIME_BASE_URL=http://127.0.0.1:3030` to `source-adapter`. Local Codex auth should use your normal `~/.codex` home unless you intentionally override `CODEX_HOME`.
+`scripts/dev-all.sh` starts the configured runtime adapter and Site. The source
+adapter calls Site, which routes summary and recap jobs through the selected
+runtime profile.
 
-For a smaller manual test, start `codex-runtime` first:
+For a smaller manual test, start Site and one configured runtime adapter first.
+For Codex Runtime:
 
 ```bash
 CODEX_HOME="$HOME/.codex" PORT=3030 npm run dev --workspace @prism-railway/codex-runtime
 ```
 
-Then start `source-adapter` with:
+Then start `source-adapter` with Site agent access:
 
 ```bash
-CODEX_RUNTIME_BASE_URL=http://127.0.0.1:3030 npm run dev --workspace @prism-railway/source-adapter
+PRISM_AGENT_API_BASE_URL=http://127.0.0.1:3100 \
+PRISM_AGENT_SERVICE_TOKEN=local-service-token \
+npm run dev --workspace @prism-railway/source-adapter
 ```
 
 Expected success signal after `/prism-record` and `/prism-stoprecord`:
@@ -455,7 +462,8 @@ The response includes `mappingCandidates` and groups Discord categories with chi
 - `VOICE_DAVE_ENCRYPTION=true`
 - `VOICE_RECORDING_WARNING_MINUTES=50`
 - `VOICE_RECORDING_MAX_MINUTES=60`
-- `CODEX_RUNTIME_BASE_URL=https://codex-runtime-production.up.railway.app` or a verified reachable private URL
+- `PRISM_AGENT_API_BASE_URL=https://your-site.up.railway.app` or the private Site URL
+- `PRISM_AGENT_SERVICE_TOKEN`
 - `PRISM_API_BASE=https://prism-memory-production.up.railway.app` or a verified reachable private URL
 - `PRISM_ARTIFACT_PUBLIC_BASE_URL=https://prism-memory-production.up.railway.app`
 - `PRISM_API_KEY`

@@ -102,7 +102,6 @@ start_service source-adapter \
   env \
   PORT="${SOURCE_ADAPTER_PORT:-8789}" \
   APP_API_BASE_URL="${APP_API_BASE_URL:-http://127.0.0.1:${SITE_PORT:-3100}}" \
-  CODEX_RUNTIME_BASE_URL="${CODEX_RUNTIME_BASE_URL:-http://127.0.0.1:${CODEX_RUNTIME_PORT:-3030}}" \
   PRISM_API_BASE="${PRISM_API_BASE:-http://127.0.0.1:${PRISM_API_PORT:-8788}}" \
   npm run dev --workspace @prism-railway/source-adapter
 

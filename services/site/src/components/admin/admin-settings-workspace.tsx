@@ -450,7 +450,7 @@ function EnvironmentInstructions() {
                 <p>
                   Required for browser capture transcription. Required for
                   browser capture recap and summary generation when those
-                  actions call Codex Runtime.
+                  actions call the selected runtime profile.
                 </p>
                 <p>
                   External capture dispatch has a bounded timeout by default;
@@ -492,7 +492,6 @@ function EnvironmentInstructions() {
                 'VOICE_TRANSCRIPTION_LANGUAGE="en"',
                 'VOICE_TRANSCRIPTION_RESPONSE_FORMAT="json"',
                 'VOICE_TRANSCRIPTION_TIMESTAMPS="true"',
-                'CODEX_RUNTIME_BASE_URL=""',
                 'DISCORD_RECORDING_COMPLETE_HOOK_KEY="recording-transcript-completed"',
                 'DISCORD_RECORDING_COMPLETE_HOOK_ENABLED="true"',
               ])}
