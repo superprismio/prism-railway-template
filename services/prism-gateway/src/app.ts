@@ -233,6 +233,7 @@ function toolsetRequestField(value: unknown, protocol: string): ToolsetRequest {
     path: textField(input.path, "toolset_path", 2000),
     query: recordField(input.query, "TOOLSET_QUERY_INVALID") as HttpToolsetRequest["query"],
     ...(input.body !== undefined ? { body: input.body } : {}),
+    ...(input.multipart !== undefined ? { multipart: recordField(input.multipart, "TOOLSET_MULTIPART_INVALID") as HttpToolsetRequest["multipart"] } : {}),
   };
 }
 
@@ -255,7 +256,7 @@ export function createGatewayApp(dependencies: AppDependencies) {
   const app = express();
   const startedAt = dependencies.startedAt || new Date();
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "256kb" }));
+  app.use(express.json({ limit: "16mb" }));
 
   app.get("/health", (_request, response) => {
     const quickCheck = dependencies.db.pragma("quick_check", { simple: true });

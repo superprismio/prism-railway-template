@@ -18,7 +18,7 @@ const responseJobAbortControllers = new Map<string, AbortController>();
 const runtimeContractVersion = '2026-07-10' as const;
 const runtimeKey = process.env.PRISM_RUNTIME_KEY?.trim() || 'codex-default';
 
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '16mb' }));
 
 type RuntimeRequestBody = {
   contractVersion?: unknown;
