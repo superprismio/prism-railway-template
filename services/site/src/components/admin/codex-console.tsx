@@ -47,6 +47,14 @@ const consoleSessionStorageKey = "prism-console-session-id";
 const consoleActiveJobStorageKey = "prism-console-active-job-id";
 const transientPollStatuses = new Set([408, 429, 502, 503, 504]);
 
+function isTouchFirstInputEnvironment() {
+  if (typeof window === "undefined") return false;
+  const hasTouchPoints = navigator.maxTouchPoints > 0;
+  const hasCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+  const hasNoHover = window.matchMedia("(hover: none)").matches;
+  return hasTouchPoints && (hasCoarsePointer || hasNoHover);
+}
+
 function randomMessageId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -93,6 +101,7 @@ export function CodexConsole({
   const [sessionRuntimeKey, setSessionRuntimeKey] = useState<string | null>(null);
   const [pollNotice, setPollNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [usesTouchFirstInput, setUsesTouchFirstInput] = useState(false);
   const [sessionControlsTarget, setSessionControlsTarget] =
     useState<HTMLElement | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
@@ -100,6 +109,21 @@ export function CodexConsole({
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const isPending = isSubmitting || Boolean(activeJobId);
+
+  useEffect(() => {
+    const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
+    const noHoverQuery = window.matchMedia("(hover: none)");
+    const syncInputEnvironment = () => {
+      setUsesTouchFirstInput(isTouchFirstInputEnvironment());
+    };
+    syncInputEnvironment();
+    coarsePointerQuery.addEventListener("change", syncInputEnvironment);
+    noHoverQuery.addEventListener("change", syncInputEnvironment);
+    return () => {
+      coarsePointerQuery.removeEventListener("change", syncInputEnvironment);
+      noHoverQuery.removeEventListener("change", syncInputEnvironment);
+    };
+  }, []);
 
   const loadConsoleHistory = useCallback(async (targetSessionId: string) => {
     const response = await fetch(
@@ -494,6 +518,7 @@ export function CodexConsole({
                 event.metaKey ||
                 event.ctrlKey ||
                 event.altKey ||
+                usesTouchFirstInput ||
                 event.nativeEvent.isComposing
               ) {
                 return;
@@ -542,7 +567,9 @@ export function CodexConsole({
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
-              Enter sends. Shift+Enter adds a new line.
+              {usesTouchFirstInput
+                ? "Return adds a new line. Use Send when ready."
+                : "Enter sends. Shift+Enter adds a new line."}
             </p>
             <Button type="submit" disabled={isPending}>
               {isPending ? (
