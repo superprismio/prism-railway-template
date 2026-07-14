@@ -495,9 +495,6 @@ function EnvironmentInstructions() {
                 'CODEX_RUNTIME_BASE_URL=""',
                 'DISCORD_RECORDING_COMPLETE_HOOK_KEY="recording-transcript-completed"',
                 'DISCORD_RECORDING_COMPLETE_HOOK_ENABLED="true"',
-                'DISCORD_RECORDING_SUMMARY_ENABLED="true"',
-                'DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED="true"',
-                'DISCORD_RECORDING_COMPLETE_HOOK_INCLUDE_TRANSCRIPT_BODY="false"',
               ])}
             </div>
           </div>
