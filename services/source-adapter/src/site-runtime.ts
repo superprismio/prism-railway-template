@@ -15,7 +15,11 @@ function siteBaseUrl() {
     process.env.PRISM_HOOKS_BASE_URL ??
     ""
   ).trim().replace(/\/+$/, "");
-  if (!value) throw new Error("PRISM_AGENT_API_BASE_URL or APP_API_BASE_URL is required");
+  if (!value) {
+    throw new Error(
+      "PRISM_AGENT_API_BASE_URL, APP_API_BASE_URL, or PRISM_HOOKS_BASE_URL is required",
+    );
+  }
   return value;
 }
 
@@ -28,7 +32,11 @@ function siteServiceToken() {
     process.env.SERVICE_SHARED_TOKEN ??
     ""
   ).trim();
-  if (!value) throw new Error("PRISM_AGENT_SERVICE_TOKEN or APP_API_SERVICE_TOKEN is required");
+  if (!value) {
+    throw new Error(
+      "PRISM_AGENT_SERVICE_TOKEN, APP_API_SERVICE_TOKEN, PRISM_HOOK_SERVICE_TOKEN, INTERNAL_SERVICE_TOKEN, or SERVICE_SHARED_TOKEN is required",
+    );
+  }
   return value;
 }
 
