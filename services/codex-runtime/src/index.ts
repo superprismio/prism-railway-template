@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import express from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { config } from './config.js';
 import { generateCodexCliReply } from './codex-runtime.js';
 import type { RuntimeCapabilityDescriptor } from './codex-runtime.js';
@@ -18,7 +19,24 @@ const responseJobAbortControllers = new Map<string, AbortController>();
 const runtimeContractVersion = '2026-07-10' as const;
 const runtimeKey = process.env.PRISM_RUNTIME_KEY?.trim() || 'codex-default';
 
-app.use(express.json({ limit: '1mb' }));
+const standardJsonParser = express.json({ limit: '1mb' });
+const toolsetJsonParser = express.json({ limit: '16mb' });
+app.use((req, res, next) => {
+  if (req.method !== 'POST' || req.path !== '/v1/runtime/toolsets/invoke') {
+    return standardJsonParser(req, res, next);
+  }
+  const token = req.header('x-runtime-toolset-token')?.trim() || '';
+  try {
+    runtimeToolsetSessions.assertActive(token);
+    return toolsetJsonParser(req, res, next);
+  } catch (error) {
+    if (error instanceof RuntimeCapabilityError) {
+      res.status(error.status).json({ ok: false, error: error.code });
+      return;
+    }
+    res.status(401).json({ ok: false, error: 'RUNTIME_TOOLSET_SESSION_INVALID' });
+  }
+});
 
 type RuntimeRequestBody = {
   contractVersion?: unknown;
@@ -620,6 +638,14 @@ app.post('/v1/runtime/jobs/:jobId/cancel', (req, res) => {
     return;
   }
   res.json({ ok: true, job: normalizedJob(cancelResponseJob(job)) });
+});
+
+app.use((error: unknown, _request: Request, response: Response, next: NextFunction) => {
+  if (error && typeof error === 'object' && 'status' in error && error.status === 413) {
+    response.status(413).json({ ok: false, error: 'RUNTIME_REQUEST_TOO_LARGE' });
+    return;
+  }
+  next(error);
 });
 
 app.listen(config.port, '0.0.0.0', () => {

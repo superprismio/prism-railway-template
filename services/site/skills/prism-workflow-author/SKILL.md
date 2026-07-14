@@ -202,6 +202,9 @@ required broad profiles in workflow/step `agentConfig.gatewayToolsets` or in an
 instance-owned skill; existing narrow wrappers use
 `metadata.gateway-capabilities`. Do not reproduce provider operations in the
 manifest. Use `agentConfig.gatewayCapabilities` only for a direct narrow call.
+For HTTP, OpenAPI, or MCP profiles, use the runtime toolset invocation contract;
+do not check for or require the provider's raw environment variables. Only
+`adapter` profiles lease environment variables to a runtime or task process.
 Before enabling a workflow, verify its referenced skills and Gateway
 requirements exist and run Prism Doctor.
 

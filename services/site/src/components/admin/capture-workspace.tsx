@@ -162,6 +162,26 @@ export function CaptureWorkspace() {
     return () => window.clearInterval(intervalId);
   }, [startedAt, status]);
 
+  useEffect(() => {
+    if (
+      status !== "finalized"
+      || !capture
+      || !dispatchSettings.autoDispatchOnTranscript
+      || dispatchSettings.destinationType === "none"
+      || capture.dispatch?.status === "completed"
+      || capture.dispatch?.status === "failed"
+    ) return;
+    const intervalId = window.setInterval(() => {
+      void refreshCaptures();
+    }, 3000);
+    return () => window.clearInterval(intervalId);
+  }, [
+    capture,
+    dispatchSettings.autoDispatchOnTranscript,
+    dispatchSettings.destinationType,
+    status,
+  ]);
+
   function stopStreams() {
     for (const stream of streamsRef.current) {
       for (const track of stream.getTracks()) {
@@ -199,6 +219,9 @@ export function CaptureWorkspace() {
       const payload = await parseJsonResponse(response);
       if (payload.captures) {
         setCaptures(payload.captures);
+        setCapture((current) => current
+          ? payload.captures?.find((item) => item.id === current.id) ?? current
+          : current);
       }
       if (payload.settings) {
         setDispatchSettings(payload.settings);

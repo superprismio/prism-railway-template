@@ -748,7 +748,7 @@ function buildPrompt(
       '',
       'Organization toolset profiles assigned to this runtime job:',
       callableToolsets.map((toolset) => JSON.stringify(toolset)).join('\n'),
-      'Use an assigned profile by POSTing to $PRISM_RUNTIME_TOOLSET_URL with header x-runtime-toolset-token: $PRISM_RUNTIME_TOOLSET_TOKEN. For HTTP/OpenAPI profiles use {"toolset":"...","action":"describe"} or {"toolset":"...","action":"request","request":{"method":"GET","path":"/api/...","query":{},"body":{}}}. For MCP profiles, describe returns tools/list and calls use {"toolset":"...","action":"request","request":{"tool":"tool_name","arguments":{}}}.',
+      'Use an assigned profile by POSTing to $PRISM_RUNTIME_TOOLSET_URL with header x-runtime-toolset-token: $PRISM_RUNTIME_TOOLSET_TOKEN. For HTTP/OpenAPI profiles use {"toolset":"...","action":"describe"} or {"toolset":"...","action":"request","request":{"method":"GET","path":"/api/...","query":{},"body":{}}}. For one-file multipart uploads, replace body with {"multipart":{"fields":{"_payload":"{...}"},"file":{"fieldName":"file","filename":"image.png","contentType":"image/png","dataBase64":"..."}}}; files are limited to 10 MB. For MCP profiles, describe returns tools/list and calls use {"toolset":"...","action":"request","request":{"tool":"tool_name","arguments":{}}}.',
       'Use Node.js built-in fetch for these local HTTP calls; curl may not be installed in the runtime image.',
       'The destination and credential are fixed by Gateway, while method, same-origin path, query, and body remain under your control. Never print, persist, or return the runtime toolset token.',
     );

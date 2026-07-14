@@ -70,8 +70,9 @@ metadata:
     - crm.admin
 ---
 
-Use the declared Gateway capability instead of reading provider credentials
-from the runtime environment.
+Use the assigned Gateway toolset instead of reading provider credentials from
+the runtime environment. Site policy, rather than generic source-skill
+metadata, normally assigns the profile to authorized jobs.
 ```
 
 Descriptions decide when the skill loads, so make them explicit about the user

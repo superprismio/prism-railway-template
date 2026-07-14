@@ -34,6 +34,8 @@ type CaptureDispatchPayload = {
   };
 };
 
+const activeDispatches = new Map<string, Promise<Awaited<ReturnType<typeof performCaptureDispatch>>>>();
+
 function redactedSettings(settings: CaptureDispatchSettings) {
   return {
     destinationType: settings.destinationType,
@@ -130,7 +132,7 @@ async function dispatchToExternalHttp(settings: CaptureDispatchSettings, payload
   }
 }
 
-export async function dispatchCaptureTranscript(captureId: string, options: {
+async function performCaptureDispatch(captureId: string, options: {
   baseUrl?: string | null;
   settings?: CaptureDispatchSettings;
 } = {}) {
@@ -189,4 +191,17 @@ export async function dispatchCaptureTranscript(captureId: string, options: {
     }).catch(() => undefined);
     throw error;
   }
+}
+
+export function dispatchCaptureTranscript(captureId: string, options: {
+  baseUrl?: string | null;
+  settings?: CaptureDispatchSettings;
+} = {}) {
+  const active = activeDispatches.get(captureId);
+  if (active) return active;
+  const dispatch = performCaptureDispatch(captureId, options).finally(() => {
+    activeDispatches.delete(captureId);
+  });
+  activeDispatches.set(captureId, dispatch);
+  return dispatch;
 }

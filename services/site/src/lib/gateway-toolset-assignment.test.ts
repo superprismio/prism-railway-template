@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { interactiveGatewayToolsets } from "./gateway-toolset-assignment";
+import {
+  gatewayToolsetsForKeys,
+  interactiveGatewayToolsets,
+  trustedRuntimeAdapterToolsets,
+} from "./gateway-toolset-assignment";
 
 test("interactive assignments do not duplicate credentials behind connected services", () => {
   assert.deepEqual(
@@ -20,5 +24,30 @@ test("interactive assignments do not duplicate credentials behind connected serv
       { key: "wallet.admin", protocol: "adapter" },
       { key: "standalone", protocol: "adapter" },
     ],
+  );
+});
+
+test("workflow assignments preserve descriptors for initial and continued steps", () => {
+  const enabled = [
+    { key: "portal.admin", protocol: "http" as const, description: "Portal CMS" },
+    { key: "crm.admin", protocol: "mcp" as const },
+  ];
+
+  assert.deepEqual(gatewayToolsetsForKeys(["portal.admin"], enabled), [enabled[0]]);
+  assert.deepEqual(gatewayToolsetsForKeys(["portal.admin", "missing.profile"], enabled), [
+    enabled[0],
+    { key: "missing.profile" },
+  ]);
+});
+
+test("trusted workflow runtimes inherit only environment-backed adapter profiles", () => {
+  assert.deepEqual(
+    trustedRuntimeAdapterToolsets([
+      { key: "x.admin", protocol: "adapter" },
+      { key: "portal.admin", protocol: "http" },
+      { key: "crm.admin", protocol: "mcp" },
+      { key: "legacy.unknown" },
+    ]),
+    [{ key: "x.admin", protocol: "adapter" }],
   );
 });

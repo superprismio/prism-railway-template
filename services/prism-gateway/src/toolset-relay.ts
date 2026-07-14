@@ -1,5 +1,6 @@
 import { lookup } from "node:dns/promises";
 import https from "node:https";
+import { randomBytes } from "node:crypto";
 import { createPinnedLookup, GatewayDriverError, type ResolvedAddress } from "./http-json-read.js";
 import { isForbiddenIpAddress } from "./network.js";
 import type { GatewayToolsetProfile } from "./types.js";
@@ -10,6 +11,15 @@ export type HttpToolsetRequest = {
   path: string;
   query?: Record<string, string | number | boolean | Array<string | number | boolean>>;
   body?: unknown;
+  multipart?: {
+    fields?: Record<string, string>;
+    file: {
+      fieldName: string;
+      filename: string;
+      contentType: string;
+      dataBase64: string;
+    };
+  };
 };
 export type McpToolsetRequest = {
   tool: string;
@@ -48,13 +58,14 @@ function targetUrl(profile: GatewayToolsetProfile, request?: ToolsetRequest) {
 function requestHeaders(
   profile: GatewayToolsetProfile,
   credentials: Record<string, string>,
-  body: string | null,
+  body: Buffer | null,
+  contentType: string | null,
   payloadToken?: string,
 ) {
   const headers: Record<string, string> = { accept: "application/json, text/plain;q=0.9", "user-agent": "prism-gateway/0.1" };
   if (body !== null) {
-    headers["content-type"] = "application/json";
-    headers["content-length"] = String(Buffer.byteLength(body));
+    headers["content-type"] = contentType || "application/octet-stream";
+    headers["content-length"] = String(body.length);
   }
   if (profile.auth.type === "payload-login") {
     if (!payloadToken) throw new GatewayDriverError("TOOLSET_PAYLOAD_TOKEN_MISSING", false);
@@ -66,6 +77,43 @@ function requestHeaders(
     else headers[profile.auth.headerName] = secret;
   }
   return headers;
+}
+
+function multipartToken(value: string, code: string, maxLength: number) {
+  if (!value || value.length > maxLength || /[\r\n"]/u.test(value)) {
+    throw new GatewayDriverError(code, false);
+  }
+  return value;
+}
+
+export function encodeMultipartBody(multipart: NonNullable<HttpToolsetRequest["multipart"]>) {
+  const boundary = `prism-${randomBytes(18).toString("hex")}`;
+  const chunks: Buffer[] = [];
+  const append = (value: string | Buffer) => chunks.push(Buffer.isBuffer(value) ? value : Buffer.from(value));
+  for (const [name, value] of Object.entries(multipart.fields ?? {})) {
+    multipartToken(name, "TOOLSET_MULTIPART_FIELD_INVALID", 120);
+    if (typeof value !== "string" || Buffer.byteLength(value) > 100_000) {
+      throw new GatewayDriverError("TOOLSET_MULTIPART_FIELD_INVALID", false);
+    }
+    append(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`);
+  }
+  const file = multipart.file;
+  const fieldName = multipartToken(file?.fieldName, "TOOLSET_MULTIPART_FILE_INVALID", 120);
+  const filename = multipartToken(file?.filename, "TOOLSET_MULTIPART_FILE_INVALID", 240);
+  const contentType = multipartToken(file?.contentType, "TOOLSET_MULTIPART_FILE_INVALID", 120);
+  if (typeof file?.dataBase64 !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/u.test(file.dataBase64)) {
+    throw new GatewayDriverError("TOOLSET_MULTIPART_FILE_INVALID", false);
+  }
+  const fileBody = Buffer.from(file.dataBase64, "base64");
+  if (!fileBody.length || fileBody.length > 10_000_000) {
+    throw new GatewayDriverError("TOOLSET_MULTIPART_FILE_TOO_LARGE", false);
+  }
+  append(`--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`);
+  append(fileBody);
+  append(`\r\n--${boundary}--\r\n`);
+  const body = Buffer.concat(chunks);
+  if (body.length > 11_000_000) throw new GatewayDriverError("TOOLSET_BODY_TOO_LARGE", false);
+  return { body, contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
 async function publicAddresses(hostname: string) {
@@ -113,8 +161,16 @@ export async function executeToolsetRequest(
   const url = targetUrl(profile, request);
   const httpRequest = request as HttpToolsetRequest | undefined;
   const method = httpRequest?.method ?? "GET";
-  const body = httpRequest && httpRequest.body !== undefined ? JSON.stringify(httpRequest.body) : null;
-  if (body !== null && Buffer.byteLength(body) > 1_000_000) throw new GatewayDriverError("TOOLSET_BODY_TOO_LARGE", false);
+  if (httpRequest?.body !== undefined && httpRequest.multipart !== undefined) {
+    throw new GatewayDriverError("TOOLSET_BODY_AMBIGUOUS", false);
+  }
+  const encoded = httpRequest?.multipart
+    ? encodeMultipartBody(httpRequest.multipart)
+    : httpRequest && httpRequest.body !== undefined
+      ? { body: Buffer.from(JSON.stringify(httpRequest.body)), contentType: "application/json" }
+      : { body: null, contentType: null };
+  const { body, contentType } = encoded;
+  if (body !== null && body.length > 11_000_000) throw new GatewayDriverError("TOOLSET_BODY_TOO_LARGE", false);
   let payloadToken: string | undefined;
   if (profile.auth.type === "payload-login") {
     const email = credentials[profile.auth.emailSecretName];
@@ -133,7 +189,7 @@ export async function executeToolsetRequest(
     }
     payloadToken = loginBody.token;
   }
-  const headers = requestHeaders(profile, credentials, body, payloadToken);
+  const headers = requestHeaders(profile, credentials, body, contentType, payloadToken);
   const addresses = await publicAddresses(url.hostname);
 
   return new Promise((resolve, reject) => {

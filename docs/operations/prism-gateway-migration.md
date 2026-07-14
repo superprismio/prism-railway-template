@@ -138,7 +138,11 @@ integration credential or toolset.
 Enable these variables when a `script-runner` task declares
 `agentConfig.gatewayCredentials`. Task Runner leases those credential bundles
 for that execution and injects them only into the script child process. Legacy
-`gatewayToolsets` assignments remain accepted. Tasks without assigned
+`gatewayToolsets` assignments remain accepted. Trusted workflow runtime jobs
+automatically inherit enabled environment-backed adapter credentials, so generic
+or externally sourced skills do not need Prism-specific credential metadata.
+Callable HTTP, OpenAPI, and MCP connected services still require an explicit
+workflow or skill assignment. Tasks without assigned
 credentials do not call Gateway. A declared credential fails closed
 when Gateway is disabled, unavailable, or returns a protected environment name.
 

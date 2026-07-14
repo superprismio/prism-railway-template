@@ -88,6 +88,21 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
   assert.equal(capabilities.contractVersion, contractVersion);
   assert.ok(capabilities.features.includes('cancellation'));
 
+  const oversizedBody = JSON.stringify({ padding: 'x'.repeat(2 * 1024 * 1024) });
+  const unauthenticatedToolsetUpload = await fetch(`${baseUrl}/v1/runtime/toolsets/invoke`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: oversizedBody,
+  });
+  assert.equal(unauthenticatedToolsetUpload.status, 401);
+
+  const oversizedStandardRequest = await fetch(`${baseUrl}/v1/runtime/jobs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: oversizedBody,
+  });
+  assert.equal(oversizedStandardRequest.status, 413);
+
   const invalid = await fetch(`${baseUrl}/v1/runtime/jobs`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
