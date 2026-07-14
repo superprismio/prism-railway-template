@@ -1,189 +1,136 @@
 ---
 name: prism-gateway-author
-description: Use this skill when an admin asks to connect, configure, test, enable, disable, inspect, or troubleshoot an organization integration, Gateway toolset profile, or narrow compatibility capability. It covers chat-driven non-secret configuration and secure credential handoff through Settings.
+description: Use this skill when an admin asks to store, configure, assign, inspect, rotate, or troubleshoot an instance credential managed by Prism Gateway.
 ---
 
-Use the Site agent API for Gateway authoring. Never ask the user to paste API
-keys, tokens, passwords, private keys, or other credentials into chat. Do not
-place credentials in capability configuration, artifacts, logs, or output.
+Use the Site agent API for non-secret Gateway configuration. Never ask the
+user to paste API keys, tokens, passwords, private keys, or other credentials
+into chat. Secret entry, replacement, and revocation happen in Settings.
 
 Authenticate with `x-service-token: $PRISM_AGENT_SERVICE_TOKEN`.
 
-## Architecture Rule
+## Model
 
-For broad integrations, create one credential-backed toolset profile such as
-`portal.admin` or `crm.admin` and preserve the provider's OpenAPI or MCP tool
-surface. Do not create one Gateway capability per collection, route, or tool.
+A credential is an encrypted set of secret variables plus non-secret instance
+configuration. Examples include an API key with `PLAUSIBLE_BASE_URL`, or an
+OAuth 1.0a identity with the four environment variables expected by an X
+client. Skills and scripts use their normal environment variables and provider
+APIs; they do not need a Prism-specific SDK.
 
-Create broad profiles with `POST /agent/gateway/toolsets`. Agent-created
-profiles remain disabled until an admin supplies the credential and validates
-the binding. The profile accepts a canonical HTTPS description URL and a
-non-secret authentication mapping, for example:
+The credential `key` is the stable assignment name used by tasks and workflows.
+Full-access admin Console and source-adapter sessions receive the active
+credential catalog automatically. Read-only source contexts do not.
 
-```json
-{
-  "key": "portal.admin",
-  "connectionId": "<connection-id>",
-  "protocol": "openapi",
-  "discoveryUrl": "https://portal.example.org/openapi.json",
-  "auth": { "type": "bearer", "secretName": "token" },
-  "description": "Portal administrator identity"
-}
-```
-
-For Payload identities that use email/password login, bind both encrypted
-connection fields without exposing the resulting JWT:
-
-```json
-"auth": {
-  "type": "payload-login",
-  "emailSecretName": "email",
-  "passwordSecretName": "password",
-  "loginPath": "/api/users/login"
-}
-```
-
-Do not compensate for missing provider documentation by rebuilding the API as
-dozens of compatibility capabilities. The assigned agent can inspect the
-canonical document and use flexible same-origin requests.
-
-Use fixed-origin HTTP toolsets when a provider has no useful OpenAPI or MCP
-document. Plausible and Arcade are normal examples: create one profile per
-credential and destination origin, then let the assigned agent select paths and
-request bodies. Do not model their routes as separate capabilities.
+Toolsets, capabilities, grants, fixed-origin proxies, and provider presets are
+legacy compatibility surfaces. Do not create them for a new credential unless
+the user explicitly needs an OpenAPI/MCP proxy or an untrusted caller boundary.
 
 ## Inspect
 
-Use `GET /agent/gateway` to read the redacted catalog, connections,
-toolsets, legacy capabilities, grants, and recent audit. Stored credential values are never
-returned.
+Use `GET /agent/gateway` to inspect the redacted credential catalog and recent
+audit history. Secret values are never returned.
 
-Imported credentials are independent from connections. Use
-`GET /agent/gateway/credentials` to list their names and metadata. To attach
-stored credentials to a connection without handling plaintext, call:
+Environment import is an Advanced migration path. Imported values appear in
+the redacted `credentials` migration pool returned by this route. Reuse an
+imported value through the existing value-free binding route rather than asking
+the admin to enter it again:
 
 ```http
 PUT /agent/gateway/connections/<connection-id>/credentials/from-store
 ```
 
 ```json
+{ "bindings": { "apiKey": "PLAUSIBLE_API_KEY" } }
+```
+
+## Create Through Chat
+
+Create a pending credential shell with `POST /agent/gateway/connections`. Give
+each secret the exact environment variable expected by the skill or SDK, and
+store reusable non-secret values in `configuration`:
+
+```json
 {
-  "bindings": {
-    "apiToken": "INSTANCE_API_TOKEN"
+  "key": "plausible-production",
+  "label": "Plausible production",
+  "authType": "api-key",
+  "secretName": "apiKey",
+  "environmentName": "PLAUSIBLE_API_KEY",
+  "configuration": {
+    "PLAUSIBLE_BASE_URL": "https://analytics.example.org",
+    "PLAUSIBLE_SITE_ID": "example.org"
   }
 }
 ```
 
-The keys are connection-local secret names used by the toolset authentication
-recipe; the values are stored credential names. Never ask the admin to re-enter
-an already stored credential.
+For multiple secrets, send `envBindings`, where each key is an environment
+variable and each value is a connection-local secret name:
 
-## Configure An Integration
+```json
+{
+  "key": "x-production",
+  "label": "X production",
+  "authType": "oauth-1a",
+  "envBindings": {
+    "X_API_KEY": "apiKey",
+    "X_API_SECRET": "apiSecret",
+    "X_ACCESS_TOKEN": "accessToken",
+    "X_ACCESS_TOKEN_SECRET": "accessTokenSecret"
+  }
+}
+```
 
-1. Inspect the catalog and reuse an active connection when appropriate.
-2. For a supported provider, use the deterministic preset endpoint instead of
-reconstructing driver configuration:
+The response includes `credentialUrl`. Direct the admin to that URL to enter
+all secret values. Never offer to accept them in chat.
+
+Update only non-secret configuration or environment bindings with:
 
 ```http
-POST /agent/gateway/integrations
+PATCH /agent/gateway/connections/<connection-id>
 ```
 
 ```json
 {
-  "preset": "plausible",
-  "label": "Plausible Analytics",
-  "origin": "https://plausible.example.org"
+  "configuration": { "SERVICE_BASE_URL": "https://service.example.org" },
+  "envBindings": { "SERVICE_API_KEY": "apiKey" }
 }
 ```
 
-This idempotent call returns existing configuration when the standard toolset
-already exists. Otherwise it creates or reuses a pending connection and creates
-a disabled fixed-origin HTTP toolset.
+## Assign To Deterministic Jobs
 
-3. For providers without a preset, create a pending connection with
-`POST /agent/gateway/connections`:
+Admin Console and full-access Discord/Telegram contexts discover credentials
+automatically. Deterministic tasks and workflow steps should declare only the
+credential keys they need in instance-owned configuration:
 
 ```json
 {
-  "provider": "plausible",
-  "label": "Plausible Analytics",
-  "authType": "bearer",
-  "secretName": "apiKey"
+  "gatewayCredentials": ["plausible-production"]
 }
 ```
 
-If a suitable credential already exists in `GET /agent/gateway/credentials`,
-bind it through the value-free route above. Otherwise, the response includes
-`credentialUrl` and `credentialPath`; give the admin that link and say the
-credential must be entered in Settings. Never offer to accept it in chat.
+Externally sourced or reusable skills should document the conventional
+environment variables they expect. Do not require those repositories to add
+Prism metadata. An instance-owned skill may use `metadata.gateway-credentials`
+when inheriting the dependency is useful, but direct task/workflow assignment
+is also valid.
 
-For an existing connection, construct the same stable Settings path from its
-redacted catalog record:
+Task Runner script jobs receive the same leased environment bundle as runtime
+jobs. Configuration variables and decrypted secrets exist only for the job.
 
-```text
-/admin?tab=settings&settings=gateway&connection=<connection-id>&action=credential&secretName=<secret-name>
-```
+## Verify
 
-Use the connection's existing `secretNames[0]` when present; otherwise use the
-secret name required by the toolset authentication mapping.
+After the admin stores the secret, run a representative non-destructive call
+from the intended Console, source channel, task, or workflow. Report the
+credential key, consuming job, and result. A stored credential alone is not
+proof that the provider accepts it.
 
-4. Create non-secret profile configuration with
-`POST /agent/gateway/toolsets`. Chat-created toolsets are disabled by default.
-5. Stop and ask the admin to use the credential link. Do not repeatedly test a
-pending connection with no credential.
-6. After the admin confirms, enable the toolset in Settings and exercise a
-representative non-destructive request through an assigned runtime job.
-
-Report the toolset key, connection label, test result, and follow-up needed.
-Do not claim setup succeeded before the test passes.
-
-## Bind Skills And Workflows
-
-For an instance-owned deterministic job, identify the skill that owns the
-provider operation and use `prism-skill-author` to declare the profile in its
-`SKILL.md` frontmatter:
-
-```yaml
-metadata:
-  gateway-toolsets:
-    - plausible.analytics
-```
-
-Workflows inherit these requirements through `agentConfig.skills`, and tasks
-inherit them through `instructionConfig.requestedSkills`. Do not duplicate the
-toolset list in each caller. A direct `agentConfig.gatewayToolsets` entry is
-acceptable when a deterministic task or workflow has no owning skill.
-
-Run Prism Doctor after binding the skill and before removing any legacy runtime
-credential. Exercise every enabled workflow, task, hook, and interactive path
-that uses the integration; Gateway configuration alone is not proof that the
-migration is complete.
-
-Do not add Gateway metadata to generic or source-managed skills just
-to make interactive access work. Site policy assigns enabled profiles to Admin
-Console and full-access source contexts. Use metadata only for instance-owned
-deterministic jobs that must declare a hard dependency.
-
-## Plausible Preset
-
-Always use the `plausible` integration preset. It creates the
-`plausible.analytics` fixed-origin HTTP toolset and bearer mapping. Supply only
-the instance HTTPS origin and optional label.
-
-## Legacy Compatibility
-
-`POST /agent/gateway/capabilities` and `metadata.gateway-capabilities` remain
-available only for existing narrow wrappers during migration. Do not create a
-new capability when an HTTP, OpenAPI, MCP, or adapter toolset can preserve the
-provider surface. These controls are under Advanced in Settings.
+Run Prism Doctor after changing deterministic task or workflow assignments.
 
 ## Safety
 
-- Credential create, replace, and revoke remain admin-session operations in
-  Settings.
-- Never send credentials through `/agent/*`.
-- Keep each connection credential bound to its destination origin; runtime
-  input must never override either.
-- Keep capabilities disabled until their connection test succeeds.
-- Treat downstream `4xx` as input, authentication, or configuration evidence.
-- Keep working direct integrations until Gateway migration is explicitly tested.
+- Never send secret values through `/agent/*`, chat, artifacts, or logs.
+- Do not duplicate provider schemas or APIs inside Gateway.
+- Do not add egress restrictions, route allowlists, or grants unless required
+  by a concrete trust boundary.
+- Keep working legacy aliases during migration; normal deployments backfill
+  them into credential bundles automatically.

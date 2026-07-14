@@ -27,9 +27,12 @@ export class GatewayStoreError extends Error {
 
 type ConnectionRow = {
   id: string;
+  credential_key: string | null;
   provider: string;
   label: string;
   auth_type: string;
+  configuration_json: string;
+  env_bindings_json: string;
   status: GatewayConnection["status"];
   last_tested_at: string | null;
   last_used_at: string | null;
@@ -116,6 +119,64 @@ type AuditRow = {
 function parseJson(value: string | null): Record<string, unknown> | null {
   if (!value) return null;
   return JSON.parse(value) as Record<string, unknown>;
+}
+
+function stringRecord(value: string | null): Record<string, string> {
+  const parsed = parseJson(value);
+  if (!parsed) return {};
+  return Object.fromEntries(
+    Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+}
+
+function credentialKey(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9.-]+/g, "-")
+    .replace(/^[^a-z]+/, "")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 120);
+  return normalized.length >= 2 ? normalized : "credential";
+}
+
+function environmentPrefix(value: string) {
+  return value
+    .replace(/\.admin$|\.read$|\.write$/, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toUpperCase();
+}
+
+function secretEnvironmentSuffix(value: string) {
+  const normalized = environmentPrefix(value);
+  if (normalized === "APIKEY" || normalized === "API_KEY") return "API_KEY";
+  if (normalized === "ACCESSTOKEN" || normalized === "ACCESS_TOKEN") return "ACCESS_TOKEN";
+  if (normalized === "SECRETCREDENTIAL" || normalized === "SECRET_CREDENTIAL") return "SECRET";
+  return normalized || "SECRET";
+}
+
+function validateCredentialConfiguration(input: Record<string, string>) {
+  if (Object.keys(input).length > 50) throw new GatewayStoreError("CREDENTIAL_CONFIGURATION_INVALID", 400);
+  for (const [name, value] of Object.entries(input)) {
+    if (!/^[A-Z_][A-Z0-9_]{0,119}$/.test(name) || !value || value.length > 10_000) {
+      throw new GatewayStoreError("CREDENTIAL_CONFIGURATION_INVALID", 400);
+    }
+  }
+}
+
+function validateCredentialEnvBindings(input: Record<string, string>) {
+  if (Object.keys(input).length > 50) throw new GatewayStoreError("CREDENTIAL_ENV_BINDINGS_INVALID", 400);
+  for (const [envName, secretName] of Object.entries(input)) {
+    if (
+      !/^[A-Z_][A-Z0-9_]{0,119}$/.test(envName)
+      || !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(secretName)
+    ) {
+      throw new GatewayStoreError("CREDENTIAL_ENV_BINDINGS_INVALID", 400);
+    }
+  }
 }
 
 export function validatePublicHttpsBaseUrl(value: unknown) {
@@ -337,9 +398,12 @@ function connectionFromRow(
   ).all(row.id) as Array<{ key: string }>).map((entry) => entry.key);
   return {
     id: row.id,
+    key: row.credential_key || row.id,
     provider: row.provider,
     label: row.label,
     authType: row.auth_type,
+    configuration: stringRecord(row.configuration_json),
+    envBindings: stringRecord(row.env_bindings_json),
     status: row.status,
     capabilityKeys,
     toolsetKeys,
@@ -446,6 +510,82 @@ export class GatewayStore {
       [encryption.keyVersion, encryption.key],
       ...(encryption.previousKeys ?? []).map((entry) => [entry.keyVersion, entry.key] as const),
     ]);
+    this.backfillCredentialBundles();
+  }
+
+  private backfillCredentialBundles() {
+    const rows = this.db.prepare(
+      "SELECT * FROM integration_connections ORDER BY created_at, id",
+    ).all() as ConnectionRow[];
+    const usedKeys = new Set(rows.flatMap((row) => row.credential_key ? [row.credential_key] : []));
+    const update = this.db.prepare(`
+      UPDATE integration_connections
+      SET credential_key = ?, configuration_json = ?, env_bindings_json = ?, updated_at = ?
+      WHERE id = ?
+    `);
+
+    this.db.transaction(() => {
+      for (const row of rows) {
+        let key = row.credential_key;
+        if (!key) {
+          const base = credentialKey(row.provider !== "none" ? row.provider : row.label);
+          key = base;
+          let suffix = 2;
+          while (usedKeys.has(key)) key = `${base.slice(0, 116)}-${suffix++}`;
+          usedKeys.add(key);
+        }
+
+        const configuration = stringRecord(row.configuration_json);
+        const envBindings = stringRecord(row.env_bindings_json);
+        const toolsets = (this.db.prepare(
+          "SELECT * FROM toolset_profiles WHERE connection_id = ? ORDER BY key",
+        ).all(row.id) as ToolsetProfileRow[]).map(toolsetProfileFromRow);
+        const secretNames = connectionFromRow(this.db, row).secretNames;
+        const aliases = toolsets.length ? toolsets.map((toolset) => toolset.key) : [key];
+
+        for (const toolset of toolsets) {
+          for (const [envName, secretName] of Object.entries(toolset.envBindings)) {
+            if (envBindings[envName] === undefined || envBindings[envName] === secretName) {
+              envBindings[envName] = secretName;
+            }
+          }
+          const prefix = environmentPrefix(toolset.key);
+          try {
+            const discoveryUrl = new URL(toolset.discoveryUrl);
+            configuration[`${prefix}_BASE_URL`] ??= discoveryUrl.origin;
+            if (discoveryUrl.pathname !== "/" || discoveryUrl.search) {
+              configuration[`${prefix}_DISCOVERY_URL`] ??= discoveryUrl.toString();
+            }
+          } catch {
+            // Existing rows were validated when created; leave malformed legacy metadata untouched.
+          }
+        }
+
+        for (const alias of aliases) {
+          const prefix = environmentPrefix(alias);
+          for (const secretName of secretNames) {
+            const envName = `${prefix}_${secretEnvironmentSuffix(secretName)}`;
+            envBindings[envName] ??= secretName;
+          }
+        }
+
+        const configurationJson = JSON.stringify(configuration);
+        const envBindingsJson = JSON.stringify(envBindings);
+        if (
+          key !== row.credential_key
+          || configurationJson !== row.configuration_json
+          || envBindingsJson !== row.env_bindings_json
+        ) {
+          update.run(
+            key,
+            configurationJson,
+            envBindingsJson,
+            new Date().toISOString(),
+            row.id,
+          );
+        }
+      }
+    })();
   }
 
   encryptionStatus() {
@@ -838,25 +978,89 @@ export class GatewayStore {
     return row ? connectionFromRow(this.db, row) : null;
   }
 
+  getCredential(keyOrAlias: string) {
+    const direct = this.db.prepare(
+      "SELECT * FROM integration_connections WHERE credential_key = ? OR id = ?",
+    ).get(keyOrAlias, keyOrAlias) as ConnectionRow | undefined;
+    if (direct) return connectionFromRow(this.db, direct);
+    const alias = this.db.prepare(`
+      SELECT connection_id FROM toolset_profiles WHERE key = ?
+    `).get(keyOrAlias) as { connection_id: string } | undefined;
+    return alias ? this.getConnection(alias.connection_id) : null;
+  }
+
   createConnection(input: {
+    key?: string;
     provider: string;
     label: string;
     authType: string;
     credentials: Record<string, string>;
+    configuration?: Record<string, string>;
+    envBindings?: Record<string, string>;
   }) {
     const id = randomUUID();
     const now = new Date().toISOString();
     const entries = Object.entries(input.credentials);
+    const key = credentialKey(input.key || input.label);
+    const configuration = input.configuration ?? {};
+    const prefix = environmentPrefix(key);
+    const envBindings = input.envBindings ?? Object.fromEntries(
+      entries.map(([name]) => [`${prefix}_${secretEnvironmentSuffix(name)}`, name]),
+    );
+    validateCredentialConfiguration(configuration);
+    validateCredentialEnvBindings(envBindings);
+    if (this.getCredential(key)) throw new GatewayStoreError("CREDENTIAL_KEY_CONFLICT", 409);
 
     this.db.transaction(() => {
       this.db.prepare(`
         INSERT INTO integration_connections
-          (id, provider, label, auth_type, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'untested', ?, ?)
-      `).run(id, input.provider, input.label, input.authType, now, now);
+          (id, credential_key, provider, label, auth_type, configuration_json,
+           env_bindings_json, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'untested', ?, ?)
+      `).run(
+        id,
+        key,
+        input.provider,
+        input.label,
+        input.authType,
+        JSON.stringify(configuration),
+        JSON.stringify(envBindings),
+        now,
+        now,
+      );
       if (entries.length > 0) this.writeCredentials(id, entries, now);
     })();
 
+    return this.getConnection(id)!;
+  }
+
+  updateCredentialBundle(id: string, input: {
+    label?: string;
+    authType?: string;
+    configuration?: Record<string, string>;
+    envBindings?: Record<string, string>;
+  }) {
+    const connection = this.getConnection(id);
+    if (!connection) throw new GatewayStoreError("CONNECTION_NOT_FOUND", 404);
+    if (connection.status === "revoked") throw new GatewayStoreError("CONNECTION_UNAVAILABLE", 409);
+    const configuration = input.configuration ?? connection.configuration;
+    const envBindings = input.envBindings ?? connection.envBindings;
+    validateCredentialConfiguration(configuration);
+    validateCredentialEnvBindings(envBindings);
+    const label = input.label?.trim() || connection.label;
+    const authType = input.authType?.trim() || connection.authType;
+    this.db.prepare(`
+      UPDATE integration_connections
+      SET label = ?, auth_type = ?, configuration_json = ?, env_bindings_json = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      label,
+      authType,
+      JSON.stringify(configuration),
+      JSON.stringify(envBindings),
+      new Date().toISOString(),
+      id,
+    );
     return this.getConnection(id)!;
   }
 

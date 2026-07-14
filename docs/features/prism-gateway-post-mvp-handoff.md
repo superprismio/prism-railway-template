@@ -9,11 +9,14 @@ Operations: [Prism Gateway Migration](../operations/prism-gateway-migration.md)
 ## Completed Boundary
 
 The MVP establishes Gateway as the durable owner of organization integration
-credentials. Site owns profile assignment and admin UX. Downstream services
-continue to own API semantics and RBAC. Codex Runtime is a consumer rather than
-the credential registry.
+credentials and reusable non-secret instance configuration. Site owns
+assignment and admin UX. Downstream services continue to own API semantics and
+RBAC. Codex Runtime and Task Runner are consumers rather than credential
+registries.
 
-Production-proven access modes:
+The default access mode is a trusted, job-scoped environment lease compatible
+with existing CLIs, SDKs, scripts, and generic skills. The following proxy
+modes remain for compatibility or a future concrete trust boundary:
 
 - fixed-origin authenticated HTTP/OpenAPI relay
 - broad Streamable HTTP MCP discovery and tool calls
@@ -49,8 +52,8 @@ auth, and model-provider auth remain with their owning services.
 - Only the Runtime-only lease endpoint returns adapter values.
 - Adapter profiles are not network destinations.
 - Runtime children never receive the long-lived Gateway caller token.
-- Site/source policy assigns profiles; Gateway does not duplicate downstream RBAC.
-- Audit summaries may contain profile, operation/tool, and environment names,
+- Site/source policy assigns credentials; Gateway does not duplicate downstream RBAC.
+- Audit summaries may contain credential keys and environment names,
   but never values, authorization headers, or request argument bodies.
 - Generic skills remain portable. Instance workflows may name required profiles.
 
@@ -58,8 +61,7 @@ auth, and model-provider auth remain with their owning services.
 
 ### Before Broad Template Rollout
 
-- [x] Add Prism Doctor checks for missing, disabled, or protocol-mismatched
-  connected services.
+- [x] Add Prism Doctor checks for missing legacy profile dependencies.
 - [x] Add authenticated SQLite snapshots with checksums and encryption-version
   manifests, plus a tested offline restore runbook.
 - [x] Add transactional, idempotent master-key rotation with current/previous
@@ -83,9 +85,9 @@ auth, and model-provider auth remain with their owning services.
 
 - Add provider-aware health checks or a runtime callback so `leased` can be
   distinguished from downstream-authenticated health without overstating it.
-- Keep normal Settings focused on Connections and Connected Services. Put
-  protocol, bindings, assignment sources, and legacy capabilities in Advanced
-  diagnostics only when operators need them.
+- Keep normal Settings focused on one Credentials table and generic secret plus
+  configuration forms. Keep legacy toolsets, capabilities, grants, protocols,
+  and egress controls out of the normal UX.
 - Add audit filtering/export, retention settings, and redacted diagnostics.
 - Generalize the environment import manifest so instances can add mappings
   without changing template source.
@@ -129,7 +131,8 @@ Before merging a Gateway change, verify:
 
 ## Recommended Next Slice
 
-Do not expand provider adapters first. Doctor and the operations contract are
-complete. The next highest-value security slice is assignment attestation and
-short-lived job sessions, after the rollout regression matrix has been exercised
-on a clean instance and the existing `prism-stack` instance.
+Do not expand provider adapters or speculative authorization first. Exercise
+credential creation, admin discovery, deterministic task assignment, Task
+Runner scripts, and automatic legacy backfill on a clean instance and the
+existing `prism-stack` instance. Add stronger assignment attestation only when
+a second or less-trusted runtime creates a concrete boundary that needs it.

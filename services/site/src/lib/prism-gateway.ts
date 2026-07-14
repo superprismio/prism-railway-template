@@ -103,6 +103,33 @@ export async function listEnabledGatewayToolsetsOrEmpty(): Promise<Array<{
   }
 }
 
+export async function listEnabledGatewayCredentialsOrEmpty(): Promise<Array<{
+  key: string;
+  protocol: "adapter";
+}>> {
+  const status = getPrismGatewayStatus();
+  if (!status.enabled || !status.configured) return [];
+  try {
+    const payload = await prismGatewayRequest<{
+      credentials?: Array<{ key?: unknown; status?: unknown }>;
+    }>("/credential-bundles");
+    return (payload.credentials ?? []).flatMap((credential) => {
+      if (
+        typeof credential.key !== "string"
+        || credential.key.length === 0
+        || credential.status === "revoked"
+      ) return [];
+      return [{ key: credential.key, protocol: "adapter" as const }];
+    });
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "prism_gateway.credential_catalog_unavailable",
+      error: error instanceof Error ? error.message : "PRISM_GATEWAY_CREDENTIAL_CATALOG_FAILED",
+    }));
+    return [];
+  }
+}
+
 export async function prismGatewayRequest<T = Record<string, unknown>>(
   path: string,
   init: RequestInit = {},

@@ -23,6 +23,15 @@ metadata:
 `), ["portal.admin"]);
 });
 
+test("hosted skill summaries accept credential assignment metadata", () => {
+  assert.deepEqual(readSkillToolsetRequirements(`---
+name: analytics-report
+metadata:
+  gateway-credentials: [plausible-production]
+---
+`), ["plausible-production"]);
+});
+
 test("hosted skill requirements reject malformed capability keys", () => {
   assert.deepEqual(readSkillCapabilityRequirements(`---
 name: unsafe

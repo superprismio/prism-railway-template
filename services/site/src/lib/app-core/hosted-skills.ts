@@ -51,7 +51,14 @@ export function readSkillToolsetRequirements(content: string) {
     const metadata = data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
       ? data.metadata as Record<string, unknown>
       : {};
-    const value = metadata['gateway-toolsets'] ?? metadata.gatewayToolsets ?? data['gateway-toolsets'] ?? data.gatewayToolsets;
+    const value = metadata['gateway-credentials']
+      ?? metadata.gatewayCredentials
+      ?? data['gateway-credentials']
+      ?? data.gatewayCredentials
+      ?? metadata['gateway-toolsets']
+      ?? metadata.gatewayToolsets
+      ?? data['gateway-toolsets']
+      ?? data.gatewayToolsets;
     const entries = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
     return Array.from(new Set(entries
       .filter((entry): entry is string => typeof entry === 'string')

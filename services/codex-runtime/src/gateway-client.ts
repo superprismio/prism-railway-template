@@ -48,6 +48,33 @@ export class GatewayClientError extends Error {
   }
 }
 
+const protectedLeaseNames = new Set([
+  'PATH', 'HOME', 'SHELL', 'PWD', 'TMPDIR', 'NODE_OPTIONS',
+  'INTERNAL_SERVICE_TOKEN', 'APP_API_SERVICE_TOKEN', 'TASK_RUNNER_TOKEN',
+  'COMMUNICATION_ADAPTER_TOKEN',
+]);
+const protectedLeasePrefixes = [
+  'PRISM_', 'RAILWAY_', 'GATEWAY_', 'CODEX_', 'NODE_', 'NPM_', 'npm_', 'LD_', 'DYLD_',
+];
+
+function leasedEnvironment(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new GatewayClientError('PRISM_GATEWAY_LEASE_INVALID', 502, false);
+  }
+  const env: Record<string, string> = {};
+  for (const [name, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (
+      !/^[A-Z_][A-Z0-9_]{0,119}$/.test(name)
+      || protectedLeaseNames.has(name)
+      || protectedLeasePrefixes.some((prefix) => name.startsWith(prefix))
+      || typeof entry !== 'string'
+      || !entry
+    ) throw new GatewayClientError('PRISM_GATEWAY_LEASE_INVALID', 502, false);
+    env[name] = entry;
+  }
+  return env;
+}
+
 export class PrismGatewayClient {
   constructor(
     private readonly config: GatewayClientConfig,
@@ -154,16 +181,42 @@ export class PrismGatewayClient {
     if (!body || !response.ok || body.ok === false || !body.env || typeof body.env !== 'object' || Array.isArray(body.env)) {
       throw new GatewayClientError(`PRISM_GATEWAY_HTTP_${response.status}`, response.status, response.status >= 500);
     }
-    const env: Record<string, string> = {};
-    for (const [name, value] of Object.entries(body.env as Record<string, unknown>)) {
-      if (!/^[A-Z_][A-Z0-9_]{0,119}$/.test(name) || typeof value !== 'string' || !value) {
-        throw new GatewayClientError('PRISM_GATEWAY_LEASE_INVALID', 502, false);
-      }
-      env[name] = value;
-    }
+    const env = leasedEnvironment(body.env);
     const leasedToolsets = Array.isArray(body.leasedToolsets)
       ? body.leasedToolsets.filter((key): key is string => typeof key === 'string')
       : [];
     return { env, leasedToolsets };
+  }
+
+  async leaseCredentials(input: {
+    credentials: string[];
+    context?: GatewayInvocationContext;
+  }): Promise<{ env: Record<string, string>; environmentOnlyAliases: string[] }> {
+    if (!this.config.enabled) throw new GatewayClientError('PRISM_GATEWAY_DISABLED', 503, false);
+    if (!this.config.baseUrl || !this.config.token) throw new GatewayClientError('PRISM_GATEWAY_NOT_CONFIGURED', 503, false);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.config.baseUrl}/credential-bundles/lease`, {
+        method: 'POST',
+        headers: { accept: 'application/json', 'content-type': 'application/json', 'x-gateway-token': this.config.token },
+        body: JSON.stringify({ credentials: input.credentials, context: input.context ?? {} }),
+        signal: AbortSignal.timeout(this.config.timeoutMs),
+      });
+    } catch {
+      throw new GatewayClientError('PRISM_GATEWAY_UNREACHABLE', 502, true);
+    }
+    if (response.status === 404) {
+      const legacy = await this.leaseToolsets({ toolsets: input.credentials, context: input.context });
+      return { env: legacy.env, environmentOnlyAliases: legacy.leasedToolsets };
+    }
+    const body = await response.json().catch(() => null) as Record<string, unknown> | null;
+    if (!body || !response.ok || body.ok === false || !body.env || typeof body.env !== 'object' || Array.isArray(body.env)) {
+      throw new GatewayClientError(`PRISM_GATEWAY_HTTP_${response.status}`, response.status, response.status >= 500);
+    }
+    const env = leasedEnvironment(body.env);
+    const environmentOnlyAliases = Array.isArray(body.environmentOnlyAliases)
+      ? body.environmentOnlyAliases.filter((key): key is string => typeof key === 'string')
+      : [];
+    return { env, environmentOnlyAliases };
   }
 }

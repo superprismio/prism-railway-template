@@ -1,23 +1,7 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
-import { useSearchParams } from "next/navigation";
-import {
-  Activity,
-  KeyRound,
-  Link2,
-  Plus,
-  RefreshCw,
-  Trash2,
-  Upload,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Activity, ChevronDown, KeyRound, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,7 +23,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -50,39 +33,23 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  gatewayCredentialImportNames,
   gatewayImportableEnvNames,
   parseEnvText,
   protectedGatewayEnvNames,
 } from "@/lib/gateway-env-import";
 
-type GatewayStoredCredential = {
+type GatewayCredential = {
   id: string;
-  name: string;
-  source: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type GatewayConnection = {
-  id: string;
+  key: string;
   provider: string;
   label: string;
   authType: string;
+  configuration: Record<string, string>;
+  envBindings: Record<string, string>;
   status: string;
   toolsetKeys: string[];
   secretNames: string[];
   lastUsedAt: string | null;
-};
-
-type GatewayToolset = {
-  key: string;
-  connectionId: string;
-  protocol: "openapi" | "mcp" | "http" | "adapter";
-  description: string;
-  enabled: boolean;
-  lastDiscoveredAt: string | null;
-  discoveryError: string | null;
 };
 
 type GatewayAuditEvent = {
@@ -101,42 +68,59 @@ type GatewayOverview = {
   enabled: boolean;
   configured: boolean;
   reachable: boolean;
-  health?: {
-    database?: { ok?: boolean; migrations?: number };
-    catalog?: {
-      toolsets?: number;
-      connections?: number;
-      auditEvents?: number;
-    };
-  };
-  credentials?: GatewayStoredCredential[];
-  connections?: GatewayConnection[];
-  toolsets?: GatewayToolset[];
+  health?: { database?: { ok?: boolean; migrations?: number } };
+  connections?: GatewayCredential[];
   auditEvents?: GatewayAuditEvent[];
 };
 
-type ConnectionDraft = {
-  provider: string;
+type SecretField = { envName: string; secretName: string; value: string };
+type ConfigurationField = { name: string; value: string };
+type CredentialDraft = {
   label: string;
-  authType: "bearer" | "api-key";
-  secretName: string;
-  secretValue: string;
+  authType: string;
+  secrets: SecretField[];
+  configuration: ConfigurationField[];
 };
 
-type PendingCredentialDraft = {
-  secretName: string;
-  value: string;
-  email: string;
-  password: string;
-};
+function secretTemplate(authType: string): SecretField[] {
+  const names = authType === "basic"
+    ? ["username", "password"]
+    : authType === "key-pair"
+      ? ["accessKey", "secretKey"]
+      : authType === "oauth-1a"
+        ? ["apiKey", "apiSecret", "accessToken", "accessTokenSecret"]
+        : authType === "bearer"
+          ? ["token"]
+          : authType === "api-key"
+            ? ["apiKey"]
+            : ["secret"];
+  return names.map((secretName) => ({ envName: "", secretName, value: "" }));
+}
 
-const emptyConnection: ConnectionDraft = {
-  provider: "",
-  label: "",
-  authType: "bearer",
-  secretName: "apiKey",
-  secretValue: "",
-};
+function secretPlaceholder(secretName: string) {
+  return `SERVICE_${secretName
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .toUpperCase()}`;
+}
+
+const credentialTypes = [
+  ["api-key", "API key"],
+  ["bearer", "Bearer token"],
+  ["basic", "Username and password"],
+  ["key-pair", "Key pair"],
+  ["oauth-1a", "OAuth 1.0a"],
+  ["custom", "Custom fields"],
+] as const;
+
+function emptyCredentialDraft(): CredentialDraft {
+  return {
+    label: "",
+    authType: "api-key",
+    secrets: secretTemplate("api-key"),
+    configuration: [],
+  };
+}
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "Never";
@@ -150,129 +134,113 @@ function formatDate(value: string | null | undefined) {
   }).format(date);
 }
 
+function statusVariant(status: string) {
+  if (["healthy", "leased", "succeeded", "allowed"].includes(status)) return "secondary" as const;
+  if (["failed", "denied", "unhealthy"].includes(status)) return "destructive" as const;
+  return "outline" as const;
+}
+
+function statusLabel(status: string) {
+  if (status === "healthy") return "Verified";
+  if (status === "leased") return "Used";
+  if (status === "untested") return "Not used";
+  if (status === "unhealthy") return "Failed";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function auditSubject(value: string) {
+  if (value.startsWith("credential:")) return value.slice("credential:".length);
+  if (value.startsWith("toolset:")) return value.slice("toolset:".length);
+  return value;
+}
+
 async function adminRequest(path: string, init: RequestInit = {}) {
   const response = await fetch(path, {
     ...init,
     headers: { "content-type": "application/json", ...init.headers },
   });
-  const body = (await response.json().catch(() => ({}))) as Record<
-    string,
-    unknown
-  >;
+  const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok || body.ok === false) {
-    throw new Error(
-      typeof body.error === "string" ? body.error : "Gateway request failed",
-    );
+    throw new Error(typeof body.error === "string" ? body.error : "Gateway request failed");
   }
   return body;
 }
 
-function statusVariant(status: string) {
-  if (status === "healthy" || status === "leased" || status === "succeeded" || status === "allowed")
-    return "secondary" as const;
-  if (status === "failed" || status === "denied" || status === "unhealthy")
-    return "destructive" as const;
-  return "outline" as const;
+function secretFieldsForCredential(credential: GatewayCredential): SecretField[] {
+  const secretNames = Array.from(new Set([
+    ...credential.secretNames,
+    ...Object.values(credential.envBindings),
+  ]));
+  return secretNames.map((secretName) => ({
+    secretName,
+    envName: Object.entries(credential.envBindings).find(([, value]) => value === secretName)?.[0]
+      ?? (/^[A-Z_][A-Z0-9_]*$/.test(secretName) ? secretName : ""),
+    value: "",
+  }));
 }
 
-function connectionStatusLabel(status: string) {
-  if (status === "healthy") return "Verified";
-  if (status === "leased") return "Lease used";
-  if (status === "untested") return "Not verified";
-  if (status === "unhealthy") return "Failed";
-  if (status === "revoked") return "Revoked";
-  return status;
-}
-
-function auditSubjectLabel(value: string) {
-  return value.startsWith("toolset:") ? value.slice("toolset:".length) : value;
+function configurationRecord(fields: ConfigurationField[]) {
+  return Object.fromEntries(
+    fields
+      .map((field) => [field.name.trim(), field.value] as const)
+      .filter(([name]) => name.length > 0),
+  );
 }
 
 export function GatewaySettings() {
-  const searchParams = useSearchParams();
   const [overview, setOverview] = useState<GatewayOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [connectionDialog, setConnectionDialog] = useState(false);
-  const [connectionDraft, setConnectionDraft] = useState(emptyConnection);
-  const [replaceConnection, setReplaceConnection] =
-    useState<GatewayConnection | null>(null);
-  const [replacementValue, setReplacementValue] = useState("");
-  const [replacementEmail, setReplacementEmail] = useState("");
-  const [replacementPassword, setReplacementPassword] = useState("");
-  const [credentialBatchDialog, setCredentialBatchDialog] = useState(false);
-  const [credentialBatch, setCredentialBatch] = useState<
-    Record<string, PendingCredentialDraft>
-  >({});
-  const [envImportDialog, setEnvImportDialog] = useState(false);
-  const [envImportText, setEnvImportText] = useState("");
-  const [envImportSelectedNames, setEnvImportSelectedNames] = useState<string[]>([]);
-  const [revokeConnection, setRevokeConnection] =
-    useState<GatewayConnection | null>(null);
-  const [focusedConnectionId, setFocusedConnectionId] = useState<string | null>(null);
-  const handledCredentialTarget = useRef("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [draft, setDraft] = useState<CredentialDraft>(emptyCredentialDraft);
+  const [editing, setEditing] = useState<GatewayCredential | null>(null);
+  const [editSecrets, setEditSecrets] = useState<SecretField[]>([]);
+  const [editConfiguration, setEditConfiguration] = useState<ConfigurationField[]>([]);
+  const [revoking, setRevoking] = useState<GatewayCredential | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [selectedImportNames, setSelectedImportNames] = useState<string[]>([]);
+  const handledCredentialLink = useRef(false);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const payload = (await adminRequest("/admin/gateway")) as {
-        gateway?: GatewayOverview;
-      };
+      const payload = (await adminRequest("/admin/gateway")) as { gateway?: GatewayOverview };
       setOverview(payload.gateway ?? null);
     } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Could not load Gateway",
-      );
+      setError(loadError instanceof Error ? loadError.message : "Could not load Gateway");
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
-  const activeConnections = useMemo(
-    () =>
-      (overview?.connections ?? []).filter(
-        (connection) => connection.status !== "revoked",
-      ),
+  const credentials = useMemo(
+    () => (overview?.connections ?? [])
+      .filter((credential) => credential.status !== "revoked")
+      .map((credential) => ({
+        ...credential,
+        key: credential.key || credential.provider || credential.id,
+        configuration: credential.configuration ?? {},
+        envBindings: credential.envBindings ?? {},
+        toolsetKeys: credential.toolsetKeys ?? [],
+        secretNames: credential.secretNames ?? [],
+      })),
     [overview?.connections],
   );
-  const incompleteConnections = useMemo(
-    () => activeConnections.filter((connection) => connection.secretNames.length === 0),
-    [activeConnections],
-  );
-  const parsedEnvImport = useMemo(() => parseEnvText(envImportText), [envImportText]);
-  const envImportableNames = useMemo(
-    () => gatewayImportableEnvNames(parsedEnvImport),
-    [parsedEnvImport],
-  );
-  const selectedEnvImportNames = envImportSelectedNames.filter((name) => envImportableNames.includes(name));
-  const protectedEnvImportNames = protectedGatewayEnvNames(parsedEnvImport);
-  const skippedEnvImportCount = envImportableNames.length - selectedEnvImportNames.length;
-
-  const requestedConnectionId = searchParams.get("connection")?.trim() || "";
-  const requestedConnectionAction = searchParams.get("action")?.trim() || "";
-  const requestedSecretName = searchParams.get("secretName")?.trim() || "";
+  const parsedImport = useMemo(() => parseEnvText(importText), [importText]);
+  const importableNames = useMemo(() => gatewayImportableEnvNames(parsedImport), [parsedImport]);
+  const selectedNames = selectedImportNames.filter((name) => importableNames.includes(name));
+  const protectedNames = protectedGatewayEnvNames(parsedImport);
 
   useEffect(() => {
-    if (!requestedConnectionId || !overview?.connections?.length) return;
-    const connection = overview.connections.find((item) => item.id === requestedConnectionId);
-    if (!connection) return;
-    setFocusedConnectionId(connection.id);
-    requestAnimationFrame(() => {
-      document.getElementById(`gateway-connection-${connection.id}`)?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-    });
-    const targetKey = `${connection.id}:${requestedConnectionAction}:${requestedSecretName}`;
-    if (requestedConnectionAction === "credential" && handledCredentialTarget.current !== targetKey) {
-      handledCredentialTarget.current = targetKey;
-      setReplaceConnection(connection);
-    }
-  }, [overview?.connections, requestedConnectionAction, requestedConnectionId, requestedSecretName]);
+    if (handledCredentialLink.current || !credentials.length) return;
+    const connectionId = new URLSearchParams(window.location.search).get("connection");
+    if (!connectionId) return;
+    const credential = credentials.find((entry) => entry.id === connectionId);
+    if (!credential) return;
+    handledCredentialLink.current = true;
+    openEdit(credential);
+  }, [credentials]);
 
   function mutate(action: () => Promise<void>) {
     setError(null);
@@ -281,94 +249,63 @@ export function GatewaySettings() {
         await action();
         await load();
       } catch (mutationError) {
-        setError(
-          mutationError instanceof Error
-            ? mutationError.message
-            : "Gateway update failed",
-        );
+        setError(mutationError instanceof Error ? mutationError.message : "Gateway update failed");
       }
     });
   }
 
-  function createConnection() {
+  function createCredential() {
     mutate(async () => {
+      const credentials = Object.fromEntries(draft.secrets.map((field) => [field.secretName, field.value]));
+      const envBindings = Object.fromEntries(draft.secrets.map((field) => [field.envName, field.secretName]));
+      const configuration = configurationRecord(draft.configuration);
       await adminRequest("/admin/gateway/connections", {
         method: "POST",
         body: JSON.stringify({
-          provider: connectionDraft.provider.trim(),
-          label: connectionDraft.label.trim(),
-          authType: connectionDraft.authType,
-          credentials: {
-            [connectionDraft.secretName.trim()]: connectionDraft.secretValue,
-          },
+          provider: "custom",
+          label: draft.label.trim(),
+          authType: draft.authType,
+          credentials,
+          envBindings,
+          configuration,
         }),
       });
-      setConnectionDialog(false);
-      setConnectionDraft(emptyConnection);
+      setCreateOpen(false);
+      setDraft(emptyCredentialDraft());
     });
   }
 
-  function replaceCredentials() {
-    if (!replaceConnection) return;
+  function openEdit(credential: GatewayCredential) {
+    setEditing(credential);
+    setEditSecrets(secretFieldsForCredential(credential));
+    setEditConfiguration(Object.entries(credential.configuration).map(([name, value]) => ({ name, value })));
+  }
+
+  function updateCredential() {
+    if (!editing) return;
     mutate(async () => {
-      const payloadLogin = replaceConnection.authType === "payload-login";
-      const secretName = replaceConnection.id === requestedConnectionId && requestedSecretName
-        ? requestedSecretName
-        : replaceConnection.secretNames[0] || "apiKey";
-      await adminRequest(
-        `/admin/gateway/connections/${encodeURIComponent(replaceConnection.id)}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            credentials: payloadLogin
-              ? { email: replacementEmail, password: replacementPassword }
-              : { [secretName]: replacementValue },
-          }),
-        },
-      );
-      setReplaceConnection(null);
-      setReplacementValue("");
-      setReplacementEmail("");
-      setReplacementPassword("");
+      const credentials = Object.fromEntries(editSecrets.map((field) => [field.secretName, field.value]));
+      const envBindings = Object.fromEntries(editSecrets.map((field) => [field.envName, field.secretName]));
+      const configuration = configurationRecord(editConfiguration);
+      await adminRequest(`/admin/gateway/connections/${encodeURIComponent(editing.id)}`, {
+        method: "PUT",
+        body: JSON.stringify({ credentials }),
+      });
+      await adminRequest(`/admin/gateway/connections/${encodeURIComponent(editing.id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ configuration, envBindings }),
+      });
+      setEditing(null);
+      setEditSecrets([]);
+      setEditConfiguration([]);
     });
   }
 
-  function openCredentialBatch() {
-    setCredentialBatch(
-      Object.fromEntries(
-        incompleteConnections.map((connection) => [
-          connection.id,
-          {
-            secretName: connection.secretNames[0] || "apiKey",
-            value: "",
-            email: "",
-            password: "",
-          },
-        ]),
-      ),
-    );
-    setCredentialBatchDialog(true);
-  }
-
-  function completeCredentialBatch() {
+  function revokeCredential() {
+    if (!revoking) return;
     mutate(async () => {
-      await adminRequest("/admin/gateway/connections/credentials/batch", {
-        method: "POST",
-        body: JSON.stringify({
-          entries: incompleteConnections.map((connection) => {
-            const draft = credentialBatch[connection.id];
-            return {
-              connectionId: connection.id,
-              credentials:
-                connection.authType === "payload-login"
-                  ? { email: draft.email, password: draft.password }
-                  : { [draft.secretName.trim()]: draft.value },
-            };
-          }),
-        }),
-      });
-      setCredentialBatch({});
-      setCredentialBatchDialog(false);
+      await adminRequest(`/admin/gateway/connections/${encodeURIComponent(revoking.id)}`, { method: "DELETE" });
+      setRevoking(null);
     });
   }
 
@@ -377,802 +314,197 @@ export function GatewaySettings() {
       await adminRequest("/admin/gateway/credentials/import", {
         method: "POST",
         body: JSON.stringify({
-          credentials: Object.fromEntries(
-            selectedEnvImportNames.map((name) => [name, parsedEnvImport[name]]),
-          ),
+          credentials: Object.fromEntries(selectedNames.map((name) => [name, parsedImport[name]])),
         }),
       });
-      setEnvImportText("");
-      setEnvImportSelectedNames([]);
-      setEnvImportDialog(false);
+      setImportOpen(false);
+      setImportText("");
+      setSelectedImportNames([]);
     });
   }
 
-  const credentialBatchComplete = incompleteConnections.every((connection) => {
-    const draft = credentialBatch[connection.id];
-    if (!draft) return false;
-    return connection.authType === "payload-login"
-      ? Boolean(draft.email.trim() && draft.password)
-      : Boolean(draft.secretName.trim() && draft.value);
-  });
-
-  function confirmRevokeConnection() {
-    if (!revokeConnection) return;
-    mutate(async () => {
-      await adminRequest(
-        `/admin/gateway/connections/${encodeURIComponent(revokeConnection.id)}`,
-        { method: "DELETE" },
-      );
-      setRevokeConnection(null);
-    });
-  }
-
-  function toggleToolset(toolset: GatewayToolset, enabled: boolean) {
-    mutate(async () => {
-      await adminRequest(
-        `/admin/gateway/toolsets/${encodeURIComponent(toolset.key)}`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ enabled }),
-        },
-      );
-    });
-  }
+  const draftValid = Boolean(
+    draft.label.trim()
+    && draft.secrets.length
+    && draft.secrets.every((field) => field.envName.trim() && field.secretName.trim() && field.value),
+  );
+  const editValid = Boolean(
+    editing
+    && editSecrets.length
+    && editSecrets.every((field) => field.envName.trim() && field.secretName.trim() && field.value),
+  );
 
   if (!overview && !error) {
-    return (
-      <div className="h-32 animate-pulse border border-border/60 bg-muted/20" />
-    );
+    return <div className="h-32 animate-pulse border border-border/60 bg-muted/20" />;
   }
 
   return (
     <div className="grid gap-6">
       {error ? (
-        <div className="border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
+        <div className="border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</div>
       ) : null}
 
       <section className="border-y border-border/60 py-4">
         <p className="text-sm text-muted-foreground">
-          Store credentials securely here. In Prism Console, use{" "}
-          <code className="font-mono text-foreground">prism-gateway-author</code> to
-          configure one or more connected services for a connection.
+          Store secrets and reusable service configuration here. Prism Console can prepare credential
+          entries and job assignments, but secret values are entered only on this page.
         </p>
       </section>
 
       <section className="grid gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <h4 className="flex items-center gap-2 font-medium">
-            <Activity className="h-4 w-4" />
-            Status
-          </h4>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h4 className="flex items-center gap-2 font-medium"><KeyRound className="h-4 w-4" />Credentials</h4>
           <div className="flex items-center gap-2">
             <Badge variant={overview?.reachable ? "secondary" : "destructive"}>
-              {overview?.reachable
-                ? "Online"
-                : overview?.enabled
-                  ? "Unavailable"
-                  : "Disabled"}
+              {overview?.reachable ? "Online" : overview?.enabled ? "Unavailable" : "Disabled"}
             </Badge>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void load()}
-              disabled={isPending}
-              title="Refresh Gateway"
-            >
+            <Button type="button" variant="outline" size="icon" onClick={() => void load()} disabled={isPending} title="Refresh credentials">
               <RefreshCw className="h-4 w-4" />
-              Refresh
+            </Button>
+            <Button size="sm" onClick={() => setCreateOpen(true)} disabled={!overview?.reachable}>
+              <Plus className="h-4 w-4" />Add credential
             </Button>
           </div>
         </div>
-        <div className="grid border border-border/70 sm:grid-cols-4">
-          {[
-            ["Stored credentials", overview?.credentials?.length ?? 0],
-            ["Connections", overview?.health?.catalog?.connections ?? 0],
-            ["Connected services", overview?.health?.catalog?.toolsets ?? 0],
-            ["Audit events", overview?.health?.catalog?.auditEvents ?? 0],
-          ].map(([label, value]) => (
-            <div
-              key={String(label)}
-              className="border-b border-border/70 p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"
-            >
-              <p className="text-xs font-medium uppercase text-muted-foreground">
-                {label}
-              </p>
-              <p className="mt-1 text-2xl font-semibold">{value}</p>
-            </div>
-          ))}
-        </div>
-      </section>
 
-      <section className="grid gap-3 border-t border-border/60 pt-5">
-        <div className="flex items-center justify-between gap-3">
-          <h4 className="flex items-center gap-2 font-medium">
-            <KeyRound className="h-4 w-4" />
-            Stored credentials
-          </h4>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setEnvImportDialog(true)}
-            disabled={!overview?.reachable}
-          >
-            <Upload />
-            Import environment
-          </Button>
-        </div>
         <div className="overflow-x-auto border border-border/70">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Credential</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Updated</TableHead>
-              </TableRow>
-            </TableHeader>
+            <TableHeader><TableRow>
+              <TableHead>Credential</TableHead><TableHead>Type</TableHead><TableHead>Variables</TableHead>
+              <TableHead>Used by</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow></TableHeader>
             <TableBody>
-              {(overview?.credentials ?? []).map((credential) => (
+              {credentials.map((credential) => (
                 <TableRow key={credential.id}>
-                  <TableCell className="font-mono text-xs">{credential.name}</TableCell>
-                  <TableCell>{credential.source === "environment-import" ? "Environment import" : credential.source}</TableCell>
-                  <TableCell>{formatDate(credential.updatedAt)}</TableCell>
+                  <TableCell><div className="font-medium">{credential.label}</div><div className="font-mono text-xs text-muted-foreground">{credential.key}</div></TableCell>
+                  <TableCell>{credentialTypes.find(([value]) => value === credential.authType)?.[1] ?? credential.authType}</TableCell>
+                  <TableCell><div className="max-w-[360px] font-mono text-xs text-muted-foreground">{[...Object.keys(credential.envBindings), ...Object.keys(credential.configuration)].join(", ") || "None"}</div></TableCell>
+                  <TableCell>{credential.toolsetKeys.length ? credential.toolsetKeys.join(", ") : "Admin contexts"}</TableCell>
+                  <TableCell>{formatDate(credential.lastUsedAt)}</TableCell>
+                  <TableCell><Badge variant={statusVariant(credential.status)}>{statusLabel(credential.status)}</Badge></TableCell>
+                  <TableCell><div className="flex justify-end gap-2">
+                    <Button size="icon" variant="outline" title="Replace credential" onClick={() => openEdit(credential)}><KeyRound className="h-4 w-4" /></Button>
+                    <Button size="icon" variant="outline" title="Revoke credential" onClick={() => setRevoking(credential)}><Trash2 className="h-4 w-4" /></Button>
+                  </div></TableCell>
                 </TableRow>
               ))}
-              {!overview?.credentials?.length ? (
-                <TableRow>
-                  <TableCell colSpan={3} className="h-20 text-center text-muted-foreground">
-                    No stored credentials.
-                  </TableCell>
-                </TableRow>
-              ) : null}
+              {!credentials.length ? <TableRow><TableCell colSpan={7} className="h-24 text-center text-muted-foreground">No credentials stored.</TableCell></TableRow> : null}
             </TableBody>
           </Table>
         </div>
       </section>
 
-      <section className="grid gap-3 border-t border-border/60 pt-5">
-        <div className="flex items-center justify-between gap-3">
-          <h4 className="flex items-center gap-2 font-medium">
-            <Link2 className="h-4 w-4" />
-            Connections
-          </h4>
-          <div className="flex items-center gap-2">
-            {incompleteConnections.length ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={openCredentialBatch}
-                disabled={!overview?.reachable}
-              >
-                <KeyRound />
-                Complete setup ({incompleteConnections.length})
-              </Button>
-            ) : null}
-            <Button
-              size="sm"
-              onClick={() => setConnectionDialog(true)}
-              disabled={!overview?.reachable}
-            >
-              <Plus />
-              Add connection
-            </Button>
+      <details className="group border-t border-border/60 pt-5">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-medium">
+          <span className="flex items-center gap-2"><Activity className="h-4 w-4" />Advanced</span>
+          <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="mt-5 grid gap-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><p className="font-medium">Environment migration</p><p className="text-sm text-muted-foreground">Import existing variables into a migration pool, then use Prism Console to organize and bind them without exposing values in chat.</p></div>
+            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} disabled={!overview?.reachable}><Upload className="h-4 w-4" />Import environment</Button>
+          </div>
+          <div className="grid gap-3">
+            <p className="font-medium">Audit history</p>
+            <div className="max-h-[420px] overflow-auto border border-border/70">
+              <Table>
+                <TableHeader><TableRow><TableHead>Time</TableHead><TableHead>Credential or tool</TableHead><TableHead>Caller</TableHead><TableHead>Status</TableHead><TableHead>Decision</TableHead><TableHead>Latency</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {(overview?.auditEvents ?? []).map((event) => <TableRow key={event.id}>
+                    <TableCell>{formatDate(event.createdAt)}</TableCell><TableCell className="font-mono text-xs">{auditSubject(event.capabilityKey)}</TableCell>
+                    <TableCell>{event.authenticatedCallerId}</TableCell><TableCell><Badge variant={statusVariant(event.status)}>{event.status}</Badge></TableCell>
+                    <TableCell>{event.errorCode ?? event.policyDecision}</TableCell><TableCell>{event.latencyMs === null ? "-" : `${event.latencyMs} ms`}</TableCell>
+                  </TableRow>)}
+                  {!overview?.auditEvents?.length ? <TableRow><TableCell colSpan={6} className="h-20 text-center text-muted-foreground">No audit events.</TableCell></TableRow> : null}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         </div>
-        <div className="overflow-x-auto border border-border/70">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Connection</TableHead>
-                <TableHead>Provider</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Connected services</TableHead>
-                <TableHead>Last used</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(overview?.connections ?? []).map((connection) => (
-                <TableRow
-                  key={connection.id}
-                  id={`gateway-connection-${connection.id}`}
-                  className={focusedConnectionId === connection.id ? "bg-accent/40" : undefined}
-                >
-                  <TableCell>
-                    <div className="font-medium">{connection.label}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {connection.authType}
-                    </div>
-                  </TableCell>
-                  <TableCell>{connection.provider}</TableCell>
-                  <TableCell>
-                    <Badge variant={statusVariant(connection.status)}>
-                      {connectionStatusLabel(connection.status)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {connection.toolsetKeys?.length
-                      ? connection.toolsetKeys.join(", ")
-                      : "Not connected"}
-                  </TableCell>
-                  <TableCell>{formatDate(connection.lastUsedAt)}</TableCell>
-                  <TableCell>
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        title="Replace credential"
-                        disabled={connection.status === "revoked"}
-                        onClick={() => setReplaceConnection(connection)}
-                      >
-                        <KeyRound />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        title="Revoke connection"
-                        disabled={connection.status === "revoked"}
-                        onClick={() => setRevokeConnection(connection)}
-                      >
-                        <Trash2 />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!overview?.connections?.length ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="h-20 text-center text-muted-foreground"
-                  >
-                    No connections.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-        </div>
-      </section>
+      </details>
 
-      <section className="grid gap-3 border-t border-border/60 pt-5">
-        <h4 className="flex items-center gap-2 font-medium">
-          <Link2 className="h-4 w-4" />
-          Connected services
-        </h4>
-        <div className="overflow-x-auto border border-border/70">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Service</TableHead>
-                <TableHead>Connection</TableHead>
-                <TableHead>Protocol</TableHead>
-                <TableHead>Discovery</TableHead>
-                <TableHead>Enabled</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(overview?.toolsets ?? []).map((toolset) => {
-                const connection = overview?.connections?.find(
-                  (candidate) => candidate.id === toolset.connectionId,
-                );
-                return (
-                  <TableRow key={toolset.key}>
-                    <TableCell>
-                      <div className="font-medium">{toolset.key}</div>
-                      <div className="max-w-[360px] truncate text-xs text-muted-foreground">
-                        {toolset.description}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div>{connection?.label ?? toolset.connectionId}</div>
-                      {connection ? (
-                        <div className="text-xs text-muted-foreground">
-                          {connection.provider}
-                        </div>
-                      ) : null}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{toolset.protocol}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      {toolset.discoveryError ? (
-                        <Badge variant="destructive">Failed</Badge>
-                      ) : toolset.lastDiscoveredAt ? (
-                        formatDate(toolset.lastDiscoveredAt)
-                      ) : toolset.protocol === "openapi" || toolset.protocol === "mcp" ? (
-                        "Not run"
-                      ) : (
-                        "Not required"
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Switch
-                        checked={toolset.enabled}
-                        onCheckedChange={(enabled) => toggleToolset(toolset, enabled)}
-                        disabled={isPending || connection?.status === "revoked"}
-                        aria-label={`Toggle ${toolset.key}`}
-                      />
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {!overview?.toolsets?.length ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="h-20 text-center text-muted-foreground"
-                  >
-                    No connected services.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-        </div>
-      </section>
+      <CredentialDialog open={createOpen} onOpenChange={setCreateOpen} title="Add credential" description="Store encrypted secrets and non-secret instance configuration." draft={draft} onDraftChange={setDraft} onSubmit={createCredential} submitLabel="Add credential" valid={draftValid} pending={isPending} />
 
-      <section className="grid gap-3 border-t border-border/60 pt-5">
-        <h4 className="flex items-center gap-2 font-medium">
-          <Activity className="h-4 w-4" />
-          Recent audit
-        </h4>
-        <div className="overflow-x-auto border border-border/70">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Time</TableHead>
-                <TableHead>Service or action</TableHead>
-                <TableHead>Caller</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Decision</TableHead>
-                <TableHead>Latency</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(overview?.auditEvents ?? []).map((event) => (
-                <TableRow key={event.id}>
-                  <TableCell className="whitespace-nowrap">
-                    {formatDate(event.createdAt)}
-                  </TableCell>
-                  <TableCell>{auditSubjectLabel(event.capabilityKey)}</TableCell>
-                  <TableCell>{event.authenticatedCallerId}</TableCell>
-                  <TableCell>
-                    <Badge variant={statusVariant(event.status)}>
-                      {event.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {event.errorCode ?? event.policyDecision}
-                  </TableCell>
-                  <TableCell>
-                    {event.latencyMs === null ? "-" : `${event.latencyMs} ms`}
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!overview?.auditEvents?.length ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="h-20 text-center text-muted-foreground"
-                  >
-                    No audit events.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-        </div>
-      </section>
+      <CredentialDialog
+        open={Boolean(editing)}
+        onOpenChange={(open) => { if (!open) setEditing(null); }}
+        title={editing ? `Replace ${editing.label}` : "Replace credential"}
+        description="Enter all secret values when rotating a credential. Existing values are never displayed."
+        draft={{ label: editing?.label ?? "", authType: editing?.authType ?? "custom", secrets: editSecrets, configuration: editConfiguration }}
+        onDraftChange={(next) => { setEditSecrets(next.secrets); setEditConfiguration(next.configuration); }}
+        onSubmit={updateCredential}
+        submitLabel="Replace credential"
+        valid={editValid}
+        pending={isPending}
+        lockIdentity
+      />
 
-      <Dialog open={connectionDialog} onOpenChange={setConnectionDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add connection</DialogTitle>
-            <DialogDescription>
-              Store an encrypted provider credential.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Label</Label>
-              <Input
-                value={connectionDraft.label}
-                onChange={(event) =>
-                  setConnectionDraft((draft) => ({
-                    ...draft,
-                    label: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Provider</Label>
-              <Input
-                value={connectionDraft.provider}
-                onChange={(event) =>
-                  setConnectionDraft((draft) => ({
-                    ...draft,
-                    provider: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Authentication</Label>
-              <Select
-                value={connectionDraft.authType}
-                onValueChange={(value: "bearer" | "api-key") =>
-                  setConnectionDraft((draft) => ({ ...draft, authType: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bearer">Bearer token</SelectItem>
-                  <SelectItem value="api-key">API key header</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Secret name</Label>
-              <Input
-                value={connectionDraft.secretName}
-                onChange={(event) =>
-                  setConnectionDraft((draft) => ({
-                    ...draft,
-                    secretName: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Credential</Label>
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={connectionDraft.secretValue}
-                onChange={(event) =>
-                  setConnectionDraft((draft) => ({
-                    ...draft,
-                    secretValue: event.target.value,
-                  }))
-                }
-              />
-            </div>
+      <Dialog open={Boolean(revoking)} onOpenChange={(open) => { if (!open) setRevoking(null); }}>
+        <DialogContent><DialogHeader><DialogTitle>Revoke credential</DialogTitle><DialogDescription>This removes encrypted values for {revoking?.label}. Jobs using it will stop working.</DialogDescription></DialogHeader>
+          <DialogFooter><Button variant="outline" onClick={() => setRevoking(null)}>Cancel</Button><Button variant="destructive" onClick={revokeCredential} disabled={isPending}>Revoke</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Import environment</DialogTitle><DialogDescription>Migration utility for existing instance variables. Platform and Prism service secrets are ignored.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2"><div className="grid gap-2"><Label htmlFor="gateway-env-import">Environment variables</Label><Textarea id="gateway-env-import" className="min-h-52 font-mono text-xs" value={importText} onChange={(event) => { setImportText(event.target.value); setSelectedImportNames(gatewayImportableEnvNames(parseEnvText(event.target.value))); }} placeholder="SERVICE_API_KEY=..." /></div>
+            {importableNames.length ? <div className="max-h-44 overflow-auto border border-border/70 p-3">{importableNames.map((name) => <label key={name} className="flex items-center gap-2 py-1 text-sm"><Checkbox checked={selectedNames.includes(name)} onCheckedChange={(checked) => setSelectedImportNames((current) => checked ? [...new Set([...current, name])] : current.filter((item) => item !== name))} /><code>{name}</code></label>)}</div> : null}
+            {protectedNames.length ? <p className="text-xs text-muted-foreground">Ignored platform variables: {protectedNames.join(", ")}</p> : null}
           </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setConnectionDialog(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={createConnection}
-              disabled={
-                isPending ||
-                !connectionDraft.label.trim() ||
-                !connectionDraft.provider.trim() ||
-                !connectionDraft.secretName.trim() ||
-                !connectionDraft.secretValue
-              }
-            >
-              Add connection
-            </Button>
-          </DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setImportOpen(false)}>Cancel</Button><Button onClick={importEnvironment} disabled={isPending || !selectedNames.length}>Import selected</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <Dialog
-        open={envImportDialog}
-        onOpenChange={(open) => {
-          setEnvImportDialog(open);
-          if (!open) {
-            setEnvImportText("");
-            setEnvImportSelectedNames([]);
-          }
-        }}
-      >
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Import environment credentials</DialogTitle>
-            <DialogDescription>
-              Paste an environment block copied from the existing runtime. Credential-like
-              values are encrypted independently; connections and Railway variables are not changed.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label>Environment</Label>
-            <Textarea
-              className="min-h-48 font-mono text-xs"
-              value={envImportText}
-              onChange={(event) => {
-                const value = event.target.value;
-                const parsed = parseEnvText(value);
-                const wasEmpty = Object.keys(parsedEnvImport).length === 0;
-                const importableNames = gatewayImportableEnvNames(parsed);
-                setEnvImportText(value);
-                setEnvImportSelectedNames((current) => wasEmpty
-                  ? gatewayCredentialImportNames(parsed)
-                  : current.filter((name) => importableNames.includes(name)));
-              }}
-              placeholder="NAME=value"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-          {envImportText ? (
-            <div className="space-y-3">
-              <div className="overflow-x-auto border border-border/70">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Credential</TableHead>
-                      <TableHead>Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {envImportableNames.map((name) => (
-                      <TableRow key={name}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Checkbox
-                              checked={selectedEnvImportNames.includes(name)}
-                              onCheckedChange={(checked) => {
-                                setEnvImportSelectedNames((current) => checked === true
-                                  ? Array.from(new Set([...current, name]))
-                                  : current.filter((candidate) => candidate !== name));
-                              }}
-                              aria-label={`Import ${name}`}
-                            />
-                            <span className="font-mono text-xs">{name}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {selectedEnvImportNames.includes(name)
-                            ? (overview?.credentials ?? []).some((credential) => credential.name === name)
-                              ? "Replace stored value"
-                              : "Store encrypted value"
-                            : "Leave in runtime"}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {!envImportableNames.length ? (
-                      <TableRow>
-                        <TableCell colSpan={2} className="h-16 text-center text-muted-foreground">
-                          No importable variables found.
-                        </TableCell>
-                      </TableRow>
-                    ) : null}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <Badge variant="outline">Credentials selected: {selectedEnvImportNames.length}</Badge>
-                <Badge variant="outline">Not selected: {skippedEnvImportCount}</Badge>
-                <Badge variant="outline">
-                  Protected platform variables: {protectedEnvImportNames.length}
-                </Badge>
-              </div>
-              {protectedEnvImportNames.length ? (
-                <div className="text-sm text-muted-foreground">
-                  Not imported; these variables remain in the runtime: {protectedEnvImportNames.join(", ")}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEnvImportDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={importEnvironment}
-              disabled={isPending || !selectedEnvImportNames.length}
-            >
-              Import credentials
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(replaceConnection)}
-        onOpenChange={(open) => {
-          if (!open) setReplaceConnection(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Replace credential</DialogTitle>
-            <DialogDescription>{replaceConnection?.label}</DialogDescription>
-          </DialogHeader>
-          {replaceConnection?.authType === "payload-login" ? (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input
-                  type="email"
-                  autoComplete="username"
-                  value={replacementEmail}
-                  onChange={(event) => setReplacementEmail(event.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Password</Label>
-                <Input
-                  type="password"
-                  autoComplete="current-password"
-                  value={replacementPassword}
-                  onChange={(event) => setReplacementPassword(event.target.value)}
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label>New credential</Label>
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={replacementValue}
-                onChange={(event) => setReplacementValue(event.target.value)}
-              />
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setReplaceConnection(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={replaceCredentials}
-              disabled={isPending || (replaceConnection?.authType === "payload-login"
-                ? !replacementEmail || !replacementPassword
-                : !replacementValue)}
-            >
-              Replace
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={credentialBatchDialog}
-        onOpenChange={(open) => {
-          setCredentialBatchDialog(open);
-          if (!open) setCredentialBatch({});
-        }}
-      >
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Complete gateway setup</DialogTitle>
-            <DialogDescription>
-              Add credentials for pending connections.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="divide-y divide-border border-y border-border">
-            {incompleteConnections.map((connection) => {
-              const draft = credentialBatch[connection.id];
-              if (!draft) return null;
-              return (
-                <div key={connection.id} className="grid gap-3 py-4">
-                  <div>
-                    <div className="font-medium">{connection.label}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {connection.provider}
-                    </div>
-                  </div>
-                  {connection.authType === "payload-login" ? (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label>Email</Label>
-                        <Input
-                          type="email"
-                          autoComplete="username"
-                          value={draft.email}
-                          onChange={(event) =>
-                            setCredentialBatch((current) => ({
-                              ...current,
-                              [connection.id]: { ...draft, email: event.target.value },
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Password</Label>
-                        <Input
-                          type="password"
-                          autoComplete="current-password"
-                          value={draft.password}
-                          onChange={(event) =>
-                            setCredentialBatch((current) => ({
-                              ...current,
-                              [connection.id]: { ...draft, password: event.target.value },
-                            }))
-                          }
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
-                      <div className="space-y-2">
-                        <Label>Secret name</Label>
-                        <Input
-                          value={draft.secretName}
-                          onChange={(event) =>
-                            setCredentialBatch((current) => ({
-                              ...current,
-                              [connection.id]: { ...draft, secretName: event.target.value },
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Credential</Label>
-                        <Input
-                          type="password"
-                          autoComplete="new-password"
-                          value={draft.value}
-                          onChange={(event) =>
-                            setCredentialBatch((current) => ({
-                              ...current,
-                              [connection.id]: { ...draft, value: event.target.value },
-                            }))
-                          }
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCredentialBatchDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={completeCredentialBatch}
-              disabled={isPending || !credentialBatchComplete}
-            >
-              Save credentials
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={Boolean(revokeConnection)}
-        onOpenChange={(open) => {
-          if (!open) setRevokeConnection(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Revoke connection</DialogTitle>
-            <DialogDescription>{revokeConnection?.label}</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRevokeConnection(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={confirmRevokeConnection}
-              disabled={isPending}
-            >
-              <Trash2 />
-              Revoke
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
     </div>
   );
+}
+
+function CredentialDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  draft,
+  onDraftChange,
+  onSubmit,
+  submitLabel,
+  valid,
+  pending,
+  lockIdentity = false,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description: string;
+  draft: CredentialDraft;
+  onDraftChange: (draft: CredentialDraft) => void;
+  onSubmit: () => void;
+  submitLabel: string;
+  valid: boolean;
+  pending: boolean;
+  lockIdentity?: boolean;
+}) {
+  const updateSecret = (index: number, patch: Partial<SecretField>) => onDraftChange({ ...draft, secrets: draft.secrets.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) });
+  const updateConfiguration = (index: number, patch: Partial<ConfigurationField>) => onDraftChange({ ...draft, configuration: draft.configuration.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field) });
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>
+    <div className="grid max-h-[65vh] gap-5 overflow-y-auto py-2">
+      <div className="grid gap-4 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor={`${title}-label`}>Name</Label><Input id={`${title}-label`} value={draft.label} disabled={lockIdentity} onChange={(event) => onDraftChange({ ...draft, label: event.target.value })} placeholder="Analytics production" /></div>
+        <div className="grid gap-2"><Label>Type</Label><Select value={draft.authType} disabled={lockIdentity} onValueChange={(authType) => onDraftChange({
+          ...draft,
+          authType,
+          secrets: draft.secrets.every((field) => !field.envName && !field.value)
+            ? secretTemplate(authType)
+            : draft.secrets,
+        })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{credentialTypes.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div></div>
+
+      <div className="grid gap-3"><div className="flex items-center justify-between gap-3"><div><p className="font-medium">Secret variables</p><p className="text-xs text-muted-foreground">Injected only into assigned trusted jobs.</p></div><Button type="button" size="sm" variant="outline" onClick={() => onDraftChange({ ...draft, secrets: [...draft.secrets, { envName: "", secretName: `secret${draft.secrets.length + 1}`, value: "" }] })}><Plus className="h-4 w-4" />Add</Button></div>
+        {draft.secrets.map((field, index) => <div key={`${field.secretName}-${index}`} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><Input aria-label="Environment variable" value={field.envName} onChange={(event) => updateSecret(index, { envName: event.target.value.toUpperCase() })} placeholder={secretPlaceholder(field.secretName)} /><Input aria-label="Secret value" type="password" value={field.value} onChange={(event) => updateSecret(index, { value: event.target.value })} placeholder="Credential value" /><Button type="button" size="icon" variant="outline" title="Remove secret variable" disabled={draft.secrets.length === 1} onClick={() => onDraftChange({ ...draft, secrets: draft.secrets.filter((_, fieldIndex) => fieldIndex !== index) })}><Trash2 className="h-4 w-4" /></Button></div>)}
+      </div>
+
+      <div className="grid gap-3"><div className="flex items-center justify-between gap-3"><div><p className="font-medium">Configuration variables</p><p className="text-xs text-muted-foreground">Base URLs, site IDs, buckets, regions, and other non-secret values.</p></div><Button type="button" size="sm" variant="outline" onClick={() => onDraftChange({ ...draft, configuration: [...draft.configuration, { name: "", value: "" }] })}><Plus className="h-4 w-4" />Add</Button></div>
+        {draft.configuration.map((field, index) => <div key={`${field.name}-${index}`} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><Input aria-label="Configuration variable" value={field.name} onChange={(event) => updateConfiguration(index, { name: event.target.value.toUpperCase() })} placeholder="SERVICE_BASE_URL" /><Input aria-label="Configuration value" value={field.value} onChange={(event) => updateConfiguration(index, { value: event.target.value })} placeholder="https://service.example.org" /><Button type="button" size="icon" variant="outline" title="Remove configuration variable" onClick={() => onDraftChange({ ...draft, configuration: draft.configuration.filter((_, fieldIndex) => fieldIndex !== index) })}><Trash2 className="h-4 w-4" /></Button></div>)}
+      </div>
+    </div>
+    <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={onSubmit} disabled={pending || !valid}>{submitLabel}</Button></DialogFooter>
+  </DialogContent></Dialog>;
 }

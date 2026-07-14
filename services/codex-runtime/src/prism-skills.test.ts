@@ -26,6 +26,15 @@ metadata:
 `), ["portal.admin"]);
 });
 
+test("skill frontmatter accepts credential assignment metadata", () => {
+  assert.deepEqual(toolsetRequirementsFromSkillMarkdown(`---
+name: analytics-report
+metadata:
+  gateway-credentials: [plausible-production]
+---
+`), ["plausible-production"]);
+});
+
 test("invalid capability keys are ignored", () => {
   assert.deepEqual(capabilityRequirementsFromSkillMarkdown(`---
 name: unsafe

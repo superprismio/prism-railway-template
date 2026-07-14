@@ -1,4 +1,4 @@
-# Prism Credential And Toolset Gateway
+# Prism Credential Gateway
 
 Status: MVP implemented; retained as architecture and future direction
 
@@ -8,28 +8,34 @@ Post-MVP handoff: [Prism Gateway Post-MVP Handoff](./prism-gateway-post-mvp-hand
 
 Runtime boundary: [Prism Runtime Adapter Contract](../architecture/runtime-adapter-contract.md)
 
-## Decision
+## Current Decision
 
-Prism Gateway is primarily a credential-custody and authenticated tool-access
-service. It must not become a second implementation of every connected API,
-RBAC system, workflow approval model, or provider schema.
+Prism Gateway is primarily encrypted credential and instance-configuration
+custody for trusted Prism jobs. It must not become a second implementation of
+every connected API, RBAC system, workflow approval model, provider schema, or
+egress policy.
 
-The primary runtime abstraction is a credential-backed **toolset profile**:
+The primary user abstraction is a **credential bundle**:
 
 ```text
-portal.admin
-crm.admin
-github.main
-plausible.read
+key: plausible-production
+encrypted: PLAUSIBLE_API_KEY
+configuration:
+  PLAUSIBLE_BASE_URL=https://analytics.example.org
+  PLAUSIBLE_SITE_ID=example.org
 ```
 
-A profile binds an authenticated connection to an existing OpenAPI, MCP, or
-fixed-origin HTTP tool surface. The downstream service continues to own API
-semantics, validation, and RBAC.
+A trusted runtime or Task Runner job receives only the bundles assigned to that
+job as conventional environment variables. Existing skills, SDKs, scripts, and
+CLIs keep their normal provider contract and require no Prism-specific client.
+Full-access admin Console and source-adapter contexts discover active bundles
+automatically; deterministic tasks and workflows declare credential keys.
 
-Per-operation capabilities such as `crm.contact.read` remain supported as
-optional wrappers for unusually small or intentionally restricted integrations.
-They are not the default integration model.
+Legacy toolset aliases remain accepted during upgrade so existing workflows do
+not break. OpenAPI/MCP proxy profiles, per-operation capabilities, grants, and
+egress restrictions are advanced compatibility mechanisms, not the default
+model or normal Settings UX. Add them only for a concrete less-trusted caller
+boundary.
 
 ## Problem
 
@@ -54,18 +60,15 @@ runtimes without reducing what trusted agents can do.
 
 1. Authorized admins can add, replace, test, and revoke integration credentials
    through Prism without Railway access.
-2. Runtimes receive authenticated proxied access without provider credentials,
-   or job-scoped compatibility leases when an existing trusted CLI/SDK requires
-   conventional environment variables. Runtimes do not persist organization
-   credentials in Railway configuration.
-3. Broad integrations retain their existing OpenAPI or MCP surface instead of
-   being manually re-described in Gateway.
+2. Trusted runtimes receive job-scoped conventional environment variables and
+   do not persist organization credentials in Railway configuration.
+3. Skills, scripts, SDKs, OpenAPI documents, and MCP servers continue to define
+   provider behavior instead of being manually re-described in Gateway.
 4. Site and existing source-adapter policy decide which users, channels, roles,
-   workflows, and runtimes receive each toolset profile.
+   workflows, and runtimes receive credentials.
 5. Downstream applications remain authoritative for their own RBAC and request
    validation.
-6. Gateway records a redacted invocation trail sufficient to diagnose credential
-   use and integration failures.
+6. Gateway records a redacted lease trail sufficient to diagnose credential use.
 7. Codex Runtime becomes one replaceable runtime consumer rather than the owner
    of organization integrations.
 
@@ -80,49 +83,51 @@ runtimes without reducing what trusted agents can do.
 - Replace Site, Prism Memory, communication adapters, or source adapters.
 - Force every existing internal service call through Gateway.
 - Require Vault, Composio, Toolhouse, or agentgateway.
+- Build provider-specific presets into the core credential form.
+- Require generic or externally sourced skill repositories to adopt Prism
+  metadata.
 
 These may be explored later only after credential custody and broad toolset
 access prove useful in production.
 
 ## Core Model
 
-### Connection
+### Credential Bundle
 
-A connection stores one integration identity:
+A credential bundle stores one integration identity:
 
 ```text
 key: portal-main
-provider: portal
-origin: https://portal.example.org
 auth: payload-login
 encrypted secrets:
   email
   password
+configuration:
+  PORTAL_BASE_URL=https://portal.example.org
 ```
 
-Gateway owns encrypted credential storage, credential binding to a fixed
-provider destination, credential testing, rotation, revocation, and connection
-health.
+Gateway owns encrypted storage, non-secret instance configuration, rotation,
+revocation, job-scoped leasing, and redacted lease audit.
 
-The credential and destination origin cannot be overridden by runtime input.
-Within that origin, an assigned agent remains free to choose methods, paths,
-query parameters, request bodies, pagination strategies, and operation
-sequences. This prevents forwarding a credential to another host without
-turning Gateway into duplicated application RBAC or an operation allowlist.
+The assigned trusted agent remains free to use its normal skill, CLI, SDK, or
+API client. The provider remains authoritative for authorization and request
+validation. Base URLs and other non-secret configuration live beside the
+credential so they are not duplicated across skills.
 
-This boundary is **credential binding**:
+This boundary is **job-scoped environment custody**:
 
 ```text
-fixed credential + fixed origin
-flexible method + path + query + body
+encrypted at rest -> selected for job -> injected into child environment -> discarded
 ```
 
-The OpenAPI document is guidance, not an invocation allowlist. An agent may use
-the complete same-origin API surface available to the downstream identity,
-including an undocumented route when it has enough context to do so. The
-downstream service remains authoritative for authorization and validation.
+Gateway does not promise secrecy from the trusted job receiving a credential.
+Use a proxy or provider-issued scoped/short-lived identity when the execution
+host itself must not receive a provider value.
 
-### Toolset Profile
+### Legacy Toolset Profile
+
+This section documents the compatibility proxy retained for existing deployed
+instances. It is not required for normal credential authoring.
 
 A profile exposes an existing tool surface through a connection:
 
@@ -164,20 +169,20 @@ The downstream application enforces those distinctions.
 
 ### Assignment
 
-Site owns profile assignment. Existing source-adapter policy remains the first
+Site owns credential assignment. Existing source-adapter policy remains the first
 interactive access layer:
 
 ```text
-Discord read-only channel -> read-oriented profiles only
-Discord full channel      -> configured admin/full profiles
-Telegram target/user      -> profiles resolved by source policy
-Admin Console             -> enabled admin profiles
-Workflow/task             -> profiles explicitly required by instance config
+Discord read-only channel -> no organization credentials by default
+Discord full channel      -> active credential catalog
+Telegram target/user      -> credentials resolved by source policy
+Admin Console             -> active credential catalog
+Workflow/task             -> credential keys explicitly required by instance config
 ```
 
-Gateway receives a short-lived runtime session containing the resolved profile
-keys. It verifies only that the authenticated caller session was assigned the
-requested profile.
+Gateway receives the resolved credential keys from an authenticated trusted
+caller and returns a job-scoped environment bundle. Stronger signed assignment
+attestation is deferred until a second or less-trusted runtime requires it.
 
 Gateway does not duplicate Discord roles, Telegram policy, Site users, or
 workflow approvals.
@@ -185,23 +190,28 @@ workflow approvals.
 ### Skills
 
 Generic skills explain how to use a provider without depending on Prism
-Gateway metadata. Site policy supplies enabled toolsets to authorized
-interactive contexts. Instance-owned deterministic workflow skills may declare
-a profile dependency when execution must fail clearly if it is unavailable:
+Gateway metadata. Site policy supplies active credentials to full-access
+interactive contexts. Deterministic tasks and workflows declare instance-owned
+credential assignments:
 
-```yaml
-metadata:
-  gateway-toolsets:
-    - portal.admin
+```json
+{
+  "gatewayCredentials": ["portal-main"]
+}
 ```
 
-During migration, `metadata.gateway-capabilities` remains accepted for existing
-narrow wrappers. Runtimes resolve both forms into short-lived Gateway access.
+Instance-owned skills may use `metadata.gateway-credentials` when dependency
+inheritance is useful. Generic and externally sourced skills only document the
+environment variables they expect. During migration, `gatewayToolsets` and
+`metadata.gateway-capabilities` remain accepted for existing jobs.
 
 Skills do not contain provider credentials and do not become the canonical copy
 of an OpenAPI or MCP specification.
 
-## Invocation
+## Legacy Proxy Invocation
+
+The following proxy modes remain implemented for compatibility. Trusted jobs
+normally call providers directly with their leased environment bundle.
 
 ### OpenAPI
 
@@ -259,14 +269,15 @@ grow a parallel schema system.
 Gateway owns only:
 
 - encrypted credential custody
-- fixed connection destination
-- provider authentication/session establishment
 - caller service authentication
-- short-lived profile assignment verification
-- safe access to canonical OpenAPI/MCP descriptions and authenticated relay
+- job-scoped environment leasing
+- reusable non-secret instance configuration
 - secret redaction
-- connection health, replacement, and revocation
-- basic invocation audit
+- credential replacement and revocation
+- basic lease audit
+
+When an advanced proxy is explicitly configured, Gateway also owns that
+profile's fixed destination, authentication injection, and relay audit.
 
 Basic audit fields:
 
@@ -291,8 +302,8 @@ Gateway tokens, or unredacted secret-bearing responses.
 ### Site
 
 Site owns users, roles, source policy, runtime profiles, skills, workflows,
-tasks, hooks, requests, approvals, and admin UI. Site resolves which toolset
-profiles a job or interactive session receives.
+tasks, hooks, requests, approvals, and admin UI. Site resolves which credentials
+a job or interactive session receives.
 
 ### Downstream Services
 
@@ -315,16 +326,16 @@ destination resolution, event handling, or ingestion logic.
 
 The default operator experience is:
 
-1. Ask Prism chat to configure an integration.
-2. Chat creates non-secret connection and toolset configuration.
-3. Chat returns a Settings deep link.
-4. An admin enters the credential outside model context.
-5. Site asks Gateway to test authentication and discover OpenAPI/MCP tools.
-6. The admin assigns the profile to Console, source-policy groups, or runtime
-   profiles.
+1. Ask Prism chat to prepare a credential and its non-secret configuration, or
+   select **Add credential** in Settings.
+2. Chat returns a Settings deep link when it prepared the entry.
+3. An admin enters the secret outside model context.
+4. Admin Console and full-access source contexts discover it automatically.
+5. Deterministic tasks and workflows assign its stable key.
 
-Advanced fields such as protocol, spec URL, credential binding, and discovery state may
-be shown under an Advanced disclosure. Credentials are never accepted through
+Settings shows one Credentials table and generic forms. Audit and environment
+import live under Advanced. Legacy protocols, capabilities, grants, and egress
+controls are not part of the normal UI. Credentials are never accepted through
 chat or `/agent/*`.
 
 ## Storage
@@ -340,12 +351,10 @@ prism-gateway
 Core records:
 
 ```text
-connections
+credential_bundles
 encrypted_secrets
-toolset_profiles
-profile_assignments_or_grants
-discovery_cache
 audit_events
+legacy_toolset_capability_and_grant_records
 ```
 
 Railway retains only bootstrap secrets: the Gateway master encryption key and
@@ -354,8 +363,8 @@ caller service tokens.
 ## Compatibility With The Initial Prototype
 
 The initial prototype implemented per-operation capabilities, constrained HTTP
-and MCP calls, grants, audit events, and a warning-only usage ledger. Keep those
-paths working while the profile model is introduced.
+and MCP calls, grants, toolset profiles, and a warning-only usage ledger. Keep
+those paths working as aliases while credential bundles become the normal model.
 
 Existing keys remain narrow compatibility wrappers:
 
@@ -365,21 +374,21 @@ crm.contact.read
 arcade.*.read
 ```
 
-Do not expand this catalog to mirror broad APIs. Portal is the first profile-led
-integration and the proof that Gateway can preserve a large existing tool
-surface without schema duplication.
+Do not expand this catalog to mirror broad APIs. Existing profile keys are
+backfilled as credential aliases during normal startup.
 
 ## Portal Proof
 
-The decisive next profile is:
+The Portal credential key may remain:
 
 ```text
 portal.admin
 ```
 
 Use one dedicated Portal automation identity with administrator scope. Gateway
-owns its credential and authentication session. The runtime receives Portal's
-OpenAPI-derived tools and can use the full documented admin surface.
+owns its credential and base configuration. The trusted runtime receives the
+job-scoped environment expected by the existing Portal skill and can use the
+full admin surface without Gateway reproducing its schema.
 
 Success criteria:
 

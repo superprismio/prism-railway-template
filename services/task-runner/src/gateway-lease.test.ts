@@ -18,8 +18,31 @@ test("leases adapter credentials for a script job", async () => {
       return new Response(JSON.stringify({ ok: true, env: { SUBGRAPH_API_KEY: "secret" } }), { status: 200 });
     },
   });
-  assert.deepEqual(requestBody.toolsets, ["thegraph.read"]);
+  assert.deepEqual(requestBody.credentials, ["thegraph.read"]);
   assert.deepEqual(leased, { SUBGRAPH_API_KEY: "secret" });
+});
+
+test("falls back to the legacy toolset lease during rolling deployments", async () => {
+  const paths: string[] = [];
+  const leased = await leaseGatewayToolsets({
+    toolsets: ["storage.s3"],
+    context: {},
+    env: {
+      PRISM_GATEWAY_ENABLED: "true",
+      PRISM_GATEWAY_BASE_URL: "http://gateway.internal",
+      PRISM_GATEWAY_TOKEN: "task-runner-token",
+    },
+    fetchImpl: async (input) => {
+      paths.push(String(input));
+      if (paths.length === 1) return new Response("{}", { status: 404 });
+      return new Response(JSON.stringify({ ok: true, env: { AWS_ACCESS_KEY_ID: "access" } }), { status: 200 });
+    },
+  });
+  assert.deepEqual(paths, [
+    "http://gateway.internal/credential-bundles/lease",
+    "http://gateway.internal/toolsets/lease",
+  ]);
+  assert.deepEqual(leased, { AWS_ACCESS_KEY_ID: "access" });
 });
 
 test("fails closed when Gateway is not enabled", async () => {

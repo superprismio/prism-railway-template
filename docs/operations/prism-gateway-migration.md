@@ -12,6 +12,21 @@ the later Railway template update. The migration is additive until one
 integration has been proven through Gateway and deliberately removed from its
 old runtime environment.
 
+## Automatic Credential-Bundle Upgrade
+
+Gateway schema migration `006_credential_bundles` runs during normal service
+startup. It converts existing connections into credential bundles, preserves
+encrypted values, derives stable keys, copies legacy environment bindings and
+base/discovery configuration, and retains toolset aliases. Site, Codex Runtime,
+and Task Runner accept both the new credential keys and old toolset keys during
+rolling deployment.
+
+This model and UI upgrade requires no per-instance database command, console
+prompt, or content migration. Back up Gateway before deploying as usual, deploy
+the services, and verify the Credentials table and one existing job. Moving a
+credential that still lives only in Railway into Gateway remains an intentional
+one-time secret migration.
+
 ## Safety Rules
 
 - Confirm the linked Railway project and environment before every mutation.
@@ -121,13 +136,14 @@ integration credential or toolset.
 | `PRISM_GATEWAY_TOKEN` | `${{prism-gateway.GATEWAY_TASK_RUNNER_TOKEN}}` | service reference |
 
 Enable these variables when a `script-runner` task declares
-`agentConfig.gatewayToolsets`. Task Runner leases adapter-profile credentials
-for that execution and injects them only into the script child process. Tasks
-without assigned toolsets do not call Gateway. A declared toolset fails closed
+`agentConfig.gatewayCredentials`. Task Runner leases those credential bundles
+for that execution and injects them only into the script child process. Legacy
+`gatewayToolsets` assignments remain accepted. Tasks without assigned
+credentials do not call Gateway. A declared credential fails closed
 when Gateway is disabled, unavailable, or returns a protected environment name.
 
 Before removing an embedded task secret, update the script to read the leased
-environment variable, bind that variable in an adapter connected service, run
+environment variable, bind that variable in a credential bundle, run
 the task successfully, and then remove the secret from `inputConfig.params`.
 
 ### Other Services
@@ -152,14 +168,18 @@ The read-only inventory of `prism-stack` on 2026-07-10 found:
   transcription
 - no Plausible credential on the active production services
 
-New integrations should use a connection plus one or more connected services.
-The earlier narrow capability/grant model remains only for compatibility with
-already migrated wrappers; it is not the normal setup path.
+New integrations should use one credential bundle containing encrypted secret
+variables and reusable non-secret configuration. The earlier connected-service,
+capability, and grant models remain compatibility internals only.
 
 No variable values were read into this document. Run the preflight again before
 implementation because Railway state may change.
 
 ## Pilot Migration History
+
+This section records the prototype paths used during the 2026-07-10 pilot. It
+is historical evidence, not the current setup procedure. Normal deployments
+backfill these profiles as aliases to credential bundles.
 
 ### RaidGuild Arcade Read API
 
@@ -255,12 +275,10 @@ Recommended order:
 3. Test health, database migration, restart persistence, and caller-token
    separation directly.
 4. Point only Site at the working branch with Gateway disabled.
-5. Enable Site Gateway settings and add/test one instance connection and
-   connected service.
+5. Enable Site Gateway settings and add one test credential bundle.
 6. Point only Codex Runtime at the working branch with Gateway disabled.
-7. Assign one connected-service key to Codex Runtime.
-8. Invoke one discovered operation/tool and verify the result, trace ID, and
-   audit event.
+7. Assign one credential key to a test job.
+8. Run one provider operation and verify the result and lease audit event.
 9. Restart and redeploy Gateway, then repeat the invocation to prove encrypted
    connection persistence.
 10. Select one existing read-oriented integration for actual credential
@@ -279,13 +297,11 @@ The first pilot must demonstrate:
 - Request JSON cannot override authenticated caller identity.
 - Secret create responses never return plaintext.
 - Secret values are absent from logs, audit input/output summaries, and errors.
-- A valid assigned connected-service operation succeeds with a stable trace ID.
-- An unassigned profile creates a denial audit event and does not call the
-  provider.
+- A valid assigned credential is injected under the expected environment names.
+- An unassigned deterministic job does not receive the credential.
 - A Gateway restart preserves the encrypted connection and audit history.
 - Replacing or revoking the connection takes effect immediately.
-- Disabling Gateway restores the explicitly configured compatibility path.
-- A profile-assignment denial never falls through to direct provider access.
+- A missing or revoked credential fails the assigned job closed.
 
 ## Existing Credential Migration
 
@@ -293,36 +309,32 @@ Move credentials one at a time:
 
 1. Inventory the skills, workflows, tasks, hooks, and console use that depend on
    the credential. Do not infer this only from Railway variable names.
-2. Create a Gateway connection through Site Settings.
-3. Create and test a connected service backed by the connection's OpenAPI, MCP, or
-   fixed-origin HTTP surface without changing runtime behavior.
-4. Declare the profile once in each integration skill's `SKILL.md` frontmatter
-   under `metadata.gateway-toolsets`.
-5. Ensure workflow steps reference the skill through `agentConfig.skills` and
-   tasks request it through `instructionConfig.requestedSkills`. Do not copy the
-   profile list into every workflow, task, or hook.
-6. Do not add new `metadata.gateway-capabilities` or grants. Retain existing
-   entries only while a narrow compatibility wrapper still depends on them.
-7. Assign the corresponding connected-service key through Site/runtime/source policy.
-8. Deploy Site, Codex Runtime, and Task Runner with Gateway-requirement-aware Doctor
+2. Create a Gateway credential through Site Settings, or let chat prepare the
+   non-secret shell and follow its Settings deep link.
+3. Store base URLs, site IDs, buckets, and other reusable non-secret values in
+   the same credential bundle.
+4. Keep generic and source-backed skills unchanged; confirm they read the
+   conventional environment variables documented by the provider integration.
+5. Assign `agentConfig.gatewayCredentials` to each deterministic task or
+   workflow step that needs the bundle. Full-access admin Console and source
+   contexts discover active credentials automatically.
+6. Do not add new toolsets, capabilities, grants, or provider presets.
+7. Deploy Site, Codex Runtime, and Task Runner with Gateway-requirement-aware Doctor
    checks before changing any legacy environment variable.
-9. Run Prism Doctor. Repair missing skill references and missing or disabled
-   connected services before proceeding.
-10. Exercise console use plus every enabled workflow, task, and hook identified
+8. Run Prism Doctor. Repair missing skill references or credential assignments
+   before proceeding.
+9. Exercise console use plus every enabled workflow, task, and hook identified
     in the inventory. Compare normalized output with the old path.
-11. Confirm audit and latency records for each execution path.
-12. Disable direct fallback for that integration.
-13. Delete the old Railway variable from the runtime service, redeploy, and
+10. Confirm audit records for each execution path.
+11. Disable direct fallback for that integration.
+12. Delete the old Railway variable from the runtime service, redeploy, and
     repeat Doctor and the execution matrix.
-14. Document the migrated variable and tested callers in the instance's
+13. Document the migrated variable and tested callers in the instance's
     environment delta history.
 
-Multiple pending connections may be prepared before step 2. Site Settings then
-shows one **Complete setup** action that accepts all missing credentials in a
-single admin session. The batch request sends secret values directly from Site
-to Gateway, never through chat or an agent route. Validation and legacy variable
-removal remain per integration so one failed provider cannot invalidate the
-others silently.
+Multiple pending credentials may be prepared through chat. Each returned deep
+link opens the secret-entry dialog in Settings. Secret values pass directly from
+Site to Gateway, never through chat or an agent route.
 
 For an existing instance with many Codex Runtime variables, use **Import
 environment** in Gateway Settings. Paste the Railway `.env` export into the
@@ -333,19 +345,16 @@ and encryption material, Railway variables, runtime authentication, and backup
 variables are protected and remain in Railway. Non-secret configuration also
 remains in Railway.
 
-After import, create connections only when configuring a connected service.
-Bind a stored credential to the connection by name inside Gateway; the connection
+After import, create a credential shell with the required environment bindings.
+Bind a stored value to the credential by name inside Gateway; the credential
 resolves the current stored value at use time, so later credential replacement
 does not require rebinding. No plaintext passes through chat or an agent route.
 Do not remove a legacy runtime variable until
-its connection or compatibility adapter, skill migration, and post-removal
-smoke test pass.
+its credential assignment and post-removal smoke test pass.
 
-The connected-service declaration is a dependency, not a downstream permission model.
-Codex Runtime adds skill requirements to a short-lived Gateway session; Gateway
-verifies profile assignment, while the downstream identity enforces its native
-RBAC. This keeps skills and workflows portable without reproducing provider
-permissions in Gateway.
+The credential assignment is a dependency, not a downstream permission model.
+The downstream identity enforces its native RBAC. This keeps skills and
+workflows portable without reproducing provider permissions in Gateway.
 
 ### Instance Upgrade Checklist
 
@@ -355,17 +364,14 @@ introduced:
 - deploy the new Site and Codex Runtime while all legacy secrets remain present
 - deploy the updated Task Runner so Prism Doctor understands skill dependencies
 - run Doctor once before editing instance content and retain the report
-- add `metadata.gateway-toolsets` to custom and source-backed broad integration
-  skills
-- repair only true missing skill references or unavailable profiles/wrappers; do not
-  add duplicate toolset arrays to every workflow
+- add `agentConfig.gatewayCredentials` only to deterministic tasks and workflow
+  steps that require explicit assignment
+- do not modify generic or source-backed skill repositories solely for Prism
 - test direct console use, scheduled tasks, hooks, and representative workflows
 - remove one legacy credential at a time and rerun the same checks
 
-Older workflows do not require a manifest rewrite merely because they use a
-skill. Once the selected skill declares its connected-service requirements,
-Codex Runtime resolves them automatically. Existing direct capability entries
-remain valid only as compatibility wrappers.
+Existing `gatewayToolsets` and capability entries remain valid as compatibility
+aliases and need no content rewrite during the service upgrade.
 
 ## Operations Acceptance
 
@@ -373,10 +379,10 @@ Before removing the last direct credential for an instance:
 
 1. Call `POST /ops/backup`, retain the SQLite file and manifest, and verify the
    snapshot can be opened with `quick_check=ok` using the matching key version.
-2. Restart Gateway and confirm connection, connected-service, and audit state
+2. Restart Gateway and confirm credential and audit state
    persists.
 3. Verify `GET /health` reports no unavailable encryption versions.
-4. Exercise a representative proxied connected service and compatibility lease.
+4. Exercise a representative credential lease and provider operation.
 5. Record who owns snapshot retention and the matching deployment secrets.
 
 Run one key-rotation drill in a disposable or staging instance before rotating a
@@ -419,7 +425,7 @@ After the production pilot is stable:
 6. Generate a new Railway template revision.
 7. Deploy that revision into a clean test project.
 8. Complete Site bootstrap and Codex device authentication.
-9. Add an instance-specific connection and connected service through Settings,
+9. Add an instance-specific credential bundle through Settings,
    then run the Gateway smoke checks.
 10. Update the template variable reference and user-facing service docs.
 

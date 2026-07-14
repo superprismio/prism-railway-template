@@ -74,7 +74,7 @@ export function toolsetRequirementsFromSkillMarkdown(content: string) {
     const line = lines[index];
     const trimmed = line.trim();
     if (trimmed === '---') break;
-    const keyMatch = trimmed.match(/^(gateway-toolsets|gatewayToolsets):\s*(.*)$/);
+    const keyMatch = trimmed.match(/^(gateway-credentials|gatewayCredentials|gateway-toolsets|gatewayToolsets):\s*(.*)$/);
     if (keyMatch) {
       activeKey = true;
       const inline = keyMatch[2].trim();

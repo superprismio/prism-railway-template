@@ -863,12 +863,12 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     ...prismSkills.selectedSkills.flatMap((skill) => skill.requiredToolsets.map((key) => ({ key }))),
   ].map((toolset) => [toolset.key, toolset])).values());
   const lease = effectiveToolsets.length
-    ? await gatewayClient.leaseToolsets({
-        toolsets: effectiveToolsets.map((toolset) => toolset.key),
+    ? await gatewayClient.leaseCredentials({
+        credentials: effectiveToolsets.map((toolset) => toolset.key),
         context: input.gatewayContext || {},
       })
-    : { env: {}, leasedToolsets: [] };
-  const leasedKeys = new Set(lease.leasedToolsets);
+    : { env: {}, environmentOnlyAliases: [] };
+  const leasedKeys = new Set(lease.environmentOnlyAliases);
   const resolvedToolsets = effectiveToolsets.map((toolset) =>
     leasedKeys.has(toolset.key) ? { ...toolset, protocol: 'adapter' as const } : toolset,
   );

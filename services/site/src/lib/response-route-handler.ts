@@ -34,7 +34,11 @@ import {
 
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
-import { listEnabledGatewayToolsetsOrEmpty, listInteractiveGatewayCapabilitiesOrEmpty } from "@/lib/prism-gateway"
+import {
+  listEnabledGatewayCredentialsOrEmpty,
+  listEnabledGatewayToolsetsOrEmpty,
+  listInteractiveGatewayCapabilitiesOrEmpty,
+} from "@/lib/prism-gateway"
 import type { GatewayCapabilityDescriptor } from "@/lib/prism-gateway-policy"
 import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
@@ -346,11 +350,17 @@ function requestedCapabilitiesFromAgentConfig(config: unknown) {
 
 function requestedToolsetsFromAgentConfig(config: unknown) {
   if (!isRecord(config)) return []
-  const toolsets = Array.isArray(config.gatewayToolsets)
-    ? config.gatewayToolsets
-    : Array.isArray(config.toolsets)
-      ? config.toolsets
-      : []
+  const toolsets = Array.isArray(config.gatewayCredentials)
+    ? config.gatewayCredentials
+    : Array.isArray(config.gateway_credentials)
+      ? config.gateway_credentials
+      : Array.isArray(config.gatewayToolsets)
+        ? config.gatewayToolsets
+        : Array.isArray(config.gateway_toolsets)
+          ? config.gateway_toolsets
+          : Array.isArray(config.toolsets)
+            ? config.toolsets
+            : []
   return Array.from(new Set(toolsets
     .map((entry) => typeof entry === "string" ? entry.trim() : isRecord(entry) && typeof entry.key === "string" ? entry.key.trim() : "")
     .filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key))))
@@ -1050,7 +1060,10 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     ...workflowRequestedCapabilities,
     ...interactiveCapabilities,
   ].map((capability) => [capability.key, capability])).values())
-  const enabledToolsets = await listEnabledGatewayToolsetsOrEmpty()
+  const enabledToolsets = Array.from(new Map([
+    ...await listEnabledGatewayToolsetsOrEmpty(),
+    ...(actorType === "admin" ? await listEnabledGatewayCredentialsOrEmpty() : []),
+  ].map((entry) => [entry.key, entry])).values())
   const workflowRequestedToolsets = requestedToolsetsFromAgentConfig(workflowAgentConfig).map((key) =>
     enabledToolsets.find((toolset) => toolset.key === key) ?? { key },
   )

@@ -156,7 +156,7 @@ const settingsViewOptions: Array<{
     value: "gateway",
     label: "Gateway",
     title: "Gateway",
-    description: "Encrypted connections, connected services, and usage history.",
+    description: "Encrypted credentials, reusable configuration, and audit history.",
   },
   {
     value: "docs",

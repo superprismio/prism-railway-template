@@ -56,6 +56,16 @@ function isProtectedStoredCredentialName(name: string) {
     || /^CODEX_(?:ACCESS|REFRESH|ID)_TOKEN$/.test(name);
 }
 
+function isProtectedLeasedEnvironmentName(name: string) {
+  return new Set([
+    "PATH", "HOME", "SHELL", "PWD", "TMPDIR", "NODE_OPTIONS",
+    "INTERNAL_SERVICE_TOKEN", "APP_API_SERVICE_TOKEN", "TASK_RUNNER_TOKEN",
+    "COMMUNICATION_ADAPTER_TOKEN",
+  ]).has(name)
+    || ["PRISM_", "RAILWAY_", "GATEWAY_", "CODEX_", "NODE_", "NPM_", "npm_", "LD_", "DYLD_"]
+      .some((prefix) => name.startsWith(prefix));
+}
+
 function storedCredentialsField(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new GatewayStoreError("STORED_CREDENTIALS_INVALID", 400);
@@ -104,6 +114,45 @@ function envBindingsField(value: unknown) {
     bindings[envName] = secretName;
   }
   if (Object.keys(bindings).length > 20) throw new GatewayStoreError("TOOLSET_ENV_BINDINGS_INVALID", 400);
+  return bindings;
+}
+
+function credentialConfigurationField(value: unknown) {
+  if (value === undefined) return {};
+  const input = recordField(value, "CREDENTIAL_CONFIGURATION_INVALID");
+  const configuration: Record<string, string> = {};
+  for (const [envName, candidate] of Object.entries(input)) {
+    if (
+      !/^[A-Z_][A-Z0-9_]{0,119}$/.test(envName)
+      || isProtectedLeasedEnvironmentName(envName)
+      || typeof candidate !== "string"
+      || !candidate
+      || candidate.length > 10_000
+    ) throw new GatewayStoreError("CREDENTIAL_CONFIGURATION_INVALID", 400);
+    configuration[envName] = candidate;
+  }
+  if (Object.keys(configuration).length > 50) {
+    throw new GatewayStoreError("CREDENTIAL_CONFIGURATION_INVALID", 400);
+  }
+  return configuration;
+}
+
+function credentialEnvBindingsField(value: unknown) {
+  if (value === undefined) return {};
+  const input = recordField(value, "CREDENTIAL_ENV_BINDINGS_INVALID");
+  const bindings: Record<string, string> = {};
+  for (const [envName, secretName] of Object.entries(input)) {
+    if (
+      !/^[A-Z_][A-Z0-9_]{0,119}$/.test(envName)
+      || isProtectedLeasedEnvironmentName(envName)
+      || typeof secretName !== "string"
+      || !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(secretName)
+    ) throw new GatewayStoreError("CREDENTIAL_ENV_BINDINGS_INVALID", 400);
+    bindings[envName] = secretName;
+  }
+  if (Object.keys(bindings).length > 50) {
+    throw new GatewayStoreError("CREDENTIAL_ENV_BINDINGS_INVALID", 400);
+  }
   return bindings;
 }
 
@@ -395,6 +444,62 @@ export function createGatewayApp(dependencies: AppDependencies) {
     response.json({ ok: true, env, leasedToolsets: leased });
   });
 
+  app.post("/credential-bundles/lease", requireLeaseCaller, (request, response) => {
+    const body = request.body as Record<string, unknown>;
+    const keys = Array.isArray(body.credentials)
+      ? Array.from(new Set(body.credentials.filter(
+        (key): key is string => typeof key === "string" && /^[a-z][a-z0-9.-]{1,119}$/.test(key),
+      )))
+      : [];
+    if (!keys.length || keys.length > 20) {
+      throw new GatewayStoreError("CREDENTIAL_LEASE_KEYS_INVALID", 400);
+    }
+    const context = invocationContext(body.context);
+    const caller = response.locals.gatewayCaller as GatewayCaller;
+    const env: Record<string, string> = {};
+    const leased: string[] = [];
+    const environmentOnlyAliases: string[] = [];
+    for (const requestedKey of keys) {
+      const credential = dependencies.store.getCredential(requestedKey);
+      if (!credential || credential.status === "revoked") {
+        throw new GatewayStoreError("CREDENTIAL_LEASE_UNAVAILABLE", 409);
+      }
+      const secrets = dependencies.store.getConnectionCredentials(credential.id);
+      const bundle: Record<string, string> = { ...credential.configuration };
+      const legacyProfile = dependencies.store.getToolsetProfile(requestedKey);
+      const envBindings = {
+        ...credential.envBindings,
+        ...(legacyProfile?.envBindings ?? {}),
+      };
+      for (const [envName, secretName] of Object.entries(envBindings)) {
+        const value = secrets[secretName];
+        if (!value) throw new GatewayStoreError("CREDENTIAL_LEASE_SECRET_MISSING", 409);
+        bundle[envName] = value;
+      }
+      for (const [envName, value] of Object.entries(bundle)) {
+        if (isProtectedLeasedEnvironmentName(envName)) {
+          throw new GatewayStoreError("CREDENTIAL_LEASE_ENV_PROTECTED", 409);
+        }
+        if (env[envName] !== undefined && env[envName] !== value) {
+          throw new GatewayStoreError("CREDENTIAL_LEASE_ENV_COLLISION", 409);
+        }
+        env[envName] = value;
+      }
+      dependencies.store.recordInvocation({
+        traceId: randomUUID(), capabilityKey: `credential:${credential.key}`, caller, context,
+        status: "succeeded", policyDecision: "trusted_runtime_credential_lease",
+        latencyMs: 0, inputSummary: { action: "lease", requestedKey },
+        outputSummary: { envNames: Object.keys(bundle).sort() }, units: 1,
+      });
+      dependencies.store.markConnectionLeased(credential.id);
+      leased.push(credential.key);
+      if (legacyProfile?.protocol === "adapter") {
+        environmentOnlyAliases.push(requestedKey);
+      }
+    }
+    response.json({ ok: true, env, leasedCredentials: leased, environmentOnlyAliases });
+  });
+
   app.post("/capabilities", requireSiteCaller, (request, response) => {
     const body = request.body as Record<string, unknown>;
     if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
@@ -460,6 +565,10 @@ export function createGatewayApp(dependencies: AppDependencies) {
     response.json({ ok: true, connections: dependencies.store.listConnections() });
   });
 
+  app.get("/credential-bundles", requireSiteCaller, (_request, response) => {
+    response.json({ ok: true, credentials: dependencies.store.listConnections() });
+  });
+
   app.get("/credentials", requireSiteCaller, (_request, response) => {
     response.json({ ok: true, credentials: dependencies.store.listStoredCredentials() });
   });
@@ -476,12 +585,34 @@ export function createGatewayApp(dependencies: AppDependencies) {
   app.post("/connections", requireSiteCaller, (request, response) => {
     const body = request.body as Record<string, unknown>;
     const connection = dependencies.store.createConnection({
-      provider: textField(body.provider, "provider", 120),
+      key: typeof body.key === "string" ? body.key : undefined,
+      provider: typeof body.provider === "string" && body.provider.trim()
+        ? body.provider.trim().slice(0, 120)
+        : "custom",
       label: textField(body.label, "label", 200),
       authType: textField(body.authType, "auth_type", 80),
       credentials: credentialsField(body.credentials),
+      configuration: credentialConfigurationField(body.configuration),
+      ...(body.envBindings !== undefined
+        ? { envBindings: credentialEnvBindingsField(body.envBindings) }
+        : {}),
     });
     response.status(201).json({ ok: true, connection });
+  });
+
+  app.patch("/credential-bundles/:id", requireSiteCaller, (request, response) => {
+    const body = request.body as Record<string, unknown>;
+    const credential = dependencies.store.updateCredentialBundle(routeParam(request.params.id), {
+      ...(typeof body.label === "string" ? { label: body.label } : {}),
+      ...(typeof body.authType === "string" ? { authType: body.authType } : {}),
+      ...(body.configuration !== undefined
+        ? { configuration: credentialConfigurationField(body.configuration) }
+        : {}),
+      ...(body.envBindings !== undefined
+        ? { envBindings: credentialEnvBindingsField(body.envBindings) }
+        : {}),
+    });
+    response.json({ ok: true, credential });
   });
 
   app.put("/connections/:id/credentials", requireSiteCaller, (request, response) => {

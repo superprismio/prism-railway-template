@@ -77,15 +77,22 @@ export async function leaseGatewayToolsets(options: GatewayLeaseOptions): Promis
   const timeoutMs = options.timeoutMs ?? 30_000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await (options.fetchImpl ?? fetch)(`${baseUrl}/toolsets/lease`, {
+    const requestLease = (path: string, body: Record<string, unknown>) => (options.fetchImpl ?? fetch)(`${baseUrl}${path}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-gateway-token": token,
       },
-      body: JSON.stringify({ toolsets, context: options.context }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
+    let response = await requestLease("/credential-bundles/lease", {
+      credentials: toolsets,
+      context: options.context,
+    });
+    if (response.status === 404) {
+      response = await requestLease("/toolsets/lease", { toolsets, context: options.context });
+    }
     const text = await response.text();
     let payload: Record<string, unknown> = {};
     try {
