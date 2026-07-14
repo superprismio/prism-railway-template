@@ -75,6 +75,18 @@ function leasedEnvironment(value: unknown) {
   return env;
 }
 
+function gatewayResponseError(body: Record<string, unknown> | null, status: number) {
+  const error = body?.error && typeof body.error === 'object'
+    ? body.error as Record<string, unknown>
+    : {};
+  return new GatewayClientError(
+    typeof error.code === 'string' ? error.code : `PRISM_GATEWAY_HTTP_${status}`,
+    status,
+    error.retryable === true || status >= 500,
+    typeof body?.traceId === 'string' ? body.traceId : null,
+  );
+}
+
 export class PrismGatewayClient {
   constructor(
     private readonly config: GatewayClientConfig,
@@ -179,7 +191,7 @@ export class PrismGatewayClient {
     }
     const body = await response.json().catch(() => null) as Record<string, unknown> | null;
     if (!body || !response.ok || body.ok === false || !body.env || typeof body.env !== 'object' || Array.isArray(body.env)) {
-      throw new GatewayClientError(`PRISM_GATEWAY_HTTP_${response.status}`, response.status, response.status >= 500);
+      throw gatewayResponseError(body, response.status);
     }
     const env = leasedEnvironment(body.env);
     const leasedToolsets = Array.isArray(body.leasedToolsets)
@@ -211,7 +223,7 @@ export class PrismGatewayClient {
     }
     const body = await response.json().catch(() => null) as Record<string, unknown> | null;
     if (!body || !response.ok || body.ok === false || !body.env || typeof body.env !== 'object' || Array.isArray(body.env)) {
-      throw new GatewayClientError(`PRISM_GATEWAY_HTTP_${response.status}`, response.status, response.status >= 500);
+      throw gatewayResponseError(body, response.status);
     }
     const env = leasedEnvironment(body.env);
     const environmentOnlyAliases = Array.isArray(body.environmentOnlyAliases)

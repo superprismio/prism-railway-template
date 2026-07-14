@@ -8,7 +8,7 @@ import {
   writeCaptureRecapFiles,
   type CaptureManifest,
 } from "./capture-storage";
-import { codexRuntimeRequest, safeJsonParse } from "./capture-summary";
+import { runtimeRequest, safeJsonParse } from "./capture-summary";
 import { readRecordingSummaryProfile } from "./recording-summary-profile";
 
 export type CaptureRecap = {
@@ -224,7 +224,7 @@ export async function recapCaptureSession(input: {
     if (!currentManifest) throw new Error("CAPTURE_NOT_FOUND");
     const transcript = await readCurrentTranscript(input.captureId, currentManifest);
     const profile = readRecordingSummaryProfile();
-    const parsed = safeJsonParse(await codexRuntimeRequest({
+    const parsed = safeJsonParse(await runtimeRequest({
       captureId: input.captureId,
       sessionId: `capture-recap-${input.captureId}`,
       metadata: {

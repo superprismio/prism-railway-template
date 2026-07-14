@@ -450,7 +450,7 @@ function EnvironmentInstructions() {
                 <p>
                   Required for browser capture transcription. Required for
                   browser capture recap and summary generation when those
-                  actions call Codex Runtime.
+                  actions call the selected runtime profile.
                 </p>
                 <p>
                   External capture dispatch has a bounded timeout by default;
@@ -477,8 +477,9 @@ function EnvironmentInstructions() {
                   defaults to the built-in Prism hook when unset.
                 </p>
                 <p>
-                  Legacy summary and memory ingest flags should stay off unless
-                  intentionally migrating an older instance.
+                  Summary generation and summary Memory promotion default on.
+                  After summary generation succeeds, the hook sends summary
+                  content and transcript references instead of the full body.
                 </p>
               </div>
               {copyBlock([
@@ -491,11 +492,8 @@ function EnvironmentInstructions() {
                 'VOICE_TRANSCRIPTION_LANGUAGE="en"',
                 'VOICE_TRANSCRIPTION_RESPONSE_FORMAT="json"',
                 'VOICE_TRANSCRIPTION_TIMESTAMPS="true"',
-                'CODEX_RUNTIME_BASE_URL=""',
                 'DISCORD_RECORDING_COMPLETE_HOOK_KEY="recording-transcript-completed"',
                 'DISCORD_RECORDING_COMPLETE_HOOK_ENABLED="true"',
-                'DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED="false"',
-                'DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED="false"',
               ])}
             </div>
           </div>

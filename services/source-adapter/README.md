@@ -83,8 +83,8 @@ Discord-specific envs you can add later:
 - `DISCORD_RECORDING_COMPLETE_HOOK_KEY=recording-transcript-completed`
 - `DISCORD_RECORDING_COMPLETE_HOOK_ENABLED=<optional true|false override; defaults to true>`
 - `DISCORD_RECORDING_COMPLETE_HOOK_TIMEOUT_MS=10000`
-- `DISCORD_RECORDING_SUMMARY_ENABLED=true`
-- `DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=true`
+- `DISCORD_RECORDING_SUMMARY_ENABLED=<optional true|false; defaults to true>`
+- `DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=<optional true|false; defaults to true>`
 - `DISCORD_RECORDING_TRANSCRIPT_MEMORY_INGEST_ENABLED=<optional true|false; defaults to false>`
 - `DISCORD_RECORDING_COMPLETE_HOOK_INCLUDE_TRANSCRIPT_BODY=<optional true|false; defaults to false when a summary exists>`
 - `PRISM_ARTIFACT_PUBLIC_BASE_URL=<public Prism Memory artifact base URL, required for shareable summary/transcript artifact links>`
@@ -94,12 +94,10 @@ The Discord recorder fetches the editable Prism skill
 final meeting summaries and in-meeting recaps. If the skill cannot be fetched,
 the recorder falls back to its generic summary prompt.
 
-For backwards-compatible rollout, Discord-native summary generation and summary
-Memory ingest remain disabled unless `DISCORD_RECORDING_SUMMARY_ENABLED=true`
-and `DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=true` are set, or the older
-legacy summary/Memory env flags are already enabled.
-- `DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED=false`
-- `DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED=false`
+Discord-native summary generation and summary Memory ingest default to enabled.
+Set `DISCORD_RECORDING_SUMMARY_ENABLED=false` or
+`DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=false` only when an instance
+needs to opt out. Older `DISCORD_LEGACY_RECORDING_*` flags are ignored.
 - `N8N_WEBHOOK_URL=https://your-n8n.example/webhook/transcribe` only if the legacy webhook handoff is still needed
 
 Telegram-specific envs:
@@ -116,7 +114,7 @@ a Telegram group appears in `GET /destinations` after the bot receives an update
 from that group. Private DMs are ignored by default and are not listed unless
 `TELEGRAM_DM_ENABLED=true`.
 
-The same poller can bridge Telegram group chat into Codex Runtime. In groups and
+The same poller can bridge Telegram group chat into Prism's selected runtime. In groups and
 channels the bot responds to `/prism`, `/prism ...`, `/superprism`,
 `/superprism ...`, or messages that mention the bot username. Access is still
 controlled by the site-owned source adapter policy; Telegram defaults to `off`,
@@ -196,7 +194,9 @@ Chat bridge envs:
 - `PRISM_AGENT_SERVICE_TOKEN=...`
 - `APP_API_BASE_URL=https://your-api.up.railway.app`
 - `APP_API_SERVICE_TOKEN=...`
-- `CODEX_RUNTIME_BASE_URL=https://your-codex-runtime.up.railway.app`
+
+The adapter sends chat, summary, recap, and promoted-document model calls to
+`POST /agent/runtime/invoke`; Site resolves the current default runtime profile.
 
 Recording completion hooks reuse the agent API base/token when possible. The
 default hook key is `recording-transcript-completed`:
@@ -338,14 +338,14 @@ redacts common internal Railway URLs, service hosts, token-looking values, priva
 keys, and local filesystem paths.
 
 Readonly Discord and Telegram surfaces also apply a lightweight write-intent
-preflight before Codex Runtime is called. Obvious create/update/send/run requests
+preflight before the selected runtime is called. Obvious create/update/send/run requests
 get a short policy reply instead of model-generated instructions for working
 around the access level.
 
 Notes:
 
 - keep source-specific auth and traversal logic here, not inside `prism-memory`
-- keep shared model/runtime behavior in `codex-runtime`, not in this adapter
+- keep shared model/runtime behavior behind Site runtime profiles, not in this adapter
 - deploy multiple copies of this same directory if you want one adapter service per source
 - the current implementation uses `discord.js` plus the Discord HTTP API for Discord and Telegram Bot API polling for Telegram
 - the stored checkpoint is a sync cursor, not a per-channel high-water mark; the overlap window reduces the chance of missing late-arriving reads across runs
@@ -394,10 +394,10 @@ Current voice command status:
 - full transcript bodies are omitted from the hook payload when a summary exists;
   set `DISCORD_RECORDING_COMPLETE_HOOK_INCLUDE_TRANSCRIPT_BODY=true` only for
   debugging or explicit fallback workflows
-- summary generation and downstream memory/Portal/delivery planning should happen in the Prism workflow `recording-transcript-review-publish`
+- the adapter creates the reusable recording summary with the editable `recording-summary-profile` skill; the Prism workflow `recording-transcript-review-publish` reuses it for business synthesis and downstream Memory/Portal/delivery work
 - `/prism-recap` routes through the existing Prism/Codex chat path and asks for a recap from the latest relevant recording transcript workflow or artifacts for the Discord context
-- legacy adapter-owned summary generation can be re-enabled with `DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED=true`
-- legacy direct Prism Memory inbox writes can be re-enabled with `DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED=true`
+- adapter summary generation can be disabled with `DISCORD_RECORDING_SUMMARY_ENABLED=false`
+- direct summary promotion to Prism Memory can be disabled with `DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=false`
 - Discord should only receive a short completion notice; durable transcript/summary artifacts live in Prism workflow/request artifacts or the local recording volume
 - if `N8N_WEBHOOK_URL` is set, the adapter POSTs meeting metadata to `n8n` after stop
 - FLAC chunks can be fetched from `GET /recordings/:sessionId/:fileName` with `X-Adapter-Token`
@@ -410,18 +410,23 @@ Use the full local stack when testing voice summaries:
 npm run dev:all
 ```
 
-`scripts/dev-all.sh` starts `codex-runtime` on `3030` and passes `CODEX_RUNTIME_BASE_URL=http://127.0.0.1:3030` to `source-adapter`. Local Codex auth should use your normal `~/.codex` home unless you intentionally override `CODEX_HOME`.
+`scripts/dev-all.sh` starts the configured runtime adapter and Site. The source
+adapter calls Site, which routes summary and recap jobs through the selected
+runtime profile.
 
-For a smaller manual test, start `codex-runtime` first:
+For a smaller manual test, start Site and one configured runtime adapter first.
+For Codex Runtime:
 
 ```bash
 CODEX_HOME="$HOME/.codex" PORT=3030 npm run dev --workspace @prism-railway/codex-runtime
 ```
 
-Then start `source-adapter` with:
+Then start `source-adapter` with Site agent access:
 
 ```bash
-CODEX_RUNTIME_BASE_URL=http://127.0.0.1:3030 npm run dev --workspace @prism-railway/source-adapter
+PRISM_AGENT_API_BASE_URL=http://127.0.0.1:3100 \
+PRISM_AGENT_SERVICE_TOKEN=local-service-token \
+npm run dev --workspace @prism-railway/source-adapter
 ```
 
 Expected success signal after `/prism-record` and `/prism-stoprecord`:
@@ -457,7 +462,8 @@ The response includes `mappingCandidates` and groups Discord categories with chi
 - `VOICE_DAVE_ENCRYPTION=true`
 - `VOICE_RECORDING_WARNING_MINUTES=50`
 - `VOICE_RECORDING_MAX_MINUTES=60`
-- `CODEX_RUNTIME_BASE_URL=https://codex-runtime-production.up.railway.app` or a verified reachable private URL
+- `PRISM_AGENT_API_BASE_URL=https://your-site.up.railway.app` or the private Site URL
+- `PRISM_AGENT_SERVICE_TOKEN`
 - `PRISM_API_BASE=https://prism-memory-production.up.railway.app` or a verified reachable private URL
 - `PRISM_ARTIFACT_PUBLIC_BASE_URL=https://prism-memory-production.up.railway.app`
 - `PRISM_API_KEY`

@@ -51,6 +51,7 @@ Send service auth as:
 - `GET /agent/runtime-profiles/:key`
 - `PATCH /agent/runtime-profiles/:key`
 - `DELETE /agent/runtime-profiles/:key`
+- `POST /agent/runtime/invoke`
 - `GET /agent/hooks/:key`
 - `PATCH /agent/hooks/:key`
 - `DELETE /agent/hooks/:key`
@@ -84,6 +85,8 @@ For runtime adapter registration, default selection, or routing metadata, use
 `/agent/runtime-profiles`. Runtime profiles contain adapter URLs and features,
 not provider credentials. The first configured profile becomes the default;
 setting `isDefault: true` moves the default to that profile.
+Service adapters use `/agent/runtime/invoke` for utility model calls that should
+follow the Site-owned default runtime profile.
 
 For source adapter access rules, use `/agent/source-adapter-policy`. Policies are platform-scoped. Use `platforms.discord.targets` for Discord channels or threads, `platforms.discord.groups` for Discord role IDs, and `platforms.discord.users` for Discord user IDs. Use `platforms.telegram.targets` for Telegram chat/group/channel IDs and `platforms.telegram.users` for Telegram user IDs. Telegram DMs are disabled by default unless explicitly enabled in adapter env/config.
 

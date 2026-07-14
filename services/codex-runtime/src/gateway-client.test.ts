@@ -131,6 +131,32 @@ test('gateway client leases generic credential bundles for trusted runtime jobs'
   });
 });
 
+test('gateway client preserves credential lease validation failures', async () => {
+  const client = new PrismGatewayClient(
+    {
+      enabled: true,
+      baseUrl: 'http://gateway.internal',
+      token: 'runtime-token',
+      timeoutMs: 1000,
+    },
+    async () => new Response(JSON.stringify({
+      ok: false,
+      traceId: 'trace-lease-invalid',
+      error: {
+        code: 'CREDENTIAL_LEASE_KEYS_INVALID',
+        retryable: false,
+      },
+    }), { status: 400, headers: { 'content-type': 'application/json' } }),
+  );
+
+  await assert.rejects(
+    client.leaseCredentials({ credentials: ['one'] }),
+    (error: unknown) => error instanceof GatewayClientError
+      && error.code === 'CREDENTIAL_LEASE_KEYS_INVALID'
+      && error.traceId === 'trace-lease-invalid',
+  );
+});
+
 test('gateway client rejects leased runtime bootstrap variables', async () => {
   const client = new PrismGatewayClient(
     { enabled: true, baseUrl: 'http://prism-gateway.internal:3040', token: 'runtime-secret', timeoutMs: 5000 },
