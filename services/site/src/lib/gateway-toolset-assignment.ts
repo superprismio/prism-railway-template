@@ -1,6 +1,7 @@
-type GatewayToolset = {
+export type GatewayToolset = {
   key: string;
   protocol?: "openapi" | "mcp" | "http" | "adapter";
+  [key: string]: unknown;
 };
 
 type GatewayCredential = {
@@ -21,4 +22,10 @@ export function interactiveGatewayToolsets(
     ...toolsets,
     ...standaloneCredentials,
   ].map((entry) => [entry.key, entry])).values());
+}
+
+export function gatewayToolsetsForKeys(keys: string[], enabledToolsets: GatewayToolset[]) {
+  return Array.from(new Set(keys)).map((key) =>
+    enabledToolsets.find((toolset) => toolset.key === key) ?? { key },
+  );
 }

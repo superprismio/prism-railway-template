@@ -39,7 +39,7 @@ import {
   listEnabledGatewayToolsetsOrEmpty,
   listInteractiveGatewayCapabilitiesOrEmpty,
 } from "@/lib/prism-gateway"
-import { interactiveGatewayToolsets } from "@/lib/gateway-toolset-assignment"
+import { gatewayToolsetsForKeys, interactiveGatewayToolsets } from "@/lib/gateway-toolset-assignment"
 import type { GatewayCapabilityDescriptor } from "@/lib/prism-gateway-policy"
 import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
@@ -1066,8 +1066,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     enabledGatewayToolsets,
     actorType === "admin" ? await listEnabledGatewayCredentialsOrEmpty() : [],
   )
-  const workflowRequestedToolsets = requestedToolsetsFromAgentConfig(workflowAgentConfig).map((key) =>
-    enabledToolsets.find((toolset) => toolset.key === key) ?? { key },
+  const workflowRequestedToolsets = gatewayToolsetsForKeys(
+    requestedToolsetsFromAgentConfig(workflowAgentConfig),
+    enabledToolsets,
   )
   const interactiveToolsets = actorType === "admin" ? enabledToolsets : []
   const requestedToolsets = Array.from(new Map([
@@ -1485,6 +1486,10 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           ]),
         )
         const continuationCapabilities = requestedCapabilitiesFromAgentConfig(continuationAgentConfig)
+        const continuationToolsets = gatewayToolsetsForKeys(
+          requestedToolsetsFromAgentConfig(continuationAgentConfig),
+          enabledToolsets,
+        )
         const continuationPrompt = [
           `Automatically continue workflow step ${continuationStepKey} for request #${latestRequest.requestNumber}: ${latestRequest.title}.`,
           `Step label: ${typeof continuationStep.label === "string" ? continuationStep.label : continuationStepKey}.`,
@@ -1501,6 +1506,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             continuationId: continuationThreadId,
             recentHistory: continuationHistory,
             capabilities: continuationCapabilities,
+            toolsets: continuationToolsets,
             gatewayContext: {
               requestId: activeLinkedChangeRequestId,
               workflowRunId: latestRun.id,
