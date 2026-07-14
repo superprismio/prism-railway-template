@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { gatewayToolsetsForKeys, interactiveGatewayToolsets } from "./gateway-toolset-assignment";
+import {
+  gatewayToolsetsForKeys,
+  interactiveGatewayToolsets,
+  trustedRuntimeAdapterToolsets,
+} from "./gateway-toolset-assignment";
 
 test("interactive assignments do not duplicate credentials behind connected services", () => {
   assert.deepEqual(
@@ -34,4 +38,16 @@ test("workflow assignments preserve descriptors for initial and continued steps"
     enabled[0],
     { key: "missing.profile" },
   ]);
+});
+
+test("trusted workflow runtimes inherit only environment-backed adapter profiles", () => {
+  assert.deepEqual(
+    trustedRuntimeAdapterToolsets([
+      { key: "x.admin", protocol: "adapter" },
+      { key: "portal.admin", protocol: "http" },
+      { key: "crm.admin", protocol: "mcp" },
+      { key: "legacy.unknown" },
+    ]),
+    [{ key: "x.admin", protocol: "adapter" }],
+  );
 });

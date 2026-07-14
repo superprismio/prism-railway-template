@@ -29,3 +29,7 @@ export function gatewayToolsetsForKeys(keys: string[], enabledToolsets: GatewayT
     enabledToolsets.find((toolset) => toolset.key === key) ?? { key },
   );
 }
+
+export function trustedRuntimeAdapterToolsets(enabledToolsets: GatewayToolset[]) {
+  return enabledToolsets.filter((toolset) => toolset.protocol === "adapter");
+}

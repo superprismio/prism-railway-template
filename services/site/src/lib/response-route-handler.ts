@@ -39,7 +39,11 @@ import {
   listEnabledGatewayToolsetsOrEmpty,
   listInteractiveGatewayCapabilitiesOrEmpty,
 } from "@/lib/prism-gateway"
-import { gatewayToolsetsForKeys, interactiveGatewayToolsets } from "@/lib/gateway-toolset-assignment"
+import {
+  gatewayToolsetsForKeys,
+  interactiveGatewayToolsets,
+  trustedRuntimeAdapterToolsets,
+} from "@/lib/gateway-toolset-assignment"
 import type { GatewayCapabilityDescriptor } from "@/lib/prism-gateway-policy"
 import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
@@ -1062,10 +1066,14 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     ...interactiveCapabilities,
   ].map((capability) => [capability.key, capability])).values())
   const enabledGatewayToolsets = await listEnabledGatewayToolsetsOrEmpty()
+  const includeTrustedRuntimeCredentials = actorType === "admin" || Boolean(linkedWorkflow)
   const enabledToolsets = interactiveGatewayToolsets(
     enabledGatewayToolsets,
-    actorType === "admin" ? await listEnabledGatewayCredentialsOrEmpty() : [],
+    includeTrustedRuntimeCredentials ? await listEnabledGatewayCredentialsOrEmpty() : [],
   )
+  const trustedWorkflowAdapterToolsets = linkedWorkflow
+    ? trustedRuntimeAdapterToolsets(enabledToolsets)
+    : []
   const workflowRequestedToolsets = gatewayToolsetsForKeys(
     requestedToolsetsFromAgentConfig(workflowAgentConfig),
     enabledToolsets,
@@ -1073,6 +1081,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   const interactiveToolsets = actorType === "admin" ? enabledToolsets : []
   const requestedToolsets = Array.from(new Map([
     ...workflowRequestedToolsets,
+    ...trustedWorkflowAdapterToolsets,
     ...interactiveToolsets,
   ].map((toolset) => [toolset.key, toolset])).values())
 
@@ -1486,10 +1495,13 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           ]),
         )
         const continuationCapabilities = requestedCapabilitiesFromAgentConfig(continuationAgentConfig)
-        const continuationToolsets = gatewayToolsetsForKeys(
-          requestedToolsetsFromAgentConfig(continuationAgentConfig),
-          enabledToolsets,
-        )
+        const continuationToolsets = Array.from(new Map([
+          ...gatewayToolsetsForKeys(
+            requestedToolsetsFromAgentConfig(continuationAgentConfig),
+            enabledToolsets,
+          ),
+          ...trustedWorkflowAdapterToolsets,
+        ].map((toolset) => [toolset.key, toolset])).values())
         const continuationPrompt = [
           `Automatically continue workflow step ${continuationStepKey} for request #${latestRequest.requestNumber}: ${latestRequest.title}.`,
           `Step label: ${typeof continuationStep.label === "string" ? continuationStep.label : continuationStepKey}.`,
