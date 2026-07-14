@@ -569,13 +569,21 @@ export class GatewayStore {
           }
         }
 
-        update.run(
-          key,
-          JSON.stringify(configuration),
-          JSON.stringify(envBindings),
-          new Date().toISOString(),
-          row.id,
-        );
+        const configurationJson = JSON.stringify(configuration);
+        const envBindingsJson = JSON.stringify(envBindings);
+        if (
+          key !== row.credential_key
+          || configurationJson !== row.configuration_json
+          || envBindingsJson !== row.env_bindings_json
+        ) {
+          update.run(
+            key,
+            configurationJson,
+            envBindingsJson,
+            new Date().toISOString(),
+            row.id,
+          );
+        }
       }
     })();
   }

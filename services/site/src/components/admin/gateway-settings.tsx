@@ -179,6 +179,14 @@ function secretFieldsForCredential(credential: GatewayCredential): SecretField[]
   }));
 }
 
+function configurationRecord(fields: ConfigurationField[]) {
+  return Object.fromEntries(
+    fields
+      .map((field) => [field.name.trim(), field.value] as const)
+      .filter(([name]) => name.length > 0),
+  );
+}
+
 export function GatewaySettings() {
   const [overview, setOverview] = useState<GatewayOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -250,7 +258,7 @@ export function GatewaySettings() {
     mutate(async () => {
       const credentials = Object.fromEntries(draft.secrets.map((field) => [field.secretName, field.value]));
       const envBindings = Object.fromEntries(draft.secrets.map((field) => [field.envName, field.secretName]));
-      const configuration = Object.fromEntries(draft.configuration.map((field) => [field.name, field.value]));
+      const configuration = configurationRecord(draft.configuration);
       await adminRequest("/admin/gateway/connections", {
         method: "POST",
         body: JSON.stringify({
@@ -278,7 +286,7 @@ export function GatewaySettings() {
     mutate(async () => {
       const credentials = Object.fromEntries(editSecrets.map((field) => [field.secretName, field.value]));
       const envBindings = Object.fromEntries(editSecrets.map((field) => [field.envName, field.secretName]));
-      const configuration = Object.fromEntries(editConfiguration.map((field) => [field.name, field.value]));
+      const configuration = configurationRecord(editConfiguration);
       await adminRequest(`/admin/gateway/connections/${encodeURIComponent(editing.id)}`, {
         method: "PUT",
         body: JSON.stringify({ credentials }),

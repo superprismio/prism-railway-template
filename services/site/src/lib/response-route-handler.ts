@@ -356,9 +356,11 @@ function requestedToolsetsFromAgentConfig(config: unknown) {
       ? config.gateway_credentials
       : Array.isArray(config.gatewayToolsets)
         ? config.gatewayToolsets
-        : Array.isArray(config.toolsets)
-          ? config.toolsets
-      : []
+        : Array.isArray(config.gateway_toolsets)
+          ? config.gateway_toolsets
+          : Array.isArray(config.toolsets)
+            ? config.toolsets
+            : []
   return Array.from(new Set(toolsets
     .map((entry) => typeof entry === "string" ? entry.trim() : isRecord(entry) && typeof entry.key === "string" ? entry.key.trim() : "")
     .filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key))))

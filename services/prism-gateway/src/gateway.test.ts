@@ -623,6 +623,9 @@ test("gateway backup and master-key rotation preserve encrypted credentials", as
     authType: "api-key",
     credentials: { apiKey: "credential-survives-rotation" },
   });
+  const stableUpdatedAt = "2026-01-01T00:00:00.000Z";
+  db.prepare("UPDATE integration_connections SET updated_at = ? WHERE id = ?")
+    .run(stableUpdatedAt, connection.id);
   oldStore.upsertStoredCredentials({ OPS_API_KEY: "stored-credential-survives-rotation" });
   const boundConnection = oldStore.createConnection({
     provider: "stored-provider",
@@ -632,6 +635,7 @@ test("gateway backup and master-key rotation preserve encrypted credentials", as
   });
   oldStore.bindStoredCredentials(boundConnection.id, { apiKey: "OPS_API_KEY" });
   const mismatchedStore = new GatewayStore(db, { key: newKey, keyVersion: "ops-v1" });
+  assert.equal(mismatchedStore.getConnection(connection.id)?.updatedAt, stableUpdatedAt);
   assert.equal(mismatchedStore.encryptionStatus().unreadableSecretCount, 2);
   const config: GatewayConfig = {
     port: 0,
