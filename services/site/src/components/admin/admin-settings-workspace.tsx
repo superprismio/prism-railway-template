@@ -477,8 +477,9 @@ function EnvironmentInstructions() {
                   defaults to the built-in Prism hook when unset.
                 </p>
                 <p>
-                  Legacy summary and memory ingest flags should stay off unless
-                  intentionally migrating an older instance.
+                  Summary generation and summary Memory promotion default on.
+                  After summary generation succeeds, the hook sends summary
+                  content and transcript references instead of the full body.
                 </p>
               </div>
               {copyBlock([
@@ -494,8 +495,9 @@ function EnvironmentInstructions() {
                 'CODEX_RUNTIME_BASE_URL=""',
                 'DISCORD_RECORDING_COMPLETE_HOOK_KEY="recording-transcript-completed"',
                 'DISCORD_RECORDING_COMPLETE_HOOK_ENABLED="true"',
-                'DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED="false"',
-                'DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED="false"',
+                'DISCORD_RECORDING_SUMMARY_ENABLED="true"',
+                'DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED="true"',
+                'DISCORD_RECORDING_COMPLETE_HOOK_INCLUDE_TRANSCRIPT_BODY="false"',
               ])}
             </div>
           </div>

@@ -83,8 +83,8 @@ Discord-specific envs you can add later:
 - `DISCORD_RECORDING_COMPLETE_HOOK_KEY=recording-transcript-completed`
 - `DISCORD_RECORDING_COMPLETE_HOOK_ENABLED=<optional true|false override; defaults to true>`
 - `DISCORD_RECORDING_COMPLETE_HOOK_TIMEOUT_MS=10000`
-- `DISCORD_RECORDING_SUMMARY_ENABLED=true`
-- `DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=true`
+- `DISCORD_RECORDING_SUMMARY_ENABLED=<optional true|false; defaults to true>`
+- `DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=<optional true|false; defaults to true>`
 - `DISCORD_RECORDING_TRANSCRIPT_MEMORY_INGEST_ENABLED=<optional true|false; defaults to false>`
 - `DISCORD_RECORDING_COMPLETE_HOOK_INCLUDE_TRANSCRIPT_BODY=<optional true|false; defaults to false when a summary exists>`
 - `PRISM_ARTIFACT_PUBLIC_BASE_URL=<public Prism Memory artifact base URL, required for shareable summary/transcript artifact links>`
@@ -94,12 +94,10 @@ The Discord recorder fetches the editable Prism skill
 final meeting summaries and in-meeting recaps. If the skill cannot be fetched,
 the recorder falls back to its generic summary prompt.
 
-For backwards-compatible rollout, Discord-native summary generation and summary
-Memory ingest remain disabled unless `DISCORD_RECORDING_SUMMARY_ENABLED=true`
-and `DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=true` are set, or the older
-legacy summary/Memory env flags are already enabled.
-- `DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED=false`
-- `DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED=false`
+Discord-native summary generation and summary Memory ingest default to enabled.
+Set `DISCORD_RECORDING_SUMMARY_ENABLED=false` or
+`DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=false` only when an instance
+needs to opt out. Older `DISCORD_LEGACY_RECORDING_*` flags are ignored.
 - `N8N_WEBHOOK_URL=https://your-n8n.example/webhook/transcribe` only if the legacy webhook handoff is still needed
 
 Telegram-specific envs:
@@ -394,10 +392,10 @@ Current voice command status:
 - full transcript bodies are omitted from the hook payload when a summary exists;
   set `DISCORD_RECORDING_COMPLETE_HOOK_INCLUDE_TRANSCRIPT_BODY=true` only for
   debugging or explicit fallback workflows
-- summary generation and downstream memory/Portal/delivery planning should happen in the Prism workflow `recording-transcript-review-publish`
+- the adapter creates the reusable recording summary with the editable `recording-summary-profile` skill; the Prism workflow `recording-transcript-review-publish` reuses it for business synthesis and downstream Memory/Portal/delivery work
 - `/prism-recap` routes through the existing Prism/Codex chat path and asks for a recap from the latest relevant recording transcript workflow or artifacts for the Discord context
-- legacy adapter-owned summary generation can be re-enabled with `DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED=true`
-- legacy direct Prism Memory inbox writes can be re-enabled with `DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED=true`
+- adapter summary generation can be disabled with `DISCORD_RECORDING_SUMMARY_ENABLED=false`
+- direct summary promotion to Prism Memory can be disabled with `DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=false`
 - Discord should only receive a short completion notice; durable transcript/summary artifacts live in Prism workflow/request artifacts or the local recording volume
 - if `N8N_WEBHOOK_URL` is set, the adapter POSTs meeting metadata to `n8n` after stop
 - FLAC chunks can be fetched from `GET /recordings/:sessionId/:fileName` with `X-Adapter-Token`

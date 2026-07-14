@@ -2743,19 +2743,11 @@ export class DiscordVoiceManager {
   }
 
   private recordingSummaryEnabled(): boolean {
-    const explicit = process.env.DISCORD_RECORDING_SUMMARY_ENABLED;
-    if (explicit !== undefined) {
-      return parseBooleanEnv("DISCORD_RECORDING_SUMMARY_ENABLED", true);
-    }
-    return parseBooleanEnv("DISCORD_LEGACY_RECORDING_SUMMARY_ENABLED", false);
+    return parseBooleanEnv("DISCORD_RECORDING_SUMMARY_ENABLED", true);
   }
 
   private recordingSummaryMemoryIngestEnabled(): boolean {
-    const explicit = process.env.DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED;
-    if (explicit !== undefined) {
-      return parseBooleanEnv("DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED", true);
-    }
-    return parseBooleanEnv("DISCORD_LEGACY_RECORDING_MEMORY_INGEST_ENABLED", false);
+    return parseBooleanEnv("DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED", true);
   }
 
   private recordingTranscriptMemoryIngestEnabled(): boolean {

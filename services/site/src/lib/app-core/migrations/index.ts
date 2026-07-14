@@ -28,6 +28,7 @@ import { recordingTranscriptWorkflowMigration } from './028_recording_transcript
 import { recordingTranscriptPortalMemoryMigration } from './029_recording_transcript_portal_memory';
 import { recordingWorkflowDownstreamHandoffMigration } from './030_recording_workflow_downstream_handoff';
 import { runtimeProfilesMigration } from './031_runtime_profiles';
+import { compactRecordingHookPayloadMigration } from './032_compact_recording_hook_payload';
 
 export interface Migration {
   name: string;
@@ -65,4 +66,5 @@ export const migrations: Migration[] = [
   recordingTranscriptPortalMemoryMigration,
   recordingWorkflowDownstreamHandoffMigration,
   runtimeProfilesMigration,
+  compactRecordingHookPayloadMigration,
 ];
