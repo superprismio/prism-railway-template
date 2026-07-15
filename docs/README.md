@@ -40,6 +40,7 @@ Feature-specific behavior and UI notes:
 - [Discord Voice Plan](features/discord-voice-plan.md)
 - [Discord Access Policy Checklist](features/discord-access-policy-checklist.md)
 - [LLM Usage Tracking And Budgets](features/llm-usage-tracking-and-budgets.md)
+- [Knowledge Document Upload](features/knowledge-document-upload.md)
 - [Member Roles](features/member-roles.md)
 - [Memory Explorer UI](features/memory-explorer-ui.md)
 - [Prism Capability Gateway](features/prism-capability-gateway.md)
