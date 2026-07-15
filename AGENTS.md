@@ -65,6 +65,7 @@ Send service auth as:
 - `GET /agent/change-board/requests/by-number/:requestNumber/review`
 - `GET /agent/change-board/requests/by-number/:requestNumber/artifacts`
 - `POST /agent/change-board/requests/by-number/:requestNumber/workflow/continue`
+- `POST /agent/change-board/requests/by-number/:requestNumber/workflow/reconcile`
 - `GET /agent/change-board/requests/:id/artifacts/:artifactId/content`
 - `GET /agent/site-content/branding`
 - `PATCH /agent/site-content/branding`
@@ -131,6 +132,32 @@ curl -fsSL \
 ```
 
 The route records the continue event and uses the normal workflow runner so agent runs and auto-continue behavior stay in sync. Prefer simple `next` flow; do not send `workflowAction` for normal continues.
+
+For a request that is already completed or closed but whose terminal workflow
+run (completed or canceled) still projects a non-terminal current step, use the
+reconciliation route.
+It does not execute workflow steps or repeat side effects. Dry-run first, then
+apply the exact repair:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/by-number/43/workflow/reconcile" \
+  -d '{"dryRun":true}'
+
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/by-number/43/workflow/reconcile" \
+  -d '{"dryRun":false,"comment":"Reconcile verified terminal projection drift."}'
+```
+
+If the workflow has more than one terminal step, the dry-run returns candidates
+and the apply request must include `terminalStepKey`. Do not use this route for
+active requests or as a substitute for continue, cancel, or rerun.
 
 For Prism Memory Discord bucket repair after `discord.category_to_bucket` changes, use Prism Memory ops auth and start with a dry-run:
 
