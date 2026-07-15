@@ -83,6 +83,10 @@ export { transcribeCaptureChunk, transcribeCaptureSession } from './capture-tran
 export { summarizeCaptureSession, type CaptureSummary } from './capture-summary';
 export { recapCaptureSession, type CaptureRecap } from './capture-recap';
 export {
+  reconcileTerminalWorkflowProjection,
+  type TerminalWorkflowProjectionReconciliation,
+} from './workflow-reconciliation';
+export {
   deleteRuntimeProfile,
   ensureBootstrapRuntimeProfile,
   getRuntimeProfile,

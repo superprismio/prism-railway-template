@@ -42,6 +42,7 @@ Service-token callers use:
 - `GET /agent/change-board/requests/:id/executions`
 - `GET /agent/change-board/requests/by-number/:requestNumber/review`
 - `POST /agent/change-board/requests/by-number/:requestNumber/workflow/continue`
+- `POST /agent/change-board/requests/by-number/:requestNumber/workflow/reconcile`
 - `GET /agent/change-board/requests/:id/deploy-plan`
 
 The `executions` routes return `legacyExecutions` plus `agentRuns`. Mutation

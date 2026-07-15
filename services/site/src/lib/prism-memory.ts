@@ -275,6 +275,12 @@ function artifactKnowledgeViewSlug(artifact: PrismArtifactDetail) {
 }
 
 export function withAdminMemoryArtifactViewUrl(artifact: PrismArtifactDetail) {
+  if (artifact.category === "memory") {
+    return {
+      ...artifact,
+      view_url: `/admin/memory/artifacts/${encodeURIComponent(artifact.id)}`,
+    }
+  }
   const slug = artifactKnowledgeViewSlug(artifact)
   return {
     ...artifact,

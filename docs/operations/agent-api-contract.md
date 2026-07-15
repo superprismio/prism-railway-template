@@ -98,12 +98,22 @@ Requests and artifacts:
 - `PATCH /agent/change-board/requests/:id`
 - `GET /agent/change-board/requests/by-number/:requestNumber/review`
 - `GET /agent/change-board/requests/by-number/:requestNumber/artifacts`
+- `POST /agent/change-board/requests/by-number/:requestNumber/workflow/continue`
+- `POST /agent/change-board/requests/by-number/:requestNumber/workflow/reconcile`
 - `POST /agent/change-board/requests/:id/artifacts`
 - `GET /agent/change-board/requests/:id/artifacts/:artifactId/content`
 - `POST /agent/source-attachments/ingest`
 - `POST /agent/source-attachments/resolve-and-ingest`
 - `GET /agent/change-board/requests/:id/external-refs`
 - `POST /agent/change-board/requests/:id/external-refs`
+
+`workflow/reconcile` is a maintenance operation for completed or closed
+requests whose terminal workflow run (completed or canceled) still projects a
+non-terminal current step. It is dry-run by default, refuses active requests
+and agent runs, and does not execute workflow steps. Send `{"dryRun":false}` to
+apply a verified repair.
+When a workflow has multiple terminal steps, include the selected
+`terminalStepKey` returned by the dry-run candidates.
 
 Request creation accepts these `requestType` values:
 

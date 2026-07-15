@@ -151,6 +151,9 @@ class MemoryInboxRequest(BaseModel):
 
 class MemoryInboxResponse(BaseModel):
     path: str
+    artifact_id: str
+    status: str = "incoming"
+    artifact_url: str
 
 
 class ArtifactSummary(BaseModel):
