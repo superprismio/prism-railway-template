@@ -1402,7 +1402,7 @@ class FilesystemStorageBackend:
             "meta_path": str(meta_path.relative_to(self.root)),
         }
 
-    def write_memory_inbox_entry(self, payload: Dict[str, Any]) -> str:
+    def write_memory_inbox_entry(self, payload: Dict[str, Any]) -> Dict[str, str]:
         required = ["source", "ts", "type", "content"]
         missing = [field for field in required if not str(payload.get(field, "")).strip()]
         if missing:
@@ -1424,10 +1424,18 @@ class FilesystemStorageBackend:
         ts_value = str(payload["ts"]).strip()
         filename = f"{ts_value.replace(':', '').replace('-', '').replace('T', '_')}-{slug}-{uuid.uuid4().hex[:8]}.json"
         path = self.memory_inbox / filename
+        artifact_id = path.stem
+        artifact_url = f"/artifacts/{artifact_id}"
+        if not str(payload.get("url") or "").strip():
+            payload["url"] = artifact_url
         with path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
             handle.write("\n")
-        return str(path.relative_to(self.root))
+        return {
+            "path": str(path.relative_to(self.root)),
+            "artifact_id": artifact_id,
+            "artifact_url": artifact_url,
+        }
 
     @staticmethod
     def _safe_slug(value: str) -> str:

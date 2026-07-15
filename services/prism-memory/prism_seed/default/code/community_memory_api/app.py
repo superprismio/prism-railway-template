@@ -1317,8 +1317,12 @@ def create_app(settings: Settings) -> FastAPI:
             payload["participant_count"] = entry.participant_count
         if entry.metadata:
             payload["metadata"] = entry.metadata
-        path = storage.write_memory_inbox_entry(payload)
-        return schemas.MemoryInboxResponse(path=path)
+        stored = storage.write_memory_inbox_entry(payload)
+        return schemas.MemoryInboxResponse(
+            path=stored["path"],
+            artifact_id=stored["artifact_id"],
+            artifact_url=stored["artifact_url"],
+        )
 
     @app.post(
         "/ops/memory/run",
