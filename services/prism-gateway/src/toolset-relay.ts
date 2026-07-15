@@ -8,6 +8,17 @@ import { executeMcpJsonRpc } from "./mcp-tool-call.js";
 
 const TOOLSET_DOWNSTREAM_TIMEOUT_MS = 60_000;
 
+type ToolsetRequestOptions = {
+  deadlineAt?: number;
+  now?: () => number;
+};
+
+export function remainingToolsetTimeoutMs(deadlineAt: number, now = Date.now()) {
+  const remaining = Math.trunc(deadlineAt - now);
+  if (remaining <= 0) throw new GatewayDriverError("TOOLSET_DOWNSTREAM_TIMEOUT", true);
+  return remaining;
+}
+
 export type HttpToolsetRequest = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
@@ -135,7 +146,10 @@ export async function executeToolsetRequest(
   profile: GatewayToolsetProfile,
   credentials: Record<string, string>,
   request?: ToolsetRequest,
+  options: ToolsetRequestOptions = {},
 ): Promise<ToolsetRelayResult> {
+  const now = options.now ?? Date.now;
+  const deadlineAt = options.deadlineAt ?? now() + TOOLSET_DOWNSTREAM_TIMEOUT_MS;
   if (profile.protocol === "mcp") {
     const tool = request && "tool" in request && typeof request.tool === "string"
       ? request.tool.trim()
@@ -182,6 +196,7 @@ export async function executeToolsetRequest(
       { ...profile, auth: { type: "none" } },
       {},
       { method: "POST", path: profile.auth.loginPath, body: { email, password } },
+      { deadlineAt, now },
     );
     const loginBody = login.body && typeof login.body === "object" && !Array.isArray(login.body)
       ? login.body as Record<string, unknown>
@@ -193,12 +208,13 @@ export async function executeToolsetRequest(
   }
   const headers = requestHeaders(profile, credentials, body, contentType, payloadToken);
   const addresses = await publicAddresses(url.hostname);
+  const timeoutMs = remainingToolsetTimeoutMs(deadlineAt, now());
 
   return new Promise((resolve, reject) => {
     const downstream = https.request(url, {
       method,
       headers,
-      signal: AbortSignal.timeout(TOOLSET_DOWNSTREAM_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
       lookup: createPinnedLookup(addresses[0]) as NonNullable<https.RequestOptions["lookup"]>,
     }, (response) => {
       const status = response.statusCode || 0;

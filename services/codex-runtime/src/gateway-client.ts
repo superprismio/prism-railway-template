@@ -177,7 +177,12 @@ export class PrismGatewayClient {
     const body = await response.json().catch(() => null) as Record<string, unknown> | null;
     if (!body || !response.ok || body.ok === false) {
       const error = body?.error && typeof body.error === 'object' ? body.error as Record<string, unknown> : {};
-      throw new GatewayClientError(typeof error.code === 'string' ? error.code : `PRISM_GATEWAY_HTTP_${response.status}`, response.status, error.retryable === true);
+      throw new GatewayClientError(
+        typeof error.code === 'string' ? error.code : `PRISM_GATEWAY_HTTP_${response.status}`,
+        response.status,
+        error.retryable === true,
+        typeof body?.traceId === 'string' ? body.traceId : null,
+      );
     }
     return body;
   }

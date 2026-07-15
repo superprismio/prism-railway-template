@@ -71,6 +71,37 @@ test('gateway client preserves policy failures without exposing credentials', as
   );
 });
 
+test('gateway client preserves toolset failure trace IDs for audit correlation', async () => {
+  const client = new PrismGatewayClient(
+    {
+      enabled: true,
+      baseUrl: 'http://prism-gateway.internal:3040',
+      token: 'runtime-secret',
+      timeoutMs: 5000,
+    },
+    (async () => new Response(JSON.stringify({
+      ok: false,
+      traceId: 'trace-portal-timeout',
+      error: {
+        code: 'TOOLSET_DOWNSTREAM_TIMEOUT',
+        retryable: true,
+      },
+    }), { status: 502, headers: { 'content-type': 'application/json' } })) as typeof fetch,
+  );
+
+  await assert.rejects(
+    client.toolsetRequest({
+      toolset: 'portal.admin',
+      action: 'request',
+      request: { method: 'POST', path: '/api/wiki/topics/expansion/import' },
+    }),
+    (error: unknown) => error instanceof GatewayClientError
+      && error.code === 'TOOLSET_DOWNSTREAM_TIMEOUT'
+      && error.traceId === 'trace-portal-timeout'
+      && error.retryable,
+  );
+});
+
 test('gateway client distinguishes timeouts from unreachable Gateway failures', async () => {
   const config = {
     enabled: true,
@@ -131,6 +162,7 @@ test('gateway client allows a slow relay to complete before its configured deadl
 });
 
 test('gateway client aborts a relay that exceeds its configured deadline', async () => {
+  let attempts = 0;
   const client = new PrismGatewayClient(
     {
       enabled: true,
@@ -139,6 +171,7 @@ test('gateway client aborts a relay that exceeds its configured deadline', async
       timeoutMs: 10,
     },
     (async (_url, init) => new Promise<Response>((_resolve, reject) => {
+      attempts += 1;
       const signal = init?.signal;
       if (!signal) return reject(new Error('missing abort signal'));
       const keepAlive = setTimeout(() => reject(new Error('deadline signal did not abort')), 100);
@@ -161,6 +194,7 @@ test('gateway client aborts a relay that exceeds its configured deadline', async
       && error.code === 'PRISM_GATEWAY_TIMEOUT'
       && error.status === 504,
   );
+  assert.equal(attempts, 1);
 });
 
 test('gateway client is inert while the runtime flag is disabled', async () => {
