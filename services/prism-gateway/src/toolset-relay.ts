@@ -6,6 +6,8 @@ import { isForbiddenIpAddress } from "./network.js";
 import type { GatewayToolsetProfile } from "./types.js";
 import { executeMcpJsonRpc } from "./mcp-tool-call.js";
 
+const TOOLSET_DOWNSTREAM_TIMEOUT_MS = 60_000;
+
 export type HttpToolsetRequest = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
@@ -196,7 +198,7 @@ export async function executeToolsetRequest(
     const downstream = https.request(url, {
       method,
       headers,
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(TOOLSET_DOWNSTREAM_TIMEOUT_MS),
       lookup: createPinnedLookup(addresses[0]) as NonNullable<https.RequestOptions["lookup"]>,
     }, (response) => {
       const status = response.statusCode || 0;

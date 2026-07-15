@@ -71,6 +71,36 @@ test('gateway client preserves policy failures without exposing credentials', as
   );
 });
 
+test('gateway client distinguishes timeouts from unreachable Gateway failures', async () => {
+  const config = {
+    enabled: true,
+    baseUrl: 'http://prism-gateway.internal:3040',
+    token: 'runtime-secret',
+    timeoutMs: 5000,
+  };
+  const timeout = new PrismGatewayClient(config, (async () => {
+    throw new DOMException('request timed out', 'TimeoutError');
+  }) as typeof fetch);
+  const unreachable = new PrismGatewayClient(config, (async () => {
+    throw new TypeError('fetch failed');
+  }) as typeof fetch);
+
+  await assert.rejects(
+    timeout.toolsetRequest({ toolset: 'portal.admin', action: 'describe' }),
+    (error: unknown) => error instanceof GatewayClientError
+      && error.code === 'PRISM_GATEWAY_TIMEOUT'
+      && error.status === 504
+      && error.retryable,
+  );
+  await assert.rejects(
+    unreachable.toolsetRequest({ toolset: 'portal.admin', action: 'describe' }),
+    (error: unknown) => error instanceof GatewayClientError
+      && error.code === 'PRISM_GATEWAY_UNREACHABLE'
+      && error.status === 502
+      && error.retryable,
+  );
+});
+
 test('gateway client is inert while the runtime flag is disabled', async () => {
   const client = new PrismGatewayClient({
     enabled: false,

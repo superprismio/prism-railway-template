@@ -87,6 +87,16 @@ function gatewayResponseError(body: Record<string, unknown> | null, status: numb
   );
 }
 
+function gatewayTransportError(error: unknown) {
+  const name = error && typeof error === 'object' && 'name' in error
+    ? String((error as { name?: unknown }).name || '')
+    : '';
+  if (name === 'AbortError' || name === 'TimeoutError') {
+    return new GatewayClientError('PRISM_GATEWAY_TIMEOUT', 504, true);
+  }
+  return new GatewayClientError('PRISM_GATEWAY_UNREACHABLE', 502, true);
+}
+
 export class PrismGatewayClient {
   constructor(
     private readonly config: GatewayClientConfig,
@@ -124,8 +134,8 @@ export class PrismGatewayClient {
         }),
         signal: AbortSignal.timeout(this.config.timeoutMs),
       });
-    } catch {
-      throw new GatewayClientError('PRISM_GATEWAY_UNREACHABLE', 502, true);
+    } catch (error) {
+      throw gatewayTransportError(error);
     }
 
     const body = await response.json().catch(() => null) as GatewayInvokeResponse | null;
@@ -161,8 +171,8 @@ export class PrismGatewayClient {
           : { context: input.context ?? {} }),
         signal: AbortSignal.timeout(this.config.timeoutMs),
       });
-    } catch {
-      throw new GatewayClientError('PRISM_GATEWAY_UNREACHABLE', 502, true);
+    } catch (error) {
+      throw gatewayTransportError(error);
     }
     const body = await response.json().catch(() => null) as Record<string, unknown> | null;
     if (!body || !response.ok || body.ok === false) {
@@ -186,8 +196,8 @@ export class PrismGatewayClient {
         body: JSON.stringify({ toolsets: input.toolsets, context: input.context ?? {} }),
         signal: AbortSignal.timeout(this.config.timeoutMs),
       });
-    } catch {
-      throw new GatewayClientError('PRISM_GATEWAY_UNREACHABLE', 502, true);
+    } catch (error) {
+      throw gatewayTransportError(error);
     }
     const body = await response.json().catch(() => null) as Record<string, unknown> | null;
     if (!body || !response.ok || body.ok === false || !body.env || typeof body.env !== 'object' || Array.isArray(body.env)) {
@@ -214,8 +224,8 @@ export class PrismGatewayClient {
         body: JSON.stringify({ credentials: input.credentials, context: input.context ?? {} }),
         signal: AbortSignal.timeout(this.config.timeoutMs),
       });
-    } catch {
-      throw new GatewayClientError('PRISM_GATEWAY_UNREACHABLE', 502, true);
+    } catch (error) {
+      throw gatewayTransportError(error);
     }
     if (response.status === 404) {
       const legacy = await this.leaseToolsets({ toolsets: input.credentials, context: input.context });
