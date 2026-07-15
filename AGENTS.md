@@ -57,6 +57,7 @@ Send service auth as:
 - `DELETE /agent/hooks/:key`
 - `POST /agent/hooks/:key/trigger`
 - `POST /agent/responses`
+- `GET /agent/workflow-events`
 - `GET /agent/target-apps`
 - `GET /agent/change-board/requests/:id`
 - `POST /agent/change-board/requests`
@@ -189,6 +190,15 @@ those instance checks.
 ## Output Adapter Delivery
 
 Use the output adapter only when the user explicitly asks to send a message or a workflow/task needs immediate delivery.
+
+For scheduled workflow-event notifications, query `GET /agent/workflow-events`
+with operator-selected `eventType` filters and persist the returned cursor only
+after successful adapter handoff. The lightweight checkpoint pattern stores the
+cursor in the successful task run's output and reads it through
+`GET /agent/tasks/runs?taskKey=<key>`. A workflow may trigger the processor for
+lower latency, but the periodic task is the recovery path. Site does not own a
+notification outbox; future durable delivery, idempotency, and inbound
+correlation belong in the communication adapter.
 
 Expected env:
 

@@ -261,3 +261,31 @@ Chat-assisted task creation should resolve human labels like `#updates` once, th
 ```
 
 At scheduled run time, Codex returns the content. The task-runner delivers that content to each configured destination and records delivery results in the task run output snapshot.
+
+## Future Workflow Notification Delivery
+
+Workflow notification policy does not belong in the adapter. A scheduled Prism
+task or agent reads the Site workflow-event feed, decides which events are
+notification-worthy, resolves the intended recipient, and hands an outbound
+message to the adapter.
+
+The adapter should grow into the shared outbound and inbound communications
+boundary. Future message submission should support a caller-provided stable
+idempotency key and Prism correlation metadata such as `workflowEventId`,
+`requestId`, and a notification policy key. Durable acceptance at this boundary
+allows a workflow-event consumer to checkpoint after adapter handoff without
+requiring a notification outbox in Site.
+
+The adapter should eventually own transport selection, provider credentials,
+retry and rate-limit behavior, provider message ids, delivery outcomes, inbound
+normalization, and reply correlation. It should not decide which workflow events
+matter or which organizational policy selects a recipient.
+
+The current `/messages` route is synchronous and does not promise durable,
+idempotent acceptance. Until that contract is added, a workflow-event processor
+must treat delivery as at-least-once, verify each response, advance its cursor
+only through the last contiguous successful event, and tolerate possible
+duplicates after a crash.
+
+See [Workflow Event Notifications](../features/workflow-event-notifications.md)
+for the current cursor and task-processing design.

@@ -73,6 +73,23 @@ Hooks:
 - `DELETE /agent/hooks/:key`
 - `POST /agent/hooks/:key/trigger`
 
+Workflow event consumers:
+
+- `GET /agent/workflow-events`
+
+The workflow-event feed is chronological and cursorable. Consumers may filter
+with repeated or comma-separated `eventType` parameters, pass the returned
+opaque `cursor`, and set `limit` from 1 to 500. The feed is an event log, not a
+delivery queue: scheduled tasks or agents own their checkpoint and delivery
+policy, while the communication adapter owns transport behavior.
+
+Consumers should persist `nextCursor` only after successful processing. The
+lightweight task pattern stores it in the successful task run's
+`outputSnapshot.body` JSON and reads the previous successful run through
+`GET /agent/tasks/runs?taskKey=<key>`. A workflow may trigger the task for lower
+latency, but the periodic schedule is the recovery mechanism. Do not place the
+Site service token in task parameters or scripts.
+
 Requests and artifacts:
 
 - `GET /agent/target-apps`

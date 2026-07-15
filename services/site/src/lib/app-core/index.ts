@@ -103,6 +103,11 @@ export {
 export { promoteMeetingSummaryToMemory, publicMemoryArtifactUrl, type MeetingMemoryPromotionResult } from './meeting-memory';
 export { readRecordingSummaryProfile, recordingSummaryProfileSkillName } from './recording-summary-profile';
 export {
+  decodeWorkflowEventCursor,
+  encodeWorkflowEventCursor,
+  listWorkflowEventFeed,
+} from './workflow-event-feed';
+export {
   defaultCaptureDispatchSettings,
   normalizeCaptureDispatchSettings,
   readCaptureDispatchSettings,
