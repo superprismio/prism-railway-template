@@ -68,6 +68,13 @@ test("gateway stores credentials safely and enforces caller identity", async () 
         return { status: 200, contentType: "application/json", body: request ? { accounts: [] } : { tools: [] }, responseBytes: 20 };
       }
       assert.equal(profile.key, "portal.admin");
+      if (request && "path" in request && request.path === "/api/slow-import") {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return { status: 200, contentType: "application/json", body: { imported: 11 }, responseBytes: 15 };
+      }
+      if (request && "path" in request && request.path === "/api/timed-out-import") {
+        throw new GatewayDriverError("TOOLSET_DOWNSTREAM_TIMEOUT", true);
+      }
       if (request) assert.deepEqual(request, { method: "PATCH", path: "/api/posts/1", query: {}, body: { title: "Updated" } });
       return { status: 200, contentType: "application/json", body: request ? { updated: true } : { openapi: "3.0.0" }, responseBytes: 20 };
     },
@@ -285,6 +292,28 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(relayedToolset.response.status, 200);
     assert.deepEqual(relayedToolset.body.result, { updated: true });
+
+    const slowImport = await jsonRequest(baseUrl, "/toolsets/portal.admin/request", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+      body: JSON.stringify({ method: "POST", path: "/api/slow-import", body: { topics: 11 } }),
+    });
+    assert.equal(slowImport.response.status, 200);
+    assert.deepEqual(slowImport.body.result, { imported: 11 });
+
+    const timedOutImport = await jsonRequest(baseUrl, "/toolsets/portal.admin/request", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+      body: JSON.stringify({ method: "POST", path: "/api/timed-out-import", body: { topics: 11 } }),
+    });
+    assert.equal(timedOutImport.response.status, 502);
+    assert.deepEqual(timedOutImport.body.error, {
+      code: "TOOLSET_DOWNSTREAM_TIMEOUT",
+      retryable: true,
+    });
+    const importAudit = store.listAuditEvents(10);
+    assert.equal(importAudit.find((event) => event.traceId === slowImport.body.traceId)?.status, "succeeded");
+    assert.equal(importAudit.find((event) => event.traceId === timedOutImport.body.traceId)?.errorCode, "TOOLSET_DOWNSTREAM_TIMEOUT");
 
     const mcpToolset = await jsonRequest(baseUrl, "/toolsets", {
       method: "POST",
@@ -588,7 +617,7 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(audit.response.status, 200);
     const events = audit.body.events as Array<Record<string, unknown>>;
-    assert.equal(events.length, 11);
+    assert.equal(events.length, 13);
     assert.equal(
       events.some((event) => event.policyDecision === "trusted_runtime_credential_lease"),
       true,

@@ -52,7 +52,7 @@ export const config = {
   prismGatewayEnabled: readBooleanEnv('PRISM_GATEWAY_ENABLED', false),
   prismGatewayBaseUrl: process.env.PRISM_GATEWAY_BASE_URL?.trim().replace(/\/+$/, '') || null,
   prismGatewayToken: process.env.PRISM_GATEWAY_TOKEN?.trim() || null,
-  prismGatewayTimeoutMs: readNumberEnv('PRISM_GATEWAY_TIMEOUT_MS', 20_000),
+  prismGatewayTimeoutMs: readNumberEnv('PRISM_GATEWAY_TIMEOUT_MS', 70_000),
   codexRuntimeEnabled: readBooleanEnv('CODEX_RUNTIME_ENABLED', true),
   codexImageGenerationEnabled: readBooleanEnv('CODEX_IMAGE_GENERATION_ENABLED', true),
   codexRuntimeTimeoutMs: readNumberEnv('CODEX_RUNTIME_TIMEOUT_MS', 600_000),

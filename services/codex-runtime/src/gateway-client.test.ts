@@ -71,6 +71,132 @@ test('gateway client preserves policy failures without exposing credentials', as
   );
 });
 
+test('gateway client preserves toolset failure trace IDs for audit correlation', async () => {
+  const client = new PrismGatewayClient(
+    {
+      enabled: true,
+      baseUrl: 'http://prism-gateway.internal:3040',
+      token: 'runtime-secret',
+      timeoutMs: 5000,
+    },
+    (async () => new Response(JSON.stringify({
+      ok: false,
+      traceId: 'trace-portal-timeout',
+      error: {
+        code: 'TOOLSET_DOWNSTREAM_TIMEOUT',
+        retryable: true,
+      },
+    }), { status: 502, headers: { 'content-type': 'application/json' } })) as typeof fetch,
+  );
+
+  await assert.rejects(
+    client.toolsetRequest({
+      toolset: 'portal.admin',
+      action: 'request',
+      request: { method: 'POST', path: '/api/wiki/topics/expansion/import' },
+    }),
+    (error: unknown) => error instanceof GatewayClientError
+      && error.code === 'TOOLSET_DOWNSTREAM_TIMEOUT'
+      && error.traceId === 'trace-portal-timeout'
+      && error.retryable,
+  );
+});
+
+test('gateway client distinguishes timeouts from unreachable Gateway failures', async () => {
+  const config = {
+    enabled: true,
+    baseUrl: 'http://prism-gateway.internal:3040',
+    token: 'runtime-secret',
+    timeoutMs: 5000,
+  };
+  const timeout = new PrismGatewayClient(config, (async () => {
+    throw new DOMException('request timed out', 'TimeoutError');
+  }) as typeof fetch);
+  const unreachable = new PrismGatewayClient(config, (async () => {
+    throw new TypeError('fetch failed');
+  }) as typeof fetch);
+
+  await assert.rejects(
+    timeout.toolsetRequest({ toolset: 'portal.admin', action: 'describe' }),
+    (error: unknown) => error instanceof GatewayClientError
+      && error.code === 'PRISM_GATEWAY_TIMEOUT'
+      && error.status === 504
+      && error.retryable,
+  );
+  await assert.rejects(
+    unreachable.toolsetRequest({ toolset: 'portal.admin', action: 'describe' }),
+    (error: unknown) => error instanceof GatewayClientError
+      && error.code === 'PRISM_GATEWAY_UNREACHABLE'
+      && error.status === 502
+      && error.retryable,
+  );
+});
+
+test('gateway client allows a slow relay to complete before its configured deadline', async () => {
+  const client = new PrismGatewayClient(
+    {
+      enabled: true,
+      baseUrl: 'http://prism-gateway.internal:3040',
+      token: 'runtime-secret',
+      timeoutMs: 100,
+    },
+    (async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return new Response(JSON.stringify({
+        ok: true,
+        traceId: 'trace-slow-success',
+        toolset: 'portal.admin',
+        downstreamStatus: 200,
+        result: { imported: 11 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch,
+  );
+
+  const result = await client.toolsetRequest({
+    toolset: 'portal.admin',
+    action: 'request',
+    request: { method: 'POST', path: '/api/wiki/topics/expansion/import' },
+  });
+  assert.equal(result.traceId, 'trace-slow-success');
+  assert.deepEqual(result.result, { imported: 11 });
+});
+
+test('gateway client aborts a relay that exceeds its configured deadline', async () => {
+  let attempts = 0;
+  const client = new PrismGatewayClient(
+    {
+      enabled: true,
+      baseUrl: 'http://prism-gateway.internal:3040',
+      token: 'runtime-secret',
+      timeoutMs: 10,
+    },
+    (async (_url, init) => new Promise<Response>((_resolve, reject) => {
+      attempts += 1;
+      const signal = init?.signal;
+      if (!signal) return reject(new Error('missing abort signal'));
+      const keepAlive = setTimeout(() => reject(new Error('deadline signal did not abort')), 100);
+      const abort = () => {
+        clearTimeout(keepAlive);
+        reject(signal.reason);
+      };
+      if (signal.aborted) abort();
+      else signal.addEventListener('abort', abort, { once: true });
+    })) as typeof fetch,
+  );
+
+  await assert.rejects(
+    client.toolsetRequest({
+      toolset: 'portal.admin',
+      action: 'request',
+      request: { method: 'POST', path: '/api/wiki/topics/expansion/import' },
+    }),
+    (error: unknown) => error instanceof GatewayClientError
+      && error.code === 'PRISM_GATEWAY_TIMEOUT'
+      && error.status === 504,
+  );
+  assert.equal(attempts, 1);
+});
+
 test('gateway client is inert while the runtime flag is disabled', async () => {
   const client = new PrismGatewayClient({
     enabled: false,

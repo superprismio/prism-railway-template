@@ -31,7 +31,7 @@ Recommended env:
 - `PRISM_GATEWAY_ENABLED=false`
 - `PRISM_GATEWAY_BASE_URL=<private Prism Gateway URL>`
 - `PRISM_GATEWAY_TOKEN=<runtime-specific Gateway caller token>`
-- `PRISM_GATEWAY_TIMEOUT_MS=20000`
+- `PRISM_GATEWAY_TIMEOUT_MS=70000`
 
 Gateway calls are made by the runtime parent process. Do not pass the long-lived
 Gateway service token into prompts, tool arguments, traces, or agent-visible
