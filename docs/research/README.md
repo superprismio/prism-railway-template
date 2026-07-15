@@ -13,3 +13,4 @@ Research notes should include:
 ## Notes
 
 - [Prism vs OpenClaw and Hermes](prism-vs-openclaw-hermes.md)
+- [Role-Agent Delegation And Organization Access](role-agent-delegation-and-org-access.md)
