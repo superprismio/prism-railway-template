@@ -43,8 +43,9 @@ GET /agent/workflow-events
   &limit=100
 ```
 
-The response contains `events`, `nextCursor`, and `hasMore`. Ordering uses the
-event timestamp plus event id, so events sharing a timestamp paginate safely.
+The response contains `events`, `nextCursor`, and `hasMore`. Ordering uses a
+durable monotonic event sequence assigned by Site, so concurrent or
+same-millisecond events paginate safely.
 
 ## Operator configuration
 

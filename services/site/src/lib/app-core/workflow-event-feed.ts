@@ -13,9 +13,10 @@ type WorkflowEventRow = {
   note: string | null;
   payload_json: string;
   created_at: string;
+  event_sequence: number;
 };
 
-type WorkflowEventCursor = { createdAt: string; id: string };
+type WorkflowEventCursor = { sequence: number };
 
 function parsePayload(value: string) {
   try {
@@ -53,9 +54,8 @@ export function decodeWorkflowEventCursor(value: string | null | undefined): Wor
     const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
     const cursor = parsed as Record<string, unknown>;
-    if (typeof cursor.createdAt !== 'string' || !Number.isFinite(Date.parse(cursor.createdAt))) throw new Error();
-    if (typeof cursor.id !== 'string' || !cursor.id.trim()) throw new Error();
-    return { createdAt: new Date(cursor.createdAt).toISOString(), id: cursor.id.trim() };
+    if (!Number.isSafeInteger(cursor.sequence) || Number(cursor.sequence) < 0) throw new Error();
+    return { sequence: Number(cursor.sequence) };
   } catch {
     throw new Error('WORKFLOW_EVENT_CURSOR_INVALID');
   }
@@ -78,8 +78,8 @@ export function listWorkflowEventFeed(input: {
   const clauses: string[] = [];
   const params: Array<string | number> = [];
   if (cursor) {
-    clauses.push('(created_at > ? OR (created_at = ? AND id > ?))');
-    params.push(cursor.createdAt, cursor.createdAt, cursor.id);
+    clauses.push('event_sequence > ?');
+    params.push(cursor.sequence);
   }
   if (eventTypes.length) {
     clauses.push(`event_type IN (${eventTypes.map(() => '?').join(', ')})`);
@@ -88,19 +88,19 @@ export function listWorkflowEventFeed(input: {
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   const rows = db.prepare(
     `SELECT id, workflow_run_id, request_id, step_key, event_type, actor_type,
-            actor_id, note, payload_json, created_at
+            actor_id, note, payload_json, created_at, event_sequence
      FROM workflow_events
      ${where}
-     ORDER BY created_at ASC, id ASC
+     ORDER BY event_sequence ASC
      LIMIT ?`,
   ).all(...params, limit + 1) as WorkflowEventRow[];
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
   const events = page.map(mapRow);
-  const last = events.at(-1);
+  const last = page.at(-1);
   return {
     events,
-    nextCursor: last ? encodeWorkflowEventCursor({ createdAt: last.createdAt, id: last.id }) : input.cursor?.trim() || null,
+    nextCursor: last ? encodeWorkflowEventCursor({ sequence: last.event_sequence }) : input.cursor?.trim() || null,
     hasMore,
   };
 }

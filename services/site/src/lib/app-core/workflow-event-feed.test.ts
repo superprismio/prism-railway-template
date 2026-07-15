@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import Database from 'better-sqlite3';
+import { workflowEventSequenceMigration } from './migrations/033_workflow_event_sequence';
 import { listWorkflowEventFeed } from './workflow-event-feed';
 
 function testDb() {
@@ -19,8 +20,12 @@ function testDb() {
       created_at TEXT NOT NULL
     );
   `);
+  db.exec(workflowEventSequenceMigration.sql);
   const insert = db.prepare(
-    `INSERT INTO workflow_events VALUES (?, 'run-1', 'request-1', NULL, ?, 'system', NULL, NULL, ?, ?)`,
+    `INSERT INTO workflow_events (
+       id, workflow_run_id, request_id, step_key, event_type, actor_type,
+       actor_id, note, payload_json, created_at
+     ) VALUES (?, 'run-1', 'request-1', NULL, ?, 'system', NULL, NULL, ?, ?)`,
   );
   insert.run('event-a', 'agent.completed', '{"sequence":1}', '2026-07-15T12:00:00.000Z');
   insert.run('event-b', 'agent.blocked', '{"sequence":2}', '2026-07-15T12:00:00.000Z');
@@ -28,15 +33,23 @@ function testDb() {
   return db;
 }
 
-test('workflow event feed pages chronologically with a stable tie-break cursor', () => {
+test('workflow event feed uses an insertion sequence so same-timestamp events cannot be skipped', () => {
   const db = testDb();
   const first = listWorkflowEventFeed({ limit: 1 }, db);
+  db.prepare(
+    `INSERT INTO workflow_events (
+       id, workflow_run_id, request_id, step_key, event_type, actor_type,
+       actor_id, note, payload_json, created_at
+     ) VALUES (?, 'run-1', 'request-1', NULL, ?, 'system', NULL, NULL, ?, ?)`,
+  ).run('event-0', 'agent.needs_attention', '{"sequence":4}', '2026-07-15T12:00:00.000Z');
   const second = listWorkflowEventFeed({ cursor: first.nextCursor, limit: 1 }, db);
+  const remaining = listWorkflowEventFeed({ cursor: second.nextCursor, limit: 10 }, db);
 
   assert.deepEqual(first.events.map((event) => event.id), ['event-a']);
   assert.equal(first.hasMore, true);
   assert.deepEqual(second.events.map((event) => event.id), ['event-b']);
   assert.deepEqual(second.events[0].payload, { sequence: 2 });
+  assert.deepEqual(remaining.events.map((event) => event.id), ['event-c', 'event-0']);
   db.close();
 });
 
@@ -55,5 +68,42 @@ test('workflow event feed filters operator-selected event types', () => {
 test('workflow event feed rejects malformed cursors', () => {
   const db = testDb();
   assert.throws(() => listWorkflowEventFeed({ cursor: 'not-a-cursor' }, db), /WORKFLOW_EVENT_CURSOR_INVALID/);
+  db.close();
+});
+
+test('workflow event sequence migration backfills existing rows and continues monotonically', () => {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE workflow_events (
+      id TEXT PRIMARY KEY,
+      workflow_run_id TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      step_key TEXT,
+      event_type TEXT NOT NULL,
+      actor_type TEXT NOT NULL,
+      actor_id TEXT,
+      note TEXT,
+      payload_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    INSERT INTO workflow_events VALUES
+      ('event-b', 'run-1', 'request-1', NULL, 'second', 'system', NULL, NULL, '{}', '2026-07-15T12:00:00.000Z'),
+      ('event-a', 'run-1', 'request-1', NULL, 'first', 'system', NULL, NULL, '{}', '2026-07-15T12:00:00.000Z');
+  `);
+  db.exec(workflowEventSequenceMigration.sql);
+  db.prepare(
+    `INSERT INTO workflow_events (
+       id, workflow_run_id, request_id, event_type, actor_type, payload_json, created_at
+     ) VALUES ('event-c', 'run-1', 'request-1', 'third', 'system', '{}', '2026-07-15T11:00:00.000Z')`,
+  ).run();
+
+  const rows = db.prepare(
+    'SELECT id, event_sequence FROM workflow_events ORDER BY event_sequence',
+  ).all() as Array<{ id: string; event_sequence: number }>;
+  assert.deepEqual(rows, [
+    { id: 'event-a', event_sequence: 1 },
+    { id: 'event-b', event_sequence: 2 },
+    { id: 'event-c', event_sequence: 3 },
+  ]);
   db.close();
 });

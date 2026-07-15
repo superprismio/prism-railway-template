@@ -77,7 +77,8 @@ Workflow event consumers:
 
 - `GET /agent/workflow-events`
 
-The workflow-event feed is chronological and cursorable. Consumers may filter
+The workflow-event feed follows Site's durable monotonic event sequence and is
+cursorable. Consumers may filter
 with repeated or comma-separated `eventType` parameters, pass the returned
 opaque `cursor`, and set `limit` from 1 to 500. The feed is an event log, not a
 delivery queue: scheduled tasks or agents own their checkpoint and delivery
