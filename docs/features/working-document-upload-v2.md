@@ -80,7 +80,7 @@ The first slice accepts exactly one file per request:
 - 5 MiB maximum by default;
 - configurable through `MEMORY_DOCUMENT_UPLOAD_MAX_MB`, clamped to 1-25 MiB.
 
-The browser may provide `.md,text/markdown,text/plain` as picker hints, but the
+The browser may provide `.md,text/markdown` as picker hints, but the
 server treats the filename extension and decoded bytes as authoritative.
 
 ## Site API

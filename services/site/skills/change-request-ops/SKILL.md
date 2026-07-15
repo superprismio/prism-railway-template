@@ -152,6 +152,25 @@ curl -fsSL \
 
 Use this route when a user approves a gate or asks to move a request along from Discord or another non-browser surface. It uses the normal workflow runner; do not manually patch `currentWorkflowStepKey` to bypass gates. Prefer simple `next` flow and do not send `workflowAction` for normal continues. The workflow continues through agent steps until it reaches a gate, checkpoint, terminal step, failure, or emergency continuation guard.
 
+Reconcile terminal projection drift by request number only when the request is
+already completed or closed and its terminal workflow run (completed or
+canceled) still projects a non-terminal step. This operation never executes
+workflow steps. Dry-run first:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/change-board/requests/by-number/$REQUEST_NUMBER/workflow/reconcile" \
+  -d '{"dryRun":true}'
+```
+
+Apply only a verified `would_repair` result with `"dryRun":false`. If the result
+is `TERMINAL_STEP_AMBIGUOUS`, select the intended key from
+`terminalStepCandidates` and send it as `terminalStepKey`. Never use this route
+for an active request, to skip work, or to repeat a side-effecting step.
+
 Create request pattern:
 
 1. If the user is asking to create or open a tracked change request, do not write to Prism memory.

@@ -73,8 +73,9 @@ export async function GET(
 </html>`
   return new Response(html, {
     headers: {
+      "cache-control": "private, no-store, max-age=0",
       "content-type": "text/html; charset=utf-8",
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
+      "content-security-policy": "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'",
       "x-content-type-options": "nosniff",
     },
   })

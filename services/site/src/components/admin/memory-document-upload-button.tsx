@@ -66,7 +66,7 @@ export function MemoryDocumentUploadButton({
       <input
         ref={inputRef}
         type="file"
-        accept=".md,text/markdown,text/plain"
+        accept=".md,text/markdown"
         className="sr-only"
         onChange={(event) => {
           const file = event.target.files?.[0]
@@ -83,7 +83,7 @@ export function MemoryDocumentUploadButton({
         {isUploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
         {isUploading ? "Uploading" : label}
       </Button>
-      {error ? <span className="text-xs text-destructive">{error}</span> : null}
+      {error ? <span role="alert" className="text-xs text-destructive">{error}</span> : null}
     </div>
   )
 }

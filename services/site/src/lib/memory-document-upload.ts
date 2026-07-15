@@ -19,10 +19,7 @@ export function artifactIdFromMemoryInboxPath(path: string) {
 }
 
 export function titleFromMarkdown(content: string, filename: string) {
-  const heading = content
-    .split(/\r?\n/)
-    .map((line) => line.match(/^#\s+(.+?)\s*$/)?.[1]?.trim())
-    .find(Boolean)
+  const heading = content.match(/^#\s+(.+?)\s*$/m)?.[1]?.trim()
   if (heading) return heading
 
   const stem = basename(filename, extname(filename))

@@ -552,7 +552,11 @@ export function CodexConsole({
                       variant="ghost"
                       size="icon"
                       title="Copy artifact link"
-                      onClick={() => void navigator.clipboard.writeText(new URL(artifact.viewUrl, window.location.origin).toString())}
+                      onClick={() => {
+                        void navigator.clipboard
+                          .writeText(new URL(artifact.viewUrl, window.location.origin).toString())
+                          .catch(() => setError("Could not copy the artifact link. Open the artifact and copy its URL instead."));
+                      }}
                     >
                       <Copy className="h-4 w-4" />
                     </Button>
