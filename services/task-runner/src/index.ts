@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
-import { leaseGatewayToolsets } from "./gateway-lease.js";
+import { leaseGatewayCredentials } from "./gateway-lease.js";
 
 type TaskStatus = "idle" | "running" | "succeeded" | "failed" | "disabled";
 
@@ -787,12 +787,9 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
           "gateway_capabilities",
           "capabilities",
         ]),
-        toolsets: requestedGatewayKeysFromConfig(siteTask.agentConfig, [
+        credentials: requestedGatewayKeysFromConfig(siteTask.agentConfig, [
           "gatewayCredentials",
           "gateway_credentials",
-          "gatewayToolsets",
-          "gateway_toolsets",
-          "toolsets",
         ]),
         context: { delegatedActorId: `task:${siteTask.key}` },
         metadata: {
@@ -863,15 +860,12 @@ async function runSiteTaskScript(input: {
   const timeoutMs = input.timeoutMs ?? script.timeoutMs ?? scriptRunnerTimeoutMs();
   const outputMaxBytes = scriptRunnerOutputMaxBytes();
   const killGraceMs = scriptRunnerKillGraceMs();
-  const gatewayToolsets = requestedGatewayKeysFromConfig(input.siteTask.agentConfig, [
+  const gatewayCredentials = requestedGatewayKeysFromConfig(input.siteTask.agentConfig, [
     "gatewayCredentials",
     "gateway_credentials",
-    "gatewayToolsets",
-    "gateway_toolsets",
-    "toolsets",
   ]).map(({ key }) => key);
-  const leasedEnv = await leaseGatewayToolsets({
-    toolsets: gatewayToolsets,
+  const leasedEnv = await leaseGatewayCredentials({
+    credentials: gatewayCredentials,
     context: {
       delegatedActorId: `task:${input.siteTask.key}`,
       runtimeJobId: `script-task:${input.siteTask.key}:${Date.now()}`,
@@ -1015,7 +1009,7 @@ async function runSiteTaskScript(input: {
           scriptRuntime: script.runtime,
           scriptChecksum: script.checksum,
           scriptUpdatedAt: script.updatedAt,
-          gatewayToolsets,
+          gatewayCredentials,
           gatewayEnvNames: Object.keys(leasedEnv).sort(),
           durationMs: Date.now() - startedAt,
           stderr: stderrText || null,
@@ -1568,15 +1562,11 @@ function doctorAgentConfigCapabilities(value: unknown) {
   return doctorStringList(value.gatewayCapabilities ?? value.gateway_capabilities ?? value.capabilities);
 }
 
-function doctorAgentConfigToolsets(value: unknown) {
+function doctorAgentConfigCredentials(value: unknown) {
   if (!isRecord(value)) return [];
-  const toolsets = value.gatewayCredentials
-    ?? value.gateway_credentials
-    ?? value.gatewayToolsets
-    ?? value.gateway_toolsets
-    ?? value.toolsets;
-  if (!Array.isArray(toolsets)) return [];
-  return Array.from(new Set(toolsets.flatMap((entry) => {
+  const credentials = value.gatewayCredentials ?? value.gateway_credentials;
+  if (!Array.isArray(credentials)) return [];
+  return Array.from(new Set(credentials.flatMap((entry) => {
     if (typeof entry === "string" && entry.trim()) return [entry.trim()];
     if (isRecord(entry) && typeof entry.key === "string" && entry.key.trim()) return [entry.key.trim()];
     return [];
@@ -1595,9 +1585,9 @@ function doctorWorkflowDependencies(workflow: Record<string, unknown>) {
       ...doctorAgentConfigCapabilities(definition.agentConfig ?? definition.agent_config),
       ...steps.flatMap((step) => doctorAgentConfigCapabilities(step.agentConfig ?? step.agent_config)),
     ])),
-    directToolsets: Array.from(new Set([
-      ...doctorAgentConfigToolsets(definition.agentConfig ?? definition.agent_config),
-      ...steps.flatMap((step) => doctorAgentConfigToolsets(step.agentConfig ?? step.agent_config)),
+    directCredentials: Array.from(new Set([
+      ...doctorAgentConfigCredentials(definition.agentConfig ?? definition.agent_config),
+      ...steps.flatMap((step) => doctorAgentConfigCredentials(step.agentConfig ?? step.agent_config)),
     ])),
   };
 }
@@ -1679,11 +1669,10 @@ function doctorCapabilityDependencyFindings(input: {
   return findings;
 }
 
-function doctorToolsetDependencyFindings(input: {
+function doctorCredentialDependencyFindings(input: {
   workflows: Record<string, unknown>[];
   tasks: Record<string, unknown>[];
   skills: Record<string, unknown>[];
-  toolsets: Record<string, unknown>[];
   connections: Record<string, unknown>[];
 }) {
   const findings: DoctorFinding[] = [];
@@ -1691,21 +1680,15 @@ function doctorToolsetDependencyFindings(input: {
     typeof skill.name === "string" ? skill.name : "",
     skill,
   ]));
-  const toolsetsByKey = new Map(input.toolsets
-    .filter((toolset) => typeof toolset.key === "string")
-    .map((toolset) => [String(toolset.key), toolset]));
-  const connectionsById = new Map(input.connections
-    .filter((connection) => typeof connection.id === "string")
-    .map((connection) => [String(connection.id), connection]));
+  const connectionsByKey = new Map(input.connections
+    .filter((connection) => typeof connection.key === "string")
+    .map((connection) => [String(connection.key), connection]));
 
-  function unavailableReason(toolsetKey: string) {
-    const toolset = toolsetsByKey.get(toolsetKey);
-    if (!toolset) return "missing";
-    if (toolset.enabled !== true) return "disabled";
-    const connectionId = typeof toolset.connectionId === "string" ? toolset.connectionId : "";
-    const connection = connectionId ? connectionsById.get(connectionId) : null;
-    if (!connection) return "connection missing";
+  function unavailableReason(credentialKey: string) {
+    const connection = connectionsByKey.get(credentialKey);
+    if (!connection) return "missing";
     if (connection.status === "revoked") return "connection revoked";
+    if (!Array.isArray(connection.secretNames) || connection.secretNames.length === 0) return "secret missing";
     return null;
   }
 
@@ -1713,21 +1696,21 @@ function doctorToolsetDependencyFindings(input: {
     check: string;
     subjectType: "skill" | "workflow" | "task";
     subjectKey: string;
-    toolsetKey: string;
+    credentialKey: string;
     skillName?: string;
   }) {
-    const reason = unavailableReason(inputFinding.toolsetKey);
+    const reason = unavailableReason(inputFinding.credentialKey);
     if (!reason) return;
     findings.push({
       check: inputFinding.check,
       status: "failed",
       subjectType: inputFinding.subjectType,
       subjectKey: inputFinding.subjectKey,
-      expected: `Required Gateway toolset is enabled and connected: ${inputFinding.toolsetKey}.`,
-      observed: `Required Gateway toolset ${inputFinding.toolsetKey} is unavailable: ${reason}.`,
-      recommendation: "Configure and enable the toolset and its credential connection before removing the legacy runtime credential.",
+      expected: `Required Gateway credential is configured: ${inputFinding.credentialKey}.`,
+      observed: `Required Gateway credential ${inputFinding.credentialKey} is unavailable: ${reason}.`,
+      recommendation: "Add or repair the credential in Gateway Settings.",
       evidence: {
-        toolsetKey: inputFinding.toolsetKey,
+        credentialKey: inputFinding.credentialKey,
         ...(inputFinding.skillName ? { skillName: inputFinding.skillName } : {}),
         reason,
       },
@@ -1736,12 +1719,12 @@ function doctorToolsetDependencyFindings(input: {
 
   for (const skill of input.skills) {
     const skillName = typeof skill.name === "string" && skill.name.trim() ? skill.name.trim() : "unknown-skill";
-    for (const toolsetKey of doctorStringList(skill.requiredToolsets ?? skill.required_toolsets)) {
+    for (const credentialKey of doctorStringList(skill.requiredCredentials ?? skill.required_credentials)) {
       addFinding({
-        check: "skill-required-toolset-available",
+        check: "skill-required-credential-available",
         subjectType: "skill",
         subjectKey: skillName,
-        toolsetKey,
+        credentialKey,
       });
     }
   }
@@ -1752,22 +1735,22 @@ function doctorToolsetDependencyFindings(input: {
     for (const skillName of dependencies.skills) {
       const skill = skillsByName.get(skillName);
       if (!skill) continue;
-      for (const toolsetKey of doctorStringList(skill.requiredToolsets ?? skill.required_toolsets)) {
+      for (const credentialKey of doctorStringList(skill.requiredCredentials ?? skill.required_credentials)) {
         addFinding({
-          check: "workflow-skill-toolset-available",
+          check: "workflow-skill-credential-available",
           subjectType: "workflow",
           subjectKey: workflowKey,
-          toolsetKey,
+          credentialKey,
           skillName,
         });
       }
     }
-    for (const toolsetKey of dependencies.directToolsets) {
+    for (const credentialKey of dependencies.directCredentials) {
       addFinding({
-        check: "workflow-direct-toolset-available",
+        check: "workflow-direct-credential-available",
         subjectType: "workflow",
         subjectKey: workflowKey,
-        toolsetKey,
+        credentialKey,
       });
     }
   }
@@ -1776,18 +1759,14 @@ function doctorToolsetDependencyFindings(input: {
     const taskKey = typeof task.key === "string" && task.key.trim() ? task.key.trim() : "unknown-task";
     const agentConfigValue = task.agentConfig ?? task.agent_config;
     const agentConfig = isRecord(agentConfigValue) ? agentConfigValue : {};
-    for (const toolsetKey of doctorStringList(
-      agentConfig.gatewayCredentials
-        ?? agentConfig.gateway_credentials
-        ?? agentConfig.gatewayToolsets
-        ?? agentConfig.gateway_toolsets
-        ?? agentConfig.toolsets,
+    for (const credentialKey of doctorStringList(
+      agentConfig.gatewayCredentials ?? agentConfig.gateway_credentials,
     )) {
       addFinding({
-        check: "task-required-toolset-available",
+        check: "task-required-credential-available",
         subjectType: "task",
         subjectKey: taskKey,
-        toolsetKey,
+        credentialKey,
       });
     }
   }
@@ -2052,7 +2031,6 @@ async function runPrismDoctorTask(): Promise<TaskRunResult> {
   const skills = doctorMergeSkills(hostedSkills, runtimeSkills);
   const gateway = isRecord(gatewayPayload.gateway) ? gatewayPayload.gateway : {};
   const gatewayCapabilities = Array.isArray(gateway.capabilities) ? gateway.capabilities.filter(isRecord) : [];
-  const gatewayToolsets = Array.isArray(gateway.toolsets) ? gateway.toolsets.filter(isRecord) : [];
   const gatewayConnections = Array.isArray(gateway.connections) ? gateway.connections.filter(isRecord) : [];
   const enabledCapabilities = new Set(gatewayCapabilities
     .filter((capability) => capability.enabled === true && typeof capability.key === "string")
@@ -2060,11 +2038,10 @@ async function runPrismDoctorTask(): Promise<TaskRunResult> {
   const initialFindings = [
     ...workflows.flatMap(doctorWorkflowFindings),
     ...doctorCapabilityDependencyFindings({ workflows, skills, enabledCapabilities }),
-    ...doctorToolsetDependencyFindings({
+    ...doctorCredentialDependencyFindings({
       workflows,
       tasks,
       skills,
-      toolsets: gatewayToolsets,
       connections: gatewayConnections,
     }),
   ];

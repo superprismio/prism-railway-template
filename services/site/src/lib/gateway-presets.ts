@@ -29,25 +29,10 @@ export const plausibleGatewayPreset = {
   defaultLabel: "Plausible Analytics",
   authType: "bearer",
   secretName: "apiKey",
-  toolsetKey: "plausible.analytics",
+  credentialEnvironmentName: "PLAUSIBLE_API_KEY",
+  baseUrlEnvironmentName: "PLAUSIBLE_BASE_URL",
   capabilityKey: "plausible.stats.query",
 } as const;
-
-export function plausibleGatewayToolset(input: {
-  connectionId: string;
-  origin: string;
-  enabled?: boolean;
-}) {
-  return {
-    key: plausibleGatewayPreset.toolsetKey,
-    connectionId: input.connectionId,
-    protocol: "http" as const,
-    discoveryUrl: input.origin,
-    auth: { type: "bearer" as const, secretName: plausibleGatewayPreset.secretName },
-    description: "Plausible analytics API",
-    enabled: input.enabled === true,
-  };
-}
 
 export const nextcrmContactReadInputSchema = {
   type: "object",
@@ -68,25 +53,10 @@ export const nextcrmGatewayPreset = {
   defaultLabel: "NextCRM",
   authType: "bearer",
   secretName: "apiToken",
-  toolsetKey: "nextcrm.admin",
+  credentialEnvironmentName: "NEXTCRM_API_TOKEN",
+  baseUrlEnvironmentName: "NEXTCRM_BASE_URL",
   capabilityKey: "crm.contact.read",
 } as const;
-
-export function nextcrmGatewayToolset(input: {
-  connectionId: string;
-  origin: string;
-  enabled?: boolean;
-}) {
-  return {
-    key: nextcrmGatewayPreset.toolsetKey,
-    connectionId: input.connectionId,
-    protocol: "mcp" as const,
-    discoveryUrl: `${input.origin}/api/mcp/mcp`,
-    auth: { type: "bearer" as const, secretName: nextcrmGatewayPreset.secretName },
-    description: "NextCRM complete MCP toolset",
-    enabled: input.enabled === true,
-  };
-}
 
 export function plausibleGatewayCapability(input: {
   connectionId: string;

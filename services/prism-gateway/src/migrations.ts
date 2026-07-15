@@ -115,38 +115,6 @@ export const gatewayMigrations: GatewayMigration[] = [
     `,
   },
   {
-    name: "002_toolset_profiles",
-    sql: `
-      CREATE TABLE toolset_profiles (
-        key TEXT PRIMARY KEY,
-        connection_id TEXT NOT NULL,
-        protocol TEXT NOT NULL,
-        discovery_url TEXT NOT NULL,
-        description TEXT NOT NULL,
-        enabled INTEGER NOT NULL DEFAULT 1,
-        last_discovered_at TEXT,
-        discovery_error TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(connection_id) REFERENCES integration_connections(id) ON DELETE CASCADE
-      );
-
-      CREATE INDEX toolset_profiles_connection_idx ON toolset_profiles(connection_id);
-    `,
-  },
-  {
-    name: "003_toolset_credential_binding",
-    sql: `
-      ALTER TABLE toolset_profiles ADD COLUMN auth_config_json TEXT NOT NULL DEFAULT '{"type":"none"}';
-    `,
-  },
-  {
-    name: "004_toolset_env_bindings",
-    sql: `
-      ALTER TABLE toolset_profiles ADD COLUMN env_bindings_json TEXT NOT NULL DEFAULT '{}';
-    `,
-  },
-  {
     name: "005_stored_credentials",
     sql: `
       CREATE TABLE stored_credentials (
@@ -187,6 +155,12 @@ export const gatewayMigrations: GatewayMigration[] = [
       CREATE UNIQUE INDEX integration_connections_credential_key_idx
         ON integration_connections(credential_key)
         WHERE credential_key IS NOT NULL;
+    `,
+  },
+  {
+    name: "007_remove_legacy_toolset_profiles",
+    sql: `
+      DROP TABLE IF EXISTS toolset_profiles;
     `,
   },
 ];

@@ -24,7 +24,6 @@ export type GatewayConnection = {
   envBindings: Record<string, string>;
   status: "untested" | "leased" | "healthy" | "unhealthy" | "revoked";
   capabilityKeys: string[];
-  toolsetKeys: string[];
   secretNames: string[];
   lastTestedAt: string | null;
   lastUsedAt: string | null;
@@ -39,27 +38,6 @@ export type GatewayStoredCredential = {
   createdAt: string;
   updatedAt: string;
 };
-
-export type GatewayToolsetProfile = {
-  key: string;
-  connectionId: string;
-  protocol: "openapi" | "mcp" | "http" | "adapter";
-  discoveryUrl: string;
-  auth: ToolsetAuthConfig;
-  envBindings: Record<string, string>;
-  description: string;
-  enabled: boolean;
-  lastDiscoveredAt: string | null;
-  discoveryError: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type ToolsetAuthConfig =
-  | { type: "none" }
-  | { type: "bearer"; secretName: string }
-  | { type: "api-key"; secretName: string; headerName: string }
-  | { type: "payload-login"; emailSecretName: string; passwordSecretName: string; loginPath: string };
 
 export type GatewayCapability = {
   key: string;

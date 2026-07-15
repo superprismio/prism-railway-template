@@ -7,7 +7,7 @@ type SkillRecord = {
   path: string;
   description: string;
   requiredCapabilities: string[];
-  requiredToolsets: string[];
+  requiredCredentials: string[];
   downloadPath?: string;
   source: 'prism-memory' | 'app-api';
 };
@@ -19,7 +19,7 @@ type SkillIndexResponse = {
     description?: string | null;
     downloadPath?: string;
     requiredCapabilities?: unknown;
-    requiredToolsets?: unknown;
+    requiredCredentials?: unknown;
   }>;
 };
 
@@ -65,7 +65,7 @@ export function capabilityRequirementsFromSkillMarkdown(content: string) {
   return normalizeCapabilityRequirements(values);
 }
 
-export function toolsetRequirementsFromSkillMarkdown(content: string) {
+function namedRequirementsFromSkillMarkdown(content: string, keyPattern: RegExp) {
   const lines = content.split(/\r?\n/);
   if (lines[0]?.trim() !== '---') return [];
   let activeKey = false;
@@ -74,7 +74,7 @@ export function toolsetRequirementsFromSkillMarkdown(content: string) {
     const line = lines[index];
     const trimmed = line.trim();
     if (trimmed === '---') break;
-    const keyMatch = trimmed.match(/^(gateway-credentials|gatewayCredentials|gateway-toolsets|gatewayToolsets):\s*(.*)$/);
+    const keyMatch = trimmed.match(keyPattern);
     if (keyMatch) {
       activeKey = true;
       const inline = keyMatch[2].trim();
@@ -95,6 +95,13 @@ export function toolsetRequirementsFromSkillMarkdown(content: string) {
     }
   }
   return normalizeCapabilityRequirements(values);
+}
+
+export function credentialRequirementsFromSkillMarkdown(content: string) {
+  return namedRequirementsFromSkillMarkdown(
+    content,
+    /^(gateway-credentials|gatewayCredentials):\s*(.*)$/,
+  );
 }
 
 type SkillCacheEntry = {
@@ -155,7 +162,7 @@ function normalizeSkillRecord(
     description?: string | null;
     downloadPath?: string;
     requiredCapabilities?: unknown;
-    requiredToolsets?: unknown;
+    requiredCredentials?: unknown;
   },
 ): SkillRecord | null {
   if (typeof entry.name !== 'string' || !entry.name.trim()) {
@@ -167,7 +174,7 @@ function normalizeSkillRecord(
     path: typeof entry.path === 'string' ? entry.path : '',
     description: typeof entry.description === 'string' ? entry.description : '',
     requiredCapabilities: normalizeCapabilityRequirements(entry.requiredCapabilities),
-    requiredToolsets: normalizeCapabilityRequirements(entry.requiredToolsets),
+    requiredCredentials: normalizeCapabilityRequirements(entry.requiredCredentials),
     downloadPath: typeof entry.downloadPath === 'string' ? entry.downloadPath : undefined,
     source,
   } satisfies SkillRecord;
@@ -426,12 +433,12 @@ export async function loadRelevantPrismSkills(prompt: string, metadata?: Record<
   if (!availableSkills.length) {
     return {
       availableSkills: [] as SkillRecord[],
-      selectedSkills: [] as Array<{ name: string; content: string; requiredCapabilities: string[]; requiredToolsets: string[] }>,
+      selectedSkills: [] as Array<{ name: string; content: string; requiredCapabilities: string[]; requiredCredentials: string[] }>,
     };
   }
 
   const requested = new Set(requestedSkillNames(prompt, metadata));
-  const selectedSkills: Array<{ name: string; content: string; requiredCapabilities: string[]; requiredToolsets: string[] }> = [];
+  const selectedSkills: Array<{ name: string; content: string; requiredCapabilities: string[]; requiredCredentials: string[] }> = [];
 
   for (const skill of availableSkills) {
     if (!requested.has(skill.name)) {
@@ -446,9 +453,9 @@ export async function loadRelevantPrismSkills(prompt: string, metadata?: Record<
         ...skill.requiredCapabilities,
         ...capabilityRequirementsFromSkillMarkdown(content),
       ])),
-      requiredToolsets: Array.from(new Set([
-        ...skill.requiredToolsets,
-        ...toolsetRequirementsFromSkillMarkdown(content),
+      requiredCredentials: Array.from(new Set([
+        ...skill.requiredCredentials,
+        ...credentialRequirementsFromSkillMarkdown(content),
       ])),
     });
   }

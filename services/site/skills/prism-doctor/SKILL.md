@@ -28,10 +28,8 @@ Current workflow checks:
 - referenced skills exist;
 - skill-declared Gateway capabilities exist and are enabled;
 - direct workflow Gateway capabilities exist and are enabled.
-- skill-declared Gateway toolsets exist, are enabled, and reference an active
-  credential connection;
-- direct workflow Gateway toolsets exist, are enabled, and reference an active
-  credential connection.
+- skill-declared Gateway credentials exist and contain secret values;
+- direct workflow and task Gateway credentials exist and contain secret values.
 
 Doctor does not infer downstream RBAC or duplicate provider policy.
 

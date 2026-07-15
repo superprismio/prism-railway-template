@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readSkillCapabilityRequirements, readSkillToolsetRequirements } from "./hosted-skills";
+import {
+  readSkillCapabilityRequirements,
+  readSkillCredentialRequirements,
+} from "./hosted-skills";
 
 test("hosted skill summaries expose declared Gateway requirements", () => {
   assert.deepEqual(readSkillCapabilityRequirements(`---
@@ -14,17 +17,8 @@ metadata:
 `), ["comms.message.send", "analytics.query"]);
 });
 
-test("hosted skill summaries expose declared Gateway toolsets", () => {
-  assert.deepEqual(readSkillToolsetRequirements(`---
-name: portal-ops
-metadata:
-  gateway-toolsets: [portal.admin]
----
-`), ["portal.admin"]);
-});
-
 test("hosted skill summaries accept credential assignment metadata", () => {
-  assert.deepEqual(readSkillToolsetRequirements(`---
+  assert.deepEqual(readSkillCredentialRequirements(`---
 name: analytics-report
 metadata:
   gateway-credentials: [plausible-production]

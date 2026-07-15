@@ -10,10 +10,8 @@ import type {
   GatewayCaller,
   GatewayGrant,
   GatewayInvocationContext,
-  GatewayToolsetProfile,
   HttpJsonReadDriverConfig,
   McpToolCallDriverConfig,
-  ToolsetAuthConfig,
 } from "./types.js";
 
 export class GatewayStoreError extends Error {
@@ -53,21 +51,6 @@ type CapabilityRow = {
   input_schema_json: string | null;
   output_schema_json: string | null;
   driver_config_json: string;
-  created_at: string;
-  updated_at: string;
-};
-
-type ToolsetProfileRow = {
-  key: string;
-  connection_id: string;
-  protocol: GatewayToolsetProfile["protocol"];
-  discovery_url: string;
-  auth_config_json: string;
-  env_bindings_json: string;
-  description: string;
-  enabled: number;
-  last_discovered_at: string | null;
-  discovery_error: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -393,9 +376,6 @@ function connectionFromRow(
   const capabilityKeys = (db.prepare(
     "SELECT key FROM capabilities WHERE connection_id = ? ORDER BY key",
   ).all(row.id) as Array<{ key: string }>).map((entry) => entry.key);
-  const toolsetKeys = (db.prepare(
-    "SELECT key FROM toolset_profiles WHERE connection_id = ? ORDER BY key",
-  ).all(row.id) as Array<{ key: string }>).map((entry) => entry.key);
   return {
     id: row.id,
     key: row.credential_key || row.id,
@@ -406,7 +386,6 @@ function connectionFromRow(
     envBindings: stringRecord(row.env_bindings_json),
     status: row.status,
     capabilityKeys,
-    toolsetKeys,
     secretNames,
     lastTestedAt: row.last_tested_at,
     lastUsedAt: row.last_used_at,
@@ -420,23 +399,6 @@ function storedCredentialFromRow(row: StoredCredentialRow): GatewayStoredCredent
     id: row.id,
     name: row.name,
     source: row.source,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function toolsetProfileFromRow(row: ToolsetProfileRow): GatewayToolsetProfile {
-  return {
-    key: row.key,
-    connectionId: row.connection_id,
-    protocol: row.protocol,
-    discoveryUrl: row.discovery_url,
-    auth: (parseJson(row.auth_config_json) || { type: "none" }) as ToolsetAuthConfig,
-    envBindings: (parseJson(row.env_bindings_json) || {}) as Record<string, string>,
-    description: row.description,
-    enabled: row.enabled === 1,
-    lastDiscoveredAt: row.last_discovered_at,
-    discoveryError: row.discovery_error,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -537,36 +499,11 @@ export class GatewayStore {
 
         const configuration = stringRecord(row.configuration_json);
         const envBindings = stringRecord(row.env_bindings_json);
-        const toolsets = (this.db.prepare(
-          "SELECT * FROM toolset_profiles WHERE connection_id = ? ORDER BY key",
-        ).all(row.id) as ToolsetProfileRow[]).map(toolsetProfileFromRow);
         const secretNames = connectionFromRow(this.db, row).secretNames;
-        const aliases = toolsets.length ? toolsets.map((toolset) => toolset.key) : [key];
-
-        for (const toolset of toolsets) {
-          for (const [envName, secretName] of Object.entries(toolset.envBindings)) {
-            if (envBindings[envName] === undefined || envBindings[envName] === secretName) {
-              envBindings[envName] = secretName;
-            }
-          }
-          const prefix = environmentPrefix(toolset.key);
-          try {
-            const discoveryUrl = new URL(toolset.discoveryUrl);
-            configuration[`${prefix}_BASE_URL`] ??= discoveryUrl.origin;
-            if (discoveryUrl.pathname !== "/" || discoveryUrl.search) {
-              configuration[`${prefix}_DISCOVERY_URL`] ??= discoveryUrl.toString();
-            }
-          } catch {
-            // Existing rows were validated when created; leave malformed legacy metadata untouched.
-          }
-        }
-
-        for (const alias of aliases) {
-          const prefix = environmentPrefix(alias);
-          for (const secretName of secretNames) {
-            const envName = `${prefix}_${secretEnvironmentSuffix(secretName)}`;
-            envBindings[envName] ??= secretName;
-          }
+        const prefix = environmentPrefix(key);
+        for (const secretName of secretNames) {
+          const envName = `${prefix}_${secretEnvironmentSuffix(secretName)}`;
+          envBindings[envName] ??= secretName;
         }
 
         const configurationJson = JSON.stringify(configuration);
@@ -784,7 +721,6 @@ export class GatewayStore {
     return {
       drivers: count("connector_drivers"),
       capabilities: count("capabilities"),
-      toolsets: count("toolset_profiles"),
       connections: count("integration_connections"),
       credentials: count("stored_credentials"),
       auditEvents: count("audit_events"),
@@ -887,76 +823,6 @@ export class GatewayStore {
     return this.getConnection(connectionId)!;
   }
 
-  listToolsetProfiles() {
-    return (this.db.prepare("SELECT * FROM toolset_profiles ORDER BY key").all() as ToolsetProfileRow[])
-      .map(toolsetProfileFromRow);
-  }
-
-  getToolsetProfile(key: string) {
-    const row = this.db.prepare("SELECT * FROM toolset_profiles WHERE key = ?").get(key) as ToolsetProfileRow | undefined;
-    return row ? toolsetProfileFromRow(row) : null;
-  }
-
-  createToolsetProfile(input: {
-    key: string;
-    connectionId: string;
-    protocol: GatewayToolsetProfile["protocol"];
-    discoveryUrl: string;
-    auth: ToolsetAuthConfig;
-    envBindings?: Record<string, string>;
-    description: string;
-    enabled?: boolean;
-  }) {
-    if (!/^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/.test(input.key)) {
-      throw new GatewayStoreError("TOOLSET_KEY_INVALID", 400);
-    }
-    const connection = this.getConnection(input.connectionId);
-    if (!connection || connection.status === "revoked") {
-      throw new GatewayStoreError("TOOLSET_CONNECTION_UNAVAILABLE", 400);
-    }
-    if (!["openapi", "mcp", "http", "adapter"].includes(input.protocol)) {
-      throw new GatewayStoreError("TOOLSET_PROTOCOL_INVALID", 400);
-    }
-    const discoveryUrl = validatePublicHttpsUrl(input.discoveryUrl, "TOOLSET_DISCOVERY_URL");
-    const now = new Date().toISOString();
-    try {
-      this.db.prepare(`
-        INSERT INTO toolset_profiles
-          (key, connection_id, protocol, discovery_url, auth_config_json, env_bindings_json, description, enabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(input.key, input.connectionId, input.protocol, discoveryUrl, JSON.stringify(input.auth), JSON.stringify(input.envBindings || {}), input.description, input.enabled === false ? 0 : 1, now, now);
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
-        throw new GatewayStoreError("TOOLSET_ALREADY_EXISTS", 409);
-      }
-      throw error;
-    }
-    return this.getToolsetProfile(input.key)!;
-  }
-
-  updateToolsetProfile(key: string, input: { description?: string; enabled?: boolean; envBindings?: Record<string, string> }) {
-    if (!this.getToolsetProfile(key)) throw new GatewayStoreError("TOOLSET_NOT_FOUND", 404);
-    const updates: string[] = [];
-    const values: unknown[] = [];
-    if (input.description !== undefined) {
-      updates.push("description = ?");
-      values.push(input.description);
-    }
-    if (input.enabled !== undefined) {
-      updates.push("enabled = ?");
-      values.push(input.enabled ? 1 : 0);
-    }
-    if (input.envBindings !== undefined) {
-      updates.push("env_bindings_json = ?");
-      values.push(JSON.stringify(input.envBindings));
-    }
-    if (!updates.length) throw new GatewayStoreError("TOOLSET_UPDATE_REQUIRED", 400);
-    updates.push("updated_at = ?");
-    values.push(new Date().toISOString(), key);
-    this.db.prepare(`UPDATE toolset_profiles SET ${updates.join(", ")} WHERE key = ?`).run(...values);
-    return this.getToolsetProfile(key)!;
-  }
-
   listDrivers() {
     return this.db.prepare(`
       SELECT key, mode, description, built_in AS builtIn, created_at AS createdAt, updated_at AS updatedAt
@@ -982,11 +848,7 @@ export class GatewayStore {
     const direct = this.db.prepare(
       "SELECT * FROM integration_connections WHERE credential_key = ? OR id = ?",
     ).get(keyOrAlias, keyOrAlias) as ConnectionRow | undefined;
-    if (direct) return connectionFromRow(this.db, direct);
-    const alias = this.db.prepare(`
-      SELECT connection_id FROM toolset_profiles WHERE key = ?
-    `).get(keyOrAlias) as { connection_id: string } | undefined;
-    return alias ? this.getConnection(alias.connection_id) : null;
+    return direct ? connectionFromRow(this.db, direct) : null;
   }
 
   createConnection(input: {

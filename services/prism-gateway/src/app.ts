@@ -6,8 +6,6 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { gatewayAuth, requireLeaseCaller, requireRuntimeCaller, requireSiteCaller } from "./auth.js";
 import { GatewayInvoker } from "./invoke.js";
 import { GatewayStore, GatewayStoreError } from "./store.js";
-import { GatewayDriverError } from "./http-json-read.js";
-import { executeToolsetRequest, type HttpToolsetRequest, type ToolsetRequest } from "./toolset-relay.js";
 import type { GatewayCaller, GatewayConfig, GatewayInvocationContext } from "./types.js";
 
 type AppDependencies = {
@@ -17,7 +15,6 @@ type AppDependencies = {
   invoker: GatewayInvoker;
   migrationCount: number;
   startedAt?: Date;
-  executeToolset?: typeof executeToolsetRequest;
 };
 
 function textField(value: unknown, field: string, maxLength = 200) {
@@ -103,20 +100,6 @@ function storedCredentialBindingsField(value: unknown) {
   return bindings;
 }
 
-function envBindingsField(value: unknown) {
-  if (value === undefined) return {};
-  const input = recordField(value, "TOOLSET_ENV_BINDINGS_INVALID");
-  const bindings: Record<string, string> = {};
-  for (const [envName, secretName] of Object.entries(input)) {
-    if (!/^[A-Z_][A-Z0-9_]{0,119}$/.test(envName) || typeof secretName !== "string" || !/^[A-Za-z][A-Za-z0-9_-]{0,119}$/.test(secretName)) {
-      throw new GatewayStoreError("TOOLSET_ENV_BINDINGS_INVALID", 400);
-    }
-    bindings[envName] = secretName;
-  }
-  if (Object.keys(bindings).length > 20) throw new GatewayStoreError("TOOLSET_ENV_BINDINGS_INVALID", 400);
-  return bindings;
-}
-
 function credentialConfigurationField(value: unknown) {
   if (value === undefined) return {};
   const input = recordField(value, "CREDENTIAL_CONFIGURATION_INVALID");
@@ -164,34 +147,6 @@ function optionalSchema(value: unknown) {
   return value as Record<string, unknown>;
 }
 
-function toolsetAuthField(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new GatewayStoreError("TOOLSET_AUTH_INVALID", 400);
-  }
-  const auth = value as Record<string, unknown>;
-  if (auth.type === "none") return { type: "none" } as const;
-  if (auth.type === "payload-login") {
-    const emailSecretName = textField(auth.emailSecretName, "toolset_auth_email_secret_name", 64);
-    const passwordSecretName = textField(auth.passwordSecretName, "toolset_auth_password_secret_name", 64);
-    const loginPath = typeof auth.loginPath === "string" && auth.loginPath.trim() ? auth.loginPath.trim() : "/api/users/login";
-    if (
-      !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(emailSecretName)
-      || !/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(passwordSecretName)
-      || !loginPath.startsWith("/") || loginPath.startsWith("//") || loginPath.includes("\\")
-    ) throw new GatewayStoreError("TOOLSET_AUTH_INVALID", 400);
-    return { type: "payload-login", emailSecretName, passwordSecretName, loginPath } as const;
-  }
-  const secretName = textField(auth.secretName, "toolset_auth_secret_name", 64);
-  if (!/^[a-zA-Z][a-zA-Z0-9_.-]{0,63}$/.test(secretName)) throw new GatewayStoreError("TOOLSET_AUTH_INVALID", 400);
-  if (auth.type === "bearer") return { type: "bearer", secretName } as const;
-  if (auth.type === "api-key") {
-    const headerName = textField(auth.headerName, "toolset_auth_header_name", 64);
-    if (!/^[a-zA-Z][a-zA-Z0-9-]{0,63}$/.test(headerName)) throw new GatewayStoreError("TOOLSET_AUTH_INVALID", 400);
-    return { type: "api-key", secretName, headerName } as const;
-  }
-  throw new GatewayStoreError("TOOLSET_AUTH_INVALID", 400);
-}
-
 function routeParam(value: string | string[]) {
   return Array.isArray(value) ? value[0] || "" : value;
 }
@@ -214,27 +169,6 @@ function invocationContext(value: unknown): GatewayInvocationContext {
     result[key] = candidate;
   }
   return result;
-}
-
-function toolsetRequestField(value: unknown, protocol: string): ToolsetRequest {
-  const input = recordField(value, "TOOLSET_REQUEST_INVALID");
-  if (protocol === "mcp") {
-    return {
-      tool: textField(input.tool, "toolset_tool", 200),
-      arguments: recordField(input.arguments ?? {}, "TOOLSET_MCP_ARGUMENTS_INVALID"),
-    };
-  }
-  const method = typeof input.method === "string" ? input.method.toUpperCase() : "";
-  if (method !== "GET" && method !== "POST" && method !== "PUT" && method !== "PATCH" && method !== "DELETE") {
-    throw new GatewayStoreError("TOOLSET_METHOD_INVALID", 400);
-  }
-  return {
-    method,
-    path: textField(input.path, "toolset_path", 2000),
-    query: recordField(input.query, "TOOLSET_QUERY_INVALID") as HttpToolsetRequest["query"],
-    ...(input.body !== undefined ? { body: input.body } : {}),
-    ...(input.multipart !== undefined ? { multipart: recordField(input.multipart, "TOOLSET_MULTIPART_INVALID") as HttpToolsetRequest["multipart"] } : {}),
-  };
 }
 
 function asyncRoute(
@@ -277,13 +211,7 @@ export function createGatewayApp(dependencies: AppDependencies) {
   });
 
   app.use(gatewayAuth(dependencies.config.callers));
-  const standardJsonParser = express.json({ limit: "256kb" });
-  const toolsetRequestJsonParser = express.json({ limit: "16mb" });
-  app.use((request, response, next) => {
-    const acceptsMultipartPayload = request.method === "POST"
-      && /^\/toolsets\/[^/]+\/request$/.test(request.path);
-    return (acceptsMultipartPayload ? toolsetRequestJsonParser : standardJsonParser)(request, response, next);
-  });
+  app.use(express.json({ limit: "256kb" }));
 
   app.post("/ops/backup", requireSiteCaller, asyncRoute(async (_request, response) => {
     const backupDirectory = path.join(path.dirname(dependencies.config.dbPath), "backups");
@@ -325,132 +253,6 @@ export function createGatewayApp(dependencies: AppDependencies) {
     response.json({ ok: true, capabilities: dependencies.store.listCapabilities() });
   });
 
-  app.get("/toolsets", (_request, response) => {
-    response.json({ ok: true, toolsets: dependencies.store.listToolsetProfiles() });
-  });
-
-  app.post("/toolsets", requireSiteCaller, (request, response) => {
-    const body = request.body as Record<string, unknown>;
-    if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
-      throw new GatewayStoreError("TOOLSET_ENABLED_INVALID", 400);
-    }
-    const protocol = body.protocol === "openapi" || body.protocol === "mcp" || body.protocol === "http" || body.protocol === "adapter"
-      ? body.protocol
-      : null;
-    if (!protocol) throw new GatewayStoreError("TOOLSET_PROTOCOL_INVALID", 400);
-    const toolset = dependencies.store.createToolsetProfile({
-      key: textField(body.key, "toolset_key", 120),
-      connectionId: textField(body.connectionId, "connection_id", 120),
-      protocol,
-      discoveryUrl: textField(body.discoveryUrl, "discovery_url", 2000),
-      auth: toolsetAuthField(body.auth ?? { type: "none" }),
-      envBindings: envBindingsField(body.envBindings),
-      description: textField(body.description, "description", 500),
-      enabled: body.enabled !== false,
-    });
-    response.status(201).json({ ok: true, toolset });
-  });
-
-  app.patch("/toolsets/:key", requireSiteCaller, (request, response) => {
-    const body = request.body as Record<string, unknown>;
-    if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
-      throw new GatewayStoreError("TOOLSET_ENABLED_INVALID", 400);
-    }
-    const toolset = dependencies.store.updateToolsetProfile(routeParam(request.params.key), {
-      ...(body.description !== undefined ? { description: textField(body.description, "description", 500) } : {}),
-      ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
-      ...(body.envBindings !== undefined ? { envBindings: envBindingsField(body.envBindings) } : {}),
-    });
-    response.json({ ok: true, toolset });
-  });
-
-  const relayToolset = async (request: Request, response: Response, describe: boolean) => {
-    const traceId = randomUUID();
-    const startedAt = Date.now();
-    const key = routeParam(request.params.key);
-    const profile = dependencies.store.getToolsetProfile(key);
-    if (!profile) throw new GatewayStoreError("TOOLSET_NOT_FOUND", 404);
-    if (!profile.enabled) throw new GatewayStoreError("TOOLSET_DISABLED", 409);
-    if (profile.protocol === "adapter") throw new GatewayStoreError("TOOLSET_ADAPTER_NOT_INVOKABLE", 409);
-    const connection = dependencies.store.getConnection(profile.connectionId);
-    if (!connection || connection.status === "revoked") throw new GatewayStoreError("TOOLSET_CONNECTION_UNAVAILABLE", 409);
-    const credentials = dependencies.store.getConnectionCredentials(connection.id);
-    const relayRequest = describe ? undefined : toolsetRequestField(request.body, profile.protocol);
-    const activeRequest = relayRequest!;
-    const auditInput = describe
-      ? { action: "describe" }
-      : "tool" in activeRequest
-        ? { action: "request", tool: activeRequest.tool }
-        : { action: "request", method: activeRequest.method, path: activeRequest.path };
-    try {
-      const result = await (dependencies.executeToolset ?? executeToolsetRequest)(profile, credentials, relayRequest);
-      dependencies.store.markConnectionUsed(connection.id, result.status >= 200 && result.status < 500);
-      dependencies.store.recordInvocation({
-        traceId, capabilityKey: `toolset:${key}`,
-        caller: response.locals.gatewayCaller as GatewayCaller,
-        context: invocationContext((request.body as Record<string, unknown> | undefined)?.context),
-        status: "succeeded", policyDecision: "runtime_toolset_assigned",
-        latencyMs: Date.now() - startedAt, inputSummary: auditInput,
-        outputSummary: { downstreamStatus: result.status, responseBytes: result.responseBytes }, units: 1,
-      });
-      response.json({ ok: true, traceId, toolset: key, downstreamStatus: result.status, contentType: result.contentType, result: result.body });
-    } catch (error) {
-      if (error instanceof GatewayDriverError) {
-        dependencies.store.recordInvocation({
-          traceId, capabilityKey: `toolset:${key}`,
-          caller: response.locals.gatewayCaller as GatewayCaller,
-          context: invocationContext((request.body as Record<string, unknown> | undefined)?.context),
-          status: "failed", policyDecision: "runtime_toolset_assigned",
-          latencyMs: Date.now() - startedAt, errorCode: error.code,
-          inputSummary: auditInput, outputSummary: null, units: 1,
-        });
-        response.status(error.retryable ? 502 : 400).json({ ok: false, traceId, error: { code: error.code, retryable: error.retryable } });
-        return;
-      }
-      throw error;
-    }
-  };
-
-  app.post("/toolsets/:key/describe", asyncRoute(async (request, response) => relayToolset(request, response, true)));
-  app.post("/toolsets/:key/request", asyncRoute(async (request, response) => relayToolset(request, response, false)));
-
-  app.post("/toolsets/lease", requireLeaseCaller, (request, response) => {
-    const body = request.body as Record<string, unknown>;
-    const keys = Array.isArray(body.toolsets)
-      ? Array.from(new Set(body.toolsets.filter((key): key is string => typeof key === "string" && /^[a-z][a-z0-9.-]{1,119}$/.test(key))))
-      : [];
-    if (!keys.length || keys.length > 20) throw new GatewayStoreError("TOOLSET_LEASE_KEYS_INVALID", 400);
-    const context = invocationContext(body.context);
-    const caller = response.locals.gatewayCaller as GatewayCaller;
-    const env: Record<string, string> = {};
-    const leased: string[] = [];
-    for (const key of keys) {
-      const profile = dependencies.store.getToolsetProfile(key);
-      if (!profile || !profile.enabled) {
-        throw new GatewayStoreError("TOOLSET_LEASE_PROFILE_UNAVAILABLE", 409);
-      }
-      if (profile.protocol !== "adapter") continue;
-      const credentials = dependencies.store.getConnectionCredentials(profile.connectionId);
-      for (const [envName, secretName] of Object.entries(profile.envBindings)) {
-        const value = credentials[secretName];
-        if (!value) throw new GatewayStoreError("TOOLSET_LEASE_SECRET_MISSING", 409);
-        if (env[envName] !== undefined && env[envName] !== value) {
-          throw new GatewayStoreError("TOOLSET_LEASE_ENV_COLLISION", 409);
-        }
-        env[envName] = value;
-      }
-      dependencies.store.recordInvocation({
-        traceId: randomUUID(), capabilityKey: `toolset:${key}`, caller, context,
-        status: "succeeded", policyDecision: "runtime_credential_lease",
-        latencyMs: 0, inputSummary: { action: "lease" },
-        outputSummary: { envNames: Object.keys(profile.envBindings).sort() }, units: 1,
-      });
-      dependencies.store.markConnectionLeased(profile.connectionId);
-      leased.push(key);
-    }
-    response.json({ ok: true, env, leasedToolsets: leased });
-  });
-
   app.post("/credential-bundles/lease", requireLeaseCaller, (request, response) => {
     const body = request.body as Record<string, unknown>;
     const keys = Array.isArray(body.credentials)
@@ -465,7 +267,6 @@ export function createGatewayApp(dependencies: AppDependencies) {
     const caller = response.locals.gatewayCaller as GatewayCaller;
     const env: Record<string, string> = {};
     const leased: string[] = [];
-    const environmentOnlyAliases: string[] = [];
     for (const requestedKey of keys) {
       const credential = dependencies.store.getCredential(requestedKey);
       if (!credential || credential.status === "revoked") {
@@ -473,12 +274,7 @@ export function createGatewayApp(dependencies: AppDependencies) {
       }
       const secrets = dependencies.store.getConnectionCredentials(credential.id);
       const bundle: Record<string, string> = { ...credential.configuration };
-      const legacyProfile = dependencies.store.getToolsetProfile(requestedKey);
-      const envBindings = {
-        ...credential.envBindings,
-        ...(legacyProfile?.envBindings ?? {}),
-      };
-      for (const [envName, secretName] of Object.entries(envBindings)) {
+      for (const [envName, secretName] of Object.entries(credential.envBindings)) {
         const value = secrets[secretName];
         if (!value) throw new GatewayStoreError("CREDENTIAL_LEASE_SECRET_MISSING", 409);
         bundle[envName] = value;
@@ -500,11 +296,8 @@ export function createGatewayApp(dependencies: AppDependencies) {
       });
       dependencies.store.markConnectionLeased(credential.id);
       leased.push(credential.key);
-      if (legacyProfile?.protocol === "adapter") {
-        environmentOnlyAliases.push(requestedKey);
-      }
     }
-    response.json({ ok: true, env, leasedCredentials: leased, environmentOnlyAliases });
+    response.json({ ok: true, env, leasedCredentials: leased });
   });
 
   app.post("/capabilities", requireSiteCaller, (request, response) => {

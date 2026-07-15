@@ -74,7 +74,7 @@ const plan = groups
     const config = group.config.filter((name) => names.has(name));
     if (!secrets.length && !config.length) return null;
     return {
-      toolset: group.key,
+      credential: group.key,
       credentialVariables: secrets,
       configurationVariables: config,
       references: references([...secrets, ...config]),

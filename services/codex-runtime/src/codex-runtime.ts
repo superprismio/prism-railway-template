@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
 import { loadRelevantPrismSkills } from './prism-skills.js';
-import { gatewayClient, runtimeCapabilitySessions, runtimeToolsetSessions } from './runtime-gateway.js';
+import { gatewayClient, runtimeCapabilitySessions } from './runtime-gateway.js';
 import { mergeSkillCapabilityRequirements } from './capability-requirements.js';
 
 type HistoryEntry = {
@@ -56,34 +56,12 @@ export type CodexRuntimeInput = {
   sessionId: string;
   codexThreadId?: string | null;
   capabilities?: RuntimeCapabilityDescriptor[];
-  toolsets?: RuntimeToolsetDescriptor[];
+  credentials?: string[];
   gatewayContext?: Record<string, string>;
   metadata?: Record<string, unknown>;
   signal?: AbortSignal;
   onTrace?: (trace: CodexRuntimeResult['trace']) => void;
 };
-
-export type RuntimeToolsetDescriptor = {
-  key: string;
-  protocol?: "openapi" | "mcp" | "http" | "adapter";
-};
-
-export function mergeRuntimeToolsets(
-  assigned: RuntimeToolsetDescriptor[],
-  requiredKeys: string[],
-) {
-  const merged = new Map(assigned.map((toolset) => [toolset.key, toolset]));
-  for (const key of requiredKeys) {
-    if (!merged.has(key)) merged.set(key, { key });
-  }
-  return Array.from(merged.values());
-}
-
-export function credentialLeaseToolsetKeys(toolsets: RuntimeToolsetDescriptor[]) {
-  return toolsets
-    .filter((toolset) => toolset.protocol === "adapter" || toolset.protocol === undefined)
-    .map((toolset) => toolset.key);
-}
 
 export type RuntimeCapabilityDescriptor = {
   key: string;
@@ -740,31 +718,6 @@ function buildPrompt(
     );
   }
 
-  const callableToolsets = input.toolsets?.filter((toolset) => toolset.protocol !== 'adapter') ?? [];
-  const adapterToolsets = input.toolsets?.filter((toolset) => toolset.protocol === 'adapter') ?? [];
-
-  if (callableToolsets.length) {
-    sections.push(
-      '',
-      'Organization toolset profiles assigned to this runtime job:',
-      callableToolsets.map((toolset) => JSON.stringify(toolset)).join('\n'),
-      'Use an assigned profile by POSTing to $PRISM_RUNTIME_TOOLSET_URL with header x-runtime-toolset-token: $PRISM_RUNTIME_TOOLSET_TOKEN. For HTTP/OpenAPI profiles use {"toolset":"...","action":"describe"} or {"toolset":"...","action":"request","request":{"method":"GET","path":"/api/...","query":{},"body":{}}}. For one-file multipart uploads, replace body with {"multipart":{"fields":{"_payload":"{...}"},"file":{"fieldName":"file","filename":"image.png","contentType":"image/png","dataBase64":"..."}}}; files are limited to 10 MB. For MCP profiles, describe returns tools/list and calls use {"toolset":"...","action":"request","request":{"tool":"tool_name","arguments":{}}}.',
-      'Use Node.js built-in fetch for these local HTTP calls; curl may not be installed in the runtime image.',
-      'The destination and credential are fixed by Gateway, while method, same-origin path, query, and body remain under your control. Never print, persist, or return the runtime toolset token.',
-    );
-  }
-
-  if (adapterToolsets.length) {
-    sections.push(
-      '',
-      'Organization compatibility credential profiles assigned to this runtime job:',
-      adapterToolsets.map((toolset) => JSON.stringify(toolset)).join('\n'),
-      'Gateway has already injected these profiles under their conventional environment variable names for this child job. Use the existing skill, CLI, SDK, or provider API exactly as instructed.',
-      'Adapter profiles are not HTTP or MCP destinations. Do not invoke them through $PRISM_RUNTIME_TOOLSET_URL and do not attempt to resolve any adapter discovery URL.',
-      'Never print, persist, or return leased credential values.',
-    );
-  }
-
   if (availableSkillsSummary) {
     sections.push('', 'Available Prism skills:', availableSkillsSummary);
   }
@@ -875,29 +828,23 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     input.capabilities ?? [],
     prismSkills.selectedSkills,
   );
-  const effectiveToolsets = mergeRuntimeToolsets(
-    input.toolsets ?? [],
-    prismSkills.selectedSkills.flatMap((skill) => skill.requiredToolsets),
-  );
-  const credentialLeaseKeys = credentialLeaseToolsetKeys(effectiveToolsets);
+  const effectiveCredentials = Array.from(new Set([
+    ...(input.credentials ?? []),
+    ...prismSkills.selectedSkills.flatMap((skill) => skill.requiredCredentials),
+  ]));
+  const credentialLeaseKeys = effectiveCredentials;
   const lease = credentialLeaseKeys.length
     ? await gatewayClient.leaseCredentials({
         credentials: credentialLeaseKeys,
         context: input.gatewayContext || {},
       })
-    : { env: {}, environmentOnlyAliases: [] };
-  const leasedKeys = new Set(lease.environmentOnlyAliases);
-  const resolvedToolsets = effectiveToolsets.map((toolset) =>
-    leasedKeys.has(toolset.key) ? { ...toolset, protocol: 'adapter' as const } : toolset,
-  );
-  const adapterToolsets = resolvedToolsets.filter((toolset) => toolset.protocol === 'adapter');
-  const callableToolsets = resolvedToolsets.filter((toolset) => toolset.protocol !== 'adapter');
+    : { env: {} };
   const leasedEnv = lease.env;
   const githubToken = leasedEnv.TARGET_REPO_GITHUB_TOKEN || config.githubToken;
   const preparedWorkspace = await prepareExecutionWorkspace(input, trace, githubToken);
   input.onTrace?.([...trace]);
   const executionWorkspaceRoot = preparedWorkspace.workspacePath;
-  const prompt = buildPrompt({ ...input, capabilities: effectiveCapabilities, toolsets: resolvedToolsets }, isResume, prismSkills);
+  const prompt = buildPrompt({ ...input, capabilities: effectiveCapabilities }, isResume, prismSkills);
   const args = isResume
     ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
     : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile, '-C', executionWorkspaceRoot];
@@ -943,19 +890,6 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     env.PRISM_RUNTIME_CAPABILITY_TOKEN = capabilityToken;
     env.PRISM_RUNTIME_CAPABILITIES = effectiveCapabilities.map((capability) => capability.key).join(',');
   }
-  const toolsetToken = callableToolsets.length
-    ? runtimeToolsetSessions.create(
-        callableToolsets.map((toolset) => toolset.key),
-        input.gatewayContext || {},
-        config.codexRuntimeTimeoutMs + 60_000,
-      )
-    : null;
-  if (toolsetToken) {
-    env.PRISM_RUNTIME_TOOLSET_URL = `http://127.0.0.1:${config.port}/v1/runtime/toolsets/invoke`;
-    env.PRISM_RUNTIME_TOOLSET_TOKEN = toolsetToken;
-    env.PRISM_RUNTIME_TOOLSETS = callableToolsets.map((toolset) => toolset.key).join(',');
-  }
-
   console.log(
     `[codex-runtime] spawn resume=${isResume ? 'yes' : 'no'} session=${input.sessionId} workspace=${executionWorkspaceRoot}`,
   );
@@ -1126,7 +1060,6 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     });
   } finally {
     if (capabilityToken) runtimeCapabilitySessions.revoke(capabilityToken);
-    if (toolsetToken) runtimeToolsetSessions.revoke(toolsetToken);
   }
 }
 

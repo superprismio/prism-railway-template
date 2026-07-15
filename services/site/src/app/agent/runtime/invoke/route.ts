@@ -51,8 +51,8 @@ export async function POST(request: Request) {
   const capabilities = Array.isArray(body?.capabilities)
     ? body.capabilities.filter((entry) => typeof entry === "string" || (entry && typeof entry === "object" && !Array.isArray(entry))) as Array<string | { key: string; [key: string]: unknown }>
     : [];
-  const toolsets = Array.isArray(body?.toolsets)
-    ? body.toolsets.filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry)) as Array<{ key: string; protocol?: "openapi" | "mcp" | "http" | "adapter" }>
+  const credentials = Array.isArray(body?.credentials)
+    ? body.credentials.filter((entry) => typeof entry === "string" || (entry && typeof entry === "object" && !Array.isArray(entry))) as Array<string | { key: string }>
     : [];
   const metadata = recordValue(body?.metadata);
   const skills = stringArray(body?.skills).length > 0
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       recentHistory,
       skills,
       capabilities,
-      toolsets,
+      credentials,
       context: Object.fromEntries(
         Object.entries(recordValue(body?.context)).map(([key, value]) => [key, value == null ? undefined : String(value)]),
       ),

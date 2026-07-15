@@ -6,12 +6,11 @@ import {
   resolveSourceAdapterPolicy,
 } from "@/lib/app-core";
 import { requireServiceAccess } from "@/lib/internal-service";
+import { credentialsForSourceMode } from "@/lib/gateway-credential-assignment";
 import {
   listEnabledGatewayCredentialsOrEmpty,
-  listEnabledGatewayToolsetsOrEmpty,
   listInteractiveGatewayCapabilitiesOrEmpty,
 } from "@/lib/prism-gateway";
-import { interactiveGatewayToolsets } from "@/lib/gateway-toolset-assignment";
 
 function stringField(value: unknown) {
   return typeof value === "string" ? value.trim().slice(0, 200) : "";
@@ -43,17 +42,13 @@ export async function POST(request: Request) {
     userId,
   });
   const capabilityDescriptors = await listInteractiveGatewayCapabilitiesOrEmpty(resolved.mode);
-  const enabledToolsets = resolved.mode === "full" ? await listEnabledGatewayToolsetsOrEmpty() : [];
-  const toolsets = interactiveGatewayToolsets(
-    enabledToolsets,
-    resolved.mode === "full" ? await listEnabledGatewayCredentialsOrEmpty() : [],
-  );
+  const credentials = resolved.mode === "full" ? await listEnabledGatewayCredentialsOrEmpty() : [];
   return NextResponse.json({
     ok: true,
     profile: resolved.mode === "full" ? "admin" : resolved.mode === "off" ? "off" : "read",
     accessPolicy: resolved,
     capabilities: capabilityDescriptors.map((capability) => capability.key),
     capabilityDescriptors,
-    toolsets,
+    credentials: credentialsForSourceMode(resolved.mode, credentials),
   });
 }

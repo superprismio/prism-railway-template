@@ -179,8 +179,8 @@ If `outputConfig.outputDestinations` is configured, task-runner posts the script
 
 For notifications, task-runner prefers a JSON `responseText`, `output_text`, `summary`, `message`, or `text` field before falling back to raw output. Stdout/stderr capture is bounded by `TASK_RUNNER_SCRIPT_OUTPUT_MAX_BYTES` so noisy scripts cannot exhaust task-runner memory.
 
-Script-runner tasks may declare adapter connected services through
-`agentConfig.gatewayToolsets`. When assigned, Task Runner leases their
+Script-runner tasks may declare credentials through
+`agentConfig.gatewayCredentials`. When assigned, Task Runner leases their
 credentials from Prism Gateway and injects the returned environment variables
 only into the script child process. Do not place provider credentials in task
 params or script content. Assigned leases fail closed when Gateway is disabled

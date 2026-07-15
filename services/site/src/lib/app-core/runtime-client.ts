@@ -29,7 +29,7 @@ export type RuntimeRequestInput = {
   recentHistory?: Array<{ role: string; content: string }>;
   skills?: string[];
   capabilities?: Array<string | { key: string; [key: string]: unknown }>;
-  toolsets?: Array<{ key: string; protocol?: 'openapi' | 'mcp' | 'http' | 'adapter' }>;
+  credentials?: Array<string | { key: string }>;
   context?: Record<string, string | undefined>;
   metadata?: Record<string, unknown>;
   runtimeKey?: string | null;
@@ -206,7 +206,7 @@ async function requestNormalized(
     recentHistory: input.recentHistory ?? [],
     skills: (input.skills ?? []).map((name) => ({ name })),
     capabilities: (input.capabilities ?? []).map((entry) => typeof entry === 'string' ? { key: entry } : entry),
-    toolsets: input.toolsets ?? [],
+    credentials: (input.credentials ?? []).map((entry) => typeof entry === 'string' ? { key: entry } : entry),
     context: input.context ?? {},
     metadata: input.metadata ?? {},
   };
@@ -258,7 +258,7 @@ async function requestLegacy(profile: RuntimeProfileRecord, input: RuntimeReques
     codexThreadId: input.continuationId ?? null,
     recentHistory: input.recentHistory ?? [],
     capabilities: input.capabilities ?? [],
-    toolsets: input.toolsets ?? [],
+    credentials: input.credentials ?? [],
     context: input.context ?? {},
     metadata: {
       ...(input.metadata ?? {}),

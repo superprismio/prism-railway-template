@@ -2,7 +2,7 @@
 
 Status: v1 implemented by Codex Runtime and local Grok Runtime
 
-Related plan: [Prism Gateway MVP Implementation Plan](../features/prism-gateway-mvp-implementation-plan.md)
+Related decision: [Prism Credential Gateway](../features/prism-capability-gateway.md)
 
 Related feature: [Local Prism Stack And Runtime Bridge](../features/local-prism-stack-and-runtime-bridge.md)
 
@@ -100,10 +100,9 @@ GET  /v1/responses/jobs/:jobId
       "contentUrl": "http://site.railway.internal:3100/agent/skills/weekly-analytics-brief"
     }
   ],
-  "toolsets": [
+  "credentials": [
     {
-      "key": "portal.admin",
-      "protocol": "openapi"
+      "key": "portal"
     }
   ],
   "context": {
@@ -192,7 +191,6 @@ shell
 site-hosted-skills
 continuations
 image-input
-gateway-toolsets
 gateway-credentials
 ```
 
@@ -203,8 +201,8 @@ workflow, task, and optionally instance-owned skills.
 The downstream service remains authoritative for the credential's RBAC and
 request validation. Gateway leases selected values and non-secret configuration
 into the assigned trusted child job under conventional environment names. The
-long-lived Gateway caller token is never passed to that child. OpenAPI, MCP,
-HTTP proxy, and adapter profiles remain compatibility or advanced modes.
+long-lived Gateway caller token is never passed to that child. The child uses
+normal provider SDKs, CLIs, HTTP/OpenAPI clients, or MCP clients.
 
 In v1, Codex Runtime authenticates to Gateway with its caller-specific service
 token and requests the connected services assigned in the job envelope. Site
@@ -213,9 +211,7 @@ assignment assertions are a future hardening step, not a v1 guarantee. Grok
 Runtime advertises no Gateway support and must not claim to have used assigned
 connected services.
 
-During migration, adapters continue to accept existing `toolsets` and
-`capabilities` arrays as aliases. New deterministic jobs should use
-`gatewayCredentials` in instance configuration.
+Deterministic jobs use `gatewayCredentials` in instance configuration.
 
 ## Skills And Tools
 
@@ -232,8 +228,7 @@ their existing behavior and permissions.
 Generic skills remain runtime- and credential-provider agnostic. Site assigns
 active credentials to Admin Console and full-access source contexts through its
 existing policy. Deterministic jobs may declare `gatewayCredentials`, and
-instance-owned skills may declare `metadata.gateway-credentials`. Existing
-toolset and capability declarations remain valid aliases.
+instance-owned skills may declare `metadata.gateway-credentials`.
 
 Runtime-specific system instructions and bootstrap authentication may remain
 inside the runtime service. For example, Codex CLI device authentication can
@@ -311,7 +306,7 @@ The first proof passed locally on 2026-07-13: the same Site-owned job envelope
 was routed to Codex Runtime and Grok Runtime, and Site resumed the returned Grok
 session ID on a second turn. Grok Runtime currently supports Site-hosted skills,
 host repository/shell access, cancellation, and continuations. It does not yet
-claim Gateway toolsets or isolated workspace assignment.
+claim Gateway credential leasing or isolated workspace assignment.
 
 ## V1 Completion Boundary
 

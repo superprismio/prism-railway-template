@@ -6,7 +6,7 @@ import {
   type ResolvedAddress,
 } from "./http-json-read.js";
 import { isForbiddenIpAddress } from "./network.js";
-import type { McpToolCallDriverConfig, ToolsetAuthConfig } from "./types.js";
+import type { McpToolCallDriverConfig } from "./types.js";
 
 export type McpToolCallResult = {
   result: unknown;
@@ -186,46 +186,6 @@ function parseJsonRpcResponse(contentType: string, body: string) {
   } catch {
     return text;
   }
-}
-
-export async function executeMcpJsonRpc(input: {
-  endpoint: string;
-  auth: ToolsetAuthConfig;
-  credentials: Record<string, string>;
-  method: "tools/list" | "tools/call";
-  params: Record<string, unknown>;
-  timeoutMs?: number;
-  maxResponseBytes?: number;
-}) {
-  const url = new URL(input.endpoint);
-  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: input.method, params: input.params });
-  if (Buffer.byteLength(body) > 1_000_000) throw new GatewayDriverError("TOOLSET_BODY_TOO_LARGE", false);
-  const headers: Record<string, string> = {
-    accept: "application/json, text/event-stream",
-    "content-type": "application/json",
-    "content-length": String(Buffer.byteLength(body)),
-    "user-agent": "prism-gateway/0.1",
-  };
-  if (input.auth.type !== "none") {
-    if (input.auth.type === "payload-login") throw new GatewayDriverError("TOOLSET_MCP_AUTH_UNSUPPORTED", false);
-    const secret = input.credentials[input.auth.secretName];
-    if (!secret) throw new GatewayDriverError("TOOLSET_CONNECTION_SECRET_MISSING", false);
-    if (input.auth.type === "bearer") headers.authorization = `Bearer ${secret}`;
-    else headers[input.auth.headerName] = secret;
-  }
-  const addresses = await resolvePublicAddresses(url.hostname);
-  const response = await performPinnedRequest(
-    url,
-    headers,
-    {
-      timeoutMs: input.timeoutMs ?? 30_000,
-      maxResponseBytes: input.maxResponseBytes ?? 5_000_000,
-    } as McpToolCallDriverConfig,
-    addresses[0],
-    body,
-  );
-  const payload = parseJsonRpcPayload(response.contentType, response.body);
-  return { result: payload.result, status: response.status, responseBytes: response.responseBytes };
 }
 
 export async function executeMcpToolCall(

@@ -60,10 +60,10 @@ async function buildPrompt(input: PrismRuntimeJobRequest) {
       'This adapter version does not expose capability invocation. Do not claim that you invoked these capabilities.',
     );
   }
-  if (input.toolsets?.length) {
+  if (input.credentials?.length) {
     sections.push(
-      `Organization toolsets requested for this job: ${JSON.stringify(input.toolsets)}`,
-      'This adapter version does not expose Gateway toolset invocation. Do not claim that you used these toolsets.',
+      `Organization credentials requested for this job: ${JSON.stringify(input.credentials)}`,
+      'This adapter version does not support credential leasing. Do not claim that you used these credentials.',
     );
   }
   for (const skill of skills) {

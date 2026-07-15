@@ -47,7 +47,6 @@ type GatewayCredential = {
   configuration: Record<string, string>;
   envBindings: Record<string, string>;
   status: string;
-  toolsetKeys: string[];
   secretNames: string[];
   lastUsedAt: string | null;
 };
@@ -150,7 +149,6 @@ function statusLabel(status: string) {
 
 function auditSubject(value: string) {
   if (value.startsWith("credential:")) return value.slice("credential:".length);
-  if (value.startsWith("toolset:")) return value.slice("toolset:".length);
   return value;
 }
 
@@ -222,7 +220,6 @@ export function GatewaySettings() {
         key: credential.key || credential.provider || credential.id,
         configuration: credential.configuration ?? {},
         envBindings: credential.envBindings ?? {},
-        toolsetKeys: credential.toolsetKeys ?? [],
         secretNames: credential.secretNames ?? [],
       })),
     [overview?.connections],
@@ -371,7 +368,7 @@ export function GatewaySettings() {
           <Table>
             <TableHeader><TableRow>
               <TableHead>Credential</TableHead><TableHead>Type</TableHead><TableHead>Variables</TableHead>
-              <TableHead>Used by</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead>
+              <TableHead>Available to</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow></TableHeader>
             <TableBody>
@@ -380,7 +377,7 @@ export function GatewaySettings() {
                   <TableCell><div className="font-medium">{credential.label}</div><div className="font-mono text-xs text-muted-foreground">{credential.key}</div></TableCell>
                   <TableCell>{credentialTypes.find(([value]) => value === credential.authType)?.[1] ?? credential.authType}</TableCell>
                   <TableCell><div className="max-w-[360px] font-mono text-xs text-muted-foreground">{[...Object.keys(credential.envBindings), ...Object.keys(credential.configuration)].join(", ") || "None"}</div></TableCell>
-                  <TableCell>{credential.toolsetKeys.length ? credential.toolsetKeys.join(", ") : "Admin contexts"}</TableCell>
+                  <TableCell>Trusted runs</TableCell>
                   <TableCell>{formatDate(credential.lastUsedAt)}</TableCell>
                   <TableCell><Badge variant={statusVariant(credential.status)}>{statusLabel(credential.status)}</Badge></TableCell>
                   <TableCell><div className="flex justify-end gap-2">

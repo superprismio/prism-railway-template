@@ -18,12 +18,9 @@ client. Skills and scripts use their normal environment variables and provider
 APIs; they do not need a Prism-specific SDK.
 
 The credential `key` is the stable assignment name used by tasks and workflows.
-Full-access admin Console and source-adapter sessions receive the active
-credential catalog automatically. Read-only source contexts do not.
-
-Toolsets, capabilities, grants, fixed-origin proxies, and provider presets are
-legacy compatibility surfaces. Do not create them for a new credential unless
-the user explicitly needs an OpenAPI/MCP proxy or an untrusted caller boundary.
+Full-access Admin Console and source-adapter sessions receive active credentials
+automatically. Read-only and run-approved source contexts do not. This existing
+source trust decision is authoritative; do not add a second permission layer.
 
 ## Inspect
 
@@ -96,7 +93,7 @@ PATCH /agent/gateway/connections/<connection-id>
 }
 ```
 
-## Assign To Deterministic Jobs
+## Use From Trusted Jobs
 
 Admin Console and full-access Discord/Telegram contexts discover credentials
 automatically. Deterministic tasks and workflow steps should declare only the
@@ -116,6 +113,7 @@ is also valid.
 
 Task Runner script jobs receive the same leased environment bundle as runtime
 jobs. Configuration variables and decrypted secrets exist only for the job.
+Gateway audits the lease, not each downstream provider request.
 
 ## Verify
 
@@ -130,7 +128,5 @@ Run Prism Doctor after changing deterministic task or workflow assignments.
 
 - Never send secret values through `/agent/*`, chat, artifacts, or logs.
 - Do not duplicate provider schemas or APIs inside Gateway.
-- Do not add egress restrictions, route allowlists, or grants unless required
-  by a concrete trust boundary.
-- Keep working legacy aliases during migration; normal deployments backfill
-  them into credential bundles automatically.
+- Do not add egress restrictions, route allowlists, or parallel grants. Source
+  policy and operator-owned task/workflow configuration define trust.

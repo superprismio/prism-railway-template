@@ -1028,10 +1028,7 @@ type RuntimeCapabilityDescriptor = {
   inputSchema?: JsonObject;
 };
 
-type RuntimeToolsetDescriptor = {
-  key: string;
-  protocol?: "openapi" | "mcp" | "http" | "adapter";
-};
+type RuntimeCredentialDescriptor = { key: string };
 
 async function resolveInteractiveGatewayAccess(input: {
   platform: "discord" | "telegram";
@@ -1039,7 +1036,10 @@ async function resolveInteractiveGatewayAccess(input: {
   threadId?: string | null;
   groupIds?: string[];
   userId: string;
-}): Promise<{ capabilities: RuntimeCapabilityDescriptor[]; toolsets: RuntimeToolsetDescriptor[] }> {
+}): Promise<{
+  capabilities: RuntimeCapabilityDescriptor[];
+  credentials: RuntimeCredentialDescriptor[];
+}> {
   try {
     const payload = await appApiRequest("/agent/gateway/interactive-capabilities", {
       method: "POST",
@@ -1069,23 +1069,18 @@ async function resolveInteractiveGatewayAccess(input: {
         ...(inputSchema ? { inputSchema } : {}),
       }];
     });
-    const toolsets = (Array.isArray(payload.toolsets) ? payload.toolsets : []).flatMap((entry): RuntimeToolsetDescriptor[] => {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
-      const record = entry as JsonObject;
-      const key = typeof record.key === "string" ? record.key.trim() : "";
-      if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key)) return [];
-      const protocol = record.protocol === "openapi" || record.protocol === "mcp" || record.protocol === "http" || record.protocol === "adapter"
-        ? record.protocol
-        : undefined;
-      return [{ key, ...(protocol ? { protocol } : {}) }];
+    const credentials = (Array.isArray(payload.credentials) ? payload.credentials : []).flatMap((entry): RuntimeCredentialDescriptor[] => {
+      const record = entry && typeof entry === "object" && !Array.isArray(entry) ? entry as JsonObject : {};
+      const key = typeof entry === "string" ? entry.trim() : typeof record.key === "string" ? record.key.trim() : "";
+      return /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key) ? [{ key }] : [];
     });
     return {
       capabilities: Array.from(new Map(normalized.map((descriptor) => [descriptor.key, descriptor])).values()),
-      toolsets: Array.from(new Map(toolsets.map((descriptor) => [descriptor.key, descriptor])).values()),
+      credentials: Array.from(new Map(credentials.map((descriptor) => [descriptor.key, descriptor])).values()),
     };
   } catch (error) {
     console.warn("[source-adapter] interactive Gateway access unavailable; continuing without it", describeError(error));
-    return { capabilities: [], toolsets: [] };
+    return { capabilities: [], credentials: [] };
   }
 }
 
@@ -1095,7 +1090,7 @@ async function runtimeRequest(input: {
   continuationId: string | null;
   recentHistory: Array<{ role: string; content: string }>;
   capabilities?: RuntimeCapabilityDescriptor[];
-  toolsets?: RuntimeToolsetDescriptor[];
+  credentials?: RuntimeCredentialDescriptor[];
   gatewayContext?: JsonObject;
   metadata: JsonObject;
 }): Promise<{ responseText: string; continuationId: string | null; provider: string | null; runtimeKey: string | null }> {
@@ -1106,7 +1101,7 @@ async function runtimeRequest(input: {
     continuationId: input.continuationId,
     recentHistory: input.recentHistory,
     capabilities: input.capabilities ?? [],
-    toolsets: input.toolsets ?? [],
+    credentials: input.credentials ?? [],
     context: input.gatewayContext ?? {},
     metadata: input.metadata,
     timeoutMs,
@@ -1739,7 +1734,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       continuationId: runtimeContinuationId,
       recentHistory,
       capabilities: gatewayAccess.capabilities,
-      toolsets: gatewayAccess.toolsets,
+      credentials: gatewayAccess.credentials,
       gatewayContext: {
         delegatedActorId: `telegram:${transport.authorId}`,
       },
@@ -2738,7 +2733,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         continuationId: runtimeContinuationId,
         recentHistory,
         capabilities: gatewayAccess.capabilities,
-        toolsets: gatewayAccess.toolsets,
+        credentials: gatewayAccess.credentials,
         gatewayContext: {
           delegatedActorId: `discord:${transport.authorId}`,
         },

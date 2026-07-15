@@ -42,9 +42,8 @@ export type PrismRuntimeCapabilityGrant = {
   grantId?: string;
 };
 
-export type PrismRuntimeToolsetGrant = {
+export type PrismRuntimeCredentialGrant = {
   key: string;
-  protocol?: "openapi" | "mcp" | "http" | "adapter";
 };
 
 export type PrismRuntimeJobRequest = {
@@ -54,7 +53,7 @@ export type PrismRuntimeJobRequest = {
   continuationId?: string | null;
   recentHistory?: Array<{ role: string; content: string }>;
   skills?: PrismRuntimeSkillReference[];
-  toolsets?: PrismRuntimeToolsetGrant[];
+  credentials?: PrismRuntimeCredentialGrant[];
   capabilities?: PrismRuntimeCapabilityGrant[];
   context?: PrismRuntimeDelegationContext;
   metadata?: Record<string, unknown>;
@@ -177,31 +176,9 @@ export type PrismGatewayConnection = {
   authType: string;
   status: PrismGatewayConnectionStatus;
   capabilityKeys: string[];
-  toolsetKeys: string[];
   secretNames: string[];
   lastTestedAt?: string | null;
   lastUsedAt?: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type PrismGatewayToolsetProfile = {
-  key: string;
-  connectionId: string;
-  protocol: "openapi" | "mcp" | "http" | "adapter";
-  discoveryUrl: string;
-  auth: {
-    type: "none" | "bearer" | "api-key" | "payload-login";
-    secretName?: string;
-    headerName?: string;
-    emailSecretName?: string;
-    passwordSecretName?: string;
-    loginPath?: string;
-  };
-  description: string;
-  enabled: boolean;
-  lastDiscoveredAt?: string | null;
-  discoveryError?: string | null;
   createdAt: string;
   updatedAt: string;
 };

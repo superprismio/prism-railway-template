@@ -10,7 +10,7 @@ import type { RuntimeCapabilityDescriptor } from './codex-runtime.js';
 import { GatewayClientError } from './gateway-client.js';
 import { listPrismSkills } from './prism-skills.js';
 import { RuntimeCapabilityError } from './runtime-capabilities.js';
-import { gatewayClient, runtimeCapabilitySessions, runtimeToolsetSessions } from './runtime-gateway.js';
+import { gatewayClient, runtimeCapabilitySessions } from './runtime-gateway.js';
 
 const startedAt = new Date();
 const app = express();
@@ -20,23 +20,7 @@ const runtimeContractVersion = '2026-07-10' as const;
 const runtimeKey = process.env.PRISM_RUNTIME_KEY?.trim() || 'codex-default';
 
 const standardJsonParser = express.json({ limit: '1mb' });
-const toolsetJsonParser = express.json({ limit: '16mb' });
-app.use((req, res, next) => {
-  if (req.method !== 'POST' || req.path !== '/v1/runtime/toolsets/invoke') {
-    return standardJsonParser(req, res, next);
-  }
-  const token = req.header('x-runtime-toolset-token')?.trim() || '';
-  try {
-    runtimeToolsetSessions.assertActive(token);
-    return toolsetJsonParser(req, res, next);
-  } catch (error) {
-    if (error instanceof RuntimeCapabilityError) {
-      res.status(error.status).json({ ok: false, error: error.code });
-      return;
-    }
-    res.status(401).json({ ok: false, error: 'RUNTIME_TOOLSET_SESSION_INVALID' });
-  }
-});
+app.use(standardJsonParser);
 
 type RuntimeRequestBody = {
   contractVersion?: unknown;
@@ -47,7 +31,7 @@ type RuntimeRequestBody = {
   recentHistory?: Array<{ role?: unknown; content?: unknown }>;
   skills?: unknown;
   capabilities?: unknown;
-  toolsets?: unknown;
+  credentials?: unknown;
   context?: unknown;
   metadata?: Record<string, unknown>;
 };
@@ -78,7 +62,7 @@ type RuntimeResponseJob = {
     codexThreadId: string | null;
     recentHistory: Array<{ role: string; content: string }>;
     capabilities: RuntimeCapabilityDescriptor[];
-    toolsets: RuntimeToolsetDescriptor[];
+    credentials: string[];
     gatewayContext: Record<string, string>;
     metadata: Record<string, unknown>;
   };
@@ -138,7 +122,7 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
         .filter((entry) => entry.content.trim())
       : [],
     capabilities: normalizeRuntimeCapabilities(body.capabilities),
-    toolsets: normalizeRuntimeToolsets(body.toolsets),
+    credentials: normalizeRuntimeCredentials(body.credentials),
     gatewayContext: normalizeGatewayContext(body.context),
     metadata: requestedSkills.length
       ? { ...metadata, requestedSkills: Array.from(new Set([...existingRequestedSkills, ...requestedSkills])) }
@@ -146,10 +130,20 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
   };
 }
 
-type RuntimeToolsetDescriptor = {
-  key: string;
-  protocol?: "openapi" | "mcp" | "http" | "adapter";
-};
+function normalizeRuntimeCredentials(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.flatMap((entry): string[] => {
+    const record = entry && typeof entry === 'object' && !Array.isArray(entry)
+      ? entry as Record<string, unknown>
+      : {};
+    const key = typeof entry === 'string'
+      ? entry.trim()
+      : typeof record.key === 'string'
+        ? record.key.trim()
+        : '';
+    return key && /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key) ? [key] : [];
+  })));
+}
 
 function normalizeRuntimeSkills(value: unknown) {
   if (!Array.isArray(value)) return [];
@@ -164,20 +158,6 @@ function normalizeRuntimeSkills(value: unknown) {
         : '';
     return name && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,119}$/.test(name) ? [name] : [];
   })));
-}
-
-function normalizeRuntimeToolsets(value: unknown): RuntimeToolsetDescriptor[] {
-  if (!Array.isArray(value)) return [];
-  const normalized = value.flatMap((entry): RuntimeToolsetDescriptor[] => {
-    const record = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : {};
-    const key = typeof entry === 'string' ? entry.trim() : typeof record.key === 'string' ? record.key.trim() : '';
-    if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key)) return [];
-    const protocol = record.protocol === 'openapi' || record.protocol === 'mcp' || record.protocol === 'http' || record.protocol === 'adapter'
-      ? record.protocol
-      : undefined;
-    return [{ key, ...(protocol ? { protocol } : {}) }];
-  });
-  return Array.from(new Map(normalized.map((toolset) => [toolset.key, toolset])).values());
 }
 
 function normalizeRuntimeCapabilities(value: unknown): RuntimeCapabilityDescriptor[] {
@@ -439,7 +419,7 @@ app.get('/v1/runtime/manifest', (_req, res) => {
       sessionContinuity: true,
       traceEvents: true,
       gatewayCapabilities: true,
-      gatewayToolsets: true,
+      gatewayCredentials: true,
       workspaceAssignment: true,
     },
   });
@@ -457,7 +437,6 @@ app.get('/v1/runtime/capabilities', (_req, res) => {
       'continuations',
       'gateway-capabilities',
       'gateway-credentials',
-      'gateway-toolsets',
       'workspace-assignment',
       'trace-events',
       'cancellation',
@@ -509,22 +488,6 @@ app.post('/v1/runtime/capabilities/invoke', async (req, res) => {
       return;
     }
     res.status(500).json({ ok: false, error: 'RUNTIME_CAPABILITY_INVOKE_FAILED' });
-  }
-});
-
-app.post('/v1/runtime/toolsets/invoke', async (req, res) => {
-  const token = req.header('x-runtime-toolset-token')?.trim() || '';
-  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body as Record<string, unknown> : {};
-  const toolset = typeof body.toolset === 'string' ? body.toolset.trim() : '';
-  const action = body.action === 'describe' || body.action === 'request' ? body.action : null;
-  const request = body.request && typeof body.request === 'object' && !Array.isArray(body.request) ? body.request as Record<string, unknown> : undefined;
-  if (!token || !toolset || !action) return res.status(400).json({ ok: false, error: 'RUNTIME_TOOLSET_INPUT_INVALID' });
-  try {
-    res.json(await runtimeToolsetSessions.invoke(token, toolset, action, request));
-  } catch (error) {
-    if (error instanceof RuntimeCapabilityError) return res.status(error.status).json({ ok: false, error: error.code });
-    if (error instanceof GatewayClientError) return res.status(error.status).json({ ok: false, error: error.code, retryable: error.retryable });
-    return res.status(500).json({ ok: false, error: 'RUNTIME_TOOLSET_INVOKE_FAILED' });
   }
 });
 

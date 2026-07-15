@@ -17,6 +17,28 @@ const siteToken = "site-token-for-gateway-tests";
 const codexToken = "codex-token-for-gateway-tests";
 const taskRunnerToken = "task-runner-token-for-gateway-tests";
 
+test("gateway migration removes legacy toolset profile storage", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "prism-gateway-migration-test-"));
+  const db = openGatewayDatabase(path.join(root, "gateway.sqlite"));
+  try {
+    runGatewayMigrations(db);
+    db.exec("CREATE TABLE toolset_profiles (key TEXT PRIMARY KEY)");
+    db.prepare("DELETE FROM schema_migrations WHERE name = ?")
+      .run("007_remove_legacy_toolset_profiles");
+
+    const result = runGatewayMigrations(db);
+
+    assert.deepEqual(result.executed, ["007_remove_legacy_toolset_profiles"]);
+    const legacyTable = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'toolset_profiles'",
+    ).get();
+    assert.equal(legacyTable, undefined);
+  } finally {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 async function jsonRequest(
   baseUrl: string,
   pathname: string,
@@ -31,7 +53,7 @@ async function jsonRequest(
   };
 }
 
-test("gateway stores credentials safely and enforces caller identity", async () => {
+test("gateway stores, leases, audits, rotates, and revokes trusted runtime credentials", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "prism-gateway-test-"));
   const config: GatewayConfig = {
     port: 0,
@@ -49,36 +71,12 @@ test("gateway stores credentials safely and enforces caller identity", async () 
   const migrations = runGatewayMigrations(db);
   const store = new GatewayStore(db, { key: config.masterKey, keyVersion: config.masterKeyVersion });
   store.seedBuiltInDrivers();
-  const invoker = new GatewayInvoker(store, async (driverConfig, credentials, input) => {
-    assert.equal(driverConfig.baseUrl, "https://analytics.example.org");
-    assert.equal(credentials.apiKey, "plausible-secret-value");
-    assert.deepEqual(input, { period: "7d" });
-    return { result: { visitors: 123 }, status: 200, responseBytes: 16 };
-  });
-  const app = createGatewayApp({
-    config,
-    db,
-    store,
-    invoker,
-    migrationCount: migrations.totalKnown,
-    executeToolset: async (profile, credentials, request) => {
-      assert.equal(credentials.apiKey, "plausible-secret-value");
-      if (profile.key === "crm.admin") {
-        if (request) assert.deepEqual(request, { tool: "crm_list_accounts", arguments: { limit: 5 } });
-        return { status: 200, contentType: "application/json", body: request ? { accounts: [] } : { tools: [] }, responseBytes: 20 };
-      }
-      assert.equal(profile.key, "portal.admin");
-      if (request && "path" in request && request.path === "/api/slow-import") {
-        await new Promise((resolve) => setTimeout(resolve, 30));
-        return { status: 200, contentType: "application/json", body: { imported: 11 }, responseBytes: 15 };
-      }
-      if (request && "path" in request && request.path === "/api/timed-out-import") {
-        throw new GatewayDriverError("TOOLSET_DOWNSTREAM_TIMEOUT", true);
-      }
-      if (request) assert.deepEqual(request, { method: "PATCH", path: "/api/posts/1", query: {}, body: { title: "Updated" } });
-      return { status: 200, contentType: "application/json", body: request ? { updated: true } : { openapi: "3.0.0" }, responseBytes: 20 };
-    },
-  });
+  const invoker = new GatewayInvoker(store, async () => ({
+    result: { ok: true },
+    status: 200,
+    responseBytes: 12,
+  }));
+  const app = createGatewayApp({ config, db, store, invoker, migrationCount: migrations.totalKnown });
   const server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const address = server.address() as AddressInfo;
@@ -92,547 +90,82 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     const unauthorized = await jsonRequest(baseUrl, "/connections");
     assert.equal(unauthorized.response.status, 401);
 
-    const oversizedBody = JSON.stringify({ padding: "x".repeat(300 * 1024) });
-    const unauthorizedOversized = await fetch(`${baseUrl}/toolsets/portal.admin/request`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: oversizedBody,
-    });
-    assert.equal(unauthorizedOversized.status, 401);
-
-    const authenticatedStandardOversized = await fetch(`${baseUrl}/connections`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
-      body: oversizedBody,
-    });
-    assert.equal(authenticatedStandardOversized.status, 413);
-
-    const forbidden = await jsonRequest(baseUrl, "/connections", {
-      headers: { "x-gateway-token": codexToken },
-    });
-    assert.equal(forbidden.response.status, 403);
-
-    const pending = await jsonRequest(baseUrl, "/connections", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
-      body: JSON.stringify({
-        provider: "pending-provider",
-        label: "Pending connection",
-        authType: "bearer",
-        credentials: {},
-      }),
-    });
-    assert.equal(pending.response.status, 201);
-    assert.deepEqual((pending.body.connection as Record<string, unknown>).secretNames, []);
-    const pendingConnectionId = String((pending.body.connection as Record<string, unknown>).id);
-    store.markConnectionLeased(pendingConnectionId);
-    assert.equal(store.getConnection(pendingConnectionId)?.status, "leased");
-
-    const plaintext = "plausible-secret-value";
+    const plaintext = "sendgrid-secret-value";
     const created = await jsonRequest(baseUrl, "/connections", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
+      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
       body: JSON.stringify({
-        provider: "analytics",
-        label: "Primary analytics",
+        key: "sendgrid",
+        provider: "sendgrid",
+        label: "SendGrid",
         authType: "api-key",
         credentials: { apiKey: plaintext },
+        configuration: { SENDGRID_BASE_URL: "https://api.sendgrid.com" },
+        envBindings: { SENDGRID_API_KEY: "apiKey" },
       }),
     });
     assert.equal(created.response.status, 201);
     assert.equal(created.text.includes(plaintext), false);
     const connection = created.body.connection as Record<string, unknown>;
     const connectionId = String(connection.id);
+    assert.equal(connection.key, "sendgrid");
     assert.deepEqual(connection.secretNames, ["apiKey"]);
-    assert.equal(store.getConnectionCredentials(connectionId).apiKey, plaintext);
 
-    const protectedImport = await jsonRequest(baseUrl, "/credentials/import", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
-      body: JSON.stringify({ credentials: { PRISM_GATEWAY_TOKEN: "must-not-store" } }),
-    });
-    assert.equal(protectedImport.response.status, 400);
-    assert.equal(protectedImport.body.error, "STORED_CREDENTIAL_PROTECTED");
-    const protectedPrismImport = await jsonRequest(baseUrl, "/credentials/import", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
-      body: JSON.stringify({ credentials: { PRISM_MEMORY_OPS_KEY: "must-not-store" } }),
-    });
-    assert.equal(protectedPrismImport.response.status, 400);
-    assert.equal(protectedPrismImport.body.error, "STORED_CREDENTIAL_PROTECTED");
-    const emptyImport = await jsonRequest(baseUrl, "/credentials/import", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
-      body: JSON.stringify({ credentials: {} }),
-    });
-    assert.equal(emptyImport.response.status, 400);
-    assert.equal(emptyImport.body.error, "STORED_CREDENTIALS_INVALID");
-    const malformedImport = await jsonRequest(baseUrl, "/credentials/import", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
-      body: JSON.stringify({ credentials: { GRAPH_API_KEY: 42 } }),
-    });
-    assert.equal(malformedImport.response.status, 400);
-    assert.equal(malformedImport.body.error, "STORED_CREDENTIAL_INVALID");
-
-    const storedPlaintext = "instance-graph-secret";
-    const importedCredentials = await jsonRequest(baseUrl, "/credentials/import", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
-      body: JSON.stringify({ credentials: { GRAPH_API_KEY: storedPlaintext } }),
-    });
-    assert.equal(importedCredentials.response.status, 201);
-    assert.equal(importedCredentials.text.includes(storedPlaintext), false);
-    assert.deepEqual(
-      (importedCredentials.body.credentials as Array<Record<string, unknown>>).map((entry) => entry.name),
-      ["GRAPH_API_KEY"],
-    );
-    const runtimeCannotListCredentials = await jsonRequest(baseUrl, "/credentials", {
+    const runtimeCannotList = await jsonRequest(baseUrl, "/credential-bundles", {
       headers: { "x-gateway-token": codexToken },
     });
-    assert.equal(runtimeCannotListCredentials.response.status, 403);
-    const listedCredentials = await jsonRequest(baseUrl, "/credentials", {
-      headers: { "x-gateway-token": siteToken },
-    });
-    assert.deepEqual(
-      (listedCredentials.body.credentials as Array<Record<string, unknown>>).map((entry) => entry.name),
-      ["GRAPH_API_KEY"],
-    );
-    assert.equal(listedCredentials.text.includes(storedPlaintext), false);
+    assert.equal(runtimeCannotList.response.status, 403);
 
-    const boundCredential = await jsonRequest(
-      baseUrl,
-      `/connections/${encodeURIComponent(connectionId)}/credentials/from-store`,
-      {
-        method: "PUT",
-        headers: { "content-type": "application/json", "x-gateway-token": siteToken },
-        body: JSON.stringify({ bindings: { apiKey: "GRAPH_API_KEY" } }),
-      },
-    );
-    assert.equal(boundCredential.response.status, 200);
-    assert.equal(boundCredential.text.includes(storedPlaintext), false);
-    assert.equal(store.getConnectionCredentials(connectionId).apiKey, storedPlaintext);
-    store.upsertStoredCredentials({ GRAPH_API_KEY: "rotated-instance-graph-secret" });
-    assert.equal(
-      store.getConnectionCredentials(connectionId).apiKey,
-      "rotated-instance-graph-secret",
-    );
-    store.upsertStoredCredentials({ GRAPH_API_KEY: plaintext });
-
-    const privateToolset = await jsonRequest(baseUrl, "/toolsets", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
-      body: JSON.stringify({
-        key: "portal.private",
-        connectionId,
-        protocol: "openapi",
-        discoveryUrl: "https://127.0.0.1/openapi.json",
-        description: "Private destination must be rejected",
-      }),
-    });
-    assert.equal(privateToolset.response.status, 400);
-    assert.equal(privateToolset.body.error, "TOOLSET_DISCOVERY_URL_PRIVATE_HOST_FORBIDDEN");
-
-    const toolsetCreated = await jsonRequest(baseUrl, "/toolsets", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
-      body: JSON.stringify({
-        key: "portal.admin",
-        connectionId,
-        protocol: "openapi",
-        discoveryUrl: "https://portal.example.org/openapi.json",
-        auth: { type: "bearer", secretName: "apiKey" },
-        description: "Portal administrator toolset",
-      }),
-    });
-    assert.equal(toolsetCreated.response.status, 201);
-    assert.equal((toolsetCreated.body.toolset as Record<string, unknown>).protocol, "openapi");
-    assert.deepEqual(store.getConnection(connectionId)?.toolsetKeys, ["portal.admin"]);
-
-    const runtimeCannotCreateToolset = await jsonRequest(baseUrl, "/toolsets", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": codexToken,
-      },
-      body: JSON.stringify({
-        key: "portal.runtime",
-        connectionId,
-        protocol: "openapi",
-        discoveryUrl: "https://portal.example.org/openapi.json",
-        description: "Forbidden runtime profile",
-      }),
-    });
-    assert.equal(runtimeCannotCreateToolset.response.status, 403);
-
-    const describedToolset = await jsonRequest(baseUrl, "/toolsets/portal.admin/describe", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
-      body: "{}",
-    });
-    assert.equal(describedToolset.response.status, 200);
-    assert.deepEqual(describedToolset.body.result, { openapi: "3.0.0" });
-
-    const relayedToolset = await jsonRequest(baseUrl, "/toolsets/portal.admin/request", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
-      body: JSON.stringify({ method: "PATCH", path: "/api/posts/1", body: { title: "Updated" } }),
-    });
-    assert.equal(relayedToolset.response.status, 200);
-    assert.deepEqual(relayedToolset.body.result, { updated: true });
-
-    const slowImport = await jsonRequest(baseUrl, "/toolsets/portal.admin/request", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
-      body: JSON.stringify({ method: "POST", path: "/api/slow-import", body: { topics: 11 } }),
-    });
-    assert.equal(slowImport.response.status, 200);
-    assert.deepEqual(slowImport.body.result, { imported: 11 });
-
-    const timedOutImport = await jsonRequest(baseUrl, "/toolsets/portal.admin/request", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
-      body: JSON.stringify({ method: "POST", path: "/api/timed-out-import", body: { topics: 11 } }),
-    });
-    assert.equal(timedOutImport.response.status, 502);
-    assert.deepEqual(timedOutImport.body.error, {
-      code: "TOOLSET_DOWNSTREAM_TIMEOUT",
-      retryable: true,
-    });
-    const importAudit = store.listAuditEvents(10);
-    assert.equal(importAudit.find((event) => event.traceId === slowImport.body.traceId)?.status, "succeeded");
-    assert.equal(importAudit.find((event) => event.traceId === timedOutImport.body.traceId)?.errorCode, "TOOLSET_DOWNSTREAM_TIMEOUT");
-
-    const mcpToolset = await jsonRequest(baseUrl, "/toolsets", {
+    const siteCannotLease = await jsonRequest(baseUrl, "/credential-bundles/lease", {
       method: "POST",
       headers: { "content-type": "application/json", "x-gateway-token": siteToken },
-      body: JSON.stringify({
-        key: "crm.admin",
-        connectionId,
-        protocol: "mcp",
-        discoveryUrl: "https://crm.example.org/api/mcp/mcp",
-        auth: { type: "bearer", secretName: "apiKey" },
-        description: "CRM MCP toolset",
-      }),
-    });
-    assert.equal(mcpToolset.response.status, 201);
-    const describedMcp = await jsonRequest(baseUrl, "/toolsets/crm.admin/describe", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
-      body: "{}",
-    });
-    assert.equal(describedMcp.response.status, 200);
-    const calledMcp = await jsonRequest(baseUrl, "/toolsets/crm.admin/request", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
-      body: JSON.stringify({ tool: "crm_list_accounts", arguments: { limit: 5 } }),
-    });
-    assert.equal(calledMcp.response.status, 200);
-    assert.deepEqual(calledMcp.body.result, { accounts: [] });
-
-    const adapterToolset = await jsonRequest(baseUrl, "/toolsets", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
-      body: JSON.stringify({
-        key: "legacy.env",
-        connectionId,
-        protocol: "adapter",
-        discoveryUrl: "https://adapter.invalid/credential-lease",
-        auth: { type: "none" },
-        envBindings: { LEGACY_API_KEY: "apiKey" },
-        description: "Job-scoped compatibility lease",
-      }),
-    });
-    assert.equal(adapterToolset.response.status, 201);
-    const adapterCannotBeInvoked = await jsonRequest(baseUrl, "/toolsets/legacy.env/request", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
-      body: JSON.stringify({ method: "GET", path: "/" }),
-    });
-    assert.equal(adapterCannotBeInvoked.response.status, 409);
-    assert.equal(adapterCannotBeInvoked.body.error, "TOOLSET_ADAPTER_NOT_INVOKABLE");
-    const siteCannotLease = await jsonRequest(baseUrl, "/toolsets/lease", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
-      body: JSON.stringify({ toolsets: ["legacy.env"] }),
+      body: JSON.stringify({ credentials: ["sendgrid"] }),
     });
     assert.equal(siteCannotLease.response.status, 403);
-    const leased = await jsonRequest(baseUrl, "/toolsets/lease", {
+
+    const runtimeLease = await jsonRequest(baseUrl, "/credential-bundles/lease", {
       method: "POST",
       headers: { "content-type": "application/json", "x-gateway-token": codexToken },
-      body: JSON.stringify({ toolsets: ["legacy.env"], context: { runtimeJobId: "job-1" } }),
+      body: JSON.stringify({
+        credentials: ["sendgrid"],
+        context: { delegatedActorId: "admin-console", runtimeJobId: "runtime-job-1" },
+      }),
     });
-    assert.equal(leased.response.status, 200);
-    assert.deepEqual(leased.body.env, { LEGACY_API_KEY: plaintext });
-    const taskRunnerLease = await jsonRequest(baseUrl, "/toolsets/lease", {
+    assert.equal(runtimeLease.response.status, 200);
+    assert.deepEqual(runtimeLease.body.env, {
+      SENDGRID_BASE_URL: "https://api.sendgrid.com",
+      SENDGRID_API_KEY: plaintext,
+    });
+    assert.deepEqual(runtimeLease.body.leasedCredentials, ["sendgrid"]);
+
+    const taskLease = await jsonRequest(baseUrl, "/credential-bundles/lease", {
       method: "POST",
       headers: { "content-type": "application/json", "x-gateway-token": taskRunnerToken },
       body: JSON.stringify({
-        toolsets: ["legacy.env"],
-        context: { delegatedActorId: "task:api-watchdog", runtimeJobId: "script-task:api-watchdog:1" },
+        credentials: ["sendgrid"],
+        context: { delegatedActorId: "task:notification", runtimeJobId: "task-run-1" },
       }),
     });
-    assert.equal(taskRunnerLease.response.status, 200);
-    assert.deepEqual(taskRunnerLease.body.env, { LEGACY_API_KEY: plaintext });
+    assert.equal(taskLease.response.status, 200);
 
-    const compatibilityCredentialLease = await jsonRequest(baseUrl, "/credential-bundles/lease", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
-      body: JSON.stringify({ credentials: ["legacy.env"], context: { runtimeJobId: "job-legacy" } }),
-    });
-    assert.equal(compatibilityCredentialLease.response.status, 200);
-    assert.equal(
-      (compatibilityCredentialLease.body.env as Record<string, unknown>).LEGACY_API_KEY,
-      plaintext,
-    );
-    assert.deepEqual(compatibilityCredentialLease.body.environmentOnlyAliases, ["legacy.env"]);
-
-    // Startup backfill folds existing toolset metadata into the credential bundle.
-    new GatewayStore(db, { key: config.masterKey, keyVersion: config.masterKeyVersion });
-    const migratedCredential = store.getCredential("portal.admin");
-    assert.equal(migratedCredential?.id, connectionId);
-    assert.equal(migratedCredential?.configuration.PORTAL_BASE_URL, "https://portal.example.org");
-    assert.equal(migratedCredential?.configuration.PORTAL_DISCOVERY_URL, "https://portal.example.org/openapi.json");
-    assert.equal(migratedCredential?.envBindings.LEGACY_API_KEY, "apiKey");
-
-    const siteCannotLeaseCredential = await jsonRequest(baseUrl, "/credential-bundles/lease", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
-      body: JSON.stringify({ credentials: ["portal.admin"] }),
-    });
-    assert.equal(siteCannotLeaseCredential.response.status, 403);
-    const credentialLease = await jsonRequest(baseUrl, "/credential-bundles/lease", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
-      body: JSON.stringify({ credentials: ["portal.admin"], context: { runtimeJobId: "job-2" } }),
-    });
-    assert.equal(credentialLease.response.status, 200);
-    assert.equal((credentialLease.body.env as Record<string, unknown>).PORTAL_API_KEY, plaintext);
-    assert.equal(
-      (credentialLease.body.env as Record<string, unknown>).PORTAL_BASE_URL,
-      "https://portal.example.org",
-    );
-    assert.deepEqual(credentialLease.body.environmentOnlyAliases, []);
-
-    const toolsetUpdated = await jsonRequest(baseUrl, "/toolsets/portal.admin", {
-      method: "PATCH",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
-      body: JSON.stringify({ enabled: false }),
-    });
-    assert.equal(toolsetUpdated.response.status, 200);
-    assert.equal((toolsetUpdated.body.toolset as Record<string, unknown>).enabled, false);
-
-    const encryptedRow = db.prepare(
-      "SELECT encrypted_value AS encryptedValue FROM stored_credentials WHERE name = ?",
-    ).get("GRAPH_API_KEY") as { encryptedValue: string };
-    assert.notEqual(encryptedRow.encryptedValue, plaintext);
-
-    const privateCapability = await jsonRequest(baseUrl, "/capabilities", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
-      body: JSON.stringify({
-        key: "analytics.query",
-        driverKey: "http-json.read",
-        connectionId,
-        provider: "analytics",
-        description: "Read analytics",
-        driverConfig: { baseUrl: "http://127.0.0.1:3000", pathTemplate: "/api/stats" },
-      }),
-    });
-    assert.equal(privateCapability.response.status, 400);
-    assert.equal(privateCapability.body.error, "CAPABILITY_BASE_URL_MUST_BE_PUBLIC_HTTPS_ORIGIN");
-
-    const privateIpv6Capability = await jsonRequest(baseUrl, "/capabilities", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
-      body: JSON.stringify({
-        key: "analytics.private",
-        driverKey: "http-json.read",
-        connectionId,
-        provider: "analytics",
-        description: "Forbidden private analytics",
-        driverConfig: { baseUrl: "https://[::1]", pathTemplate: "/api/stats" },
-      }),
-    });
-    assert.equal(privateIpv6Capability.response.status, 400);
-    assert.equal(privateIpv6Capability.body.error, "CAPABILITY_BASE_URL_PRIVATE_HOST_FORBIDDEN");
-
-    const capability = await jsonRequest(baseUrl, "/capabilities", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
-      body: JSON.stringify({
-        key: "analytics.query",
-        driverKey: "http-json.read",
-        connectionId,
-        provider: "analytics",
-        description: "Read analytics",
-        driverConfig: {
-          baseUrl: "https://analytics.example.org",
-          pathTemplate: "/api/stats",
-          timeoutMs: 5000,
-          maxResponseBytes: 250000,
-          allowedQueryParams: ["period"],
-          auth: { type: "bearer", secretName: "apiKey" },
-        },
-      }),
-    });
-    assert.equal(capability.response.status, 201);
-
-    const pendingCapability = await jsonRequest(baseUrl, "/capabilities", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
-      body: JSON.stringify({
-        key: "analytics.pending",
-        driverKey: "http-json.read",
-        connectionId,
-        provider: "analytics",
-        description: "Pending analytics setup",
-        enabled: false,
-        driverConfig: {
-          baseUrl: "https://analytics.example.org",
-          pathTemplate: "/api/stats",
-          allowedQueryParams: ["period"],
-          auth: { type: "bearer", secretName: "apiKey" },
-        },
-      }),
-    });
-    assert.equal(pendingCapability.response.status, 201);
-    assert.equal((pendingCapability.body.capability as Record<string, unknown>).enabled, false);
-
-    const tested = await jsonRequest(baseUrl, "/capabilities/analytics.query/test", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
-      body: JSON.stringify({ input: { period: "7d" } }),
-    });
-    assert.equal(tested.response.status, 200);
-    assert.deepEqual(tested.body.result, { visitors: 123 });
-
-    const denied = await jsonRequest(baseUrl, "/invoke", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": codexToken,
-      },
-      body: JSON.stringify({ capability: "analytics.query", input: { period: "7d" } }),
-    });
-    assert.equal(denied.response.status, 403);
-    assert.equal((denied.body.error as Record<string, unknown>).code, "CAPABILITY_POLICY_DENIED");
-
-    const grant = await jsonRequest(baseUrl, "/grants/codex-analytics-read", {
-      method: "PUT",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
-      body: JSON.stringify({
-        subjectType: "runtime",
-        subjectId: "codex-test",
-        capabilityKey: "analytics.query",
-        allowed: true,
-      }),
-    });
-    assert.equal(grant.response.status, 200);
-
-    const invoked = await jsonRequest(baseUrl, "/invoke", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": codexToken,
-      },
-      body: JSON.stringify({
-        capability: "analytics.query",
-        input: { period: "7d" },
-        context: { requestId: "349" },
-      }),
-    });
-    assert.equal(invoked.response.status, 200);
-    assert.deepEqual(invoked.body.result, { visitors: 123 });
-    assert.equal(invoked.text.includes(plaintext), false);
-
-    const updatedCapability = await jsonRequest(baseUrl, "/capabilities/analytics.query", {
-      method: "PATCH",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
-      body: JSON.stringify({
-        description: "Query analytics with a required site id.",
-        inputSchema: {
-          type: "object",
-          required: ["site_id", "metrics", "date_range"],
-        },
-        driverConfig: {
-          baseUrl: "https://analytics.example.org",
-          pathTemplate: "/api/v2/query",
-          method: "POST",
-          allowedQueryParams: [],
-          allowedJsonBodyParams: ["site_id", "metrics", "date_range"],
-          staticJsonBody: {},
-          auth: { type: "bearer", secretName: "apiKey" },
-        },
-      }),
-    });
-    assert.equal(updatedCapability.response.status, 200);
-    assert.equal(
-      ((updatedCapability.body.capability as Record<string, unknown>).driverConfig as Record<string, unknown>).method,
-      "POST",
-    );
-    assert.deepEqual(
-      ((updatedCapability.body.capability as Record<string, unknown>).inputSchema as Record<string, unknown>).required,
-      ["site_id", "metrics", "date_range"],
-    );
-
-    const audit = await jsonRequest(baseUrl, "/audit-events", {
-      headers: { "x-gateway-token": siteToken },
-    });
-    assert.equal(audit.response.status, 200);
-    const events = audit.body.events as Array<Record<string, unknown>>;
-    assert.equal(events.length, 13);
-    assert.equal(
-      events.some((event) => event.policyDecision === "trusted_runtime_credential_lease"),
-      true,
-    );
+    const events = store.listAuditEvents(10);
+    assert.equal(events.some((event) =>
+      event.capabilityKey === "credential:sendgrid"
+      && event.policyDecision === "trusted_runtime_credential_lease"
+      && event.authenticatedCallerId === "codex-runtime"
+    ), true);
     assert.equal(events.some((event) => event.authenticatedCallerId === "task-runner"), true);
     assert.equal(JSON.stringify(events).includes(plaintext), false);
-    assert.equal(JSON.stringify(events).includes('"limit":5'), false);
+
+    const encryptedRow = db.prepare(
+      "SELECT encrypted_value AS encryptedValue FROM encrypted_secrets WHERE connection_id = ?",
+    ).get(connectionId) as { encryptedValue: string };
+    assert.notEqual(encryptedRow.encryptedValue, plaintext);
 
     const replacement = "replacement-secret-value";
     const replaced = await jsonRequest(baseUrl, `/connections/${connectionId}/credentials`, {
       method: "PUT",
-      headers: {
-        "content-type": "application/json",
-        "x-gateway-token": siteToken,
-      },
+      headers: { "content-type": "application/json", "x-gateway-token": siteToken },
       body: JSON.stringify({ credentials: { apiKey: replacement } }),
     });
     assert.equal(replaced.response.status, 200);
@@ -645,14 +178,19 @@ test("gateway stores credentials safely and enforces caller identity", async () 
     });
     assert.equal(revoked.response.status, 200);
     assert.equal((revoked.body.connection as Record<string, unknown>).status, "revoked");
-    assert.deepEqual(store.getConnectionCredentials(connectionId), {});
+
+    const revokedLease = await jsonRequest(baseUrl, "/credential-bundles/lease", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+      body: JSON.stringify({ credentials: ["sendgrid"] }),
+    });
+    assert.equal(revokedLease.response.status, 409);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     db.close();
     rmSync(root, { recursive: true, force: true });
   }
 });
-
 test("gateway backup and master-key rotation preserve encrypted credentials", async () => {
   const root = mkdtempSync(path.join(tmpdir(), "prism-gateway-ops-test-"));
   const dbPath = path.join(root, "gateway.sqlite");

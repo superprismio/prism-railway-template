@@ -153,72 +153,10 @@ export class PrismGatewayClient {
     return body;
   }
 
-  async toolsetRequest(input: {
-    toolset: string;
-    action: "describe" | "request";
-    request?: Record<string, unknown>;
-    context?: GatewayInvocationContext;
-  }): Promise<Record<string, unknown>> {
-    if (!this.config.enabled) throw new GatewayClientError('PRISM_GATEWAY_DISABLED', 503, false);
-    if (!this.config.baseUrl || !this.config.token) throw new GatewayClientError('PRISM_GATEWAY_NOT_CONFIGURED', 503, false);
-    let response: Response;
-    try {
-      response = await this.fetchImpl(`${this.config.baseUrl}/toolsets/${encodeURIComponent(input.toolset)}/${input.action}`, {
-        method: 'POST',
-        headers: { accept: 'application/json', 'content-type': 'application/json', 'x-gateway-token': this.config.token },
-        body: JSON.stringify(input.action === 'request'
-          ? { ...(input.request ?? {}), context: input.context ?? {} }
-          : { context: input.context ?? {} }),
-        signal: AbortSignal.timeout(this.config.timeoutMs),
-      });
-    } catch (error) {
-      throw gatewayTransportError(error);
-    }
-    const body = await response.json().catch(() => null) as Record<string, unknown> | null;
-    if (!body || !response.ok || body.ok === false) {
-      const error = body?.error && typeof body.error === 'object' ? body.error as Record<string, unknown> : {};
-      throw new GatewayClientError(
-        typeof error.code === 'string' ? error.code : `PRISM_GATEWAY_HTTP_${response.status}`,
-        response.status,
-        error.retryable === true,
-        typeof body?.traceId === 'string' ? body.traceId : null,
-      );
-    }
-    return body;
-  }
-
-  async leaseToolsets(input: {
-    toolsets: string[];
-    context?: GatewayInvocationContext;
-  }): Promise<{ env: Record<string, string>; leasedToolsets: string[] }> {
-    if (!this.config.enabled) throw new GatewayClientError('PRISM_GATEWAY_DISABLED', 503, false);
-    if (!this.config.baseUrl || !this.config.token) throw new GatewayClientError('PRISM_GATEWAY_NOT_CONFIGURED', 503, false);
-    let response: Response;
-    try {
-      response = await this.fetchImpl(`${this.config.baseUrl}/toolsets/lease`, {
-        method: 'POST',
-        headers: { accept: 'application/json', 'content-type': 'application/json', 'x-gateway-token': this.config.token },
-        body: JSON.stringify({ toolsets: input.toolsets, context: input.context ?? {} }),
-        signal: AbortSignal.timeout(this.config.timeoutMs),
-      });
-    } catch (error) {
-      throw gatewayTransportError(error);
-    }
-    const body = await response.json().catch(() => null) as Record<string, unknown> | null;
-    if (!body || !response.ok || body.ok === false || !body.env || typeof body.env !== 'object' || Array.isArray(body.env)) {
-      throw gatewayResponseError(body, response.status);
-    }
-    const env = leasedEnvironment(body.env);
-    const leasedToolsets = Array.isArray(body.leasedToolsets)
-      ? body.leasedToolsets.filter((key): key is string => typeof key === 'string')
-      : [];
-    return { env, leasedToolsets };
-  }
-
   async leaseCredentials(input: {
     credentials: string[];
     context?: GatewayInvocationContext;
-  }): Promise<{ env: Record<string, string>; environmentOnlyAliases: string[] }> {
+  }): Promise<{ env: Record<string, string> }> {
     if (!this.config.enabled) throw new GatewayClientError('PRISM_GATEWAY_DISABLED', 503, false);
     if (!this.config.baseUrl || !this.config.token) throw new GatewayClientError('PRISM_GATEWAY_NOT_CONFIGURED', 503, false);
     let response: Response;
@@ -232,18 +170,11 @@ export class PrismGatewayClient {
     } catch (error) {
       throw gatewayTransportError(error);
     }
-    if (response.status === 404) {
-      const legacy = await this.leaseToolsets({ toolsets: input.credentials, context: input.context });
-      return { env: legacy.env, environmentOnlyAliases: legacy.leasedToolsets };
-    }
     const body = await response.json().catch(() => null) as Record<string, unknown> | null;
     if (!body || !response.ok || body.ok === false || !body.env || typeof body.env !== 'object' || Array.isArray(body.env)) {
       throw gatewayResponseError(body, response.status);
     }
     const env = leasedEnvironment(body.env);
-    const environmentOnlyAliases = Array.isArray(body.environmentOnlyAliases)
-      ? body.environmentOnlyAliases.filter((key): key is string => typeof key === 'string')
-      : [];
-    return { env, environmentOnlyAliases };
+    return { env };
   }
 }

@@ -79,40 +79,14 @@ export async function listInteractiveGatewayCapabilitiesOrEmpty(
   }
 }
 
-export async function listEnabledGatewayToolsetsOrEmpty(): Promise<Array<{
-  key: string;
-  protocol?: "openapi" | "mcp" | "http" | "adapter";
-}>> {
-  const status = getPrismGatewayStatus();
-  if (!status.enabled || !status.configured) return [];
-  try {
-    const payload = await prismGatewayRequest<{ toolsets?: Array<{ key?: unknown; protocol?: unknown; enabled?: unknown }> }>("/toolsets");
-    return (payload.toolsets ?? []).flatMap((toolset) => {
-      if (toolset.enabled !== true || typeof toolset.key !== "string") return [];
-      const protocol = toolset.protocol === "openapi" || toolset.protocol === "mcp" || toolset.protocol === "http" || toolset.protocol === "adapter"
-        ? toolset.protocol
-        : undefined;
-      return [{ key: toolset.key, ...(protocol ? { protocol } : {}) }];
-    });
-  } catch (error) {
-    console.warn(JSON.stringify({
-      event: "prism_gateway.toolset_catalog_unavailable",
-      error: error instanceof Error ? error.message : "PRISM_GATEWAY_TOOLSET_CATALOG_FAILED",
-    }));
-    return [];
-  }
-}
-
 export async function listEnabledGatewayCredentialsOrEmpty(): Promise<Array<{
   key: string;
-  protocol: "adapter";
-  toolsetKeys: string[];
 }>> {
   const status = getPrismGatewayStatus();
   if (!status.enabled || !status.configured) return [];
   try {
     const payload = await prismGatewayRequest<{
-      credentials?: Array<{ key?: unknown; status?: unknown; toolsetKeys?: unknown }>;
+      credentials?: Array<{ key?: unknown; status?: unknown }>;
     }>("/credential-bundles");
     return (payload.credentials ?? []).flatMap((credential) => {
       if (
@@ -122,10 +96,6 @@ export async function listEnabledGatewayCredentialsOrEmpty(): Promise<Array<{
       ) return [];
       return [{
         key: credential.key,
-        protocol: "adapter" as const,
-        toolsetKeys: Array.isArray(credential.toolsetKeys)
-          ? credential.toolsetKeys.filter((key): key is string => typeof key === "string")
-          : [],
       }];
     });
   } catch (error) {
@@ -230,13 +200,12 @@ export async function getPrismGatewayOverview() {
     return { ...status, reachable: false };
   }
 
-  const [health, drivers, credentials, connections, toolsets, capabilities, grants, audit] =
+  const [health, drivers, credentials, connections, capabilities, grants, audit] =
     await Promise.all([
       prismGatewayRequest("/health"),
       prismGatewayRequest("/connector-drivers"),
       prismGatewayRequest("/credentials"),
       prismGatewayRequest("/connections"),
-      prismGatewayRequest("/toolsets"),
       prismGatewayRequest("/capabilities"),
       prismGatewayRequest("/grants"),
       prismGatewayRequest("/audit-events?limit=50"),
@@ -249,7 +218,6 @@ export async function getPrismGatewayOverview() {
     drivers: drivers.drivers ?? [],
     credentials: credentials.credentials ?? [],
     connections: connections.connections ?? [],
-    toolsets: toolsets.toolsets ?? [],
     capabilities: capabilities.capabilities ?? [],
     grants: grants.grants ?? [],
     auditEvents: audit.events ?? [],
