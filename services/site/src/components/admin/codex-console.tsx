@@ -2,11 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bot, Cpu, LoaderCircle, Plus } from "lucide-react";
+import { Bot, Copy, Cpu, ExternalLink, LoaderCircle, Plus, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  MemoryDocumentUploadButton,
+  type UploadedMemoryArtifact,
+} from "@/components/admin/memory-document-upload-button";
 import { describeFetchError, readApiError } from "@/lib/client-api-errors";
 
 type ConsoleMessage = {
@@ -59,6 +63,13 @@ function randomMessageId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function displayConsoleContent(role: string, content: string) {
+  if (role !== "user") return content;
+  const marker = "\n\nConsole question:\n";
+  const markerIndex = content.lastIndexOf(marker);
+  return markerIndex >= 0 ? content.slice(markerIndex + marker.length).trim() : content;
+}
+
 function scrollToLatestMessage(
   element: HTMLDivElement | null,
   behavior: ScrollBehavior = "auto",
@@ -102,6 +113,7 @@ export function CodexConsole({
   const [pollNotice, setPollNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [usesTouchFirstInput, setUsesTouchFirstInput] = useState(false);
+  const [attachedArtifacts, setAttachedArtifacts] = useState<UploadedMemoryArtifact[]>([]);
   const [sessionControlsTarget, setSessionControlsTarget] =
     useState<HTMLElement | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
@@ -150,7 +162,7 @@ export function CodexConsole({
           .map((message) => ({
             id: message.id,
             role: message.role as "user" | "assistant",
-            content: message.content,
+            content: displayConsoleContent(message.role, message.content),
           }))
       : [];
     setSessionId(targetSessionId);
@@ -345,6 +357,19 @@ export function CodexConsole({
     const prompt = String(formData.get("prompt") ?? "").trim();
     if (!prompt) return;
 
+    const artifactContext = attachedArtifacts.length
+      ? [
+          "Attached Prism Memory working documents:",
+          ...attachedArtifacts.map(
+            (artifact) => `- ${artifact.title} (artifact ${artifact.id}): ${artifact.viewUrl}`,
+          ),
+          "Use Prism Memory reader access to fetch the full artifacts when needed.",
+        ].join("\n")
+      : "";
+    const runtimePrompt = artifactContext
+      ? `${artifactContext}\n\nConsole question:\n${prompt}`
+      : prompt;
+
     const userMessage: ConsoleMessage = {
       id: randomMessageId("user"),
       role: "user",
@@ -364,8 +389,9 @@ export function CodexConsole({
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          input: [{ role: "user", content: prompt }],
+          input: [{ role: "user", content: runtimePrompt }],
           session_id: sessionId,
+          ...(attachedArtifacts.length ? { requested_skills: ["prism-api-reader"] } : {}),
         }),
       });
 
@@ -408,6 +434,7 @@ export function CodexConsole({
     setActiveJobId(null);
     setActiveJobTrace([]);
     setPollNotice(null);
+    setAttachedArtifacts([]);
     window.localStorage.removeItem(consoleActiveJobStorageKey);
   }
 
@@ -506,6 +533,43 @@ export function CodexConsole({
         className="border-t border-border/60 px-5 py-4 md:px-6"
       >
         <div className="space-y-3">
+          {attachedArtifacts.length ? (
+            <div className="space-y-2 border-l-2 border-primary/50 bg-muted/20 p-3">
+              {attachedArtifacts.map((artifact) => (
+                <div key={artifact.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{artifact.title}</p>
+                    <p className="truncate text-xs text-muted-foreground">{artifact.filename} · {artifact.status}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button asChild type="button" variant="ghost" size="icon" title="Open artifact">
+                      <a href={artifact.viewUrl} target="_blank" rel="noreferrer">
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      title="Copy artifact link"
+                      onClick={() => void navigator.clipboard.writeText(new URL(artifact.viewUrl, window.location.origin).toString())}
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      title="Remove from chat"
+                      onClick={() => setAttachedArtifacts((current) => current.filter((item) => item.id !== artifact.id))}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <Textarea
             ref={inputRef}
             name="prompt"
@@ -566,11 +630,20 @@ export function CodexConsole({
           ) : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-muted-foreground">
-              {usesTouchFirstInput
-                ? "Return adds a new line. Use Send when ready."
-                : "Enter sends. Shift+Enter adds a new line."}
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <MemoryDocumentUploadButton
+                disabled={isPending}
+                label="Upload"
+                onUploaded={(artifact) => {
+                  setAttachedArtifacts((current) => current.some((item) => item.id === artifact.id) ? current : [...current, artifact]);
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                {usesTouchFirstInput
+                  ? "Return adds a new line. Use Send when ready."
+                  : "Enter sends. Shift+Enter adds a new line."}
+              </p>
+            </div>
             <Button type="submit" disabled={isPending}>
               {isPending ? (
                 <LoaderCircle className="h-4 w-4 animate-spin" />

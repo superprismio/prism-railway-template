@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { MemoryDocumentUploadButton } from "@/components/admin/memory-document-upload-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -501,6 +502,7 @@ export function MemoryExplorerWorkspace({
 }: {
   setup: AdminSetupStatus;
 }) {
+  const [activeTab, setActiveTab] = useState("artifacts");
   const [artifacts, setArtifacts] = useState<PrismArtifactSummary[]>([]);
   const [artifactTotal, setArtifactTotal] = useState(0);
   const [selectedArtifact, setSelectedArtifact] =
@@ -861,9 +863,9 @@ export function MemoryExplorerWorkspace({
         </div>
       </div>
 
-      <Tabs defaultValue="artifacts" className="flex flex-1 flex-col">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col">
         <div className="sticky top-16 z-20 border-b border-border/60 bg-background/95 backdrop-blur">
-          <div className="px-5 py-3 md:px-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 md:px-6">
             <TabsList className="h-auto flex-wrap rounded-2xl bg-transparent p-0">
               <TabsTrigger
                 value="artifacts"
@@ -902,6 +904,15 @@ export function MemoryExplorerWorkspace({
                 </Badge>
               </TabsTrigger>
             </TabsList>
+            {activeTab === "artifacts" ? (
+              <MemoryDocumentUploadButton
+                disabled={!setup.prismMemory.reachable}
+                onUploaded={async (artifact) => {
+                  await loadArtifacts();
+                  await loadArtifactDetail(artifact.id);
+                }}
+              />
+            ) : null}
           </div>
         </div>
 
