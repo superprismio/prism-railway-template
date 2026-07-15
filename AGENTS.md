@@ -133,8 +133,9 @@ curl -fsSL \
 
 The route records the continue event and uses the normal workflow runner so agent runs and auto-continue behavior stay in sync. Prefer simple `next` flow; do not send `workflowAction` for normal continues.
 
-For a request that is already completed or closed but whose completed workflow
-run still projects a non-terminal current step, use the reconciliation route.
+For a request that is already completed or closed but whose terminal workflow
+run (completed or canceled) still projects a non-terminal current step, use the
+reconciliation route.
 It does not execute workflow steps or repeat side effects. Dry-run first, then
 apply the exact repair:
 

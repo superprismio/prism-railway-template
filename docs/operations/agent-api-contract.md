@@ -91,9 +91,10 @@ Requests and artifacts:
 - `POST /agent/change-board/requests/:id/external-refs`
 
 `workflow/reconcile` is a maintenance operation for completed or closed
-requests whose completed workflow run still projects a non-terminal current
-step. It is dry-run by default, refuses active requests and agent runs, and does
-not execute workflow steps. Send `{"dryRun":false}` to apply a verified repair.
+requests whose terminal workflow run (completed or canceled) still projects a
+non-terminal current step. It is dry-run by default, refuses active requests
+and agent runs, and does not execute workflow steps. Send `{"dryRun":false}` to
+apply a verified repair.
 When a workflow has multiple terminal steps, include the selected
 `terminalStepKey` returned by the dry-run candidates.
 

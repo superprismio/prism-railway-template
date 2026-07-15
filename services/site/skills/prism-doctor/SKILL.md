@@ -46,10 +46,10 @@ When summarizing a report:
 6. Mention that Doctor did not mutate content.
 
 When Doctor or a repair workflow finds a completed/closed request whose
-completed workflow run projects a non-terminal current step, use the documented
-by-number workflow reconciliation route. Dry-run it first. The route only
-corrects terminal projection drift; it does not execute steps, rerun work, or
-repair active requests.
+terminal workflow run (completed or canceled) projects a non-terminal current
+step, use the documented by-number workflow reconciliation route. Dry-run it
+first. The route only corrects terminal projection drift; it does not execute
+steps, rerun work, or repair active requests.
 
 Useful commands:
 

@@ -153,8 +153,9 @@ curl -fsSL \
 Use this route when a user approves a gate or asks to move a request along from Discord or another non-browser surface. It uses the normal workflow runner; do not manually patch `currentWorkflowStepKey` to bypass gates. Prefer simple `next` flow and do not send `workflowAction` for normal continues. The workflow continues through agent steps until it reaches a gate, checkpoint, terminal step, failure, or emergency continuation guard.
 
 Reconcile terminal projection drift by request number only when the request is
-already completed or closed and its completed workflow run still projects a
-non-terminal step. This operation never executes workflow steps. Dry-run first:
+already completed or closed and its terminal workflow run (completed or
+canceled) still projects a non-terminal step. This operation never executes
+workflow steps. Dry-run first:
 
 ```bash
 curl -fsSL \
