@@ -43,6 +43,7 @@ Feature-specific behavior and UI notes:
 - [Working Document Upload v2](features/working-document-upload-v2.md)
 - [Member Roles](features/member-roles.md)
 - [Memory Explorer UI](features/memory-explorer-ui.md)
+- [Workflow Event Notifications](features/workflow-event-notifications.md)
 - [Prism Capability Gateway](features/prism-capability-gateway.md)
 - [Prism Gateway MVP Implementation Plan](features/prism-gateway-mvp-implementation-plan.md)
 - [Prism Gateway Post-MVP Handoff](features/prism-gateway-post-mvp-handoff.md)
