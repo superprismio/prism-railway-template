@@ -5,8 +5,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
 import { loadRelevantPrismSkills } from './prism-skills.js';
-import { gatewayClient, runtimeCapabilitySessions } from './runtime-gateway.js';
-import { mergeSkillCapabilityRequirements } from './capability-requirements.js';
+import { gatewayClient } from './runtime-gateway.js';
 
 type HistoryEntry = {
   role: string;
@@ -55,19 +54,11 @@ export type CodexRuntimeInput = {
   recentHistory: HistoryEntry[];
   sessionId: string;
   codexThreadId?: string | null;
-  capabilities?: RuntimeCapabilityDescriptor[];
   credentials?: string[];
   gatewayContext?: Record<string, string>;
   metadata?: Record<string, unknown>;
   signal?: AbortSignal;
   onTrace?: (trace: CodexRuntimeResult['trace']) => void;
-};
-
-export type RuntimeCapabilityDescriptor = {
-  key: string;
-  mode?: string;
-  description?: string;
-  inputSchema?: Record<string, unknown>;
 };
 
 export type CodexRuntimeResult = {
@@ -707,17 +698,6 @@ function buildPrompt(
     sections.push(`Session metadata: ${JSON.stringify(input.metadata)}`);
   }
 
-  if (input.capabilities?.length) {
-    sections.push(
-      '',
-      'Organization capabilities assigned to this runtime job:',
-      input.capabilities.map((capability) => JSON.stringify(capability)).join('\n'),
-      'Invoke an assigned capability by POSTing JSON shaped as {"capability":"...","input":{...}} to $PRISM_RUNTIME_CAPABILITY_URL with header x-runtime-capability-token: $PRISM_RUNTIME_CAPABILITY_TOKEN.',
-      'Follow each capability inputSchema. Include every required property and do not guess that a rejected request is a provider configuration failure when required input was omitted.',
-      'Never print, persist, or return the runtime capability token.',
-    );
-  }
-
   if (availableSkillsSummary) {
     sections.push('', 'Available Prism skills:', availableSkillsSummary);
   }
@@ -824,10 +804,6 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   const isResume = Boolean(input.codexThreadId);
   const trace: CodexRuntimeResult['trace'] = [];
   const prismSkills = await loadRelevantPrismSkills(input.prompt, input.metadata);
-  const effectiveCapabilities = mergeSkillCapabilityRequirements(
-    input.capabilities ?? [],
-    prismSkills.selectedSkills,
-  );
   const effectiveCredentials = Array.from(new Set([
     ...(input.credentials ?? []),
     ...prismSkills.selectedSkills.flatMap((skill) => skill.requiredCredentials),
@@ -844,7 +820,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   const preparedWorkspace = await prepareExecutionWorkspace(input, trace, githubToken);
   input.onTrace?.([...trace]);
   const executionWorkspaceRoot = preparedWorkspace.workspacePath;
-  const prompt = buildPrompt({ ...input, capabilities: effectiveCapabilities }, isResume, prismSkills);
+  const prompt = buildPrompt(input, isResume, prismSkills);
   const args = isResume
     ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
     : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile, '-C', executionWorkspaceRoot];
@@ -878,18 +854,6 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       : {}),
   };
   delete env.PRISM_GATEWAY_TOKEN;
-  const capabilityToken = effectiveCapabilities.length
-    ? runtimeCapabilitySessions.create(
-        effectiveCapabilities.map((capability) => capability.key),
-        input.gatewayContext || {},
-        config.codexRuntimeTimeoutMs + 60_000,
-      )
-    : null;
-  if (capabilityToken) {
-    env.PRISM_RUNTIME_CAPABILITY_URL = `http://127.0.0.1:${config.port}/v1/runtime/capabilities/invoke`;
-    env.PRISM_RUNTIME_CAPABILITY_TOKEN = capabilityToken;
-    env.PRISM_RUNTIME_CAPABILITIES = effectiveCapabilities.map((capability) => capability.key).join(',');
-  }
   console.log(
     `[codex-runtime] spawn resume=${isResume ? 'yes' : 'no'} session=${input.sessionId} workspace=${executionWorkspaceRoot}`,
   );
@@ -1059,7 +1023,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     });
     });
   } finally {
-    if (capabilityToken) runtimeCapabilitySessions.revoke(capabilityToken);
+    // The leased child environment is discarded when the process exits.
   }
 }
 

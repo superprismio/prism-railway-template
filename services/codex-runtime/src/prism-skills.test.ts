@@ -1,23 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  capabilityRequirementsFromSkillMarkdown,
-  credentialRequirementsFromSkillMarkdown,
-} from "./prism-skills.js";
-
-test("skill frontmatter capability requirements support YAML lists", () => {
-  assert.deepEqual(capabilityRequirementsFromSkillMarkdown(`---
-name: discord-send
-description: Send a message.
-metadata:
-  gateway-capabilities:
-    - comms.message.send
-    - analytics.query
----
-
-Instructions.
-`), ["comms.message.send", "analytics.query"]);
-});
+import { credentialRequirementsFromSkillMarkdown } from "./prism-skills.js";
 
 test("skill frontmatter accepts credential assignment metadata", () => {
   assert.deepEqual(credentialRequirementsFromSkillMarkdown(`---
@@ -28,11 +11,11 @@ metadata:
 `), ["plausible-production"]);
 });
 
-test("invalid capability keys are ignored", () => {
-  assert.deepEqual(capabilityRequirementsFromSkillMarkdown(`---
+test("invalid credential keys are ignored", () => {
+  assert.deepEqual(credentialRequirementsFromSkillMarkdown(`---
 name: unsafe
 metadata:
-  gateway-capabilities: [valid.read, "../../secret", "bad key"]
+  gateway-credentials: [sendgrid, "../../secret", "bad key"]
 ---
-`), ["valid.read"]);
+`), ["sendgrid"]);
 });

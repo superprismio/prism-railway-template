@@ -163,4 +163,55 @@ export const gatewayMigrations: GatewayMigration[] = [
       DROP TABLE IF EXISTS toolset_profiles;
     `,
   },
+  {
+    name: "008_remove_legacy_capability_system",
+    sql: `
+      ALTER TABLE audit_events RENAME TO audit_events_legacy;
+
+      CREATE TABLE audit_events (
+        id TEXT PRIMARY KEY,
+        trace_id TEXT NOT NULL,
+        credential_key TEXT NOT NULL,
+        authenticated_caller_id TEXT NOT NULL,
+        delegated_actor_id TEXT,
+        request_id TEXT,
+        workflow_run_id TEXT,
+        workflow_step_key TEXT,
+        status TEXT NOT NULL,
+        policy_decision TEXT NOT NULL,
+        latency_ms INTEGER,
+        error_code TEXT,
+        input_summary_json TEXT,
+        output_summary_json TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      INSERT INTO audit_events (
+        id, trace_id, credential_key, authenticated_caller_id,
+        delegated_actor_id, request_id, workflow_run_id, workflow_step_key,
+        status, policy_decision, latency_ms, error_code,
+        input_summary_json, output_summary_json, created_at
+      )
+      SELECT
+        id, trace_id, substr(capability_key, length('credential:') + 1),
+        authenticated_caller_id, delegated_actor_id, request_id,
+        workflow_run_id, workflow_step_key, status, policy_decision,
+        latency_ms, error_code, input_summary_json, output_summary_json, created_at
+      FROM audit_events_legacy
+      WHERE capability_key LIKE 'credential:%';
+
+      DROP TABLE audit_events_legacy;
+      DROP TABLE IF EXISTS capability_grants;
+      DROP TABLE IF EXISTS capabilities;
+      DROP TABLE IF EXISTS connector_drivers;
+      DROP TABLE IF EXISTS usage_ledger;
+
+      UPDATE integration_connections SET status = 'leased' WHERE status = 'healthy';
+      UPDATE integration_connections SET status = 'untested' WHERE status = 'unhealthy';
+
+      CREATE UNIQUE INDEX audit_events_trace_id_idx ON audit_events(trace_id);
+      CREATE INDEX audit_events_credential_created_idx
+        ON audit_events(credential_key, created_at);
+    `,
+  },
 ];

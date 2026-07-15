@@ -41,7 +41,7 @@ Payload shape:
 ```json
 {
   "name": "example-skill",
-  "content": "---\nname: example-skill\ndescription: Use this skill when...\nmetadata:\n  gateway-capabilities:\n    - example.read\n---\n\nSkill instructions go here.\n"
+  "content": "---\nname: example-skill\ndescription: Use this skill when...\nmetadata:\n  gateway-credentials:\n    - example\n---\n\nSkill instructions go here.\n"
 }
 ```
 

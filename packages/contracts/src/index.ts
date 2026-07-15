@@ -37,11 +37,6 @@ export type PrismRuntimeSkillReference = {
   contentUrl?: string;
 };
 
-export type PrismRuntimeCapabilityGrant = {
-  key: string;
-  grantId?: string;
-};
-
 export type PrismRuntimeCredentialGrant = {
   key: string;
 };
@@ -54,7 +49,6 @@ export type PrismRuntimeJobRequest = {
   recentHistory?: Array<{ role: string; content: string }>;
   skills?: PrismRuntimeSkillReference[];
   credentials?: PrismRuntimeCredentialGrant[];
-  capabilities?: PrismRuntimeCapabilityGrant[];
   context?: PrismRuntimeDelegationContext;
   metadata?: Record<string, unknown>;
 };
@@ -128,38 +122,9 @@ export type PrismGatewayDelegationContext = PrismRuntimeDelegationContext & {
   runtimeJobId?: string;
 };
 
-export type PrismGatewayInvokeRequest = {
-  capability: string;
-  input: Record<string, unknown>;
-  context?: PrismGatewayDelegationContext;
-  idempotencyKey?: string;
-};
-
-export type PrismGatewayUsage = {
-  units: number;
-  estimatedCost: number;
-  actualCost?: number;
-  currency?: string;
-  budgetStatus: "off" | "within_budget" | "warning" | "blocked";
-};
-
-export type PrismGatewayInvokeResponse = {
-  ok: boolean;
-  traceId: string;
-  capability: string;
-  result?: unknown;
-  usage?: PrismGatewayUsage;
-  error?: {
-    code: string;
-    message: string;
-    retryable: boolean;
-  };
-};
-
 export type PrismGatewayConnectionStatus =
   | "untested"
-  | "healthy"
-  | "unhealthy"
+  | "leased"
   | "revoked";
 
 export type PrismGatewayConnectionCreateRequest = {
@@ -175,7 +140,6 @@ export type PrismGatewayConnection = {
   label: string;
   authType: string;
   status: PrismGatewayConnectionStatus;
-  capabilityKeys: string[];
   secretNames: string[];
   lastTestedAt?: string | null;
   lastUsedAt?: string | null;
@@ -183,46 +147,17 @@ export type PrismGatewayConnection = {
   updatedAt: string;
 };
 
-export type PrismGatewayCapability = {
-  key: string;
-  driverKey: string;
-  connectionId?: string | null;
-  provider: string;
-  description: string;
-  mode: "read" | "write" | "delivery" | "destructive" | "model" | "runtime";
-  riskLevel: "low" | "medium" | "high";
-  requiresApproval: boolean;
-  enabled: boolean;
-  inputSchema?: Record<string, unknown>;
-  outputSchema?: Record<string, unknown>;
-  driverConfig: Record<string, unknown>;
-};
-
-export type PrismGatewayCapabilityGrant = {
-  id: string;
-  subjectType: "runtime" | "service" | "agent" | "user" | "role";
-  subjectId: string;
-  capabilityKey: string;
-  allowed: boolean;
-  requiresApproval?: boolean;
-  allowedDestinations?: string[];
-  maxUnitsPerDay?: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type PrismGatewayAuditEvent = {
   id: string;
   traceId: string;
-  capabilityKey: string;
+  credentialKey: string;
   authenticatedCallerId: string;
   delegatedActorId?: string | null;
   requestId?: string | null;
   workflowRunId?: string | null;
   workflowStepKey?: string | null;
-  status: "allowed" | "denied" | "succeeded" | "failed";
+  status: "succeeded" | "failed";
   policyDecision: string;
-  budgetDecision?: string | null;
   latencyMs?: number | null;
   errorCode?: string | null;
   inputSummary?: Record<string, unknown> | null;

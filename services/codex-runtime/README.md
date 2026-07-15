@@ -35,19 +35,19 @@ Recommended env:
 
 Gateway calls are made by the runtime parent process. Do not pass the long-lived
 Gateway service token into prompts, tool arguments, traces, or agent-visible
-configuration. Agent access should use a short-lived job-scoped token that is
-restricted to the capabilities listed on that runtime job.
+configuration. The parent leases selected credential bundles and injects their
+configured variables only into the child job environment.
 
-Site-owned workflows assign capabilities through step or workflow agent config:
+Site-owned deterministic jobs may assign credential keys through agent config:
 
 ```json
 {
-  "gatewayCapabilities": ["plausible.stats.query"]
+  "gatewayCredentials": ["sendgrid"]
 }
 ```
 
-The runtime gives the Codex child a short-lived local invocation token for only
-those keys. Gateway grants remain authoritative.
+Trusted Admin Console and full-access source contexts receive active credentials
+from Site policy without another access-profile step.
 
 Railway notes:
 

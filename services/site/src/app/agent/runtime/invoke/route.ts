@@ -48,9 +48,6 @@ export async function POST(request: Request) {
         return role && content ? [{ role, content }] : [];
       })
     : [];
-  const capabilities = Array.isArray(body?.capabilities)
-    ? body.capabilities.filter((entry) => typeof entry === "string" || (entry && typeof entry === "object" && !Array.isArray(entry))) as Array<string | { key: string; [key: string]: unknown }>
-    : [];
   const credentials = Array.isArray(body?.credentials)
     ? body.credentials.filter((entry) => typeof entry === "string" || (entry && typeof entry === "object" && !Array.isArray(entry))) as Array<string | { key: string }>
     : [];
@@ -67,7 +64,6 @@ export async function POST(request: Request) {
       continuationId: stringValue(body?.continuationId) || null,
       recentHistory,
       skills,
-      capabilities,
       credentials,
       context: Object.fromEntries(
         Object.entries(recordValue(body?.context)).map(([key, value]) => [key, value == null ? undefined : String(value)]),

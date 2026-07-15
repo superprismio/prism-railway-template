@@ -22,8 +22,7 @@ export type GatewayConnection = {
   authType: string;
   configuration: Record<string, string>;
   envBindings: Record<string, string>;
-  status: "untested" | "leased" | "healthy" | "unhealthy" | "revoked";
-  capabilityKeys: string[];
+  status: "untested" | "leased" | "revoked";
   secretNames: string[];
   lastTestedAt: string | null;
   lastUsedAt: string | null;
@@ -39,61 +38,6 @@ export type GatewayStoredCredential = {
   updatedAt: string;
 };
 
-export type GatewayCapability = {
-  key: string;
-  driverKey: string;
-  connectionId: string | null;
-  provider: string;
-  description: string;
-  mode: "read" | "write" | "delivery" | "destructive" | "model" | "runtime";
-  riskLevel: "low" | "medium" | "high";
-  requiresApproval: boolean;
-  enabled: boolean;
-  inputSchema: Record<string, unknown> | null;
-  outputSchema: Record<string, unknown> | null;
-  driverConfig: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type HttpJsonReadDriverConfig = {
-  baseUrl: string;
-  pathTemplate: string;
-  method: "GET" | "POST";
-  timeoutMs: number;
-  maxResponseBytes: number;
-  allowedQueryParams: string[];
-  allowedJsonBodyParams: string[];
-  staticJsonBody: Record<string, unknown>;
-  auth:
-    | { type: "none" }
-    | { type: "bearer"; secretName: string }
-    | { type: "api-key"; secretName: string; headerName: string };
-};
-
-export type McpToolCallDriverConfig = {
-  baseUrl: string;
-  pathTemplate: string;
-  timeoutMs: number;
-  maxResponseBytes: number;
-  operations: Record<string, {
-    toolName: string;
-    allowedArguments: string[];
-  }>;
-  auth: { type: "bearer"; secretName: string };
-};
-
-export type GatewayGrant = {
-  id: string;
-  subjectType: "runtime" | "service";
-  subjectId: string;
-  capabilityKey: string;
-  allowed: boolean;
-  policy: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type GatewayInvocationContext = {
   delegatedActorId?: string;
   requestId?: string;
@@ -105,7 +49,7 @@ export type GatewayInvocationContext = {
 export type GatewayAuditEvent = {
   id: string;
   traceId: string;
-  capabilityKey: string;
+  credentialKey: string;
   authenticatedCallerId: string;
   delegatedActorId: string | null;
   requestId: string | null;
@@ -113,7 +57,6 @@ export type GatewayAuditEvent = {
   workflowStepKey: string | null;
   status: "denied" | "succeeded" | "failed";
   policyDecision: string;
-  budgetDecision: string | null;
   latencyMs: number | null;
   errorCode: string | null;
   inputSummary: Record<string, unknown> | null;

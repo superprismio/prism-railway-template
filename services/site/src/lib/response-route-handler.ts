@@ -36,9 +36,7 @@ import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
 import {
   listEnabledGatewayCredentialsOrEmpty,
-  listInteractiveGatewayCapabilitiesOrEmpty,
 } from "@/lib/prism-gateway"
-import type { GatewayCapabilityDescriptor } from "@/lib/prism-gateway-policy"
 import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
 
@@ -331,22 +329,6 @@ function requestedSkillsFromAgentConfig(config: unknown) {
   return skills.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim())
 }
 
-function requestedCapabilitiesFromAgentConfig(config: unknown) {
-  if (!isRecord(config)) return []
-  const capabilities = Array.isArray(config.gatewayCapabilities)
-    ? config.gatewayCapabilities
-    : Array.isArray(config.capabilities)
-      ? config.capabilities
-      : []
-  return Array.from(new Set(capabilities
-    .map((entry) => {
-      if (typeof entry === "string") return entry.trim()
-      if (isRecord(entry) && typeof entry.key === "string") return entry.key.trim()
-      return ""
-    })
-    .filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key))))
-}
-
 function requestedCredentialsFromAgentConfig(config: unknown) {
   if (!isRecord(config)) return []
   const credentials = Array.isArray(config.gatewayCredentials)
@@ -402,7 +384,6 @@ async function requestPrismRuntimeResponse(input: {
   sessionId: string
   continuationId?: string | null
   recentHistory: Array<{ role: string; content: string }>
-  capabilities?: Array<string | GatewayCapabilityDescriptor>
   credentials?: Array<string | { key: string }>
   gatewayContext?: Record<string, string | undefined>
   metadata: Record<string, unknown>
@@ -422,7 +403,6 @@ async function requestPrismRuntimeResponse(input: {
     continuationId: input.continuationId ?? null,
     recentHistory: input.recentHistory,
     skills: requestedSkills,
-    capabilities: input.capabilities,
     credentials: input.credentials ?? [],
     context: input.gatewayContext,
     metadata: input.metadata,
@@ -1044,15 +1024,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       ...requestedSkillsFromAgentConfig(workflowAgentConfig),
     ]),
   )
-  const workflowRequestedCapabilities = requestedCapabilitiesFromAgentConfig(workflowAgentConfig)
-    .map((key): GatewayCapabilityDescriptor => ({ key }))
-  const interactiveCapabilities = actorType === "admin"
-    ? await listInteractiveGatewayCapabilitiesOrEmpty("full")
-    : []
-  const requestedCapabilities = Array.from(new Map([
-    ...workflowRequestedCapabilities,
-    ...interactiveCapabilities,
-  ].map((capability) => [capability.key, capability])).values())
   const includeTrustedRuntimeCredentials = actorType === "admin" || Boolean(linkedWorkflow)
   const activeCredentials = includeTrustedRuntimeCredentials
     ? await listEnabledGatewayCredentialsOrEmpty()
@@ -1252,7 +1223,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             ? session.meta.codexThreadId
             : null,
       recentHistory,
-      capabilities: requestedCapabilities,
       credentials: requestedCredentials,
       gatewayContext: {
         delegatedActorId: actorType === "admin" ? "admin-console" : undefined,
@@ -1471,7 +1441,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             ...requestedSkillsFromAgentConfig(continuationAgentConfig),
           ]),
         )
-        const continuationCapabilities = requestedCapabilitiesFromAgentConfig(continuationAgentConfig)
         const continuationCredentials = Array.from(new Set([
           ...activeCredentials.map((credential) => credential.key),
           ...requestedCredentialsFromAgentConfig(continuationAgentConfig),
@@ -1491,7 +1460,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             sessionId: session.id,
             continuationId: continuationThreadId,
             recentHistory: continuationHistory,
-            capabilities: continuationCapabilities,
             credentials: continuationCredentials,
             gatewayContext: {
               requestId: activeLinkedChangeRequestId,

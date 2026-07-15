@@ -1,5 +1,8 @@
 # Prism Credential Gateway
 
+Gateway is intentionally credential-only; it has no provider operation catalog
+or parallel grant system.
+
 ## Decision
 
 Prism Gateway is a credential vault and lease auditor for trusted agent runs.

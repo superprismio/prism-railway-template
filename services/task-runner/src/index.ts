@@ -782,11 +782,6 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
         sessionId: `scheduled-task:${siteTask.key}:${Date.now()}`,
         codexThreadId: null,
         recentHistory: [],
-        capabilities: requestedGatewayKeysFromConfig(siteTask.agentConfig, [
-          "gatewayCapabilities",
-          "gateway_capabilities",
-          "capabilities",
-        ]),
         credentials: requestedGatewayKeysFromConfig(siteTask.agentConfig, [
           "gatewayCredentials",
           "gateway_credentials",
@@ -1557,11 +1552,6 @@ function doctorAgentConfigSkills(value: unknown) {
   return isRecord(value) ? doctorStringList(value.skills) : [];
 }
 
-function doctorAgentConfigCapabilities(value: unknown) {
-  if (!isRecord(value)) return [];
-  return doctorStringList(value.gatewayCapabilities ?? value.gateway_capabilities ?? value.capabilities);
-}
-
 function doctorAgentConfigCredentials(value: unknown) {
   if (!isRecord(value)) return [];
   const credentials = value.gatewayCredentials ?? value.gateway_credentials;
@@ -1581,10 +1571,6 @@ function doctorWorkflowDependencies(workflow: Record<string, unknown>) {
       ...doctorAgentConfigSkills(definition.agentConfig ?? definition.agent_config),
       ...steps.flatMap((step) => doctorAgentConfigSkills(step.agentConfig ?? step.agent_config)),
     ])),
-    directCapabilities: Array.from(new Set([
-      ...doctorAgentConfigCapabilities(definition.agentConfig ?? definition.agent_config),
-      ...steps.flatMap((step) => doctorAgentConfigCapabilities(step.agentConfig ?? step.agent_config)),
-    ])),
     directCredentials: Array.from(new Set([
       ...doctorAgentConfigCredentials(definition.agentConfig ?? definition.agent_config),
       ...steps.flatMap((step) => doctorAgentConfigCredentials(step.agentConfig ?? step.agent_config)),
@@ -1592,33 +1578,15 @@ function doctorWorkflowDependencies(workflow: Record<string, unknown>) {
   };
 }
 
-function doctorCapabilityDependencyFindings(input: {
+function doctorSkillDependencyFindings(input: {
   workflows: Record<string, unknown>[];
   skills: Record<string, unknown>[];
-  enabledCapabilities: Set<string>;
 }) {
   const findings: DoctorFinding[] = [];
   const skillsByName = new Map(input.skills.map((skill) => [
     typeof skill.name === "string" ? skill.name : "",
     skill,
   ]));
-
-  for (const skill of input.skills) {
-    const skillName = typeof skill.name === "string" && skill.name.trim() ? skill.name.trim() : "unknown-skill";
-    for (const capabilityKey of doctorStringList(skill.requiredCapabilities ?? skill.required_capabilities)) {
-      if (input.enabledCapabilities.has(capabilityKey)) continue;
-      findings.push({
-        check: "skill-required-capability-available",
-        status: "failed",
-        subjectType: "skill",
-        subjectKey: skillName,
-        expected: `Required capability is enabled: ${capabilityKey}.`,
-        observed: `Required capability is missing or disabled: ${capabilityKey}.`,
-        recommendation: "Configure and test the capability before removing the legacy integration credential.",
-        evidence: { capabilityKey },
-      });
-    }
-  }
 
   for (const workflow of input.workflows) {
     const workflowKey = workflowKeyFromRecord(workflow);
@@ -1638,32 +1606,6 @@ function doctorCapabilityDependencyFindings(input: {
         });
         continue;
       }
-      for (const capabilityKey of doctorStringList(skill.requiredCapabilities ?? skill.required_capabilities)) {
-        if (input.enabledCapabilities.has(capabilityKey)) continue;
-        findings.push({
-          check: "workflow-skill-capability-available",
-          status: "failed",
-          subjectType: "workflow",
-          subjectKey: workflowKey,
-          expected: `Skill ${skillName} can resolve capability ${capabilityKey}.`,
-          observed: `Capability ${capabilityKey} required by ${skillName} is missing or disabled.`,
-          recommendation: "Configure and test the capability before running this workflow without its legacy credential.",
-          evidence: { skillName, capabilityKey },
-        });
-      }
-    }
-    for (const capabilityKey of dependencies.directCapabilities) {
-      if (input.enabledCapabilities.has(capabilityKey)) continue;
-      findings.push({
-        check: "workflow-direct-capability-available",
-        status: "failed",
-        subjectType: "workflow",
-        subjectKey: workflowKey,
-        expected: `Direct workflow capability is enabled: ${capabilityKey}.`,
-        observed: `Direct workflow capability is missing or disabled: ${capabilityKey}.`,
-        recommendation: "Configure the capability or move provider behavior into a capability-declaring skill.",
-        evidence: { capabilityKey },
-      });
     }
   }
   return findings;
@@ -1834,7 +1776,7 @@ function doctorRepairSummary(report: {
     "",
     "Recommended repair flow:",
     "1. Read the attached stamped `prism-doctor-report-<timestamp>.json` and `prism-doctor-report-<timestamp>.md` artifacts.",
-    "2. Repair the listed workflow, skill, task, hook, or capability drift deliberately.",
+    "2. Repair the listed workflow, skill, task, hook, or credential drift deliberately.",
     "3. Rerun Prism Doctor and confirm the failed finding count is zero.",
   ].join("\n");
 }
@@ -2030,14 +1972,10 @@ async function runPrismDoctorTask(): Promise<TaskRunResult> {
   const runtimeSkills = await doctorRuntimeSkills().catch(() => [] as Record<string, unknown>[]);
   const skills = doctorMergeSkills(hostedSkills, runtimeSkills);
   const gateway = isRecord(gatewayPayload.gateway) ? gatewayPayload.gateway : {};
-  const gatewayCapabilities = Array.isArray(gateway.capabilities) ? gateway.capabilities.filter(isRecord) : [];
   const gatewayConnections = Array.isArray(gateway.connections) ? gateway.connections.filter(isRecord) : [];
-  const enabledCapabilities = new Set(gatewayCapabilities
-    .filter((capability) => capability.enabled === true && typeof capability.key === "string")
-    .map((capability) => String(capability.key)));
   const initialFindings = [
     ...workflows.flatMap(doctorWorkflowFindings),
-    ...doctorCapabilityDependencyFindings({ workflows, skills, enabledCapabilities }),
+    ...doctorSkillDependencyFindings({ workflows, skills }),
     ...doctorCredentialDependencyFindings({
       workflows,
       tasks,

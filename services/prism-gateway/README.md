@@ -36,9 +36,6 @@ Trusted runtime and Task Runner lease:
 
 - `POST /credential-bundles/lease`
 
-Existing narrow capability routes remain for built-in deterministic integrations,
-but credential use does not depend on them.
-
 ## Lease Example
 
 ```json

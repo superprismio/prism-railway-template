@@ -1,11 +1,4 @@
 import "server-only";
-import {
-  interactiveGatewayCapabilities,
-  interactiveGatewayCapabilityKeys,
-  type GatewayCapabilityDescriptor,
-  type GatewayCapabilitySummary,
-  type InteractiveGatewayMode,
-} from "@/lib/prism-gateway-policy";
 
 export class PrismGatewayError extends Error {
   constructor(
@@ -33,50 +26,6 @@ export function getPrismGatewayStatus() {
     enabled: gatewayEnabled(),
     configured: Boolean(gatewayBaseUrl() && gatewayToken()),
   };
-}
-
-export async function listInteractiveGatewayCapabilityKeys(mode: InteractiveGatewayMode) {
-  if (mode === "off") return [];
-  const payload = await prismGatewayRequest<{ capabilities?: GatewayCapabilitySummary[] }>("/capabilities");
-  return interactiveGatewayCapabilityKeys(payload.capabilities ?? [], mode);
-}
-
-export async function listInteractiveGatewayCapabilities(mode: InteractiveGatewayMode) {
-  if (mode === "off") return [];
-  const payload = await prismGatewayRequest<{ capabilities?: GatewayCapabilitySummary[] }>("/capabilities");
-  return interactiveGatewayCapabilities(payload.capabilities ?? [], mode);
-}
-
-export async function listInteractiveGatewayCapabilityKeysOrEmpty(mode: InteractiveGatewayMode) {
-  const status = getPrismGatewayStatus();
-  if (!status.enabled || !status.configured || mode === "off") return [];
-  try {
-    return await listInteractiveGatewayCapabilityKeys(mode);
-  } catch (error) {
-    console.warn(JSON.stringify({
-      event: "prism_gateway.interactive_catalog_unavailable",
-      mode,
-      error: error instanceof Error ? error.message : "PRISM_GATEWAY_CATALOG_FAILED",
-    }));
-    return [];
-  }
-}
-
-export async function listInteractiveGatewayCapabilitiesOrEmpty(
-  mode: InteractiveGatewayMode,
-): Promise<GatewayCapabilityDescriptor[]> {
-  const status = getPrismGatewayStatus();
-  if (!status.enabled || !status.configured || mode === "off") return [];
-  try {
-    return await listInteractiveGatewayCapabilities(mode);
-  } catch (error) {
-    console.warn(JSON.stringify({
-      event: "prism_gateway.interactive_catalog_unavailable",
-      mode,
-      error: error instanceof Error ? error.message : "PRISM_GATEWAY_CATALOG_FAILED",
-    }));
-    return [];
-  }
 }
 
 export async function listEnabledGatewayCredentialsOrEmpty(): Promise<Array<{
@@ -157,57 +106,17 @@ export async function prismGatewayRequest<T = Record<string, unknown>>(
   return body as T;
 }
 
-export async function createGatewayCapabilityWithDefaultGrant(
-  body: Record<string, unknown>,
-) {
-  const created = await prismGatewayRequest<{ capability?: { key?: unknown }; [key: string]: unknown }>(
-    "/capabilities",
-    { method: "POST", body: JSON.stringify(body) },
-  );
-  const capabilityKey = typeof created.capability?.key === "string"
-    ? created.capability.key
-    : "";
-  if (!capabilityKey) return created;
-
-  const runtimeKey = process.env.PRISM_GATEWAY_DEFAULT_RUNTIME_KEY?.trim() || "codex-default";
-  const grantId = `runtime-${runtimeKey}-${capabilityKey}`.replace(/[^a-zA-Z0-9_.:-]/g, "-").slice(0, 200);
-  try {
-    const grant = await prismGatewayRequest(`/grants/${encodeURIComponent(grantId)}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        subjectType: "runtime",
-        subjectId: runtimeKey,
-        capabilityKey,
-        allowed: true,
-        policy: { source: "site-easy-mode" },
-      }),
-    });
-    return { ...created, defaultRuntimeGrant: grant.grant ?? null };
-  } catch (error) {
-    console.warn(JSON.stringify({
-      event: "prism_gateway.default_runtime_grant_failed",
-      capabilityKey,
-      runtimeKey,
-      error: error instanceof Error ? error.message : "GATEWAY_GRANT_FAILED",
-    }));
-    return { ...created, warning: "CAPABILITY_CREATED_DEFAULT_RUNTIME_GRANT_FAILED" };
-  }
-}
-
 export async function getPrismGatewayOverview() {
   const status = getPrismGatewayStatus();
   if (!status.enabled || !status.configured) {
     return { ...status, reachable: false };
   }
 
-  const [health, drivers, credentials, connections, capabilities, grants, audit] =
+  const [health, credentials, connections, audit] =
     await Promise.all([
       prismGatewayRequest("/health"),
-      prismGatewayRequest("/connector-drivers"),
       prismGatewayRequest("/credentials"),
       prismGatewayRequest("/connections"),
-      prismGatewayRequest("/capabilities"),
-      prismGatewayRequest("/grants"),
       prismGatewayRequest("/audit-events?limit=50"),
     ]);
 
@@ -215,11 +124,8 @@ export async function getPrismGatewayOverview() {
     ...status,
     reachable: true,
     health,
-    drivers: drivers.drivers ?? [],
     credentials: credentials.credentials ?? [],
     connections: connections.connections ?? [],
-    capabilities: capabilities.capabilities ?? [],
-    grants: grants.grants ?? [],
     auditEvents: audit.events ?? [],
   };
 }

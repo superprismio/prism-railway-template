@@ -3,8 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
-import { gatewayAuth, requireLeaseCaller, requireRuntimeCaller, requireSiteCaller } from "./auth.js";
-import { GatewayInvoker } from "./invoke.js";
+import { gatewayAuth, requireLeaseCaller, requireSiteCaller } from "./auth.js";
 import { GatewayStore, GatewayStoreError } from "./store.js";
 import type { GatewayCaller, GatewayConfig, GatewayInvocationContext } from "./types.js";
 
@@ -12,7 +11,6 @@ type AppDependencies = {
   config: GatewayConfig;
   db: Database.Database;
   store: GatewayStore;
-  invoker: GatewayInvoker;
   migrationCount: number;
   startedAt?: Date;
 };
@@ -139,14 +137,6 @@ function credentialEnvBindingsField(value: unknown) {
   return bindings;
 }
 
-function optionalSchema(value: unknown) {
-  if (value === undefined || value === null) return null;
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw new GatewayStoreError("CAPABILITY_SCHEMA_INVALID", 400);
-  }
-  return value as Record<string, unknown>;
-}
-
 function routeParam(value: string | string[]) {
   return Array.isArray(value) ? value[0] || "" : value;
 }
@@ -245,14 +235,6 @@ export function createGatewayApp(dependencies: AppDependencies) {
     response.json({ ok: true, rotation: result });
   });
 
-  app.get("/connector-drivers", (_request, response) => {
-    response.json({ ok: true, drivers: dependencies.store.listDrivers() });
-  });
-
-  app.get("/capabilities", (_request, response) => {
-    response.json({ ok: true, capabilities: dependencies.store.listCapabilities() });
-  });
-
   app.post("/credential-bundles/lease", requireLeaseCaller, (request, response) => {
     const body = request.body as Record<string, unknown>;
     const keys = Array.isArray(body.credentials)
@@ -288,78 +270,15 @@ export function createGatewayApp(dependencies: AppDependencies) {
         }
         env[envName] = value;
       }
-      dependencies.store.recordInvocation({
-        traceId: randomUUID(), capabilityKey: `credential:${credential.key}`, caller, context,
-        status: "succeeded", policyDecision: "trusted_runtime_credential_lease",
-        latencyMs: 0, inputSummary: { action: "lease", requestedKey },
-        outputSummary: { envNames: Object.keys(bundle).sort() }, units: 1,
+      dependencies.store.recordCredentialLease({
+        traceId: randomUUID(), credentialKey: credential.key, caller, context,
+        environmentNames: Object.keys(bundle).sort(),
       });
       dependencies.store.markConnectionLeased(credential.id);
       leased.push(credential.key);
     }
     response.json({ ok: true, env, leasedCredentials: leased });
   });
-
-  app.post("/capabilities", requireSiteCaller, (request, response) => {
-    const body = request.body as Record<string, unknown>;
-    if (body.enabled !== undefined && typeof body.enabled !== "boolean") {
-      throw new GatewayStoreError("CAPABILITY_ENABLED_INVALID", 400);
-    }
-    const capability = dependencies.store.createCapability({
-      key: textField(body.key, "capability_key", 120),
-      driverKey: textField(body.driverKey, "driver_key", 120),
-      connectionId: textField(body.connectionId, "connection_id", 120),
-      provider: textField(body.provider, "provider", 120),
-      description: textField(body.description, "description", 500),
-      driverConfig: body.driverConfig,
-      inputSchema: optionalSchema(body.inputSchema),
-      outputSchema: optionalSchema(body.outputSchema),
-      enabled: body.enabled !== false,
-    });
-    response.status(201).json({ ok: true, capability });
-  });
-
-  app.patch("/capabilities/:key", requireSiteCaller, (request, response) => {
-    const body = request.body as Record<string, unknown>;
-    const key = routeParam(request.params.key);
-    if (
-      body.enabled === undefined &&
-      body.driverConfig === undefined &&
-      body.description === undefined &&
-      body.inputSchema === undefined &&
-      body.outputSchema === undefined
-    ) {
-      throw new GatewayStoreError("CAPABILITY_UPDATE_REQUIRED", 400);
-    }
-    let capability = body.driverConfig === undefined
-      ? dependencies.store.getCapability(key)
-      : dependencies.store.updateCapabilityConfig(key, body.driverConfig);
-    if (!capability) throw new GatewayStoreError("CAPABILITY_NOT_FOUND", 404);
-    if (body.description !== undefined || body.inputSchema !== undefined || body.outputSchema !== undefined) {
-      capability = dependencies.store.updateCapabilityMetadata(key, {
-        ...(body.description !== undefined ? { description: textField(body.description, "description", 500) } : {}),
-        ...(body.inputSchema !== undefined ? { inputSchema: optionalSchema(body.inputSchema) } : {}),
-        ...(body.outputSchema !== undefined ? { outputSchema: optionalSchema(body.outputSchema) } : {}),
-      });
-    }
-    if (body.enabled !== undefined) {
-      if (typeof body.enabled !== "boolean") throw new GatewayStoreError("CAPABILITY_ENABLED_INVALID", 400);
-      capability = dependencies.store.setCapabilityEnabled(key, body.enabled);
-    }
-    response.json({ ok: true, capability });
-  });
-
-  app.post("/capabilities/:key/test", requireSiteCaller, asyncRoute(async (request, response) => {
-    const body = request.body as Record<string, unknown>;
-    const result = await dependencies.invoker.invoke({
-      capabilityKey: routeParam(request.params.key),
-      capabilityInput: recordField(body.input, "CAPABILITY_INPUT_INVALID"),
-      context: invocationContext(body.context),
-      caller: response.locals.gatewayCaller as GatewayCaller,
-      adminTest: true,
-    });
-    response.status(result.status).json(result);
-  }));
 
   app.get("/connections", requireSiteCaller, (_request, response) => {
     response.json({ ok: true, connections: dependencies.store.listConnections() });
@@ -437,39 +356,6 @@ export function createGatewayApp(dependencies: AppDependencies) {
     const connection = dependencies.store.revokeConnection(routeParam(request.params.id));
     response.json({ ok: true, connection });
   });
-
-  app.get("/grants", requireSiteCaller, (_request, response) => {
-    response.json({ ok: true, grants: dependencies.store.listGrants() });
-  });
-
-  app.put("/grants/:id", requireSiteCaller, (request, response) => {
-    const body = request.body as Record<string, unknown>;
-    const subjectType = body.subjectType === "runtime" || body.subjectType === "service"
-      ? body.subjectType
-      : null;
-    if (!subjectType) throw new GatewayStoreError("GRANT_SUBJECT_TYPE_INVALID", 400);
-    if (typeof body.allowed !== "boolean") throw new GatewayStoreError("GRANT_ALLOWED_INVALID", 400);
-    const grant = dependencies.store.upsertGrant({
-      id: routeParam(request.params.id),
-      subjectType,
-      subjectId: textField(body.subjectId, "grant_subject_id", 120),
-      capabilityKey: textField(body.capabilityKey, "grant_capability_key", 120),
-      allowed: body.allowed,
-      policy: recordField(body.policy, "GRANT_POLICY_INVALID"),
-    });
-    response.json({ ok: true, grant });
-  });
-
-  app.post("/invoke", asyncRoute(async (request, response) => {
-    const body = request.body as Record<string, unknown>;
-    const result = await dependencies.invoker.invoke({
-      capabilityKey: textField(body.capability, "capability", 120),
-      capabilityInput: recordField(body.input, "CAPABILITY_INPUT_INVALID"),
-      context: invocationContext(body.context),
-      caller: response.locals.gatewayCaller as GatewayCaller,
-    });
-    response.status(result.status).json(result);
-  }));
 
   app.get("/audit-events", requireSiteCaller, (request, response) => {
     const limit = Number.parseInt(String(request.query.limit || "100"), 10);

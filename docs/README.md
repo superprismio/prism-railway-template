@@ -44,7 +44,7 @@ Feature-specific behavior and UI notes:
 - [Member Roles](features/member-roles.md)
 - [Memory Explorer UI](features/memory-explorer-ui.md)
 - [Workflow Event Notifications](features/workflow-event-notifications.md)
-- [Prism Credential Gateway](features/prism-capability-gateway.md)
+- [Prism Credential Gateway](features/prism-credential-gateway.md)
 - [Prism Stack Landing Page](features/prism-stack-landing-page.md)
 
 ## Operations

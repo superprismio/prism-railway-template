@@ -26,8 +26,6 @@ Current workflow checks:
 - loop steps have `loop.target`, `next`, and positive `loop.maxIterations`;
 - referenced step keys exist.
 - referenced skills exist;
-- skill-declared Gateway capabilities exist and are enabled;
-- direct workflow Gateway capabilities exist and are enabled.
 - skill-declared Gateway credentials exist and contain secret values;
 - direct workflow and task Gateway credentials exist and contain secret values.
 
@@ -39,7 +37,7 @@ When summarizing a report:
 2. Call out enabled hooks or tasks that reference workflows with failures.
 3. Separate built-in workflow drift from custom instance workflow drift.
 4. Recommend a small repair order.
-5. Treat a missing capability as a blocker to removing the corresponding legacy
+5. Treat a missing credential as a blocker to removing the corresponding legacy
    runtime credential.
 6. Mention that Doctor did not mutate content.
 

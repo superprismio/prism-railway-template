@@ -2,7 +2,7 @@
 
 Status: v1 implemented by Codex Runtime and local Grok Runtime
 
-Related decision: [Prism Credential Gateway](../features/prism-capability-gateway.md)
+Related decision: [Prism Credential Gateway](../features/prism-credential-gateway.md)
 
 Related feature: [Local Prism Stack And Runtime Bridge](../features/local-prism-stack-and-runtime-bridge.md)
 
@@ -34,7 +34,7 @@ no additional proxy service in front of `codex-runtime`. The existing service
 becomes the Codex implementation of this contract.
 
 Site owns runtime profile configuration and chooses the runtime for a workflow,
-task, or console session. The capability gateway does not own runtime job
+task, or console session. The credential gateway does not own runtime job
 scheduling.
 
 Communication adapters do not select or call Codex/Grok services directly.

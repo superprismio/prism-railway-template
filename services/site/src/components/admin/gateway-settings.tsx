@@ -54,7 +54,7 @@ type GatewayCredential = {
 type GatewayAuditEvent = {
   id: string;
   traceId: string;
-  capabilityKey: string;
+  credentialKey: string;
   authenticatedCallerId: string;
   status: string;
   policyDecision: string;
@@ -134,22 +134,15 @@ function formatDate(value: string | null | undefined) {
 }
 
 function statusVariant(status: string) {
-  if (["healthy", "leased", "succeeded", "allowed"].includes(status)) return "secondary" as const;
-  if (["failed", "denied", "unhealthy"].includes(status)) return "destructive" as const;
+  if (["leased", "succeeded"].includes(status)) return "secondary" as const;
+  if (status === "failed") return "destructive" as const;
   return "outline" as const;
 }
 
 function statusLabel(status: string) {
-  if (status === "healthy") return "Verified";
   if (status === "leased") return "Used";
   if (status === "untested") return "Not used";
-  if (status === "unhealthy") return "Failed";
   return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-function auditSubject(value: string) {
-  if (value.startsWith("credential:")) return value.slice("credential:".length);
-  return value;
 }
 
 async function adminRequest(path: string, init: RequestInit = {}) {
@@ -406,10 +399,10 @@ export function GatewaySettings() {
             <p className="font-medium">Audit history</p>
             <div className="max-h-[420px] overflow-auto border border-border/70">
               <Table>
-                <TableHeader><TableRow><TableHead>Time</TableHead><TableHead>Credential or tool</TableHead><TableHead>Caller</TableHead><TableHead>Status</TableHead><TableHead>Decision</TableHead><TableHead>Latency</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Time</TableHead><TableHead>Credential</TableHead><TableHead>Caller</TableHead><TableHead>Status</TableHead><TableHead>Decision</TableHead><TableHead>Latency</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {(overview?.auditEvents ?? []).map((event) => <TableRow key={event.id}>
-                    <TableCell>{formatDate(event.createdAt)}</TableCell><TableCell className="font-mono text-xs">{auditSubject(event.capabilityKey)}</TableCell>
+                    <TableCell>{formatDate(event.createdAt)}</TableCell><TableCell className="font-mono text-xs">{event.credentialKey}</TableCell>
                     <TableCell>{event.authenticatedCallerId}</TableCell><TableCell><Badge variant={statusVariant(event.status)}>{event.status}</Badge></TableCell>
                     <TableCell>{event.errorCode ?? event.policyDecision}</TableCell><TableCell>{event.latencyMs === null ? "-" : `${event.latencyMs} ms`}</TableCell>
                   </TableRow>)}

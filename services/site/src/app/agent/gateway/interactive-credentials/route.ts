@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
 import {
-  loadConfig,
   isSourceAdapterPlatform,
+  loadConfig,
   readSourceAdapterPolicy,
   resolveSourceAdapterPolicy,
 } from "@/lib/app-core";
-import { requireServiceAccess } from "@/lib/internal-service";
 import { credentialsForSourceMode } from "@/lib/gateway-credential-assignment";
-import {
-  listEnabledGatewayCredentialsOrEmpty,
-  listInteractiveGatewayCapabilitiesOrEmpty,
-} from "@/lib/prism-gateway";
+import { requireServiceAccess } from "@/lib/internal-service";
+import { listEnabledGatewayCredentialsOrEmpty } from "@/lib/prism-gateway";
 
 function stringField(value: unknown) {
   return typeof value === "string" ? value.trim().slice(0, 200) : "";
@@ -41,14 +38,11 @@ export async function POST(request: Request) {
       : [],
     userId,
   });
-  const capabilityDescriptors = await listInteractiveGatewayCapabilitiesOrEmpty(resolved.mode);
   const credentials = resolved.mode === "full" ? await listEnabledGatewayCredentialsOrEmpty() : [];
   return NextResponse.json({
     ok: true,
     profile: resolved.mode === "full" ? "admin" : resolved.mode === "off" ? "off" : "read",
     accessPolicy: resolved,
-    capabilities: capabilityDescriptors.map((capability) => capability.key),
-    capabilityDescriptors,
     credentials: credentialsForSourceMode(resolved.mode, credentials),
   });
 }

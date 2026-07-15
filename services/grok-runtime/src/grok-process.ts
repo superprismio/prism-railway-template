@@ -54,12 +54,6 @@ async function buildPrompt(input: PrismRuntimeJobRequest) {
   if (input.metadata && Object.keys(input.metadata).length) {
     sections.push(`Session metadata: ${JSON.stringify(input.metadata)}`);
   }
-  if (input.capabilities?.length) {
-    sections.push(
-      `Organization capabilities requested for this job: ${JSON.stringify(input.capabilities)}`,
-      'This adapter version does not expose capability invocation. Do not claim that you invoked these capabilities.',
-    );
-  }
   if (input.credentials?.length) {
     sections.push(
       `Organization credentials requested for this job: ${JSON.stringify(input.credentials)}`,

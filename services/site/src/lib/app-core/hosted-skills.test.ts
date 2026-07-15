@@ -1,36 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  readSkillCapabilityRequirements,
-  readSkillCredentialRequirements,
-} from "./hosted-skills";
-
-test("hosted skill summaries expose declared Gateway requirements", () => {
-  assert.deepEqual(readSkillCapabilityRequirements(`---
-name: discord-send
-description: Send a message.
-metadata:
-  gateway-capabilities:
-    - comms.message.send
-    - analytics.query
----
-`), ["comms.message.send", "analytics.query"]);
-});
+import { readSkillCredentialRequirements } from "./hosted-skills";
 
 test("hosted skill summaries accept credential assignment metadata", () => {
   assert.deepEqual(readSkillCredentialRequirements(`---
 name: analytics-report
 metadata:
-  gateway-credentials: [plausible-production]
+  gateway-credentials:
+    - plausible-production
 ---
 `), ["plausible-production"]);
 });
 
-test("hosted skill requirements reject malformed capability keys", () => {
-  assert.deepEqual(readSkillCapabilityRequirements(`---
+test("hosted skill requirements reject malformed credential keys", () => {
+  assert.deepEqual(readSkillCredentialRequirements(`---
 name: unsafe
 metadata:
-  gateway-capabilities: [valid.read, "../../secret", "bad key"]
+  gateway-credentials: [sendgrid, "../../secret", "bad key"]
 ---
-`), ["valid.read"]);
+`), ["sendgrid"]);
 });

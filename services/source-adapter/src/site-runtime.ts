@@ -1,4 +1,3 @@
-export type SiteRuntimeCapability = string | { key: string; [key: string]: unknown };
 export type SiteRuntimeCredential = string | { key: string };
 
 export type SiteRuntimeResponse = {
@@ -45,7 +44,6 @@ export async function requestSiteRuntime(input: {
   sessionId: string;
   continuationId?: string | null;
   recentHistory?: Array<{ role: string; content: string }>;
-  capabilities?: SiteRuntimeCapability[];
   credentials?: SiteRuntimeCredential[];
   context?: Record<string, unknown>;
   metadata?: Record<string, unknown>;

@@ -1021,66 +1021,29 @@ async function appendSessionMessage(input: {
   });
 }
 
-type RuntimeCapabilityDescriptor = {
-  key: string;
-  mode?: string;
-  description?: string;
-  inputSchema?: JsonObject;
-};
-
 type RuntimeCredentialDescriptor = { key: string };
 
-async function resolveInteractiveGatewayAccess(input: {
+async function resolveInteractiveGatewayCredentials(input: {
   platform: "discord" | "telegram";
   targetId: string;
   threadId?: string | null;
   groupIds?: string[];
   userId: string;
-}): Promise<{
-  capabilities: RuntimeCapabilityDescriptor[];
-  credentials: RuntimeCredentialDescriptor[];
-}> {
+}): Promise<RuntimeCredentialDescriptor[]> {
   try {
-    const payload = await appApiRequest("/agent/gateway/interactive-capabilities", {
+    const payload = await appApiRequest("/agent/gateway/interactive-credentials", {
       method: "POST",
       body: JSON.stringify(input),
-    });
-    const descriptors = Array.isArray(payload.capabilityDescriptors)
-      ? payload.capabilityDescriptors
-      : Array.isArray(payload.capabilities)
-        ? payload.capabilities
-        : [];
-    const normalized = descriptors.flatMap((entry): RuntimeCapabilityDescriptor[] => {
-      if (typeof entry === "string") {
-        const key = entry.trim();
-        return /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key) ? [{ key }] : [];
-      }
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
-      const record = entry as JsonObject;
-      const key = typeof record.key === "string" ? record.key.trim() : "";
-      if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key)) return [];
-      const inputSchema = record.inputSchema && typeof record.inputSchema === "object" && !Array.isArray(record.inputSchema)
-        ? record.inputSchema as JsonObject
-        : undefined;
-      return [{
-        key,
-        ...(typeof record.mode === "string" ? { mode: record.mode.slice(0, 40) } : {}),
-        ...(typeof record.description === "string" ? { description: record.description.slice(0, 500) } : {}),
-        ...(inputSchema ? { inputSchema } : {}),
-      }];
     });
     const credentials = (Array.isArray(payload.credentials) ? payload.credentials : []).flatMap((entry): RuntimeCredentialDescriptor[] => {
       const record = entry && typeof entry === "object" && !Array.isArray(entry) ? entry as JsonObject : {};
       const key = typeof entry === "string" ? entry.trim() : typeof record.key === "string" ? record.key.trim() : "";
       return /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key) ? [{ key }] : [];
     });
-    return {
-      capabilities: Array.from(new Map(normalized.map((descriptor) => [descriptor.key, descriptor])).values()),
-      credentials: Array.from(new Map(credentials.map((descriptor) => [descriptor.key, descriptor])).values()),
-    };
+    return Array.from(new Map(credentials.map((descriptor) => [descriptor.key, descriptor])).values());
   } catch (error) {
-    console.warn("[source-adapter] interactive Gateway access unavailable; continuing without it", describeError(error));
-    return { capabilities: [], credentials: [] };
+    console.warn("[source-adapter] interactive Gateway credentials unavailable; continuing without them", describeError(error));
+    return [];
   }
 }
 
@@ -1089,7 +1052,6 @@ async function runtimeRequest(input: {
   sessionId: string;
   continuationId: string | null;
   recentHistory: Array<{ role: string; content: string }>;
-  capabilities?: RuntimeCapabilityDescriptor[];
   credentials?: RuntimeCredentialDescriptor[];
   gatewayContext?: JsonObject;
   metadata: JsonObject;
@@ -1100,7 +1062,6 @@ async function runtimeRequest(input: {
     sessionId: input.sessionId,
     continuationId: input.continuationId,
     recentHistory: input.recentHistory,
-    capabilities: input.capabilities ?? [],
     credentials: input.credentials ?? [],
     context: input.gatewayContext ?? {},
     metadata: input.metadata,
@@ -1714,7 +1675,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       ? sessionMeta.runtimeContinuationId
       : typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
-  const gatewayAccess = await resolveInteractiveGatewayAccess({
+  const gatewayCredentials = await resolveInteractiveGatewayCredentials({
     platform: "telegram",
     targetId: transport.chatId,
     userId: transport.authorId,
@@ -1733,8 +1694,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       sessionId: String(session.id),
       continuationId: runtimeContinuationId,
       recentHistory,
-      capabilities: gatewayAccess.capabilities,
-      credentials: gatewayAccess.credentials,
+      credentials: gatewayCredentials,
       gatewayContext: {
         delegatedActorId: `telegram:${transport.authorId}`,
       },
@@ -2715,7 +2675,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
     (typeof sessionMeta.runtimeContinuationId === "string"
       ? sessionMeta.runtimeContinuationId
       : typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
-  const gatewayAccess = await resolveInteractiveGatewayAccess({
+  const gatewayCredentials = await resolveInteractiveGatewayCredentials({
     platform: "discord",
     targetId: transport.channelId,
     threadId: transport.threadId,
@@ -2732,8 +2692,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         sessionId: String(session.id),
         continuationId: runtimeContinuationId,
         recentHistory,
-        capabilities: gatewayAccess.capabilities,
-        credentials: gatewayAccess.credentials,
+        credentials: gatewayCredentials,
         gatewayContext: {
           delegatedActorId: `discord:${transport.authorId}`,
         },

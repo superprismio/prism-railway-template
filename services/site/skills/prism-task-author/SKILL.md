@@ -13,8 +13,8 @@ Task authoring rules:
 4. Use `taskType="script-runner"` for deterministic watchdogs, pollers, API checks, checkpoint updates, and other jobs that need more logic than one HTTP POST.
 5. Store replayable natural-language instructions in `instructionConfig.prompt` for `codex-prompt` and `workflow-runner` tasks.
 6. Store optional skill names in `instructionConfig.requestedSkills`.
-   Capability requirements declared by those skills are resolved automatically
-   at runtime; do not duplicate them in task configuration.
+   Credential requirements declared by instance-owned skills are resolved at
+   runtime; do not duplicate them in task configuration.
 7. Store schedule in `scheduleCron` using standard five-field cron syntax.
 8. Default new tasks to `enabled=false` unless the user explicitly asks to enable it after review.
 9. Do not store arbitrary JavaScript, Python, or shell code in the task row.

@@ -28,7 +28,6 @@ export type RuntimeRequestInput = {
   continuationId?: string | null;
   recentHistory?: Array<{ role: string; content: string }>;
   skills?: string[];
-  capabilities?: Array<string | { key: string; [key: string]: unknown }>;
   credentials?: Array<string | { key: string }>;
   context?: Record<string, string | undefined>;
   metadata?: Record<string, unknown>;
@@ -205,7 +204,6 @@ async function requestNormalized(
     continuationId: input.continuationId ?? null,
     recentHistory: input.recentHistory ?? [],
     skills: (input.skills ?? []).map((name) => ({ name })),
-    capabilities: (input.capabilities ?? []).map((entry) => typeof entry === 'string' ? { key: entry } : entry),
     credentials: (input.credentials ?? []).map((entry) => typeof entry === 'string' ? { key: entry } : entry),
     context: input.context ?? {},
     metadata: input.metadata ?? {},
@@ -257,7 +255,6 @@ async function requestLegacy(profile: RuntimeProfileRecord, input: RuntimeReques
     sessionId: input.sessionId,
     codexThreadId: input.continuationId ?? null,
     recentHistory: input.recentHistory ?? [],
-    capabilities: input.capabilities ?? [],
     credentials: input.credentials ?? [],
     context: input.context ?? {},
     metadata: {

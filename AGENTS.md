@@ -75,9 +75,6 @@ Send service auth as:
 - `GET /agent/gateway`
 - `POST /agent/gateway/connections`
 - `POST /agent/gateway/integrations`
-- `POST /agent/gateway/capabilities`
-- `PATCH /agent/gateway/capabilities/:key`
-- `POST /agent/gateway/capabilities/:key/test`
 
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
 
@@ -190,8 +187,6 @@ metadata:
   gateway-credentials:
     - crm
 ```
-
-Existing narrow wrappers may continue to use `metadata.gateway-capabilities`.
 
 Do not add Prism-specific Gateway metadata to generic or externally sourced
 skills merely to make interactive access work. Admin Console and full-access

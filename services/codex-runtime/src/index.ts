@@ -6,11 +6,8 @@ import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { config } from './config.js';
 import { generateCodexCliReply } from './codex-runtime.js';
-import type { RuntimeCapabilityDescriptor } from './codex-runtime.js';
-import { GatewayClientError } from './gateway-client.js';
 import { listPrismSkills } from './prism-skills.js';
-import { RuntimeCapabilityError } from './runtime-capabilities.js';
-import { gatewayClient, runtimeCapabilitySessions } from './runtime-gateway.js';
+import { gatewayClient } from './runtime-gateway.js';
 
 const startedAt = new Date();
 const app = express();
@@ -30,7 +27,6 @@ type RuntimeRequestBody = {
   codexThreadId?: unknown;
   recentHistory?: Array<{ role?: unknown; content?: unknown }>;
   skills?: unknown;
-  capabilities?: unknown;
   credentials?: unknown;
   context?: unknown;
   metadata?: Record<string, unknown>;
@@ -61,7 +57,6 @@ type RuntimeResponseJob = {
     sessionId: string;
     codexThreadId: string | null;
     recentHistory: Array<{ role: string; content: string }>;
-    capabilities: RuntimeCapabilityDescriptor[];
     credentials: string[];
     gatewayContext: Record<string, string>;
     metadata: Record<string, unknown>;
@@ -121,7 +116,6 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
         }))
         .filter((entry) => entry.content.trim())
       : [],
-    capabilities: normalizeRuntimeCapabilities(body.capabilities),
     credentials: normalizeRuntimeCredentials(body.credentials),
     gatewayContext: normalizeGatewayContext(body.context),
     metadata: requestedSkills.length
@@ -158,33 +152,6 @@ function normalizeRuntimeSkills(value: unknown) {
         : '';
     return name && /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,119}$/.test(name) ? [name] : [];
   })));
-}
-
-function normalizeRuntimeCapabilities(value: unknown): RuntimeCapabilityDescriptor[] {
-  if (!Array.isArray(value)) return [];
-  const normalized = value.flatMap((entry): RuntimeCapabilityDescriptor[] => {
-    const record = entry && typeof entry === 'object' && !Array.isArray(entry)
-      ? entry as Record<string, unknown>
-      : {};
-    const key = typeof entry === 'string'
-      ? entry.trim()
-      : typeof record.key === 'string'
-        ? record.key.trim()
-        : '';
-    if (!/^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key)) return [];
-    const inputSchema = record.inputSchema && typeof record.inputSchema === 'object' && !Array.isArray(record.inputSchema)
-      ? record.inputSchema as Record<string, unknown>
-      : undefined;
-    return [{
-      key,
-      ...(typeof record.mode === 'string' && record.mode.trim() ? { mode: record.mode.trim().slice(0, 40) } : {}),
-      ...(typeof record.description === 'string' && record.description.trim()
-        ? { description: record.description.trim().slice(0, 500) }
-        : {}),
-      ...(inputSchema ? { inputSchema } : {}),
-    }];
-  });
-  return Array.from(new Map(normalized.map((capability) => [capability.key, capability])).values());
 }
 
 function normalizeGatewayContext(value: unknown) {
@@ -418,7 +385,6 @@ app.get('/v1/runtime/manifest', (_req, res) => {
       cancellation: true,
       sessionContinuity: true,
       traceEvents: true,
-      gatewayCapabilities: true,
       gatewayCredentials: true,
       workspaceAssignment: true,
     },
@@ -435,7 +401,6 @@ app.get('/v1/runtime/capabilities', (_req, res) => {
       'shell',
       'site-hosted-skills',
       'continuations',
-      'gateway-capabilities',
       'gateway-credentials',
       'workspace-assignment',
       'trace-events',
@@ -451,43 +416,6 @@ app.get('/skills', async (_req, res) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown skills error';
     res.status(500).json({ ok: false, error: message });
-  }
-});
-
-app.post('/v1/runtime/capabilities/invoke', async (req, res) => {
-  const token = typeof req.header('x-runtime-capability-token') === 'string'
-    ? req.header('x-runtime-capability-token')!.trim()
-    : '';
-  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
-    ? req.body as Record<string, unknown>
-    : {};
-  const capability = typeof body.capability === 'string' ? body.capability.trim() : '';
-  const input = body.input && typeof body.input === 'object' && !Array.isArray(body.input)
-    ? body.input as Record<string, unknown>
-    : null;
-  if (!token || !capability || !input) {
-    res.status(400).json({ ok: false, error: 'RUNTIME_CAPABILITY_REQUEST_INVALID' });
-    return;
-  }
-
-  try {
-    const result = await runtimeCapabilitySessions.invoke(token, capability, input);
-    res.status(result.status).json(result);
-  } catch (error) {
-    if (error instanceof RuntimeCapabilityError) {
-      res.status(error.status).json({ ok: false, error: error.code });
-      return;
-    }
-    if (error instanceof GatewayClientError) {
-      res.status(error.status).json({
-        ok: false,
-        error: error.code,
-        retryable: error.retryable,
-        traceId: error.traceId,
-      });
-      return;
-    }
-    res.status(500).json({ ok: false, error: 'RUNTIME_CAPABILITY_INVOKE_FAILED' });
   }
 });
 

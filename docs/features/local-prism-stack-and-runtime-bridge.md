@@ -2,7 +2,7 @@
 
 Status: local MVP implemented; distribution hardening in progress
 
-Depends on: [Prism Capability Gateway](prism-capability-gateway.md)
+Depends on: [Prism Credential Gateway](prism-credential-gateway.md)
 
 Related operations guide:
 [Local And VPS Deployment](../operations/local-vps-deployment.md)
