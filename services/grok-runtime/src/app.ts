@@ -112,8 +112,7 @@ export function createGrokRuntimeApp() {
       siteHostedSkills: true,
       repository: true,
       shell: true,
-      gatewayCapabilities: false,
-      gatewayToolsets: false,
+      gatewayCredentials: false,
       workspaceAssignment: false,
     },
   }));

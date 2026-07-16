@@ -521,7 +521,7 @@ async function registerLocalRuntimeProfiles(config, startedRuntimes) {
       adapter: "codex-cli",
       baseUrl: `http://host.docker.internal:${config.CODEX_RUNTIME_PORT}`,
       contractVersion: "2026-07-10",
-      features: ["cancellation", "continuations", "gateway-capabilities", "gateway-toolsets", "workspace-assignment"],
+      features: ["cancellation", "continuations", "gateway-credentials", "workspace-assignment"],
     }] : []),
     ...(startedRuntimes.grok ? [{
       key: "grok-local",

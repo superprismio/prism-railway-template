@@ -1,5 +1,5 @@
 export type GatewayLeaseOptions = {
-  toolsets: string[];
+  credentials: string[];
   context: Record<string, unknown>;
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
@@ -59,9 +59,9 @@ export function validateLeasedEnvironment(value: unknown): Record<string, string
   return leasedEnv;
 }
 
-export async function leaseGatewayToolsets(options: GatewayLeaseOptions): Promise<Record<string, string>> {
-  const toolsets = Array.from(new Set(options.toolsets.map((key) => key.trim()).filter(Boolean)));
-  if (!toolsets.length) return {};
+export async function leaseGatewayCredentials(options: GatewayLeaseOptions): Promise<Record<string, string>> {
+  const credentials = Array.from(new Set(options.credentials.map((key) => key.trim()).filter(Boolean)));
+  if (!credentials.length) return {};
 
   const env = options.env ?? process.env;
   if (!enabled(env.PRISM_GATEWAY_ENABLED)) {
@@ -86,13 +86,10 @@ export async function leaseGatewayToolsets(options: GatewayLeaseOptions): Promis
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-    let response = await requestLease("/credential-bundles/lease", {
-      credentials: toolsets,
+    const response = await requestLease("/credential-bundles/lease", {
+      credentials,
       context: options.context,
     });
-    if (response.status === 404) {
-      response = await requestLease("/toolsets/lease", { toolsets, context: options.context });
-    }
     const text = await response.text();
     let payload: Record<string, unknown> = {};
     try {

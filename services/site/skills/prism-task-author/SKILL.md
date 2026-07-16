@@ -13,8 +13,8 @@ Task authoring rules:
 4. Use `taskType="script-runner"` for deterministic watchdogs, pollers, API checks, checkpoint updates, and other jobs that need more logic than one HTTP POST.
 5. Store replayable natural-language instructions in `instructionConfig.prompt` for `codex-prompt` and `workflow-runner` tasks.
 6. Store optional skill names in `instructionConfig.requestedSkills`.
-   Capability requirements declared by those skills are resolved automatically
-   at runtime; do not duplicate them in task configuration.
+   Credential requirements declared by instance-owned skills are resolved at
+   runtime; do not duplicate them in task configuration.
 7. Store schedule in `scheduleCron` using standard five-field cron syntax.
 8. Default new tasks to `enabled=false` unless the user explicitly asks to enable it after review.
 9. Do not store arbitrary JavaScript, Python, or shell code in the task row.
@@ -164,7 +164,7 @@ Script runner task shape:
   },
   "instructionConfig": {},
   "agentConfig": {
-    "gatewayToolsets": ["example.read"]
+    "gatewayCredentials": ["example"]
   },
   "outputConfig": {
     "outputDestinations": [
@@ -181,9 +181,8 @@ Script runner task shape:
 
 For script-runner tasks, the script itself must be a site-owned task script available through `/agent/task-scripts/:key/content`. Do not rely on local Codex Runtime files, repo-only files, or task-runner env registries for scheduled execution. The task row only references `scriptKey` and passes structured non-secret params. Scripts should write JSON to stdout and may include `shouldNotify:false` to suppress configured output delivery for healthy/no-op runs.
 
-When a script needs an organization credential, bind an adapter connected
-service in Gateway and declare its profile key in
-`agentConfig.gatewayToolsets`. Read the profile's leased environment variable
+When a script needs an organization credential, configure it in Gateway and
+declare its credential key in `agentConfig.gatewayCredentials`. Read the leased environment variable
 from `process.env` in the script. Never store credentials in
 `inputConfig.params`, task-script content, or output. The lease exists only in
 the script child process and the task must fail when an assigned lease cannot be

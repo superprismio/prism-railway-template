@@ -58,6 +58,7 @@ test('runtime client uses the normalized contract without adapter-specific parsi
     sessionId: 'site-session',
     continuationId: 'existing-session',
     skills: ['test-skill'],
+    credentials: ['sendgrid'],
     timeoutMs: 10_000,
   });
 
@@ -68,4 +69,5 @@ test('runtime client uses the normalized contract without adapter-specific parsi
   assert.equal(submitted.body?.contractVersion, '2026-07-10');
   assert.equal(submitted.body?.continuationId, 'existing-session');
   assert.deepEqual(submitted.body?.skills, [{ name: 'test-skill' }]);
+  assert.deepEqual(submitted.body?.credentials, [{ key: 'sendgrid' }]);
 });

@@ -1,5 +1,4 @@
-export type SiteRuntimeCapability = string | { key: string; [key: string]: unknown };
-export type SiteRuntimeToolset = { key: string; protocol?: "openapi" | "mcp" | "http" | "adapter" };
+export type SiteRuntimeCredential = string | { key: string };
 
 export type SiteRuntimeResponse = {
   responseText: string;
@@ -45,8 +44,7 @@ export async function requestSiteRuntime(input: {
   sessionId: string;
   continuationId?: string | null;
   recentHistory?: Array<{ role: string; content: string }>;
-  capabilities?: SiteRuntimeCapability[];
-  toolsets?: SiteRuntimeToolset[];
+  credentials?: SiteRuntimeCredential[];
   context?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   skills?: string[];

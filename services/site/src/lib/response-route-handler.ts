@@ -36,15 +36,7 @@ import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
 import {
   listEnabledGatewayCredentialsOrEmpty,
-  listEnabledGatewayToolsetsOrEmpty,
-  listInteractiveGatewayCapabilitiesOrEmpty,
 } from "@/lib/prism-gateway"
-import {
-  gatewayToolsetsForKeys,
-  interactiveGatewayToolsets,
-  trustedRuntimeAdapterToolsets,
-} from "@/lib/gateway-toolset-assignment"
-import type { GatewayCapabilityDescriptor } from "@/lib/prism-gateway-policy"
 import { isLoopWorkflowStep, loopIterationKeyForRequest, resolveControlFlowSteps } from "@/lib/workflow-control-flow"
 import { findStepByKey, gateEventAction, nextStepForAction, stepKey, stepType, workflowSteps } from "@/lib/workflow-steps"
 
@@ -337,36 +329,14 @@ function requestedSkillsFromAgentConfig(config: unknown) {
   return skills.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim())
 }
 
-function requestedCapabilitiesFromAgentConfig(config: unknown) {
+function requestedCredentialsFromAgentConfig(config: unknown) {
   if (!isRecord(config)) return []
-  const capabilities = Array.isArray(config.gatewayCapabilities)
-    ? config.gatewayCapabilities
-    : Array.isArray(config.capabilities)
-      ? config.capabilities
-      : []
-  return Array.from(new Set(capabilities
-    .map((entry) => {
-      if (typeof entry === "string") return entry.trim()
-      if (isRecord(entry) && typeof entry.key === "string") return entry.key.trim()
-      return ""
-    })
-    .filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key))))
-}
-
-function requestedToolsetsFromAgentConfig(config: unknown) {
-  if (!isRecord(config)) return []
-  const toolsets = Array.isArray(config.gatewayCredentials)
+  const credentials = Array.isArray(config.gatewayCredentials)
     ? config.gatewayCredentials
     : Array.isArray(config.gateway_credentials)
       ? config.gateway_credentials
-      : Array.isArray(config.gatewayToolsets)
-        ? config.gatewayToolsets
-        : Array.isArray(config.gateway_toolsets)
-          ? config.gateway_toolsets
-          : Array.isArray(config.toolsets)
-            ? config.toolsets
-            : []
-  return Array.from(new Set(toolsets
+      : []
+  return Array.from(new Set(credentials
     .map((entry) => typeof entry === "string" ? entry.trim() : isRecord(entry) && typeof entry.key === "string" ? entry.key.trim() : "")
     .filter((key) => /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key))))
 }
@@ -414,8 +384,7 @@ async function requestPrismRuntimeResponse(input: {
   sessionId: string
   continuationId?: string | null
   recentHistory: Array<{ role: string; content: string }>
-  capabilities?: Array<string | GatewayCapabilityDescriptor>
-  toolsets?: Array<{ key: string; protocol?: "openapi" | "mcp" | "http" | "adapter" }>
+  credentials?: Array<string | { key: string }>
   gatewayContext?: Record<string, string | undefined>
   metadata: Record<string, unknown>
   onProgress?: (progress: {
@@ -434,8 +403,7 @@ async function requestPrismRuntimeResponse(input: {
     continuationId: input.continuationId ?? null,
     recentHistory: input.recentHistory,
     skills: requestedSkills,
-    capabilities: input.capabilities,
-    toolsets: input.toolsets ?? [],
+    credentials: input.credentials ?? [],
     context: input.gatewayContext,
     metadata: input.metadata,
     timeoutMs: runtimeRequestTimeoutMs(),
@@ -1056,34 +1024,14 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       ...requestedSkillsFromAgentConfig(workflowAgentConfig),
     ]),
   )
-  const workflowRequestedCapabilities = requestedCapabilitiesFromAgentConfig(workflowAgentConfig)
-    .map((key): GatewayCapabilityDescriptor => ({ key }))
-  const interactiveCapabilities = actorType === "admin"
-    ? await listInteractiveGatewayCapabilitiesOrEmpty("full")
-    : []
-  const requestedCapabilities = Array.from(new Map([
-    ...workflowRequestedCapabilities,
-    ...interactiveCapabilities,
-  ].map((capability) => [capability.key, capability])).values())
-  const enabledGatewayToolsets = await listEnabledGatewayToolsetsOrEmpty()
   const includeTrustedRuntimeCredentials = actorType === "admin" || Boolean(linkedWorkflow)
-  const enabledToolsets = interactiveGatewayToolsets(
-    enabledGatewayToolsets,
-    includeTrustedRuntimeCredentials ? await listEnabledGatewayCredentialsOrEmpty() : [],
-  )
-  const trustedWorkflowAdapterToolsets = linkedWorkflow
-    ? trustedRuntimeAdapterToolsets(enabledToolsets)
+  const activeCredentials = includeTrustedRuntimeCredentials
+    ? await listEnabledGatewayCredentialsOrEmpty()
     : []
-  const workflowRequestedToolsets = gatewayToolsetsForKeys(
-    requestedToolsetsFromAgentConfig(workflowAgentConfig),
-    enabledToolsets,
-  )
-  const interactiveToolsets = actorType === "admin" ? enabledToolsets : []
-  const requestedToolsets = Array.from(new Map([
-    ...workflowRequestedToolsets,
-    ...trustedWorkflowAdapterToolsets,
-    ...interactiveToolsets,
-  ].map((toolset) => [toolset.key, toolset])).values())
+  const requestedCredentials = Array.from(new Set([
+    ...activeCredentials.map((credential) => credential.key),
+    ...requestedCredentialsFromAgentConfig(workflowAgentConfig),
+  ]))
 
   createAgentMessage({
     sessionId: session.id,
@@ -1275,8 +1223,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             ? session.meta.codexThreadId
             : null,
       recentHistory,
-      capabilities: requestedCapabilities,
-      toolsets: requestedToolsets,
+      credentials: requestedCredentials,
       gatewayContext: {
         delegatedActorId: actorType === "admin" ? "admin-console" : undefined,
         requestId: activeLinkedChangeRequestId ?? undefined,
@@ -1494,14 +1441,10 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             ...requestedSkillsFromAgentConfig(continuationAgentConfig),
           ]),
         )
-        const continuationCapabilities = requestedCapabilitiesFromAgentConfig(continuationAgentConfig)
-        const continuationToolsets = Array.from(new Map([
-          ...gatewayToolsetsForKeys(
-            requestedToolsetsFromAgentConfig(continuationAgentConfig),
-            enabledToolsets,
-          ),
-          ...trustedWorkflowAdapterToolsets,
-        ].map((toolset) => [toolset.key, toolset])).values())
+        const continuationCredentials = Array.from(new Set([
+          ...activeCredentials.map((credential) => credential.key),
+          ...requestedCredentialsFromAgentConfig(continuationAgentConfig),
+        ]))
         const continuationPrompt = [
           `Automatically continue workflow step ${continuationStepKey} for request #${latestRequest.requestNumber}: ${latestRequest.title}.`,
           `Step label: ${typeof continuationStep.label === "string" ? continuationStep.label : continuationStepKey}.`,
@@ -1517,8 +1460,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             sessionId: session.id,
             continuationId: continuationThreadId,
             recentHistory: continuationHistory,
-            capabilities: continuationCapabilities,
-            toolsets: continuationToolsets,
+            credentials: continuationCredentials,
             gatewayContext: {
               requestId: activeLinkedChangeRequestId,
               workflowRunId: latestRun.id,

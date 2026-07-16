@@ -2,7 +2,7 @@
 
 Status: local MVP implemented; distribution hardening in progress
 
-Depends on: [Prism Capability Gateway](prism-capability-gateway.md)
+Depends on: [Prism Credential Gateway](prism-credential-gateway.md)
 
 Related operations guide:
 [Local And VPS Deployment](../operations/local-vps-deployment.md)
@@ -56,7 +56,7 @@ with its existing service topology and environment model.
 - Start the required local Prism control plane with one command.
 - Generate internal service tokens, encryption keys, URLs, and data paths.
 - Preserve persistent Site, Gateway, Memory, and runtime state across restarts.
-- Use the Gateway for organization credential custody and toolset access.
+- Use the Gateway for organization credential custody and job-scoped leases.
 - Let local Codex CLI, Grok Build, and future harnesses implement one runtime
   adapter contract.
 - Configure non-secret instance behavior through Prism Console after startup.
@@ -157,7 +157,7 @@ than designed as an unrelated protocol. At minimum, an adapter must support:
 - job submission
 - normalized prompt and conversation history
 - workspace and context assignment
-- Gateway toolset/profile assignment
+- Gateway credential assignment
 - streamed or polled progress
 - normalized final response and artifacts
 - cancellation
@@ -237,7 +237,7 @@ The configuration agent should:
 
 Chat may author:
 
-- Gateway connection metadata and toolset/profile configuration
+- Gateway credential metadata and environment/configuration bindings
 - runtime registration and routing preferences
 - skills, workflows, hooks, and tasks
 - communication adapter policy
@@ -265,8 +265,8 @@ prism local runtime add codex
 
 Later iterations should replace broad static Gateway caller tokens with
 Site-signed job assignments or Gateway-issued job sessions. A runtime should
-receive only the toolsets or compatibility leases assigned to its current job,
-with expiration and audit attribution.
+receive only the credential leases assigned to its current job, with expiration
+and audit attribution.
 
 ## Compose Services And Profiles
 

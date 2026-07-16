@@ -47,7 +47,6 @@ type GatewayCredential = {
   configuration: Record<string, string>;
   envBindings: Record<string, string>;
   status: string;
-  toolsetKeys: string[];
   secretNames: string[];
   lastUsedAt: string | null;
 };
@@ -55,7 +54,7 @@ type GatewayCredential = {
 type GatewayAuditEvent = {
   id: string;
   traceId: string;
-  capabilityKey: string;
+  credentialKey: string;
   authenticatedCallerId: string;
   status: string;
   policyDecision: string;
@@ -135,23 +134,15 @@ function formatDate(value: string | null | undefined) {
 }
 
 function statusVariant(status: string) {
-  if (["healthy", "leased", "succeeded", "allowed"].includes(status)) return "secondary" as const;
-  if (["failed", "denied", "unhealthy"].includes(status)) return "destructive" as const;
+  if (["leased", "succeeded"].includes(status)) return "secondary" as const;
+  if (status === "failed") return "destructive" as const;
   return "outline" as const;
 }
 
 function statusLabel(status: string) {
-  if (status === "healthy") return "Verified";
   if (status === "leased") return "Used";
   if (status === "untested") return "Not used";
-  if (status === "unhealthy") return "Failed";
   return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-function auditSubject(value: string) {
-  if (value.startsWith("credential:")) return value.slice("credential:".length);
-  if (value.startsWith("toolset:")) return value.slice("toolset:".length);
-  return value;
 }
 
 async function adminRequest(path: string, init: RequestInit = {}) {
@@ -222,7 +213,6 @@ export function GatewaySettings() {
         key: credential.key || credential.provider || credential.id,
         configuration: credential.configuration ?? {},
         envBindings: credential.envBindings ?? {},
-        toolsetKeys: credential.toolsetKeys ?? [],
         secretNames: credential.secretNames ?? [],
       })),
     [overview?.connections],
@@ -371,7 +361,7 @@ export function GatewaySettings() {
           <Table>
             <TableHeader><TableRow>
               <TableHead>Credential</TableHead><TableHead>Type</TableHead><TableHead>Variables</TableHead>
-              <TableHead>Used by</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead>
+              <TableHead>Available to</TableHead><TableHead>Last used</TableHead><TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow></TableHeader>
             <TableBody>
@@ -380,7 +370,7 @@ export function GatewaySettings() {
                   <TableCell><div className="font-medium">{credential.label}</div><div className="font-mono text-xs text-muted-foreground">{credential.key}</div></TableCell>
                   <TableCell>{credentialTypes.find(([value]) => value === credential.authType)?.[1] ?? credential.authType}</TableCell>
                   <TableCell><div className="max-w-[360px] font-mono text-xs text-muted-foreground">{[...Object.keys(credential.envBindings), ...Object.keys(credential.configuration)].join(", ") || "None"}</div></TableCell>
-                  <TableCell>{credential.toolsetKeys.length ? credential.toolsetKeys.join(", ") : "Admin contexts"}</TableCell>
+                  <TableCell>Trusted runs</TableCell>
                   <TableCell>{formatDate(credential.lastUsedAt)}</TableCell>
                   <TableCell><Badge variant={statusVariant(credential.status)}>{statusLabel(credential.status)}</Badge></TableCell>
                   <TableCell><div className="flex justify-end gap-2">
@@ -409,10 +399,10 @@ export function GatewaySettings() {
             <p className="font-medium">Audit history</p>
             <div className="max-h-[420px] overflow-auto border border-border/70">
               <Table>
-                <TableHeader><TableRow><TableHead>Time</TableHead><TableHead>Credential or tool</TableHead><TableHead>Caller</TableHead><TableHead>Status</TableHead><TableHead>Decision</TableHead><TableHead>Latency</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Time</TableHead><TableHead>Credential</TableHead><TableHead>Caller</TableHead><TableHead>Status</TableHead><TableHead>Decision</TableHead><TableHead>Latency</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {(overview?.auditEvents ?? []).map((event) => <TableRow key={event.id}>
-                    <TableCell>{formatDate(event.createdAt)}</TableCell><TableCell className="font-mono text-xs">{auditSubject(event.capabilityKey)}</TableCell>
+                    <TableCell>{formatDate(event.createdAt)}</TableCell><TableCell className="font-mono text-xs">{event.credentialKey}</TableCell>
                     <TableCell>{event.authenticatedCallerId}</TableCell><TableCell><Badge variant={statusVariant(event.status)}>{event.status}</Badge></TableCell>
                     <TableCell>{event.errorCode ?? event.policyDecision}</TableCell><TableCell>{event.latencyMs === null ? "-" : `${event.latencyMs} ms`}</TableCell>
                   </TableRow>)}

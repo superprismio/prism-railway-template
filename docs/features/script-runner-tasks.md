@@ -34,7 +34,7 @@ Task rows use `taskType="script-runner"` and reference a site-owned task script 
   },
   "instructionConfig": {},
   "agentConfig": {
-    "gatewayToolsets": ["example.read"]
+    "gatewayCredentials": ["example"]
   },
   "outputConfig": {}
 }
@@ -44,7 +44,7 @@ Do not store inline JavaScript, shell, or Python in task rows. The task row stor
 
 `params` are non-secret task inputs. When a script needs an organization
 credential, assign an adapter connected service through
-`agentConfig.gatewayToolsets` and read its declared environment variable from
+`agentConfig.gatewayCredentials` and read its declared environment variable from
 `process.env`. Task Runner leases those values for one execution and exposes
 them only to the child process. It fails the task if an assigned lease cannot be
 obtained; it does not fall back to credentials embedded in params or script
@@ -84,14 +84,14 @@ Scripts should write JSON to stdout:
     "latencyMs": 1240
   },
   "agentConfig": {
-    "gatewayToolsets": ["example.read"]
+    "gatewayCredentials": ["example"]
   }
 }
 ```
 
 `params` are non-secret task inputs. When a script needs an organization
 credential, assign an adapter connected service through
-`agentConfig.gatewayToolsets` and read its declared environment variable from
+`agentConfig.gatewayCredentials` and read its declared environment variable from
 `process.env`. Task Runner leases those values for one execution and exposes
 them only to the child process. It fails the task if an assigned lease cannot be
 obtained; it does not fall back to credentials embedded in params or script

@@ -197,14 +197,11 @@ Use it for:
 - deterministic delegation policy in `agentConfig.delegation`
 
 When a step uses a skill, put the skill name in `agentConfig.skills`. Generic
-skills remain Gateway-agnostic. For deterministic instance workflows, declare
-required broad profiles in workflow/step `agentConfig.gatewayToolsets` or in an
-instance-owned skill; existing narrow wrappers use
-`metadata.gateway-capabilities`. Do not reproduce provider operations in the
-manifest. Use `agentConfig.gatewayCapabilities` only for a direct narrow call.
-For HTTP, OpenAPI, or MCP profiles, use the runtime toolset invocation contract;
-do not check for or require the provider's raw environment variables. Only
-`adapter` profiles lease environment variables to a runtime or task process.
+skills remain Gateway-agnostic. Trusted workflow runs inherit active
+credentials. A deterministic task or instance-owned skill may declare specific
+keys with `agentConfig.gatewayCredentials` or `metadata.gateway-credentials`.
+Use the provider's normal SDK, CLI, HTTP API, OpenAPI client, or MCP client
+through the leased environment and configuration variables.
 Before enabling a workflow, verify its referenced skills and Gateway
 requirements exist and run Prism Doctor.
 

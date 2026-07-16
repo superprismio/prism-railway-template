@@ -75,11 +75,6 @@ Send service auth as:
 - `GET /agent/gateway`
 - `POST /agent/gateway/connections`
 - `POST /agent/gateway/integrations`
-- `GET /agent/gateway/toolsets`
-- `POST /agent/gateway/toolsets`
-- `POST /agent/gateway/capabilities`
-- `PATCH /agent/gateway/capabilities/:key`
-- `POST /agent/gateway/capabilities/:key/test`
 
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
 
@@ -98,10 +93,9 @@ configuration only. Never ask for or send credentials through chat or
 `/agent/*`; create a pending connection and direct the admin to the returned
 Settings credential URL.
 
-Assigned runtime toolsets use short-lived runtime-local tokens. The runtime
-interface supports `describe` for the canonical API description and `request`
-for flexible same-origin method/path/query/body calls. Provider credentials and
-destination origins are never runtime inputs.
+Gateway credential bundles are leased only to trusted runtime jobs and injected
+under their configured environment-variable names. Gateway records each lease;
+provider credentials must never be copied into prompts, task inputs, or chat.
 
 For questions like "what happened to request #10?" or "what artifacts did request #10 create?", do not use `/admin/board`. Use:
 
@@ -185,29 +179,25 @@ Examples:
 - Task create/update/reasoning: use `prism-task-author`, then `GET /agent/tasks` or `POST /agent/tasks`.
 - Skill create/update/reasoning: use `prism-skill-author`, then `GET /agent/skills` or `POST /agent/skills`.
 
-Instance-owned deterministic workflows may declare required Gateway toolsets in
+Instance-owned deterministic workflows may declare required Gateway credentials in
 `SKILL.md` frontmatter:
 
 ```yaml
 metadata:
-  gateway-toolsets:
-    - crm.admin
+  gateway-credentials:
+    - crm
 ```
-
-Existing narrow wrappers continue to use `metadata.gateway-capabilities` during
-migration. Do not create one narrow capability per route or collection for a
-broad OpenAPI/MCP integration.
 
 Do not add Prism-specific Gateway metadata to generic or externally sourced
 skills merely to make interactive access work. Admin Console and full-access
-source contexts receive enabled organization toolsets from Site policy.
+source contexts receive active organization credentials from Site policy.
 
 Codex Runtime adds Gateway requirements to the job-scoped session when it
 selects the skill. Workflows should reference the skill through
 `agentConfig.skills`; tasks should request it through
-`instructionConfig.requestedSkills`. Do not duplicate requirement lists in each
-workflow, task, or hook. Keep `agentConfig.gatewayCapabilities` only for direct
-narrow compatibility calls.
+`instructionConfig.requestedSkills`. Deterministic tasks may declare
+`agentConfig.gatewayCredentials` when they need a specific leased credential.
+Do not duplicate requirement lists in each workflow, task, or hook.
 
 Before removing a legacy integration secret from Codex Runtime, run Prism
 Doctor and exercise every enabled workflow, task, and hook that uses the
