@@ -304,7 +304,6 @@ export function upsertExternalInterface(input: UpsertExternalInterfaceInput, db:
   const existing = interfaceRow(key, db);
   const now = new Date().toISOString();
   const enabled = input.enabled ?? (existing?.enabled === 1);
-  if (enabled && profile.mode === 'full') throw new Error('EXTERNAL_INTERFACE_FULL_MODE_NOT_SUPPORTED');
   if (enabled && !existing?.credential_hash) throw new Error('EXTERNAL_INTERFACE_CREDENTIAL_REQUIRED');
 
   db.prepare(`
@@ -453,10 +452,6 @@ export function authorizeExternalInterface(input: {
   if (!profile || profile.mode === 'off') {
     recordInteractionAccessEvent({ interfaceKey: row.key, outcome: 'rejected', reason: 'profile-off', requestId: input.requestId, subject: input.subject }, db);
     return { ok: false as const, code: 'EXTERNAL_INTERFACE_DISABLED' };
-  }
-  if (profile.mode === 'full') {
-    recordInteractionAccessEvent({ interfaceKey: row.key, outcome: 'rejected', reason: 'full-mode-not-supported', requestId: input.requestId, subject: input.subject }, db);
-    return { ok: false as const, code: 'EXTERNAL_INTERFACE_FULL_MODE_NOT_SUPPORTED' };
   }
   const now = new Date().toISOString();
   db.prepare('UPDATE external_interfaces SET credential_last_used_at = ? WHERE key = ?').run(now, row.key);

@@ -15,12 +15,15 @@ Implemented on the feature branch:
 - source-adapter session and message routes backed by generic Site sessions;
 - persona/version metadata, continuation reset, rate limiting, and public-output
   sanitization;
-- no Gateway credentials for external interactions and no enabled interfaces by
-  default.
+- Gateway credentials only for deliberately configured `full` interfaces, and
+  no enabled interfaces by default.
 
-Still deferred:
+Next interaction slice:
 
 - explicit allowlisted workflow execution;
+
+Later, separate authorization or transport work:
+
 - browser signed-session tokens;
 - a restricted tool-free Runtime;
 - enforced Memory source or bucket scoping;
@@ -301,7 +304,8 @@ Keep the existing operator-facing modes:
 - `off`: reject the interaction;
 - `readonly`: answer from permitted context with no organization credentials;
 - `run-approved`: readonly behavior plus explicitly listed workflows;
-- `full`: trusted agent behavior, reserved for deliberate later enablement.
+- `full`: trusted agent behavior with normal trusted-run credential access,
+  enabled only through deliberate operator configuration.
 
 Modes are convenient presets, not a future universal RBAC vocabulary. The
 resolved context should also record concrete actions and resources so a future

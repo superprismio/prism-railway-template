@@ -1096,6 +1096,7 @@ type ExternalInteractionAuthorization = {
     rateLimit: DiscordRateLimitConfig;
     version: number;
   };
+  credentials: RuntimeCredentialDescriptor[];
 };
 
 class ExternalInteractionHttpError extends Error {
@@ -1140,6 +1141,7 @@ async function authorizeExternalInteraction(
     error?: unknown;
     code?: unknown;
     resolved?: unknown;
+    credentials?: unknown;
   } | null;
   if (!response.ok) {
     throw new ExternalInteractionHttpError(
@@ -1151,7 +1153,15 @@ async function authorizeExternalInteraction(
   if (!resolved || typeof resolved !== "object" || Array.isArray(resolved)) {
     throw new ExternalInteractionHttpError(502, "EXTERNAL_INTERFACE_AUTHORIZATION_INVALID");
   }
-  return resolved as ExternalInteractionAuthorization;
+  const credentials = (Array.isArray(payload?.credentials) ? payload.credentials : []).flatMap((entry): RuntimeCredentialDescriptor[] => {
+    const record = entry && typeof entry === "object" && !Array.isArray(entry) ? entry as JsonObject : {};
+    const key = typeof entry === "string" ? entry.trim() : typeof record.key === "string" ? record.key.trim() : "";
+    return /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key) ? [{ key }] : [];
+  });
+  return {
+    ...resolved as Omit<ExternalInteractionAuthorization, "credentials">,
+    credentials: Array.from(new Map(credentials.map((descriptor) => [descriptor.key, descriptor])).values()),
+  };
 }
 
 function checkExternalInteractionRateLimit(
@@ -1179,7 +1189,9 @@ function externalInteractionPolicyInstructions(authorization: ExternalInteractio
   const persona = authorization.profile.persona.instructions.trim();
   const access = authorization.profile.mode === "readonly"
     ? "This external interaction is readonly. Do not call writer endpoints, create or mutate tasks/workflows/skills/requests, send messages, or modify repositories. Answer only from available approved context."
-    : `This external interaction may run only these existing workflows through an explicit adapter action: ${authorization.profile.allowedWorkflows.join(", ") || "none"}. Do not author workflows or perform broad administrative changes.`;
+    : authorization.profile.mode === "run-approved"
+      ? `This external interaction may run only these existing workflows through an explicit adapter action: ${authorization.profile.allowedWorkflows.join(", ") || "none"}. Do not author workflows or perform broad administrative changes.`
+      : "This external interaction is trusted for full agent behavior, including normal trusted-run credential access, subject to normal Prism safeguards.";
   return [persona, access].filter(Boolean).join("\n\n");
 }
 
@@ -3964,7 +3976,7 @@ async function main(): Promise<void> {
         sessionId,
         continuationId,
         recentHistory,
-        credentials: [],
+        credentials: authorization.credentials,
         runtimeProfileKey: authorization.profile.runtimeProfileKey,
         gatewayContext: { delegatedActorId: `external:${authorization.interface.key}` },
         metadata: {
@@ -3976,7 +3988,7 @@ async function main(): Promise<void> {
           externalAccessMode: authorization.profile.mode,
           allowedWorkflows: authorization.profile.allowedWorkflows,
           policyInstructions: externalInteractionPolicyInstructions(authorization),
-          credentialPolicy: "none",
+          credentialPolicy: authorization.profile.mode === "full" ? "trusted-source" : "none",
         },
       });
       const sanitized = sanitizePublicOutput(result.responseText);

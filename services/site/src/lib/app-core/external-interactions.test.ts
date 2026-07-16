@@ -97,14 +97,21 @@ test('credential authorization returns only resolved non-secret configuration', 
   db.close();
 });
 
-test('full interfaces cannot be enabled and referenced profiles cannot be deleted', () => {
+test('full interfaces authorize deliberately and referenced profiles cannot be deleted', () => {
   const db = testDb();
   upsertInteractionProfile({ key: 'trusted', mode: 'full' }, db);
-  assert.throws(() => upsertExternalInterface({
+  upsertExternalInterface({
     key: 'trusted-api',
     interactionProfileKey: 'trusted',
-    enabled: true,
-  }, db), /EXTERNAL_INTERFACE_FULL_MODE_NOT_SUPPORTED/);
+  }, db);
+  const rotated = rotateExternalInterfaceCredential('trusted-api', db);
+  upsertExternalInterface({ key: 'trusted-api', interactionProfileKey: 'trusted', enabled: true }, db);
+  const authorized = authorizeExternalInterface({
+    key: 'trusted-api',
+    credential: rotated.credential,
+  }, db);
+  assert.equal(authorized.ok, true);
+  if (authorized.ok) assert.equal(authorized.resolved.profile.mode, 'full');
 
   upsertInteractionProfile({ key: 'limited', mode: 'readonly' }, db);
   upsertExternalInterface({ key: 'limited-api', interactionProfileKey: 'limited' }, db);

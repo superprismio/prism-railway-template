@@ -12,10 +12,11 @@ inbound credential in Settings and explicitly enables the path.
 ## Rules
 
 1. Create the interaction profile before the interface that references it.
-2. Use `readonly` for contextual assistance and `run-approved` only when the
-   operator supplies an explicit workflow allowlist.
-3. Do not enable or recommend `full`; the first external transport slice does
-   not support it.
+2. Default to `readonly` for contextual assistance. Use `run-approved` only
+   when the operator supplies an explicit workflow allowlist.
+3. Use `full` only when the operator explicitly asks for a trusted interface.
+   Explain that it receives the same normal trusted-run credential access as a
+   full-access Discord or Telegram source context.
 4. Keep persona instructions concise and treat them as behavior, not authority.
 5. Use a restricted Runtime profile when one exists. Do not claim the current
    Runtime is a hard public sandbox merely because the profile says readonly.

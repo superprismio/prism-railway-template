@@ -228,11 +228,12 @@ curl -fsSL \
 ```
 
 The first slice accepts API keys from trusted application backends. Do not put a
-long-lived interface key in browser JavaScript. External interactions receive
-no Gateway credentials, responses pass through the public-output sanitizer,
-and conversations reuse Site agent sessions. `readonly` remains an operating
-policy rather than a tool-free public sandbox until a restricted Runtime is
-available.
+long-lived interface key in browser JavaScript. `readonly` and `run-approved`
+interactions receive no Gateway credentials; deliberately configured `full`
+interfaces follow the normal trusted-source credential lease path. Responses
+pass through the public-output sanitizer, and conversations reuse Site agent
+sessions. `readonly` remains an operating policy rather than a tool-free public
+sandbox until a restricted Runtime is available.
 
 Recording completion hooks reuse the agent API base/token when possible. The
 default hook key is `recording-transcript-completed`:
