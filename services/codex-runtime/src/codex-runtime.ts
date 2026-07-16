@@ -682,6 +682,9 @@ function buildPrompt(
   const policyInstructions = typeof input.metadata?.policyInstructions === 'string'
     ? input.metadata.policyInstructions.trim().slice(0, 40_000)
     : '';
+  const sessionMetadata = Object.fromEntries(
+    Object.entries(input.metadata ?? {}).filter(([key]) => key !== 'policyInstructions'),
+  );
 
   const sections = [
     'You are Codex replying through a transport adapter.',
@@ -701,8 +704,8 @@ function buildPrompt(
     sections.push('', 'Trusted transport policy instructions:', policyInstructions);
   }
 
-  if (input.metadata && Object.keys(input.metadata).length) {
-    sections.push(`Session metadata: ${JSON.stringify(input.metadata)}`);
+  if (Object.keys(sessionMetadata).length) {
+    sections.push(`Session metadata: ${JSON.stringify(sessionMetadata)}`);
   }
 
   if (availableSkillsSummary) {
