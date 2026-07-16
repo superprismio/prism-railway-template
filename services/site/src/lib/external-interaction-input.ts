@@ -40,6 +40,7 @@ export function interactionProfileInput(
 ): UpsertInteractionProfileInput | null {
   const input = record(value);
   const persona = record(input.persona);
+  const memoryScope = record(input.memoryScope ?? input.memory_scope);
   const rateLimit = record(input.rateLimit ?? input.rate_limit);
   const key = text(input.key) || existing?.key || '';
   if (!key) return null;
@@ -54,6 +55,14 @@ export function interactionProfileInput(
     persona: {
       name: persona.name === undefined ? existing?.persona.name : nullableText(persona.name),
       instructions: persona.instructions === undefined ? existing?.persona.instructions : nullableText(persona.instructions),
+    },
+    memoryScope: {
+      knowledgeSourceIds: strings(memoryScope.knowledgeSourceIds ?? memoryScope.knowledge_source_ids)
+        ?? existing?.memoryScope.knowledgeSourceIds,
+      buckets: strings(memoryScope.buckets) ?? existing?.memoryScope.buckets,
+      instructions: memoryScope.instructions === undefined
+        ? existing?.memoryScope.instructions
+        : nullableText(memoryScope.instructions),
     },
     allowedWorkflows: strings(input.allowedWorkflows ?? input.allowed_workflows) ?? existing?.allowedWorkflows,
     rateLimit: {

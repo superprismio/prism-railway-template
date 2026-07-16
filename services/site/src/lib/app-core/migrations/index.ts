@@ -31,6 +31,7 @@ import { runtimeProfilesMigration } from './031_runtime_profiles';
 import { compactRecordingHookPayloadMigration } from './032_compact_recording_hook_payload';
 import { workflowEventSequenceMigration } from './033_workflow_event_sequence';
 import { externalInteractionsMigration } from './034_external_interactions';
+import { interactionMemoryInstructionsMigration } from './035_interaction_memory_instructions';
 
 export interface Migration {
   name: string;
@@ -71,4 +72,5 @@ export const migrations: Migration[] = [
   compactRecordingHookPayloadMigration,
   workflowEventSequenceMigration,
   externalInteractionsMigration,
+  interactionMemoryInstructionsMigration,
 ];

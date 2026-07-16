@@ -1,6 +1,6 @@
 ---
 name: prism-interaction-author
-description: Create, update, inspect, or disable Prism external HTTP interaction interfaces and their persona/access profiles. Use when an operator asks for an API chat path, docs or Portal assistant, interface persona, Runtime routing, rate limit, allowed workflow list, or inbound interface credential setup.
+description: Create, update, inspect, or disable Prism external HTTP interaction interfaces and their persona/access profiles. Use when an operator asks for an API chat path, docs or Portal assistant, interface persona, advisory Prism Memory sources or buckets, Runtime routing, rate limit, allowed workflow list, or inbound interface credential setup.
 ---
 
 # Prism Interaction Author
@@ -21,8 +21,9 @@ inbound credential in Settings and explicitly enables the path.
 4. Keep persona instructions concise and treat them as behavior, not authority.
 5. Use a restricted Runtime profile when one exists. Do not claim the current
    Runtime is a hard public sandbox merely because the profile says readonly.
-6. Do not promise knowledge-source or bucket enforcement until a context broker
-   or scoped Memory authorization is configured.
+6. Treat `memoryScope` as trusted model instructions only. Always report
+   `enforcement: instructions-only`; do not promise knowledge-source or bucket
+   authorization until Prism Memory enforces it.
 7. Never ask for, accept, print, or send the inbound interface credential
    through chat or `/agent/*`.
 8. Direct the operator to **Settings > Interfaces** to generate, rotate, revoke,
@@ -50,6 +51,11 @@ Example:
   "persona": {
     "name": "Prism Docs Guide",
     "instructions": "Answer from approved documentation context. Be concise and do not speculate about private workspace state."
+  },
+  "memoryScope": {
+    "knowledgeSourceIds": ["public-handbook"],
+    "buckets": ["governance"],
+    "instructions": "Use the configured public handbook and governance context. Say when an answer is outside that context."
   },
   "allowedWorkflows": [],
   "rateLimit": {
@@ -118,6 +124,8 @@ browser `/admin/*` routes with a service token.
 After saving a disabled interface, report:
 
 - profile key, mode, persona, Runtime profile, and workflow allowlist;
+- advisory Memory source IDs, buckets, and instructions, clearly labeled as
+  instructions-only rather than enforced authorization;
 - interface key and public path;
 - allowed origins;
 - disabled state;

@@ -3,6 +3,7 @@ import test from 'node:test';
 import Database from 'better-sqlite3';
 import { runtimeProfilesMigration } from './migrations/031_runtime_profiles';
 import { externalInteractionsMigration } from './migrations/034_external_interactions';
+import { interactionMemoryInstructionsMigration } from './migrations/035_interaction_memory_instructions';
 import { upsertRuntimeProfile } from './runtime-profiles';
 import {
   authorizeExternalInterface,
@@ -18,6 +19,7 @@ function testDb() {
   db.pragma('foreign_keys = ON');
   db.exec(runtimeProfilesMigration.sql);
   db.exec(externalInteractionsMigration.sql);
+  db.exec(interactionMemoryInstructionsMigration.sql);
   upsertRuntimeProfile({
     key: 'public-chat',
     adapter: 'test-runtime',
@@ -33,8 +35,19 @@ test('external interfaces are disabled and credential-free by default', () => {
     mode: 'readonly',
     runtimeProfileKey: 'public-chat',
     persona: { name: 'Docs Guide', instructions: 'Use approved documentation.' },
+    memoryScope: {
+      knowledgeSourceIds: ['handbook', 'handbook', 'bad source'],
+      buckets: ['Governance', 'bad bucket'],
+      instructions: 'Use only the configured handbook and governance context.',
+    },
   }, db);
   assert.equal(profile.version, 1);
+  assert.deepEqual(profile.memoryScope, {
+    knowledgeSourceIds: ['handbook'],
+    buckets: ['governance'],
+    instructions: 'Use only the configured handbook and governance context.',
+    enforcement: 'instructions-only',
+  });
   const externalInterface = upsertExternalInterface({
     key: 'docs-assistant',
     interactionProfileKey: profile.key,

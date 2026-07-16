@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "test": "tsx --test src/external-interaction-rate-limit.test.ts src/site-runtime.test.ts",
+    "test": "tsx --test src/external-interaction-memory-policy.test.ts src/external-interaction-rate-limit.test.ts src/site-runtime.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

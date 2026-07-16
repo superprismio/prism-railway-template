@@ -12,6 +12,12 @@ type InteractionProfile = {
   mode: "off" | "readonly" | "run-approved" | "full";
   runtimeProfileKey: string | null;
   persona: { name: string | null; instructions: string };
+  memoryScope: {
+    knowledgeSourceIds: string[];
+    buckets: string[];
+    instructions: string;
+    enforcement: "instructions-only";
+  };
   allowedWorkflows: string[];
   rateLimit: { windowSeconds: number; maxRequests: number };
   version: number;
@@ -192,6 +198,13 @@ export function ExternalInterfaceSettings() {
                     {profile?.persona.name ? ` · ${profile.persona.name}` : ""}
                     {profile?.runtimeProfileKey ? ` · runtime ${profile.runtimeProfileKey}` : " · default runtime"}
                   </p>
+                  {profile && (profile.memoryScope.knowledgeSourceIds.length > 0 || profile.memoryScope.buckets.length > 0 || profile.memoryScope.instructions) ? (
+                    <p className="mt-1 text-xs text-amber-500">
+                      Advisory Memory scope (instructions only)
+                      {profile.memoryScope.knowledgeSourceIds.length > 0 ? ` · sources ${profile.memoryScope.knowledgeSourceIds.join(", ")}` : ""}
+                      {profile.memoryScope.buckets.length > 0 ? ` · buckets ${profile.memoryScope.buckets.join(", ")}` : ""}
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-xs text-muted-foreground">
                     Last used {formatDate(externalInterface.credential.lastUsedAt)}
                     {externalInterface.credential.prefix ? ` · ${externalInterface.credential.prefix}…` : ""}

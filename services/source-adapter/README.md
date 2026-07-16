@@ -242,6 +242,12 @@ next planned interaction change; deterministic allowlisted workflow execution
 follows it. Browser-direct and CORS authentication flows are outside this
 server-to-server interface.
 
+Interaction profiles may also configure advisory Prism Memory knowledge-source
+IDs, buckets, and additional instructions. The adapter includes them in trusted
+Runtime policy instructions and session metadata. They improve model behavior
+but are explicitly `instructions-only`; Prism Memory does not yet enforce them
+as an authorization boundary.
+
 The profile rate limit is aggregate per external interface and counts both
 session creation and message requests. Creating additional sessions does not
 create additional rate-limit capacity. A trusted application that legitimately
