@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GatewaySettings } from "@/components/admin/gateway-settings";
 import { RuntimeSettings } from "@/components/admin/runtime-settings";
+import { ExternalInterfaceSettings } from "@/components/admin/external-interface-settings";
 import {
   Card,
   CardContent,
@@ -116,7 +117,7 @@ type SourceAdapterPolicySettings = {
   platforms: Record<string, SourceAdapterPlatformPolicy>;
 };
 
-type SettingsView = "status" | "config" | "runtimes" | "gateway" | "docs";
+type SettingsView = "status" | "config" | "interfaces" | "runtimes" | "gateway" | "docs";
 
 type RepositoryTargetDraft = {
   name: string;
@@ -147,6 +148,12 @@ const settingsViewOptions: Array<{
       "Instance identity, access policy, repository targets, and members.",
   },
   {
+    value: "interfaces",
+    label: "Interfaces",
+    title: "External Interfaces",
+    description: "Inbound interaction paths, credentials, policy profiles, and recent access activity.",
+  },
+  {
     value: "runtimes",
     label: "Runtimes",
     title: "Runtime Profiles",
@@ -171,6 +178,7 @@ function isSettingsView(value: string | null): value is SettingsView {
   return (
     value === "status" ||
     value === "config" ||
+    value === "interfaces" ||
     value === "runtimes" ||
     value === "gateway" ||
     value === "docs"
@@ -2053,6 +2061,8 @@ export function AdminSettingsWorkspace({
         ) : null}
 
         {activeView === "gateway" ? <GatewaySettings /> : null}
+
+        {activeView === "interfaces" ? <ExternalInterfaceSettings /> : null}
 
         {activeView === "runtimes" ? <RuntimeSettings /> : null}
 

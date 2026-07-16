@@ -1,6 +1,31 @@
 # External Interaction Interfaces
 
-Status: proposed; first implementation slice not started
+Status: first additive server-to-server slice in progress
+
+## Implementation Status
+
+Implemented on the feature branch:
+
+- additive Site tables for profiles, interfaces, credential hashes, and ingress
+  authorization events;
+- console/agent configuration routes and a built-in
+  `prism-interaction-author` skill;
+- admin-only one-time API-key generation, rotation, and revocation;
+- a compact **Settings > Interfaces** observability and credential surface;
+- source-adapter session and message routes backed by generic Site sessions;
+- persona/version metadata, continuation reset, rate limiting, and public-output
+  sanitization;
+- no Gateway credentials for external interactions and no enabled interfaces by
+  default.
+
+Still deferred:
+
+- explicit allowlisted workflow execution;
+- browser signed-session tokens;
+- a restricted tool-free Runtime;
+- enforced Memory source or bucket scoping;
+- reuse of interaction profiles by Discord and Telegram;
+- the future organization authorization service.
 
 ## Decision
 

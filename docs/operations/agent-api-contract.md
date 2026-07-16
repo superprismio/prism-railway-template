@@ -203,12 +203,34 @@ are platform-scoped. For Discord, `platforms.discord.targets` are channel or
 thread IDs, `platforms.discord.groups` are role IDs, and
 `platforms.discord.users` are Discord user IDs. The default mode is `readonly`.
 
+External interaction configuration:
+
+- `GET /agent/interaction-profiles`
+- `POST /agent/interaction-profiles`
+- `GET /agent/interaction-profiles/:key`
+- `PATCH /agent/interaction-profiles/:key`
+- `DELETE /agent/interaction-profiles/:key`
+- `GET /agent/external-interfaces`
+- `POST /agent/external-interfaces`
+- `GET /agent/external-interfaces/:key`
+- `PATCH /agent/external-interfaces/:key`
+- `DELETE /agent/external-interfaces/:key`
+- `GET /agent/external-interfaces/events`
+
+These routes manage non-secret configuration only. Use the built-in
+`prism-interaction-author` skill, create new interfaces disabled, and direct the
+operator to **Settings > Interfaces** for one-time credential generation,
+rotation, revocation, and enablement. The internal adapter authorization route
+is not an agent authoring surface.
+
 Agent sessions:
 
 - `GET /agent/agent-sessions/:sessionId`
 - `POST /agent/agent-sessions/:sessionId/messages`
 - `GET /agent/agent-sessions/discord/lookup`
 - `POST /agent/agent-sessions/discord/upsert`
+- `GET /agent/agent-sessions/source/lookup`
+- `POST /agent/agent-sessions/source/upsert`
 
 ## Adapter Delivery
 

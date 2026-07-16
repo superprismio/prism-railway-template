@@ -20,6 +20,7 @@ Current behavior:
 - `GET /health` for service health and config visibility
 - `POST /sync` runs a Discord REST sync and posts a normalized batch to `prism-memory`
 - `GET /capabilities`, `GET /destinations`, `POST /messages`, `POST /attachments/resolve`, and `POST /attachments/fetch` expose the adapter output interface for agent-authored delivery and attachment handoff
+- `POST /interactions/:key/sessions` and `POST /interactions/:key/sessions/:sessionId/messages` expose operator-configured server-to-server chat interfaces
 - `GET /guild/channels` exposes a protected guild channel inventory for instance setup and Prism Memory bucket mapping
 - optional live Discord mention/thread chat forwarding to `codex-runtime`
 - slash commands can now route into the same Discord session/Codex path as mentions
@@ -197,6 +198,41 @@ Chat bridge envs:
 
 The adapter sends chat, summary, recap, and promoted-document model calls to
 `POST /agent/runtime/invoke`; Site resolves the current default runtime profile.
+
+## External HTTP Interactions
+
+External interaction paths are disabled until an operator creates an
+interaction profile and interface through Prism Console, generates an inbound
+credential in **Settings > Interfaces**, and enables the interface. The adapter
+authenticates every session and message against Site; external clients never
+receive the Site service token.
+
+Create a session:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "Authorization: Bearer $PRISM_INTERFACE_KEY" \
+  "$COMMUNICATION_ADAPTER_BASE_URL/interactions/docs-assistant/sessions"
+```
+
+Send a message with the returned `sessionId`:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "Authorization: Bearer $PRISM_INTERFACE_KEY" \
+  "$COMMUNICATION_ADAPTER_BASE_URL/interactions/docs-assistant/sessions/$SESSION_ID/messages" \
+  -d '{"content":"How do I create a Prism workflow?"}'
+```
+
+The first slice accepts API keys from trusted application backends. Do not put a
+long-lived interface key in browser JavaScript. External interactions receive
+no Gateway credentials, responses pass through the public-output sanitizer,
+and conversations reuse Site agent sessions. `readonly` remains an operating
+policy rather than a tool-free public sandbox until a restricted Runtime is
+available.
 
 Recording completion hooks reuse the agent API base/token when possible. The
 default hook key is `recording-transcript-completed`:

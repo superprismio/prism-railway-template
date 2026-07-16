@@ -9,7 +9,7 @@
     "bootstrap:admin": "tsx src/cli/bootstrap-admin.ts",
     "bootstrap:targets": "tsx src/cli/bootstrap-targets.ts",
     "start": "npm run migrate && next start --hostname 0.0.0.0 --port ${PORT:-3100}",
-    "test": "tsx --test src/lib/app-core/capture-post-processing.test.ts src/lib/app-core/hosted-skills.test.ts src/lib/app-core/runtime-client.test.ts src/lib/app-core/runtime-profiles.test.ts src/lib/app-core/source-adapter-policy.test.ts src/lib/app-core/workflow-event-feed.test.ts src/lib/app-core/workflow-reconciliation.test.ts src/lib/gateway-credential-assignment.test.ts src/lib/gateway-env-import.test.ts src/lib/gateway-presets.test.ts src/lib/memory-document-upload.test.ts src/lib/workflow-agent-run-prompt.test.ts",
+    "test": "tsx --test src/lib/app-core/capture-post-processing.test.ts src/lib/app-core/external-interactions.test.ts src/lib/app-core/hosted-skills.test.ts src/lib/app-core/runtime-client.test.ts src/lib/app-core/runtime-profiles.test.ts src/lib/app-core/source-adapter-policy.test.ts src/lib/app-core/workflow-event-feed.test.ts src/lib/app-core/workflow-reconciliation.test.ts src/lib/gateway-credential-assignment.test.ts src/lib/gateway-env-import.test.ts src/lib/gateway-presets.test.ts src/lib/memory-document-upload.test.ts src/lib/workflow-agent-run-prompt.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
