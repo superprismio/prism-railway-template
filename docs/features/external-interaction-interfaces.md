@@ -18,17 +18,22 @@ Implemented on the feature branch:
 - Gateway credentials only for deliberately configured `full` interfaces, and
   no enabled interfaces by default.
 
-Next interaction slice:
+Next interaction work, in order:
 
-- explicit allowlisted workflow execution;
+- enforceable Prism Memory source and bucket scoping, including the required
+  Prism Memory service authorization changes;
+- deterministic `run-approved` execution that rejects workflows outside the
+  configured allowlist before starting a run.
 
-Later, separate authorization or transport work:
+Later, separate authorization work:
 
-- browser signed-session tokens;
 - a restricted tool-free Runtime;
-- enforced Memory source or bucket scoping;
 - reuse of interaction profiles by Discord and Telegram;
 - the future organization authorization service.
+
+Browser-direct authentication, CORS flows, and signed browser sessions are not
+on this roadmap. The interface is server-to-server; browser clients should call
+their own application backend.
 
 ## Decision
 
@@ -150,7 +155,8 @@ The adapter owns:
 - extraction of the interface key;
 - forwarding credentials to Site for verification over the internal service
   boundary;
-- CORS and request-size enforcement;
+- request-size enforcement and optional Origin metadata checks for configured
+  application backends; this is not a browser CORS/authentication flow;
 - transport-level rate limiting and timeouts;
 - public-output sanitization;
 - returning the response to the external application;
@@ -186,7 +192,7 @@ credential-only model described in
 
 - `off`, `readonly`, and `run-approved` external contexts receive no
   organization credentials.
-- An eventual explicitly configured `full` interface is a trusted source
+- An explicitly configured `full` interface is a trusted source
   context and follows normal trusted-run credential leasing.
 - Approved workflows receive credentials according to their workflow or task
   configuration, not from the external request.
@@ -293,9 +299,10 @@ The first slice supports server-to-server API keys:
 An API key identifies the external application, not necessarily the human using
 it.
 
-Browser-direct chat requires a later short-lived signed-session flow or a
-deliberately anonymous restricted interface. Long-lived interface keys must not
-be shipped in browser bundles. CORS is defense in depth, not authentication.
+Browser-direct chat is outside the current design. Long-lived interface keys
+must not be shipped in browser bundles. A browser application should call its
+own backend, which holds the interface credential and calls Prism
+server-to-server. CORS is not being used as an authentication boundary.
 
 ## Access Modes
 
@@ -303,7 +310,9 @@ Keep the existing operator-facing modes:
 
 - `off`: reject the interaction;
 - `readonly`: answer from permitted context with no organization credentials;
-- `run-approved`: readonly behavior plus explicitly listed workflows;
+- `run-approved`: readonly behavior plus explicitly listed workflows; the
+  profile is stored now, but deterministic allowlist enforcement is not wired
+  until the workflow execution slice;
 - `full`: trusted agent behavior with normal trusted-run credential access,
   enabled only through deliberate operator configuration.
 
@@ -439,11 +448,14 @@ until there is a demonstrated need to extract it.
 
 ## Later Work
 
+- First add enforceable Memory source, bucket, artifact, and visibility scopes
+  through changes to Prism Memory and the Site interaction profile contract.
+- Then add deterministic `run-approved` execution through existing Site
+  workflow or hook behavior, rejecting non-allowlisted workflow keys before
+  execution.
 - Let Discord and Telegram targets, groups, and users reference reusable
   interaction profiles.
-- Add short-lived browser session tokens and signed external user claims.
 - Add a restricted, tool-free Runtime profile suitable for public chat.
-- Add enforced Memory source, bucket, artifact, and visibility scopes.
 - Add streaming responses and cancellation.
 - Add per-interface usage budgets and durable distributed rate limits.
 - Add inbound email as another communication transport where appropriate.
@@ -451,7 +463,7 @@ until there is a demonstrated need to extract it.
 - Replace local authorization decisions with signed execution grants only if a
   separate authority service is proven useful.
 
-## First Implementation Sequence
+## Implementation Sequence
 
 1. Add additive Site records and agent/admin APIs for interaction profiles and
    disabled external interfaces.
@@ -459,11 +471,15 @@ until there is a demonstrated need to extract it.
 3. Add the source-adapter session and message routes.
 4. Reuse generic Site source sessions and Site-mediated Runtime invocation.
 5. Apply persona instructions, access mode, rate limit, and output sanitization.
-6. Add explicit allowlisted workflow execution through existing Site workflow
-   or hook behavior.
-7. Add ingress audit and the compact Settings observability surface.
-8. Validate one disabled-by-default server-to-server interface before adding
-   browser-direct authentication or migrating Discord/Telegram.
+6. Add ingress audit and the compact Settings observability surface.
+7. Validate one disabled-by-default server-to-server interface.
+8. Add enforceable Prism Memory scoping through the Memory service and Site
+   profile contract.
+9. Add deterministic allowlisted workflow execution through existing Site
+   workflow or hook behavior.
+
+Browser-direct authentication and CORS flows are explicitly excluded from this
+sequence. Revisit them only if the product later adopts browser-to-Prism calls.
 
 ## Acceptance Criteria
 
@@ -476,7 +492,9 @@ until there is a demonstrated need to extract it.
   Memory scope, or credential assignment.
 - Existing Discord and Telegram behavior and configuration remain unchanged.
 - Limited external contexts receive no Gateway credentials.
-- A disallowed workflow is rejected before Runtime or workflow execution.
+- Once the `run-approved` slice is implemented, a disallowed workflow is
+  rejected before Runtime or workflow execution. This is not yet a current
+  guarantee.
 - Accepted conversations reuse Site sessions and record source attribution.
 - Public responses pass through the existing sanitizer.
 - No interface becomes externally usable until an operator enables it.

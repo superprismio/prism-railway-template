@@ -235,6 +235,13 @@ pass through the public-output sanitizer, and conversations reuse Site agent
 sessions. `readonly` remains an operating policy rather than a tool-free public
 sandbox until a restricted Runtime is available.
 
+`run-approved` currently records the operator-owned workflow allowlist and
+applies restrictive Runtime instructions, but it does not yet expose the
+deterministic workflow-start endpoint. Enforceable Prism Memory scoping is the
+next planned interaction change; deterministic allowlisted workflow execution
+follows it. Browser-direct and CORS authentication flows are outside this
+server-to-server interface.
+
 Recording completion hooks reuse the agent API base/token when possible. The
 default hook key is `recording-transcript-completed`:
 

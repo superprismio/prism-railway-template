@@ -13,7 +13,8 @@ inbound credential in Settings and explicitly enables the path.
 
 1. Create the interaction profile before the interface that references it.
 2. Default to `readonly` for contextual assistance. Use `run-approved` only
-   when the operator supplies an explicit workflow allowlist.
+   when the operator supplies an explicit workflow allowlist, and report that
+   deterministic allowlist enforcement is not wired yet.
 3. Use `full` only when the operator explicitly asks for a trusted interface.
    Explain that it receives the same normal trusted-run credential access as a
    full-access Discord or Telegram source context.
@@ -26,9 +27,9 @@ inbound credential in Settings and explicitly enables the path.
    through chat or `/agent/*`.
 8. Direct the operator to **Settings > Interfaces** to generate, rotate, revoke,
    or copy the credential. The plaintext value is shown once.
-9. Leave browser-direct use for a later signed-session flow. API-key interfaces
-   are server-to-server and should normally be called from the application's
-   backend.
+9. API-key interfaces are server-to-server and should be called from the
+   application's backend. Do not propose browser-direct or CORS authentication
+   as part of this feature.
 10. Do not change Discord or Telegram policy when creating an external HTTP
     interface.
 
@@ -79,7 +80,9 @@ Example:
 }
 ```
 
-`allowedOrigins` constrains browser Origin headers but is not authentication.
+`allowedOrigins` optionally checks an Origin header supplied by an application
+backend. It is not browser authentication and most server-to-server clients do
+not need to send an Origin header.
 The public adapter paths are:
 
 ```text
