@@ -11,6 +11,12 @@ export interface InteractionProfileRecord {
   mode: InteractionAccessMode;
   runtimeProfileKey: string | null;
   persona: { name: string | null; instructions: string };
+  memoryScope: {
+    knowledgeSourceIds: string[];
+    buckets: string[];
+    instructions: string;
+    enforcement: 'instructions-only';
+  };
   allowedWorkflows: string[];
   rateLimit: { windowSeconds: number; maxRequests: number };
   version: number;
@@ -48,6 +54,7 @@ export interface UpsertInteractionProfileInput {
   mode?: InteractionAccessMode;
   runtimeProfileKey?: string | null;
   persona?: { name?: string | null; instructions?: string | null };
+  memoryScope?: { knowledgeSourceIds?: string[]; buckets?: string[]; instructions?: string | null };
   allowedWorkflows?: string[];
   rateLimit?: { windowSeconds?: number; maxRequests?: number };
 }
@@ -70,6 +77,9 @@ type InteractionProfileRow = {
   runtime_profile_key: string | null;
   persona_name: string | null;
   persona_instructions: string;
+  memory_source_ids_json: string;
+  memory_buckets_json: string;
+  memory_instructions: string;
   allowed_workflows_json: string;
   rate_limit_window_seconds: number;
   rate_limit_max_requests: number;
@@ -121,6 +131,16 @@ function normalizeWorkflowKeys(value: unknown) {
   return Array.from(new Set(value.map((item) => normalizeText(item, 80)).filter((item) => keyPattern.test(item)))).sort();
 }
 
+function normalizeMemorySourceIds(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => normalizeText(item, 160)).filter((item) => /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,159}$/.test(item)))).sort();
+}
+
+function normalizeMemoryBuckets(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => normalizeText(item, 80).toLowerCase()).filter((item) => /^[a-z0-9][a-z0-9_-]{0,79}$/.test(item)))).sort();
+}
+
 function normalizeOrigins(value: unknown) {
   if (!Array.isArray(value)) return [];
   return Array.from(new Set(value.flatMap((item) => {
@@ -149,6 +169,12 @@ function mapProfile(row: InteractionProfileRow): InteractionProfileRecord {
     mode: accessModes.has(row.mode as InteractionAccessMode) ? row.mode as InteractionAccessMode : 'off',
     runtimeProfileKey: row.runtime_profile_key,
     persona: { name: row.persona_name, instructions: row.persona_instructions },
+    memoryScope: {
+      knowledgeSourceIds: normalizeMemorySourceIds(parseStringArray(row.memory_source_ids_json)),
+      buckets: normalizeMemoryBuckets(parseStringArray(row.memory_buckets_json)),
+      instructions: row.memory_instructions,
+      enforcement: 'instructions-only',
+    },
     allowedWorkflows: normalizeWorkflowKeys(parseStringArray(row.allowed_workflows_json)),
     rateLimit: {
       windowSeconds: row.rate_limit_window_seconds,
@@ -221,6 +247,17 @@ export function upsertInteractionProfile(input: UpsertInteractionProfileInput, d
       ? currentPersona.instructions
       : normalizeText(input.persona.instructions, 20_000),
   };
+  const memoryScope = {
+    knowledgeSourceIds: input.memoryScope?.knowledgeSourceIds === undefined
+      ? normalizeMemorySourceIds(existing ? parseStringArray(existing.memory_source_ids_json) : [])
+      : normalizeMemorySourceIds(input.memoryScope.knowledgeSourceIds),
+    buckets: input.memoryScope?.buckets === undefined
+      ? normalizeMemoryBuckets(existing ? parseStringArray(existing.memory_buckets_json) : [])
+      : normalizeMemoryBuckets(input.memoryScope.buckets),
+    instructions: input.memoryScope?.instructions === undefined
+      ? existing?.memory_instructions ?? ''
+      : normalizeText(input.memoryScope.instructions, 10_000),
+  };
   const rateLimit = {
     windowSeconds: boundedInteger(input.rateLimit?.windowSeconds, existing?.rate_limit_window_seconds ?? 60, 1, 86_400),
     maxRequests: boundedInteger(input.rateLimit?.maxRequests, existing?.rate_limit_max_requests ?? 6, 1, 10_000),
@@ -229,11 +266,13 @@ export function upsertInteractionProfile(input: UpsertInteractionProfileInput, d
   db.prepare(`
     INSERT INTO interaction_profiles (
       key, name, description, mode, runtime_profile_key, persona_name,
-      persona_instructions, allowed_workflows_json, rate_limit_window_seconds,
+      persona_instructions, memory_source_ids_json, memory_buckets_json,
+      memory_instructions, allowed_workflows_json, rate_limit_window_seconds,
       rate_limit_max_requests, version, created_at, updated_at
     ) VALUES (
       @key, @name, @description, @mode, @runtimeProfileKey, @personaName,
-      @personaInstructions, @allowedWorkflowsJson, @windowSeconds,
+      @personaInstructions, @memorySourceIdsJson, @memoryBucketsJson,
+      @memoryInstructions, @allowedWorkflowsJson, @windowSeconds,
       @maxRequests, @version, @createdAt, @updatedAt
     )
     ON CONFLICT(key) DO UPDATE SET
@@ -243,6 +282,9 @@ export function upsertInteractionProfile(input: UpsertInteractionProfileInput, d
       runtime_profile_key = excluded.runtime_profile_key,
       persona_name = excluded.persona_name,
       persona_instructions = excluded.persona_instructions,
+      memory_source_ids_json = excluded.memory_source_ids_json,
+      memory_buckets_json = excluded.memory_buckets_json,
+      memory_instructions = excluded.memory_instructions,
       allowed_workflows_json = excluded.allowed_workflows_json,
       rate_limit_window_seconds = excluded.rate_limit_window_seconds,
       rate_limit_max_requests = excluded.rate_limit_max_requests,
@@ -256,6 +298,9 @@ export function upsertInteractionProfile(input: UpsertInteractionProfileInput, d
     runtimeProfileKey,
     personaName: persona.name,
     personaInstructions: persona.instructions,
+    memorySourceIdsJson: JSON.stringify(memoryScope.knowledgeSourceIds),
+    memoryBucketsJson: JSON.stringify(memoryScope.buckets),
+    memoryInstructions: memoryScope.instructions,
     allowedWorkflowsJson: JSON.stringify(input.allowedWorkflows === undefined
       ? normalizeWorkflowKeys(existing ? parseStringArray(existing.allowed_workflows_json) : [])
       : normalizeWorkflowKeys(input.allowedWorkflows)),

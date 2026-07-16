@@ -15,13 +15,15 @@ Implemented on the feature branch:
 - source-adapter session and message routes backed by generic Site sessions;
 - persona/version metadata, continuation reset, rate limiting, and public-output
   sanitization;
+- operator-owned advisory Memory source, bucket, and behavior instructions,
+  injected into the trusted Runtime policy and labeled instructions-only;
 - Gateway credentials only for deliberately configured `full` interfaces, and
   no enabled interfaces by default.
 
 Next interaction work, in order:
 
-- enforceable Prism Memory source and bucket scoping, including the required
-  Prism Memory service authorization changes;
+- upgrade advisory Prism Memory selectors to enforceable source and bucket
+  scoping, including the required Prism Memory service authorization changes;
 - deterministic `run-approved` execution that rejects workflows outside the
   configured allowlist before starting a run.
 
@@ -209,6 +211,12 @@ resource-scoped authorization, a limited external run must receive a
 Site-prepared context bundle or use a restricted broker. Giving a limited run a
 global Memory read key does not enforce a knowledge-source or bucket scope.
 
+The current profile may store `knowledgeSourceIds`, `buckets`, and additional
+Memory instructions. Site passes them as trusted model instructions and records
+`enforcement: instructions-only`. This improves relevance and model behavior,
+but it is not access control: the model can make mistakes and the Memory service
+does not reject out-of-scope reads yet.
+
 ## First-Slice Configuration
 
 The initial model should remain small.
@@ -238,6 +246,11 @@ An interaction profile needs:
     "name": "Prism Docs Guide",
     "instructions": "Answer from the supplied public documentation context. Be concise and do not speculate about private workspace state."
   },
+  "memoryScope": {
+    "knowledgeSourceIds": ["public-handbook"],
+    "buckets": [],
+    "instructions": "Use only the configured public handbook source; say when the answer is outside it."
+  },
   "allowedWorkflows": [],
   "rateLimit": {
     "windowSeconds": 60,
@@ -250,10 +263,13 @@ Persona instructions are trusted Site configuration. The external request may
 contain user content and an opaque subject identifier, but it cannot provide or
 override the persona.
 
-Memory scope is part of the intended profile model, but it must not be presented
-as enforced until the selected Runtime path can only access that scope. The
-first implementation may support no Memory context or one explicitly prepared
-context bundle before adding arbitrary source and bucket selectors.
+Memory selectors are trusted Site configuration and cannot be overridden by an
+external request. They currently compose model instructions only and must not
+be presented as enforced until Prism Memory rejects out-of-scope access.
+Knowledge-source IDs are the primary selector for docs, handbook, policy, and
+support assistants. Operators should resolve them from `GET /knowledge/sources`
+rather than guessing from a display name. Buckets are optional and intended for
+activity or digest context when explicitly requested.
 
 ## Public HTTP Shape
 
@@ -453,8 +469,8 @@ until there is a demonstrated need to extract it.
 
 ## Later Work
 
-- First add enforceable Memory source, bucket, artifact, and visibility scopes
-  through changes to Prism Memory and the Site interaction profile contract.
+- First upgrade the advisory Memory selectors to enforceable source, bucket,
+  artifact, and visibility scopes through changes to Prism Memory.
 - Then add deterministic `run-approved` execution through existing Site
   workflow or hook behavior, rejecting non-allowlisted workflow keys before
   execution.
@@ -478,9 +494,10 @@ until there is a demonstrated need to extract it.
 5. Apply persona instructions, access mode, rate limit, and output sanitization.
 6. Add ingress audit and the compact Settings observability surface.
 7. Validate one disabled-by-default server-to-server interface.
-8. Add enforceable Prism Memory scoping through the Memory service and Site
+8. Add advisory Memory selectors and trusted model instructions to the Site
    profile contract.
-9. Add deterministic allowlisted workflow execution through existing Site
+9. Enforce those selectors through Prism Memory authorization.
+10. Add deterministic allowlisted workflow execution through existing Site
    workflow or hook behavior.
 
 Browser-direct authentication and CORS flows are explicitly excluded from this

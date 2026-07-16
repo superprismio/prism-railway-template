@@ -22,6 +22,7 @@ import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { DiscordVoiceManager } from "./voice.js";
 import { ExternalInteractionRateLimiter } from "./external-interaction-rate-limit.js";
+import { buildAdvisoryMemoryInstructions, type AdvisoryMemoryScope } from "./external-interaction-memory-policy.js";
 import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 import { requestSiteRuntime } from "./site-runtime.js";
 
@@ -1093,6 +1094,7 @@ type ExternalInteractionAuthorization = {
     mode: DiscordAccessMode;
     runtimeProfileKey: string | null;
     persona: { name: string | null; instructions: string };
+    memoryScope?: AdvisoryMemoryScope;
     allowedWorkflows: string[];
     rateLimit: DiscordRateLimitConfig;
     version: number;
@@ -1174,12 +1176,22 @@ function checkExternalInteractionRateLimit(
 
 function externalInteractionPolicyInstructions(authorization: ExternalInteractionAuthorization) {
   const persona = authorization.profile.persona.instructions.trim();
+  const memory = buildAdvisoryMemoryInstructions(externalInteractionMemoryScope(authorization));
   const access = authorization.profile.mode === "readonly"
     ? "This external interaction is readonly. Do not call writer endpoints, create or mutate tasks/workflows/skills/requests, send messages, or modify repositories. Answer only from available approved context."
     : authorization.profile.mode === "run-approved"
       ? `This external interaction may run only these existing workflows through an explicit adapter action: ${authorization.profile.allowedWorkflows.join(", ") || "none"}. Do not author workflows or perform broad administrative changes.`
       : "This external interaction is trusted for full agent behavior, including normal trusted-run credential access, subject to normal Prism safeguards.";
-  return [persona, access].filter(Boolean).join("\n\n");
+  return [persona, memory, access].filter(Boolean).join("\n\n");
+}
+
+function externalInteractionMemoryScope(authorization: ExternalInteractionAuthorization): AdvisoryMemoryScope {
+  return authorization.profile.memoryScope ?? {
+    knowledgeSourceIds: [],
+    buckets: [],
+    instructions: "",
+    enforcement: "instructions-only",
+  };
 }
 
 function externalSessionMeta(value: unknown): JsonObject {
@@ -3866,6 +3878,7 @@ async function main(): Promise<void> {
           interactionProfileVersion: authorization.profile.version,
           runtimeKey: authorization.profile.runtimeProfileKey,
           accessMode: authorization.profile.mode,
+          memoryScope: externalInteractionMemoryScope(authorization),
         },
         lastMessageAt: now,
       });
@@ -3982,6 +3995,7 @@ async function main(): Promise<void> {
           interactionProfileVersion: authorization.profile.version,
           externalAccessMode: authorization.profile.mode,
           allowedWorkflows: authorization.profile.allowedWorkflows,
+          memoryScope: externalInteractionMemoryScope(authorization),
           policyInstructions: externalInteractionPolicyInstructions(authorization),
           credentialPolicy: authorization.profile.mode === "full" ? "trusted-source" : "none",
         },
@@ -3997,6 +4011,7 @@ async function main(): Promise<void> {
         runtimeKey: result.runtimeKey ?? authorization.profile.runtimeProfileKey,
         runtimeProvider: result.provider,
         accessMode: authorization.profile.mode,
+        memoryScope: externalInteractionMemoryScope(authorization),
       };
       await upsertSourceSession({
         source: "external",

@@ -1,6 +1,6 @@
 ---
 name: prism-interaction-author
-description: Create, update, inspect, or disable Prism external HTTP interaction interfaces and their persona/access profiles. Use when an operator asks for an API chat path, docs or Portal assistant, interface persona, Runtime routing, rate limit, allowed workflow list, or inbound interface credential setup.
+description: Create, update, inspect, or disable Prism external HTTP interaction interfaces and their persona/access profiles. Use when an operator asks for an API chat path, docs or Portal assistant, interface persona, advisory Prism Memory sources or buckets, Runtime routing, rate limit, allowed workflow list, or inbound interface credential setup.
 ---
 
 # Prism Interaction Author
@@ -21,8 +21,9 @@ inbound credential in Settings and explicitly enables the path.
 4. Keep persona instructions concise and treat them as behavior, not authority.
 5. Use a restricted Runtime profile when one exists. Do not claim the current
    Runtime is a hard public sandbox merely because the profile says readonly.
-6. Do not promise knowledge-source or bucket enforcement until a context broker
-   or scoped Memory authorization is configured.
+6. Treat `memoryScope` as trusted model instructions only. Always report
+   `enforcement: instructions-only`; do not promise knowledge-source or bucket
+   authorization until Prism Memory enforces it.
 7. Never ask for, accept, print, or send the inbound interface credential
    through chat or `/agent/*`.
 8. Direct the operator to **Settings > Interfaces** to generate, rotate, revoke,
@@ -32,6 +33,25 @@ inbound credential in Settings and explicitly enables the path.
    as part of this feature.
 10. Do not change Discord or Telegram policy when creating an external HTTP
     interface.
+
+## Resolve Prism Memory Sources
+
+Treat knowledge sources as the primary advisory Memory selector for docs,
+handbook, policy, and support assistants. Before saving source IDs:
+
+1. Call `GET $PRISM_API_BASE/knowledge/sources` with `X-Prism-Api-Key` using
+   `$PRISM_API_READ_KEY` or `$PRISM_API_KEY`.
+2. Match the operator's requested source by its returned ID and descriptive
+   metadata. Do not guess an ID from a display name or repository name.
+3. Put only verified IDs in `memoryScope.knowledgeSourceIds`.
+4. Use `memoryScope.buckets` only when the operator explicitly wants community
+   activity or digest buckets in addition to knowledge sources.
+5. If Prism Memory is unavailable or a requested source cannot be resolved,
+   keep the interface disabled and report the unresolved source instead of
+   silently widening or omitting the intended scope.
+
+An empty selector list does not mean all Memory. It means there is no configured
+advisory selector. State that clearly in the handoff.
 
 ## Create A Profile
 
@@ -50,6 +70,11 @@ Example:
   "persona": {
     "name": "Prism Docs Guide",
     "instructions": "Answer from approved documentation context. Be concise and do not speculate about private workspace state."
+  },
+  "memoryScope": {
+    "knowledgeSourceIds": ["public-handbook"],
+    "buckets": [],
+    "instructions": "Answer from the configured public handbook source. Say when an answer is outside that source."
   },
   "allowedWorkflows": [],
   "rateLimit": {
@@ -118,6 +143,8 @@ browser `/admin/*` routes with a service token.
 After saving a disabled interface, report:
 
 - profile key, mode, persona, Runtime profile, and workflow allowlist;
+- advisory Memory source IDs, buckets, and instructions, clearly labeled as
+  instructions-only rather than enforced authorization;
 - interface key and public path;
 - allowed origins;
 - disabled state;
