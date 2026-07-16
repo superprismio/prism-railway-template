@@ -297,12 +297,14 @@ The site endpoint syncs enabled GitHub-backed skill sources into the site data v
 The runner calls:
 
 - `GET /agent/workflows`
+- `GET /agent/workflows/:key`
 - `GET /agent/tasks`
 - `GET /agent/hooks`
 - `GET /agent/skills`
 
 The task emits a report-only JSON body. It checks workflow structure for simple
 gate `next` flow, missing step links, and loop target/exit/max-iteration config,
+legacy Gateway toolset/capability fields, and legacy toolset instructions,
 then warns when tasks or hooks reference workflows with findings. It does not
 mutate workflows, tasks, hooks, skills, requests, or instance config.
 
