@@ -34,6 +34,25 @@ inbound credential in Settings and explicitly enables the path.
 10. Do not change Discord or Telegram policy when creating an external HTTP
     interface.
 
+## Resolve Prism Memory Sources
+
+Treat knowledge sources as the primary advisory Memory selector for docs,
+handbook, policy, and support assistants. Before saving source IDs:
+
+1. Call `GET $PRISM_API_BASE/knowledge/sources` with `X-Prism-Api-Key` using
+   `$PRISM_API_READ_KEY` or `$PRISM_API_KEY`.
+2. Match the operator's requested source by its returned ID and descriptive
+   metadata. Do not guess an ID from a display name or repository name.
+3. Put only verified IDs in `memoryScope.knowledgeSourceIds`.
+4. Use `memoryScope.buckets` only when the operator explicitly wants community
+   activity or digest buckets in addition to knowledge sources.
+5. If Prism Memory is unavailable or a requested source cannot be resolved,
+   keep the interface disabled and report the unresolved source instead of
+   silently widening or omitting the intended scope.
+
+An empty selector list does not mean all Memory. It means there is no configured
+advisory selector. State that clearly in the handoff.
+
 ## Create A Profile
 
 ```http
@@ -54,8 +73,8 @@ Example:
   },
   "memoryScope": {
     "knowledgeSourceIds": ["public-handbook"],
-    "buckets": ["governance"],
-    "instructions": "Use the configured public handbook and governance context. Say when an answer is outside that context."
+    "buckets": [],
+    "instructions": "Answer from the configured public handbook source. Say when an answer is outside that source."
   },
   "allowedWorkflows": [],
   "rateLimit": {

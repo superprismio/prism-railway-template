@@ -248,8 +248,8 @@ An interaction profile needs:
   },
   "memoryScope": {
     "knowledgeSourceIds": ["public-handbook"],
-    "buckets": ["governance"],
-    "instructions": "Use only the configured public handbook and governance context; say when the answer is outside it."
+    "buckets": [],
+    "instructions": "Use only the configured public handbook source; say when the answer is outside it."
   },
   "allowedWorkflows": [],
   "rateLimit": {
@@ -266,6 +266,10 @@ override the persona.
 Memory selectors are trusted Site configuration and cannot be overridden by an
 external request. They currently compose model instructions only and must not
 be presented as enforced until Prism Memory rejects out-of-scope access.
+Knowledge-source IDs are the primary selector for docs, handbook, policy, and
+support assistants. Operators should resolve them from `GET /knowledge/sources`
+rather than guessing from a display name. Buckets are optional and intended for
+activity or digest context when explicitly requested.
 
 ## Public HTTP Shape
 
