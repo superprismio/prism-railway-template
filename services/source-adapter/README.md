@@ -242,6 +242,13 @@ next planned interaction change; deterministic allowlisted workflow execution
 follows it. Browser-direct and CORS authentication flows are outside this
 server-to-server interface.
 
+The profile rate limit is aggregate per external interface and counts both
+session creation and message requests. Creating additional sessions does not
+create additional rate-limit capacity. A trusted application that legitimately
+handles many concurrent sessions should configure an appropriate interface
+limit; `x-prism-external-subject` remains audit attribution and is not trusted
+as the primary limiter key.
+
 Recording completion hooks reuse the agent API base/token when possible. The
 default hook key is `recording-transcript-completed`:
 

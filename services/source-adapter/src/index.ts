@@ -21,6 +21,7 @@ import path from "node:path";
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { DiscordVoiceManager } from "./voice.js";
+import { ExternalInteractionRateLimiter } from "./external-interaction-rate-limit.js";
 import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 import { requestSiteRuntime } from "./site-runtime.js";
 
@@ -134,7 +135,7 @@ let discordUserTag: string | null = null;
 let telegramBotUsername: string | null = null;
 const discordPromptQueues = new Map<string, Promise<void>>();
 const discordRateLimitBuckets = new Map<string, { windowStartMs: number; count: number }>();
-const externalInteractionRateLimitBuckets = new Map<string, { windowStartMs: number; count: number }>();
+const externalInteractionRateLimiter = new ExternalInteractionRateLimiter();
 let sourceAdapterPolicyCache: { expiresAt: number; platforms: Record<string, DiscordAccessPolicyConfig> } | null = null;
 
 function nowUtcIso(): string {
@@ -1168,21 +1169,7 @@ function checkExternalInteractionRateLimit(
   key: string,
   limit: DiscordRateLimitConfig,
 ): { ok: true } | { ok: false; retryAfterSeconds: number } {
-  const now = Date.now();
-  const windowMs = limit.windowSeconds * 1000;
-  for (const [bucketKey, bucket] of externalInteractionRateLimitBuckets) {
-    if (now - bucket.windowStartMs >= windowMs) externalInteractionRateLimitBuckets.delete(bucketKey);
-  }
-  const bucket = externalInteractionRateLimitBuckets.get(key);
-  if (!bucket || now - bucket.windowStartMs >= windowMs) {
-    externalInteractionRateLimitBuckets.set(key, { windowStartMs: now, count: 1 });
-    return { ok: true };
-  }
-  if (bucket.count >= limit.maxRequests) {
-    return { ok: false, retryAfterSeconds: Math.max(1, Math.ceil((windowMs - (now - bucket.windowStartMs)) / 1000)) };
-  }
-  bucket.count += 1;
-  return { ok: true };
+  return externalInteractionRateLimiter.check(key, limit);
 }
 
 function externalInteractionPolicyInstructions(authorization: ExternalInteractionAuthorization) {
@@ -3854,6 +3841,14 @@ async function main(): Promise<void> {
     try {
       const interfaceKey = request.params.key.trim().toLowerCase();
       const authorization = await authorizeExternalInteraction(request, interfaceKey, requestId);
+      const rateLimit = checkExternalInteractionRateLimit(
+        authorization.interface.key,
+        authorization.profile.rateLimit,
+      );
+      if (!rateLimit.ok) {
+        response.setHeader("retry-after", String(rateLimit.retryAfterSeconds));
+        throw new ExternalInteractionHttpError(429, "EXTERNAL_INTERACTION_RATE_LIMITED");
+      }
       const externalSessionId = randomUUID();
       const contextKey = `${authorization.interface.key}:${externalSessionId}`;
       const now = nowUtcIso();
@@ -3924,7 +3919,7 @@ async function main(): Promise<void> {
       }
 
       const rateLimit = checkExternalInteractionRateLimit(
-        `${authorization.interface.key}:${sessionId}`,
+        authorization.interface.key,
         authorization.profile.rateLimit,
       );
       if (!rateLimit.ok) {

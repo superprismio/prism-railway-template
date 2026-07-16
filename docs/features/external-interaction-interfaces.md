@@ -35,6 +35,11 @@ Browser-direct authentication, CORS flows, and signed browser sessions are not
 on this roadmap. The interface is server-to-server; browser clients should call
 their own application backend.
 
+Rate limits are aggregate per interface credential boundary and count session
+creation as well as messages. Session IDs and caller-asserted external subjects
+must not create independent capacity or allow a caller to bypass the configured
+interface limit.
+
 ## Decision
 
 Add named HTTP interaction interfaces to the existing source/communication
