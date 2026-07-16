@@ -30,6 +30,7 @@ import { recordingWorkflowDownstreamHandoffMigration } from './030_recording_wor
 import { runtimeProfilesMigration } from './031_runtime_profiles';
 import { compactRecordingHookPayloadMigration } from './032_compact_recording_hook_payload';
 import { workflowEventSequenceMigration } from './033_workflow_event_sequence';
+import { externalInteractionsMigration } from './034_external_interactions';
 
 export interface Migration {
   name: string;
@@ -69,4 +70,5 @@ export const migrations: Migration[] = [
   runtimeProfilesMigration,
   compactRecordingHookPayloadMigration,
   workflowEventSequenceMigration,
+  externalInteractionsMigration,
 ];

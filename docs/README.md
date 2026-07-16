@@ -39,6 +39,7 @@ Feature-specific behavior and UI notes:
 - [Custom Skills](features/custom-skills.md)
 - [Discord Voice Plan](features/discord-voice-plan.md)
 - [Discord Access Policy Checklist](features/discord-access-policy-checklist.md)
+- [External Interaction Interfaces](features/external-interaction-interfaces.md)
 - [LLM Usage Tracking And Budgets](features/llm-usage-tracking-and-budgets.md)
 - [Working Document Upload v2](features/working-document-upload-v2.md)
 - [Member Roles](features/member-roles.md)

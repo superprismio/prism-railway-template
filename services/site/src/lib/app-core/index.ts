@@ -112,6 +112,28 @@ export {
   listWorkflowEventFeed,
 } from './workflow-event-feed';
 export {
+  authorizeExternalInterface,
+  deleteExternalInterface,
+  deleteInteractionProfile,
+  getExternalInterface,
+  getInteractionProfile,
+  listExternalInterfaces,
+  listInteractionAccessEvents,
+  listInteractionProfiles,
+  recordInteractionAccessEvent,
+  resolveExternalInterface,
+  revokeExternalInterfaceCredential,
+  rotateExternalInterfaceCredential,
+  upsertExternalInterface,
+  upsertInteractionProfile,
+  type ExternalInterfaceRecord,
+  type InteractionAccessMode,
+  type InteractionProfileRecord,
+  type ResolvedExternalInterface,
+  type UpsertExternalInterfaceInput,
+  type UpsertInteractionProfileInput,
+} from './external-interactions';
+export {
   defaultCaptureDispatchSettings,
   normalizeCaptureDispatchSettings,
   readCaptureDispatchSettings,

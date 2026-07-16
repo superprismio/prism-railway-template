@@ -72,6 +72,16 @@ Send service auth as:
 - `PATCH /agent/site-content/branding`
 - `GET /agent/source-adapter-policy`
 - `PATCH /agent/source-adapter-policy`
+- `GET /agent/interaction-profiles`
+- `POST /agent/interaction-profiles`
+- `GET /agent/interaction-profiles/:key`
+- `PATCH /agent/interaction-profiles/:key`
+- `DELETE /agent/interaction-profiles/:key`
+- `GET /agent/external-interfaces`
+- `POST /agent/external-interfaces`
+- `GET /agent/external-interfaces/:key`
+- `PATCH /agent/external-interfaces/:key`
+- `DELETE /agent/external-interfaces/:key`
 - `GET /agent/gateway`
 - `POST /agent/gateway/connections`
 - `POST /agent/gateway/integrations`
@@ -86,6 +96,12 @@ Service adapters use `/agent/runtime/invoke` for utility model calls that should
 follow the Site-owned default runtime profile.
 
 For source adapter access rules, use `/agent/source-adapter-policy`. Policies are platform-scoped. Use `platforms.discord.targets` for Discord channels or threads, `platforms.discord.groups` for Discord role IDs, and `platforms.discord.users` for Discord user IDs. Use `platforms.telegram.targets` for Telegram chat/group/channel IDs and `platforms.telegram.users` for Telegram user IDs. Telegram DMs are disabled by default unless explicitly enabled in adapter env/config.
+
+For named external HTTP chat paths, use the built-in
+`prism-interaction-author` skill and the interaction profile/external interface
+routes. Create non-secret configuration through `/agent/*`, keep new interfaces
+disabled, and direct the operator to **Settings > Interfaces** to generate or
+rotate the inbound API key. Never ask for or return that key through chat.
 
 For Gateway integration setup and troubleshooting, use the built-in
 `prism-gateway-author` skill. Gateway agent routes accept non-secret

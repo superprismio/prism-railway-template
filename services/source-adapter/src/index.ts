@@ -16,10 +16,12 @@ import {
   type TextBasedChannel,
 } from "discord.js";
 import fs from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { DiscordVoiceManager } from "./voice.js";
+import { ExternalInteractionRateLimiter } from "./external-interaction-rate-limit.js";
 import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 import { requestSiteRuntime } from "./site-runtime.js";
 
@@ -133,6 +135,7 @@ let discordUserTag: string | null = null;
 let telegramBotUsername: string | null = null;
 const discordPromptQueues = new Map<string, Promise<void>>();
 const discordRateLimitBuckets = new Map<string, { windowStartMs: number; count: number }>();
+const externalInteractionRateLimiter = new ExternalInteractionRateLimiter();
 let sourceAdapterPolicyCache: { expiresAt: number; platforms: Record<string, DiscordAccessPolicyConfig> } | null = null;
 
 function nowUtcIso(): string {
@@ -1055,6 +1058,7 @@ async function runtimeRequest(input: {
   credentials?: RuntimeCredentialDescriptor[];
   gatewayContext?: JsonObject;
   metadata: JsonObject;
+  runtimeProfileKey?: string | null;
 }): Promise<{ responseText: string; continuationId: string | null; provider: string | null; runtimeKey: string | null }> {
   const timeoutMs = adapterConfig().codexRuntimeRequestTimeoutSeconds * 1000;
   const result = await requestSiteRuntime({
@@ -1065,6 +1069,7 @@ async function runtimeRequest(input: {
     credentials: input.credentials ?? [],
     context: input.gatewayContext ?? {},
     metadata: input.metadata,
+    runtimeProfileKey: input.runtimeProfileKey ?? null,
     timeoutMs,
   });
   return {
@@ -1073,6 +1078,115 @@ async function runtimeRequest(input: {
     provider: result.provider,
     runtimeKey: result.runtimeKey,
   };
+}
+
+type ExternalInteractionAuthorization = {
+  interface: {
+    key: string;
+    name: string;
+    enabled: boolean;
+    interactionProfileKey: string;
+  };
+  profile: {
+    key: string;
+    name: string;
+    mode: DiscordAccessMode;
+    runtimeProfileKey: string | null;
+    persona: { name: string | null; instructions: string };
+    allowedWorkflows: string[];
+    rateLimit: DiscordRateLimitConfig;
+    version: number;
+  };
+  credentials: RuntimeCredentialDescriptor[];
+};
+
+class ExternalInteractionHttpError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+function externalInterfaceCredential(request: Request) {
+  const explicit = request.header("X-Prism-Interface-Key")?.trim();
+  if (explicit) return explicit;
+  const authorization = request.header("Authorization")?.trim() ?? "";
+  return authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
+}
+
+function safeExternalHeader(value: string | undefined, maxLength: number) {
+  return (value ?? "").trim().slice(0, maxLength);
+}
+
+async function authorizeExternalInteraction(
+  request: Request,
+  interfaceKey: string,
+  requestId: string,
+): Promise<ExternalInteractionAuthorization> {
+  const credential = externalInterfaceCredential(request);
+  const response = await fetch(
+    `${appApiBaseUrl()}/agent/external-interfaces/${encodeURIComponent(interfaceKey)}/authorize`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${appApiServiceToken()}`,
+        "x-prism-interface-credential": credential,
+        "x-prism-request-id": requestId,
+        ...(request.header("origin") ? { "x-prism-interface-origin": safeExternalHeader(request.header("origin"), 500) } : {}),
+        ...(request.header("x-prism-external-subject")
+          ? { "x-prism-external-subject": safeExternalHeader(request.header("x-prism-external-subject"), 300) }
+          : {}),
+      },
+    },
+  );
+  const payload = await response.json().catch(() => null) as {
+    error?: unknown;
+    code?: unknown;
+    resolved?: unknown;
+    credentials?: unknown;
+  } | null;
+  if (!response.ok) {
+    throw new ExternalInteractionHttpError(
+      response.status,
+      typeof payload?.code === "string" ? payload.code : "EXTERNAL_INTERFACE_AUTHORIZATION_FAILED",
+    );
+  }
+  const resolved = payload?.resolved;
+  if (!resolved || typeof resolved !== "object" || Array.isArray(resolved)) {
+    throw new ExternalInteractionHttpError(502, "EXTERNAL_INTERFACE_AUTHORIZATION_INVALID");
+  }
+  const credentials = (Array.isArray(payload?.credentials) ? payload.credentials : []).flatMap((entry): RuntimeCredentialDescriptor[] => {
+    const record = entry && typeof entry === "object" && !Array.isArray(entry) ? entry as JsonObject : {};
+    const key = typeof entry === "string" ? entry.trim() : typeof record.key === "string" ? record.key.trim() : "";
+    return /^[a-zA-Z][a-zA-Z0-9_.:-]{0,119}$/.test(key) ? [{ key }] : [];
+  });
+  return {
+    ...resolved as Omit<ExternalInteractionAuthorization, "credentials">,
+    credentials: Array.from(new Map(credentials.map((descriptor) => [descriptor.key, descriptor])).values()),
+  };
+}
+
+function checkExternalInteractionRateLimit(
+  key: string,
+  limit: DiscordRateLimitConfig,
+): { ok: true } | { ok: false; retryAfterSeconds: number } {
+  return externalInteractionRateLimiter.check(key, limit);
+}
+
+function externalInteractionPolicyInstructions(authorization: ExternalInteractionAuthorization) {
+  const persona = authorization.profile.persona.instructions.trim();
+  const access = authorization.profile.mode === "readonly"
+    ? "This external interaction is readonly. Do not call writer endpoints, create or mutate tasks/workflows/skills/requests, send messages, or modify repositories. Answer only from available approved context."
+    : authorization.profile.mode === "run-approved"
+      ? `This external interaction may run only these existing workflows through an explicit adapter action: ${authorization.profile.allowedWorkflows.join(", ") || "none"}. Do not author workflows or perform broad administrative changes.`
+      : "This external interaction is trusted for full agent behavior, including normal trusted-run credential access, subject to normal Prism safeguards.";
+  return [persona, access].filter(Boolean).join("\n\n");
+}
+
+function externalSessionMeta(value: unknown): JsonObject {
+  const session = value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
+  return session.meta && typeof session.meta === "object" && !Array.isArray(session.meta)
+    ? session.meta as JsonObject
+    : {};
 }
 
 async function discordApiRequest<T extends JsonValue>(
@@ -3706,8 +3820,9 @@ async function main(): Promise<void> {
       adapters: [
         "discord",
         (process.env.TELEGRAM_BOT_TOKEN ?? "").trim() ? "telegram" : null,
+        "external-http",
       ].filter(Boolean),
-      capabilities: ["list-destinations", "send-message", "fetch-attachment"],
+      capabilities: ["list-destinations", "send-message", "fetch-attachment", "external-interactions"],
       destinationTypes: ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"],
       routes: {
         attachmentsFetch: "/attachments/fetch",
@@ -3715,8 +3830,215 @@ async function main(): Promise<void> {
         destinations: "/destinations",
         guildChannels: "/guild/channels",
         messages: "/messages",
+        externalSessions: "/interactions/:key/sessions",
+        externalSessionMessages: "/interactions/:key/sessions/:sessionId/messages",
       },
     });
+  });
+
+  app.post("/interactions/:key/sessions", async (request: Request, response: Response) => {
+    const requestId = randomUUID();
+    try {
+      const interfaceKey = request.params.key.trim().toLowerCase();
+      const authorization = await authorizeExternalInteraction(request, interfaceKey, requestId);
+      const rateLimit = checkExternalInteractionRateLimit(
+        authorization.interface.key,
+        authorization.profile.rateLimit,
+      );
+      if (!rateLimit.ok) {
+        response.setHeader("retry-after", String(rateLimit.retryAfterSeconds));
+        throw new ExternalInteractionHttpError(429, "EXTERNAL_INTERACTION_RATE_LIMITED");
+      }
+      const externalSessionId = randomUUID();
+      const contextKey = `${authorization.interface.key}:${externalSessionId}`;
+      const now = nowUtcIso();
+      const subject = safeExternalHeader(request.header("x-prism-external-subject"), 300) || null;
+      const session = await upsertSourceSession({
+        source: "external",
+        contextKey,
+        title: `${authorization.interface.name} session`,
+        meta: {
+          transport: "external-http",
+          externalInterfaceKey: authorization.interface.key,
+          externalSessionId,
+          externalSubject: subject,
+          interactionProfileKey: authorization.profile.key,
+          interactionProfileVersion: authorization.profile.version,
+          runtimeKey: authorization.profile.runtimeProfileKey,
+          accessMode: authorization.profile.mode,
+        },
+        lastMessageAt: now,
+      });
+      const origin = request.header("origin");
+      if (origin) response.setHeader("access-control-allow-origin", origin);
+      response.status(201).json({
+        ok: true,
+        requestId,
+        sessionId: String(session.id),
+        interface: {
+          key: authorization.interface.key,
+          name: authorization.interface.name,
+        },
+        profile: {
+          key: authorization.profile.key,
+          name: authorization.profile.name,
+          version: authorization.profile.version,
+          mode: authorization.profile.mode,
+          personaName: authorization.profile.persona.name,
+        },
+      });
+    } catch (error) {
+      const status = error instanceof ExternalInteractionHttpError ? error.status : 500;
+      const message = error instanceof ExternalInteractionHttpError ? error.message : "EXTERNAL_INTERACTION_SESSION_FAILED";
+      response.status(status).json({ ok: false, requestId, error: message });
+    }
+  });
+
+  app.post("/interactions/:key/sessions/:sessionId/messages", async (request: Request, response: Response) => {
+    const requestId = randomUUID();
+    try {
+      const interfaceKey = request.params.key.trim().toLowerCase();
+      const sessionId = request.params.sessionId.trim();
+      const authorization = await authorizeExternalInteraction(request, interfaceKey, requestId);
+      const body = request.body && typeof request.body === "object" ? request.body as JsonObject : {};
+      const content = typeof body.content === "string"
+        ? body.content.trim()
+        : typeof body.message === "string"
+          ? body.message.trim()
+          : "";
+      if (!content) throw new ExternalInteractionHttpError(400, "EXTERNAL_INTERACTION_MESSAGE_REQUIRED");
+      if (content.length > 100_000) throw new ExternalInteractionHttpError(413, "EXTERNAL_INTERACTION_MESSAGE_TOO_LARGE");
+
+      const sessionPayload = await appApiRequest(`/agent/agent-sessions/${encodeURIComponent(sessionId)}?limit=25`);
+      const session = sessionPayload.session && typeof sessionPayload.session === "object" && !Array.isArray(sessionPayload.session)
+        ? sessionPayload.session as JsonObject
+        : {};
+      const sessionMeta = externalSessionMeta(session);
+      if (session.source !== "external" || sessionMeta.externalInterfaceKey !== authorization.interface.key) {
+        throw new ExternalInteractionHttpError(404, "EXTERNAL_INTERACTION_SESSION_NOT_FOUND");
+      }
+
+      const rateLimit = checkExternalInteractionRateLimit(
+        authorization.interface.key,
+        authorization.profile.rateLimit,
+      );
+      if (!rateLimit.ok) {
+        response.setHeader("retry-after", String(rateLimit.retryAfterSeconds));
+        throw new ExternalInteractionHttpError(429, "EXTERNAL_INTERACTION_RATE_LIMITED");
+      }
+
+      const existingMessages = Array.isArray(sessionPayload.messages) ? sessionPayload.messages : [];
+      const recentHistory = existingMessages
+        .slice(-12)
+        .flatMap((entry): Array<{ role: string; content: string }> => {
+          if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+          const record = entry as JsonObject;
+          return typeof record.content === "string" && record.content
+            ? [{ role: typeof record.role === "string" ? record.role : "user", content: record.content }]
+            : [];
+        });
+      const sourceMessageId = typeof body.messageId === "string"
+        ? body.messageId.trim().slice(0, 200) || null
+        : typeof body.message_id === "string"
+          ? body.message_id.trim().slice(0, 200) || null
+          : null;
+      const now = nowUtcIso();
+      await appendSessionMessage({
+        sessionId,
+        role: "user",
+        source: "external",
+        sourceMessageId,
+        content,
+        meta: {
+          requestId,
+          externalInterfaceKey: authorization.interface.key,
+          externalSubject: safeExternalHeader(request.header("x-prism-external-subject"), 300) || null,
+          interactionProfileKey: authorization.profile.key,
+          interactionProfileVersion: authorization.profile.version,
+        },
+        createdAt: now,
+      });
+
+      const profileChanged = sessionMeta.interactionProfileKey !== authorization.profile.key
+        || sessionMeta.interactionProfileVersion !== authorization.profile.version;
+      const continuationId = profileChanged
+        ? null
+        : typeof sessionMeta.runtimeContinuationId === "string"
+          ? sessionMeta.runtimeContinuationId
+          : null;
+      const result = await runtimeRequest({
+        prompt: content,
+        sessionId,
+        continuationId,
+        recentHistory,
+        credentials: authorization.credentials,
+        runtimeProfileKey: authorization.profile.runtimeProfileKey,
+        gatewayContext: { delegatedActorId: `external:${authorization.interface.key}` },
+        metadata: {
+          transport: "external-http",
+          externalInterfaceKey: authorization.interface.key,
+          externalSubject: safeExternalHeader(request.header("x-prism-external-subject"), 300) || null,
+          interactionProfileKey: authorization.profile.key,
+          interactionProfileVersion: authorization.profile.version,
+          externalAccessMode: authorization.profile.mode,
+          allowedWorkflows: authorization.profile.allowedWorkflows,
+          policyInstructions: externalInteractionPolicyInstructions(authorization),
+          credentialPolicy: authorization.profile.mode === "full" ? "trusted-source" : "none",
+        },
+      });
+      const sanitized = sanitizePublicOutput(result.responseText);
+      const updatedMeta: JsonObject = {
+        ...sessionMeta,
+        transport: "external-http",
+        externalInterfaceKey: authorization.interface.key,
+        interactionProfileKey: authorization.profile.key,
+        interactionProfileVersion: authorization.profile.version,
+        runtimeContinuationId: result.continuationId,
+        runtimeKey: result.runtimeKey ?? authorization.profile.runtimeProfileKey,
+        runtimeProvider: result.provider,
+        accessMode: authorization.profile.mode,
+      };
+      await upsertSourceSession({
+        source: "external",
+        contextKey: String(sessionMeta.contextKey),
+        title: typeof session.title === "string" ? session.title : `${authorization.interface.name} session`,
+        meta: updatedMeta,
+        lastMessageAt: nowUtcIso(),
+      });
+      await appendSessionMessage({
+        sessionId,
+        role: "assistant",
+        source: "external",
+        sourceMessageId: null,
+        content: sanitized.text,
+        meta: {
+          requestId,
+          runtimeContinuationId: result.continuationId,
+          interactionProfileKey: authorization.profile.key,
+          interactionProfileVersion: authorization.profile.version,
+          redactions: sanitized.redactions as unknown as JsonValue,
+        },
+        createdAt: nowUtcIso(),
+      });
+      const origin = request.header("origin");
+      if (origin) response.setHeader("access-control-allow-origin", origin);
+      response.json({
+        ok: true,
+        requestId,
+        sessionId,
+        message: { role: "assistant", content: sanitized.text },
+        profile: { key: authorization.profile.key, version: authorization.profile.version },
+      });
+    } catch (error) {
+      const described = describeError(error);
+      const status = error instanceof ExternalInteractionHttpError
+        ? error.status
+        : described.startsWith("APP_API_REQUEST_FAILED:404:") ? 404 : 502;
+      const message = error instanceof ExternalInteractionHttpError
+        ? error.message
+        : status === 404 ? "EXTERNAL_INTERACTION_SESSION_NOT_FOUND" : "EXTERNAL_INTERACTION_RUNTIME_FAILED";
+      response.status(status).json({ ok: false, requestId, error: message });
+    }
   });
 
   app.get("/destinations", async (request: Request, response: Response) => {
