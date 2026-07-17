@@ -10,6 +10,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Activity,
+  ArrowUpCircle,
   Bot,
   Boxes,
   CheckCircle2,
@@ -68,6 +69,7 @@ import type {
   TargetAppRecord,
   TargetEnvironmentRecord,
 } from "@/lib/admin";
+import type { PrismUpdateStatus } from "@/lib/prism-version";
 import type { Capability, RoleSlug } from "@/lib/role-access";
 
 type AdminMember = {
@@ -280,7 +282,13 @@ function SettingsViewHeader({
   );
 }
 
-function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
+function SetupStatus({
+  setup,
+  updateStatus,
+}: {
+  setup: AdminSetupStatus;
+  updateStatus: PrismUpdateStatus;
+}) {
   const targetsReady =
     setup.targets.targetAppCount > 0 &&
     setup.targets.targetEnvironmentCount > 0;
@@ -297,7 +305,57 @@ function SetupStatus({ setup }: { setup: AdminSetupStatus }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 lg:grid-cols-3">
+        <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-none border border-border/70 bg-background/60 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="flex items-center gap-2 font-medium">
+                  <ArrowUpCircle className="h-4 w-4" />
+                  Prism Version
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {updateStatus.currentVersion}
+                  {updateStatus.buildSha
+                    ? ` · ${updateStatus.buildSha.slice(0, 7)}`
+                    : ""}
+                </p>
+              </div>
+              <Badge
+                variant="secondary"
+                className={
+                  updateStatus.state === "update_available"
+                    ? "border-amber-300 bg-amber-50 text-amber-900"
+                    : updateStatus.state === "current"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : undefined
+                }
+              >
+                {updateStatus.state === "update_available"
+                  ? updateStatus.updateReason === "version"
+                    ? `${updateStatus.latestVersion} available`
+                    : "New build available"
+                  : updateStatus.state === "current"
+                    ? "Current"
+                    : updateStatus.state === "newer"
+                      ? "Development build"
+                      : "Check unavailable"}
+              </Badge>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {updateStatus.repository}@{updateStatus.branch}
+            </p>
+            {updateStatus.state === "update_available" ? (
+              <a
+                href={updateStatus.changesUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-block text-sm font-medium underline underline-offset-4"
+              >
+                Review changes before updating
+              </a>
+            ) : null}
+          </div>
+
           <div className="rounded-none border border-border/70 bg-background/60 p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -1969,6 +2027,7 @@ function RepositorySetup({
 
 export function AdminSettingsWorkspace({
   setup,
+  updateStatus,
   branding,
   onBrandingChange,
   targetApps,
@@ -1976,6 +2035,7 @@ export function AdminSettingsWorkspace({
   session,
 }: {
   setup: AdminSetupStatus;
+  updateStatus: PrismUpdateStatus;
   branding: AdminBranding;
   onBrandingChange: (branding: AdminBranding) => void;
   targetApps: TargetAppRecord[];
@@ -2043,7 +2103,9 @@ export function AdminSettingsWorkspace({
           description={activeViewMeta.description}
         />
 
-        {activeView === "status" ? <SetupStatus setup={setup} /> : null}
+        {activeView === "status" ? (
+          <SetupStatus setup={setup} updateStatus={updateStatus} />
+        ) : null}
 
         {activeView === "config" ? (
           <div className="grid gap-5">

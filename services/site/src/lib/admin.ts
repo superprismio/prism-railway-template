@@ -1,5 +1,6 @@
 import { getAdminBoardSnapshot, getAdminSetupStatus, loadConfig, readSiteContent } from "@/lib/app-core"
 import { requireAdminSession } from "@/lib/admin-auth"
+import { getPrismUpdateStatus, type PrismUpdateStatus } from "@/lib/prism-version"
 import type { Capability } from "@/lib/role-access"
 
 function useLocalAppApi() {
@@ -233,6 +234,7 @@ export type AdminBoardData = {
 
 export type AdminWorkspaceData = AdminBoardData & {
   setup: AdminSetupStatus
+  updateStatus: PrismUpdateStatus
   branding: {
     brandName: string
     logoUrl: string
@@ -364,6 +366,7 @@ export async function getAdminWorkspaceData(): Promise<
         data: {
           ...getAdminBoardSnapshot(),
           setup: await getAdminSetupStatus(),
+          updateStatus: await getPrismUpdateStatus(),
           branding: adminBranding(),
           session: {
             userId: access.session.userId,
@@ -383,9 +386,10 @@ export async function getAdminWorkspaceData(): Promise<
   }
 
   try {
-    const [board, setupResponse] = await Promise.all([
+    const [board, setupResponse, updateStatus] = await Promise.all([
       getAdminBoardData(),
       adminFetch("/api/admin/setup/status"),
+      getPrismUpdateStatus(),
     ])
 
     if (!board.ok) {
@@ -409,6 +413,7 @@ export async function getAdminWorkspaceData(): Promise<
       data: {
         ...board.data,
         setup: setupJson.setup,
+        updateStatus,
         branding: adminBranding(),
         session: {
           userId: access.userId,

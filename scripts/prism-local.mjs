@@ -22,6 +22,155 @@ const runtimeLogPath = path.join(instanceRoot, "codex-runtime.log");
 const grokRuntimePidPath = path.join(instanceRoot, "grok-runtime.pid");
 const grokRuntimeLogPath = path.join(instanceRoot, "grok-runtime.log");
 const composePath = path.join(repoRoot, "compose.yaml");
+const versionManifestPath = path.join(repoRoot, "prism-version.json");
+
+function readVersionManifest() {
+  try {
+    const value = JSON.parse(fs.readFileSync(versionManifestPath, "utf8"));
+    if (
+      typeof value.version === "string" &&
+      typeof value.repository === "string" &&
+      typeof value.branch === "string"
+    ) {
+      return value;
+    }
+  } catch {
+    // The caller reports unavailable version metadata without blocking local operations.
+  }
+  return null;
+}
+
+function versionParts(value) {
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(String(value).trim());
+  if (!match) return null;
+  const prerelease = match[4]?.split(".") || null;
+  if (prerelease?.some((identifier) => /^\d+$/.test(identifier) && identifier.length > 1 && identifier.startsWith("0"))) {
+    return null;
+  }
+  return {
+    numbers: [match[1], match[2], match[3]],
+    prerelease,
+  };
+}
+
+function compareNumericIdentifiers(left, right) {
+  if (left.length !== right.length) return left.length < right.length ? -1 : 1;
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+function comparePrereleaseIdentifiers(left, right) {
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftIdentifier = left[index];
+    const rightIdentifier = right[index];
+    if (leftIdentifier === undefined) return -1;
+    if (rightIdentifier === undefined) return 1;
+    if (leftIdentifier === rightIdentifier) continue;
+
+    const leftNumeric = /^\d+$/.test(leftIdentifier);
+    const rightNumeric = /^\d+$/.test(rightIdentifier);
+    if (leftNumeric && rightNumeric) {
+      return compareNumericIdentifiers(leftIdentifier, rightIdentifier);
+    }
+    if (leftNumeric) return -1;
+    if (rightNumeric) return 1;
+    return leftIdentifier < rightIdentifier ? -1 : 1;
+  }
+  return 0;
+}
+
+function compareVersions(left, right) {
+  const leftParts = versionParts(left);
+  const rightParts = versionParts(right);
+  if (!leftParts || !rightParts) return null;
+  for (let index = 0; index < leftParts.numbers.length; index += 1) {
+    if (leftParts.numbers[index] !== rightParts.numbers[index]) {
+      return compareNumericIdentifiers(leftParts.numbers[index], rightParts.numbers[index]);
+    }
+  }
+  if (leftParts.prerelease === rightParts.prerelease) return 0;
+  if (leftParts.prerelease === null) return 1;
+  if (rightParts.prerelease === null) return -1;
+  return comparePrereleaseIdentifiers(leftParts.prerelease, rightParts.prerelease);
+}
+
+async function localVersionStatus() {
+  const current = readVersionManifest();
+  if (!current) return null;
+  try {
+    const shaResult = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" });
+    const currentSha = shaResult.status === 0 ? shaResult.stdout.trim() : null;
+    const manifestRequest = fetch(
+      `https://raw.githubusercontent.com/${current.repository}/${current.branch}/prism-version.json`,
+      { signal: AbortSignal.timeout(3_000), headers: { accept: "application/json" } },
+    );
+    const comparisonRequest = currentSha
+      ? fetch(
+        `https://api.github.com/repos/${current.repository}/compare/${currentSha}...${current.branch}`,
+        {
+          signal: AbortSignal.timeout(3_000),
+          headers: {
+            accept: "application/vnd.github+json",
+            "x-github-api-version": "2022-11-28",
+          },
+        },
+      )
+      : null;
+    const [response, comparisonResponse] = await Promise.all([manifestRequest, comparisonRequest]);
+    if (!response.ok) return { current, latest: null, comparison: null };
+    const latest = await response.json();
+    if (
+      latest.repository !== current.repository ||
+      latest.branch !== current.branch ||
+      typeof latest.version !== "string"
+    ) {
+      return { current, latest: null, comparison: null, commitUpdate: false, currentSha };
+    }
+    let commitUpdate = false;
+    if (comparisonResponse?.ok) {
+      const gitComparison = await comparisonResponse.json();
+      commitUpdate =
+        (gitComparison.status === "behind" || gitComparison.status === "diverged") &&
+        Number(gitComparison.behind_by) > 0 &&
+        Array.isArray(gitComparison.files) &&
+        gitComparison.files.length > 0;
+    }
+    return {
+      current,
+      latest,
+      comparison: compareVersions(current.version, latest.version),
+      commitUpdate,
+      currentSha,
+    };
+  } catch {
+    return { current, latest: null, comparison: null, commitUpdate: false, currentSha: null };
+  }
+}
+
+async function printLocalVersionStatus({ always = false } = {}) {
+  const status = await localVersionStatus();
+  if (!status) return;
+  if (status.comparison === -1 || status.commitUpdate) {
+    const updateLabel = status.comparison === -1
+      ? `Prism ${status.latest.version}`
+      : "A newer Prism build";
+    console.log(
+      `update ${updateLabel} is available; this checkout is ${status.current.version}.`,
+    );
+    console.log(
+      `       Review changes at https://github.com/${status.current.repository}/${status.currentSha ? `compare/${status.currentSha}...${status.current.branch}` : `commits/${status.current.branch}`}`,
+    );
+    console.log("       Preserve local changes before updating from the canonical main branch.");
+  } else if (always) {
+    const suffix = status.comparison === 0
+      ? "current"
+      : status.comparison === 1
+        ? "development build"
+        : "update check unavailable";
+    console.log(`info Prism ${status.current.version} (${suffix})`);
+  }
+}
 
 function randomSecret(bytes = 32) {
   return randomBytes(bytes).toString("base64url");
@@ -233,7 +382,17 @@ function composeArgs(args) {
 }
 
 function runCompose(args, options = {}) {
-  run("docker", composeArgs(args), options);
+  const shaResult = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" });
+  const branchResult = spawnSync("git", ["branch", "--show-current"], { cwd: repoRoot, encoding: "utf8" });
+  run("docker", composeArgs(args), {
+    ...options,
+    env: {
+      ...process.env,
+      PRISM_BUILD_SHA: shaResult.status === 0 ? shaResult.stdout.trim() : "unknown",
+      PRISM_BUILD_BRANCH: branchResult.status === 0 ? branchResult.stdout.trim() : "unknown",
+      ...(options.env || {}),
+    },
+  });
 }
 
 function readManagedPid(pidPath = runtimePidPath) {
@@ -566,6 +725,7 @@ async function upCommand() {
   }
   await registerLocalRuntimeProfiles(config, startedRuntimes);
   console.log(`Prism is available at http://127.0.0.1:${config.SITE_PORT}`);
+  await printLocalVersionStatus();
 }
 
 async function siteCommand() {
@@ -594,6 +754,7 @@ async function statusCommand() {
   for (const result of results) {
     console.log(`${result.ok ? "ok  " : "fail"} ${result.name}${result.status ? ` (${result.status})` : ""}`);
   }
+  await printLocalVersionStatus({ always: true });
   if (results.some((result) => !result.ok)) process.exitCode = 1;
 }
 
@@ -639,6 +800,7 @@ async function doctorCommand() {
       console.log(`${result.ok ? "ok  " : "warn"} ${result.name} health${result.status ? ` (${result.status})` : ""}`);
     }
   }
+  await printLocalVersionStatus({ always: true });
   if (checks.some(([, ok]) => !ok)) process.exitCode = 1;
 }
 
