@@ -28,6 +28,9 @@ Current workflow checks:
 - referenced skills exist;
 - skill-declared Gateway credentials exist and contain secret values;
 - direct workflow and task Gateway credentials exist and contain secret values.
+- workflow manifests do not declare legacy Gateway toolset or capability fields;
+- inline and file-backed workflow instructions do not require legacy admin
+  toolset keys or `PRISM_RUNTIME_TOOLSET_*` variables.
 
 Doctor does not infer downstream RBAC or duplicate provider policy.
 

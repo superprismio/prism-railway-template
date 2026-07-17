@@ -7,6 +7,7 @@ import path from "node:path";
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { leaseGatewayCredentials } from "./gateway-lease.js";
+import { legacyGatewayWorkflowFindings } from "./prism-doctor-legacy-gateway.js";
 
 type TaskStatus = "idle" | "running" | "succeeded" | "failed" | "disabled";
 
@@ -1973,8 +1974,20 @@ async function runPrismDoctorTask(): Promise<TaskRunResult> {
   const skills = doctorMergeSkills(hostedSkills, runtimeSkills);
   const gateway = isRecord(gatewayPayload.gateway) ? gatewayPayload.gateway : {};
   const gatewayConnections = Array.isArray(gateway.connections) ? gateway.connections.filter(isRecord) : [];
+  const workflowDetails = new Map<string, Record<string, unknown>>();
+  await Promise.all(workflows.map(async (workflow) => {
+    const workflowKey = workflowKeyFromRecord(workflow);
+    if (workflowKey === "unknown-workflow") return;
+    const payload = await appApiRequest(`/agent/workflows/${encodeURIComponent(workflowKey)}`, { method: "GET" })
+      .catch(() => null);
+    if (isRecord(payload?.detail)) workflowDetails.set(workflowKey, payload.detail);
+  }));
   const initialFindings = [
     ...workflows.flatMap(doctorWorkflowFindings),
+    ...workflows.flatMap((workflow) => legacyGatewayWorkflowFindings({
+      workflow,
+      detail: workflowDetails.get(workflowKeyFromRecord(workflow)) ?? null,
+    })),
     ...doctorSkillDependencyFindings({ workflows, skills }),
     ...doctorCredentialDependencyFindings({
       workflows,
