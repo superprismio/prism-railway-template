@@ -51,6 +51,9 @@ services:
     build:
       context: .
       dockerfile: docker/site.Dockerfile
+      args:
+        PRISM_BUILD_SHA: ${PRISM_BUILD_SHA:-unknown}
+        PRISM_BUILD_BRANCH: ${PRISM_BUILD_BRANCH:-unknown}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -63,6 +66,8 @@ services:
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       APP_API_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
       SITE_USE_LOCAL_APP_API: "true"
+      PRISM_BUILD_SHA: ${PRISM_BUILD_SHA:-unknown}
+      PRISM_BUILD_BRANCH: ${PRISM_BUILD_BRANCH:-unknown}
       NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:${SITE_PORT:-3100}
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:${SITE_PORT:-3100}
       PUBLIC_SITE_URL: http://127.0.0.1:${SITE_PORT:-3100}

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  ArrowUpCircle,
   BotMessageSquare,
   BookOpen,
   CalendarClock,
@@ -137,6 +138,7 @@ export function ChangeBoard({
           setData((current) => ({
             ...payload.data,
             setup: current.setup,
+            updateStatus: current.updateStatus,
             branding: current.branding,
             session: current.session,
           }));
@@ -291,6 +293,7 @@ export function ChangeBoard({
     setData((current) => ({
       ...payload.data,
       setup: current.setup,
+      updateStatus: current.updateStatus,
       branding: current.branding,
       session: current.session,
     }));
@@ -486,6 +489,36 @@ export function ChangeBoard({
           </>
         }
       />
+
+      {data.updateStatus.state === "update_available" ? (
+        <div className="border-b border-amber-300 bg-amber-50 px-5 py-3 text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100 md:px-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="flex items-center gap-2 text-sm font-medium">
+              <ArrowUpCircle className="h-4 w-4 shrink-0" />
+              {data.updateStatus.updateReason === "version"
+                ? `Prism ${data.updateStatus.latestVersion} is available.`
+                : "A newer Prism build is available."}{" "}
+              This instance is running {data.updateStatus.currentVersion}.
+            </p>
+            <div className="flex items-center gap-3 text-sm">
+              <Link
+                href="/admin?tab=settings&settings=status"
+                className="font-medium underline underline-offset-4"
+              >
+                Version details
+              </Link>
+              <a
+                href={data.updateStatus.changesUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium underline underline-offset-4"
+              >
+                View changes
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <Tabs
         value={activeTab}
@@ -838,6 +871,7 @@ export function ChangeBoard({
 
             <AdminSettingsWorkspace
               setup={data.setup}
+              updateStatus={data.updateStatus}
               branding={data.branding}
               onBrandingChange={(branding) =>
                 setData((current) => ({

@@ -21,6 +21,7 @@ Documentation starts at [docs/README.md](docs/README.md).
 Template authoring notes live in [docs/template/template-authoring.md](docs/template/template-authoring.md).
 Post-deploy template operations live in [docs/operations/template-deploy-runbook.md](docs/operations/template-deploy-runbook.md).
 Non-Railway deployment notes live in [docs/operations/local-vps-deployment.md](docs/operations/local-vps-deployment.md).
+Template versioning and update behavior live in [docs/template/versioning-and-updates.md](docs/template/versioning-and-updates.md).
 Prism Memory storage cleanup planning lives in [docs/archive/prism-memory-path-cleanup.md](docs/archive/prism-memory-path-cleanup.md).
 Site/API consolidation planning lives in [docs/architecture/site-api-consolidation-plan.md](docs/architecture/site-api-consolidation-plan.md).
 Site/API live cutover steps live in [docs/archive/site-api-cutover-checklist.md](docs/archive/site-api-cutover-checklist.md).
@@ -170,6 +171,17 @@ npm run dev:all
 ```
 
 For local development, use concrete loopback URLs in `.env`; Railway template references such as `${{api.RAILWAY_PRIVATE_DOMAIN}}` only resolve inside Railway templates.
+
+Local lifecycle commands report the installed Prism version and check the
+canonical `superprismio/prism-railway-template` `main` branch for updates:
+
+```bash
+npm run local:status
+npm run local:doctor
+```
+
+The check is informational and never changes the checkout. Review and preserve
+local modifications before pulling or merging an update.
 
 Minimum local values:
 
