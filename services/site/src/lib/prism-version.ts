@@ -57,12 +57,43 @@ function normalizeSha(value: string | undefined) {
 }
 
 function versionParts(value: string) {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(value.trim())
+  const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(value.trim())
   if (!match) return null
-  return {
-    numbers: [Number(match[1]), Number(match[2]), Number(match[3])],
-    prerelease: match[4] ?? null,
+  const prerelease = match[4]?.split(".") ?? null
+  if (prerelease?.some((identifier) => /^\d+$/.test(identifier) && identifier.length > 1 && identifier.startsWith("0"))) {
+    return null
   }
+  return {
+    numbers: [match[1], match[2], match[3]],
+    prerelease,
+  }
+}
+
+function compareNumericIdentifiers(left: string, right: string) {
+  if (left.length !== right.length) return left.length < right.length ? -1 : 1
+  if (left === right) return 0
+  return left < right ? -1 : 1
+}
+
+function comparePrereleaseIdentifiers(left: string[], right: string[]) {
+  const length = Math.max(left.length, right.length)
+  for (let index = 0; index < length; index += 1) {
+    const leftIdentifier = left[index]
+    const rightIdentifier = right[index]
+    if (leftIdentifier === undefined) return -1
+    if (rightIdentifier === undefined) return 1
+    if (leftIdentifier === rightIdentifier) continue
+
+    const leftNumeric = /^\d+$/.test(leftIdentifier)
+    const rightNumeric = /^\d+$/.test(rightIdentifier)
+    if (leftNumeric && rightNumeric) {
+      return compareNumericIdentifiers(leftIdentifier, rightIdentifier)
+    }
+    if (leftNumeric) return -1
+    if (rightNumeric) return 1
+    return leftIdentifier < rightIdentifier ? -1 : 1
+  }
+  return 0
 }
 
 export function comparePrismVersions(left: string, right: string) {
@@ -72,14 +103,20 @@ export function comparePrismVersions(left: string, right: string) {
 
   for (let index = 0; index < leftParts.numbers.length; index += 1) {
     if (leftParts.numbers[index] !== rightParts.numbers[index]) {
-      return leftParts.numbers[index] < rightParts.numbers[index] ? -1 : 1
+      return compareNumericIdentifiers(
+        leftParts.numbers[index],
+        rightParts.numbers[index],
+      )
     }
   }
 
   if (leftParts.prerelease === rightParts.prerelease) return 0
   if (leftParts.prerelease === null) return 1
   if (rightParts.prerelease === null) return -1
-  return leftParts.prerelease.localeCompare(rightParts.prerelease)
+  return comparePrereleaseIdentifiers(
+    leftParts.prerelease,
+    rightParts.prerelease,
+  )
 }
 
 export function currentPrismBuild() {

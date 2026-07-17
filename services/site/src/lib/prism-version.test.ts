@@ -13,6 +13,15 @@ test("comparePrismVersions compares stable semantic versions", () => {
   assert.equal(comparePrismVersions("invalid", "1.0.0"), null)
 })
 
+test("comparePrismVersions follows SemVer prerelease precedence", () => {
+  assert.equal(comparePrismVersions("1.0.0-alpha.2", "1.0.0-alpha.10"), -1)
+  assert.equal(comparePrismVersions("1.0.0-alpha", "1.0.0-alpha.1"), -1)
+  assert.equal(comparePrismVersions("1.0.0-alpha.1", "1.0.0-alpha.beta"), -1)
+  assert.equal(comparePrismVersions("1.0.0-rc.1", "1.0.0"), -1)
+  assert.equal(comparePrismVersions("1.0.0+build.1", "1.0.0+build.2"), 0)
+  assert.equal(comparePrismVersions("1.0.0-alpha.01", "1.0.0-alpha.1"), null)
+})
+
 test("fetchPrismUpdateStatus reports a newer canonical version", async () => {
   const status = await fetchPrismUpdateStatus(async () => new Response(JSON.stringify({
     version: "0.2.0",
