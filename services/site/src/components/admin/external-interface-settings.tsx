@@ -52,6 +52,13 @@ function formatDate(value: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+const interactionBaseUrl = (process.env.NEXT_PUBLIC_INTERACTION_BASE_URL ?? "").trim().replace(/\/+$/, "");
+
+function interactionSessionUrl(interfaceKey: string) {
+  const path = `/interactions/${interfaceKey}/sessions`;
+  return interactionBaseUrl ? `${interactionBaseUrl}${path}` : path;
+}
+
 export function ExternalInterfaceSettings() {
   const [interfaces, setInterfaces] = useState<ExternalInterface[]>([]);
   const [profiles, setProfiles] = useState<InteractionProfile[]>([]);
@@ -191,7 +198,7 @@ export function ExternalInterfaceSettings() {
                     </Badge>
                   </div>
                   <p className="mt-1 break-all text-sm text-muted-foreground">
-                    POST /interactions/{externalInterface.key}/sessions
+                    POST {interactionSessionUrl(externalInterface.key)}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     Profile {profile?.name ?? externalInterface.interactionProfileKey} v{profile?.version ?? "?"}

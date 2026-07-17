@@ -238,7 +238,9 @@ Use these blocks in the Railway template composer raw variable editor when descr
 PORT="3100" # Port the site service listens on.
 NODE_ENV="production" # Runtime environment for the site service.
 NEXT_PUBLIC_API_BASE_URL="https://${{site.RAILWAY_PUBLIC_DOMAIN}}" # Browser-facing API URL used by the site.
+NEXT_PUBLIC_INTERACTION_BASE_URL="https://${{discord-adapter.RAILWAY_PUBLIC_DOMAIN}}" # Browser-visible base URL used to display callable external interaction endpoints.
 API_INTERNAL_BASE_URL="http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}" # Server-side API URL used by the site.
+COMMUNICATION_ADAPTER_BASE_URL="http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}" # Private communication adapter URL used by Site server routes.
 SITE_USE_LOCAL_APP_API="true" # Site owns the app API and SQLite runtime state.
 PRISM_AGENT_DATA_ROOT="/data" # Mounted data directory for site runtime state.
 ADMIN_EMAIL="admin@local.agent" # Initial admin account email.

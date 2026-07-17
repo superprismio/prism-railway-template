@@ -25,7 +25,9 @@ Use this while filling out the Railway template composer.
 | `PORT` | `3100` | Port the site service listens on. | No |
 | `NODE_ENV` | `production` | Runtime environment for the site service. | No |
 | `NEXT_PUBLIC_API_BASE_URL` | `https://${{api.RAILWAY_PUBLIC_DOMAIN}}` | Browser-facing API URL used by the site. | No |
+| `NEXT_PUBLIC_INTERACTION_BASE_URL` | `https://${{discord-adapter.RAILWAY_PUBLIC_DOMAIN}}` | Browser-visible base URL used to display external interaction endpoints. | Yes |
 | `API_INTERNAL_BASE_URL` | `https://${{api.RAILWAY_PUBLIC_DOMAIN}}` | Server-side API URL used by the site. | No |
+| `COMMUNICATION_ADAPTER_BASE_URL` | `http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}` | Private communication adapter URL used by Site server routes. | Yes |
 | `PRISM_GATEWAY_ENABLED` | `true` | Shows Gateway connection administration. Set false only when Gateway is intentionally omitted. | Yes |
 | `PRISM_GATEWAY_BASE_URL` | `http://${{prism-gateway.RAILWAY_PRIVATE_DOMAIN}}:${{prism-gateway.PORT}}` | Private Gateway URL used by Site server routes. | Yes |
 | `PRISM_GATEWAY_TOKEN` | `${{prism-gateway.GATEWAY_SITE_TOKEN}}` | Site-specific Gateway caller token. Never expose it to browser code. | Yes |
