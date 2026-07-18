@@ -2889,6 +2889,14 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
       });
     } catch (error) {
       const errorMessage = describeError(error);
+      console.error("[discord-adapter] runtime request failed", {
+        sessionId: String(session.id),
+        runtimeKey: sessionMeta.runtimeKey ?? null,
+        guildId: transport.guildId,
+        channelId: transport.channelId,
+        threadId: transport.threadId,
+        error: errorMessage,
+      });
       const reply =
         "I hit a chat-engine error. This bridge can keep the Discord thread and session state, but the model-backed reply path is not available right now. " +
         `Error: ${errorMessage}`;

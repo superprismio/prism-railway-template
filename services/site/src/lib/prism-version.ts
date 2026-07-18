@@ -1,4 +1,4 @@
-import manifest from "../../../../prism-version.json"
+import manifest from "../../prism-version.json"
 
 export type PrismUpdateState =
   | "current"
@@ -180,7 +180,7 @@ export async function fetchPrismUpdateStatus(
       signal: AbortSignal.timeout(3_000),
     }
     const manifestRequest = fetcher(
-      `https://raw.githubusercontent.com/${manifest.repository}/${manifest.branch}/prism-version.json`,
+      `https://raw.githubusercontent.com/${manifest.repository}/${manifest.branch}/services/site/prism-version.json`,
       requestInit,
     )
     const comparisonRequest = current.buildSha

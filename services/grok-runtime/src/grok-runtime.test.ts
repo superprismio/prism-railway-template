@@ -83,7 +83,7 @@ test('Grok adapter implements the normalized runtime HTTP contract', async (t) =
 
   const accepted = await fetch(`${baseUrl}/v1/runtime/jobs`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'idempotency-key': 'grok-test-request' },
     body: JSON.stringify({
       contractVersion: '2026-07-10',
       prompt: 'test',
@@ -91,6 +91,16 @@ test('Grok adapter implements the normalized runtime HTTP contract', async (t) =
     }),
   }).then((response) => response.json()) as { jobId: string; job: { input?: unknown } };
   assert.ok(accepted.jobId);
+  const replayed = await fetch(`${baseUrl}/v1/runtime/jobs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'idempotency-key': 'grok-test-request' },
+    body: JSON.stringify({
+      contractVersion: '2026-07-10',
+      prompt: 'test',
+      sessionId: 'site-session',
+    }),
+  }).then((response) => response.json()) as { jobId: string };
+  assert.equal(replayed.jobId, accepted.jobId);
   assert.equal(accepted.job.input, undefined);
   const completed = await waitForJob(baseUrl, accepted.jobId);
   assert.equal(completed.status, 'succeeded');

@@ -13,6 +13,7 @@ const startedAt = new Date();
 const app = express();
 const responseJobs = new Map<string, RuntimeResponseJob>();
 const responseJobAbortControllers = new Map<string, AbortController>();
+const responseJobIdempotencyKeys = new Map<string, string>();
 const runtimeContractVersion = '2026-07-10' as const;
 const runtimeKey = process.env.PRISM_RUNTIME_KEY?.trim() || 'codex-default';
 
@@ -219,8 +220,19 @@ function pruneResponseJobs() {
     if (job) {
       responseJobs.delete(job.id);
       responseJobAbortControllers.delete(job.id);
+      for (const [key, jobId] of responseJobIdempotencyKeys) {
+        if (jobId === job.id) responseJobIdempotencyKeys.delete(key);
+      }
     }
   }
+}
+
+function idempotencyKey(value: unknown) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized && normalized.length <= 200 && /^[A-Za-z0-9._:-]+$/.test(normalized)
+    ? normalized
+    : null;
 }
 
 function createResponseJob(input: NonNullable<ReturnType<typeof normalizeRuntimeRequest>>) {
@@ -382,6 +394,7 @@ app.get('/v1/runtime/manifest', (_req, res) => {
     features: {
       synchronousResponses: true,
       asynchronousJobs: true,
+      idempotentJobCreation: true,
       cancellation: true,
       sessionContinuity: true,
       traceEvents: true,
@@ -405,6 +418,7 @@ app.get('/v1/runtime/capabilities', (_req, res) => {
       'workspace-assignment',
       'trace-events',
       'cancellation',
+      'idempotent-job-creation',
     ],
   });
 });
@@ -495,7 +509,31 @@ app.post('/v1/runtime/jobs', (req, res) => {
     return;
   }
 
+  const rawIdempotencyKey = req.header('idempotency-key');
+  const requestIdempotencyKey = idempotencyKey(rawIdempotencyKey);
+  if (rawIdempotencyKey && !requestIdempotencyKey) {
+    res.status(400).json({
+      ok: false,
+      error: {
+        code: 'RUNTIME_IDEMPOTENCY_KEY_INVALID',
+        message: 'idempotency-key must contain 1-200 letters, numbers, dots, underscores, colons, or hyphens',
+        retryable: false,
+      },
+    });
+    return;
+  }
+
+  const existingJobId = requestIdempotencyKey
+    ? responseJobIdempotencyKeys.get(requestIdempotencyKey)
+    : null;
+  const existingJob = existingJobId ? responseJobs.get(existingJobId) : null;
+  if (existingJob) {
+    res.status(202).json({ ok: true, jobId: existingJob.id, job: normalizedJob(existingJob) });
+    return;
+  }
+
   const job = createResponseJob(input);
+  if (requestIdempotencyKey) responseJobIdempotencyKeys.set(requestIdempotencyKey, job.id);
   res.status(202).json({ ok: true, jobId: job.id, job: normalizedJob(job) });
 });
 

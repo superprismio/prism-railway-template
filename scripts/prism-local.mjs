@@ -22,7 +22,7 @@ const runtimeLogPath = path.join(instanceRoot, "codex-runtime.log");
 const grokRuntimePidPath = path.join(instanceRoot, "grok-runtime.pid");
 const grokRuntimeLogPath = path.join(instanceRoot, "grok-runtime.log");
 const composePath = path.join(repoRoot, "compose.yaml");
-const versionManifestPath = path.join(repoRoot, "prism-version.json");
+const versionManifestPath = path.join(repoRoot, "services", "site", "prism-version.json");
 
 function readVersionManifest() {
   try {
@@ -102,7 +102,7 @@ async function localVersionStatus() {
     const shaResult = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" });
     const currentSha = shaResult.status === 0 ? shaResult.stdout.trim() : null;
     const manifestRequest = fetch(
-      `https://raw.githubusercontent.com/${current.repository}/${current.branch}/prism-version.json`,
+      `https://raw.githubusercontent.com/${current.repository}/${current.branch}/services/site/prism-version.json`,
       { signal: AbortSignal.timeout(3_000), headers: { accept: "application/json" } },
     );
     const comparisonRequest = currentSha

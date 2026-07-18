@@ -30,6 +30,7 @@ export function createGrokRuntimeApp() {
   const app = express();
   const jobs = new Map<string, StoredJob>();
   const controllers = new Map<string, AbortController>();
+  const idempotencyKeys = new Map<string, string>();
   const startedAt = new Date();
   app.use(express.json({ limit: '1mb' }));
 
@@ -47,6 +48,9 @@ export function createGrokRuntimeApp() {
       if (job) {
         jobs.delete(job.id);
         controllers.delete(job.id);
+        for (const [key, jobId] of idempotencyKeys) {
+          if (jobId === job.id) idempotencyKeys.delete(key);
+        }
       }
     }
   };
@@ -106,6 +110,7 @@ export function createGrokRuntimeApp() {
     },
     features: {
       asynchronousJobs: true,
+      idempotentJobCreation: true,
       cancellation: true,
       sessionContinuity: true,
       traceEvents: true,
@@ -121,7 +126,7 @@ export function createGrokRuntimeApp() {
     contractVersion: PRISM_RUNTIME_CONTRACT_VERSION,
     runtimeKey: config.runtimeKey,
     adapter: 'grok-build',
-    features: ['repository', 'shell', 'site-hosted-skills', 'continuations', 'trace-events', 'cancellation'],
+    features: ['repository', 'shell', 'site-hosted-skills', 'continuations', 'trace-events', 'cancellation', 'idempotent-job-creation'],
   }));
 
   app.post('/v1/runtime/jobs', (request, response) => {
@@ -139,6 +144,30 @@ export function createGrokRuntimeApp() {
       });
       return;
     }
+    const rawIdempotencyKey = request.header('idempotency-key');
+    const requestIdempotencyKey = typeof rawIdempotencyKey === 'string'
+      && rawIdempotencyKey.trim().length > 0
+      && rawIdempotencyKey.trim().length <= 200
+      && /^[A-Za-z0-9._:-]+$/.test(rawIdempotencyKey.trim())
+      ? rawIdempotencyKey.trim()
+      : null;
+    if (rawIdempotencyKey && !requestIdempotencyKey) {
+      response.status(400).json({
+        ok: false,
+        error: {
+          code: 'RUNTIME_IDEMPOTENCY_KEY_INVALID',
+          message: 'idempotency-key must contain 1-200 letters, numbers, dots, underscores, colons, or hyphens',
+          retryable: false,
+        },
+      });
+      return;
+    }
+    const existingJobId = requestIdempotencyKey ? idempotencyKeys.get(requestIdempotencyKey) : null;
+    const existingJob = existingJobId ? jobs.get(existingJobId) : null;
+    if (existingJob) {
+      response.status(202).json({ ok: true, jobId: existingJob.id, job: publicJob(existingJob) });
+      return;
+    }
     const id = randomUUID();
     const job: StoredJob = {
       id,
@@ -154,6 +183,7 @@ export function createGrokRuntimeApp() {
       input: request.body,
     };
     jobs.set(id, job);
+    if (requestIdempotencyKey) idempotencyKeys.set(requestIdempotencyKey, id);
     controllers.set(id, new AbortController());
     void runJob(job);
     response.status(202).json({ ok: true, jobId: id, job: publicJob(job) });
