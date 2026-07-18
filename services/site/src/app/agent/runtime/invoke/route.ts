@@ -24,6 +24,18 @@ function timeoutMs(value: unknown) {
   return Math.min(Math.max(parsed, 1_000), 1_200_000);
 }
 
+function errorDetails(error: unknown) {
+  if (!(error instanceof Error)) return { message: String(error) };
+  const cause = error.cause && typeof error.cause === "object"
+    ? error.cause as { code?: unknown; message?: unknown }
+    : null;
+  return {
+    message: error.message,
+    causeCode: typeof cause?.code === "string" ? cause.code : null,
+    causeMessage: typeof cause?.message === "string" ? cause.message : null,
+  };
+}
+
 export async function POST(request: Request) {
   const access = await requireServiceAccess();
   if (!access.ok) {
@@ -74,6 +86,11 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ ok: true, response });
   } catch (error) {
+    console.error("[site-runtime] invoke failed", {
+      sessionId,
+      runtimeKey,
+      ...errorDetails(error),
+    });
     return NextResponse.json({
       ok: false,
       error: error instanceof Error ? error.message : "RUNTIME_REQUEST_FAILED",

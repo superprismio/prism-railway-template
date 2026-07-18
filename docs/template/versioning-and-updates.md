@@ -7,10 +7,11 @@ upstream remotes may use different names.
 
 ## Version source
 
-`prism-version.json` is the release-version source of truth. It contains the
-stable semantic version, release channel, canonical repository, and canonical
-branch. Update that file and `CHANGELOG.md` when a merge establishes a new
-user-facing release boundary.
+`services/site/prism-version.json` is the release-version source of truth. It
+contains the stable semantic version, release channel, canonical repository,
+and canonical branch. It lives inside Site's Railway service root so both
+Railpack and local monorepo builds can bundle it. Update that file and
+`CHANGELOG.md` when a merge establishes a new user-facing release boundary.
 
 Package versions identify individual npm workspaces and do not determine
 whether a template update is available.

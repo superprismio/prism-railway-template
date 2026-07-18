@@ -71,3 +71,72 @@ test('runtime client uses the normalized contract without adapter-specific parsi
   assert.deepEqual(submitted.body?.skills, [{ name: 'test-skill' }]);
   assert.deepEqual(submitted.body?.credentials, [{ key: 'sendgrid' }]);
 });
+
+test('runtime client safely retries transport failures for bundled adapters', async (t) => {
+  let createAttempts = 0;
+  let pollAttempts = 0;
+  const idempotencyKeys: string[] = [];
+  const server = createServer((request, response) => {
+    if (request.method === 'POST' && request.url === '/v1/runtime/jobs') {
+      idempotencyKeys.push(String(request.headers['idempotency-key'] ?? ''));
+      request.resume();
+      request.on('end', () => {
+        createAttempts += 1;
+        if (createAttempts === 1) {
+          request.socket.destroy();
+          return;
+        }
+        response.writeHead(202, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ ok: true, jobId: 'retry-job', job: { id: 'retry-job', status: 'queued' } }));
+      });
+      return;
+    }
+    if (request.method === 'GET' && request.url === '/v1/runtime/jobs/retry-job') {
+      pollAttempts += 1;
+      if (pollAttempts === 1) {
+        request.socket.destroy();
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({
+        ok: true,
+        job: {
+          id: 'retry-job',
+          status: 'succeeded',
+          result: { responseText: 'RETRY_OK', continuationId: 'retry-thread' },
+        },
+      }));
+      return;
+    }
+    response.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+
+  const profile: RuntimeProfileRecord = {
+    key: 'codex-default',
+    name: 'Codex Default',
+    adapter: 'codex-cli',
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    enabled: true,
+    isDefault: true,
+    contractVersion: '2026-07-10',
+    features: [],
+    createdAt: '2026-07-18T00:00:00.000Z',
+    updatedAt: '2026-07-18T00:00:00.000Z',
+  };
+  const result = await requestRuntimeResponseWithProfile(profile, {
+    prompt: 'retry transport failures',
+    sessionId: 'retry-session',
+    timeoutMs: 10_000,
+  });
+
+  assert.equal(result.responseText, 'RETRY_OK');
+  assert.equal(createAttempts, 2);
+  assert.equal(pollAttempts, 2);
+  assert.equal(idempotencyKeys.length, 2);
+  assert.ok(idempotencyKeys[0]);
+  assert.equal(idempotencyKeys[1], idempotencyKeys[0]);
+});

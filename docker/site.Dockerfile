@@ -12,7 +12,7 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-COPY package.json package-lock.json prism-version.json ./
+COPY package.json package-lock.json ./
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY services/site/package.json services/site/package.json
 RUN npm ci --workspace @prism-railway/site --include-workspace-root=false

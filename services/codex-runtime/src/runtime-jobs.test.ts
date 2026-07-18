@@ -105,7 +105,7 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
 
   const accepted = await fetch(`${baseUrl}/v1/runtime/jobs`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'idempotency-key': 'normalized-success-request' },
     body: JSON.stringify({
       contractVersion,
       prompt: 'Return the test response',
@@ -113,6 +113,17 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
       skills: [{ name: 'test-skill' }],
     }),
   }).then((response) => response.json()) as { jobId: string };
+  const replayed = await fetch(`${baseUrl}/v1/runtime/jobs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'idempotency-key': 'normalized-success-request' },
+    body: JSON.stringify({
+      contractVersion,
+      prompt: 'Return the test response',
+      sessionId: 'normalized-success',
+      skills: [{ name: 'test-skill' }],
+    }),
+  }).then((response) => response.json()) as { jobId: string };
+  assert.equal(replayed.jobId, accepted.jobId);
   const completed = await pollJob(baseUrl, accepted.jobId) as {
     job: { status: string; result: { responseText: string; continuationId: string } };
   };

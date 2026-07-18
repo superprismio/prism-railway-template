@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   prismRuntimeContractVersion,
   resolveRuntimeProfile,
@@ -138,6 +139,51 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
+function transportError(error: unknown) {
+  if (!(error instanceof Error)) return String(error);
+  const cause = error.cause && typeof error.cause === 'object'
+    ? error.cause as { code?: unknown; message?: unknown }
+    : null;
+  const causeCode = typeof cause?.code === 'string' ? cause.code : '';
+  const causeMessage = typeof cause?.message === 'string' ? cause.message : '';
+  return [error.name, error.message, causeCode, causeMessage]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(':');
+}
+
+async function fetchWithTransportRetries(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  options: { attempts: number; operation: string },
+) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
+    try {
+      return await fetchWithTimeout(url, init, Math.max(1, deadline - Date.now()));
+    } catch (error) {
+      lastError = error;
+      const remainingMs = deadline - Date.now();
+      if (attempt >= options.attempts || remainingMs <= 0) break;
+      const retryDelayMs = Math.min(250 * (2 ** (attempt - 1)), remainingMs);
+      console.warn('[site-runtime] transport retry', {
+        operation: options.operation,
+        attempt,
+        maxAttempts: options.attempts,
+        retryDelayMs,
+        error: transportError(error),
+      });
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+  throw new Error(
+    `RUNTIME_TRANSPORT_FAILED:${options.operation}:${transportError(lastError) || 'unknown'}`,
+    { cause: lastError },
+  );
+}
+
 function normalizedResponse(profile: RuntimeProfileRecord, job: NormalizedJob): RuntimeResponse {
   const metadata = job.result?.providerMetadata ?? {};
   const responseText = typeof job.result?.responseText === 'string' ? job.result.responseText.trim() : '';
@@ -208,11 +254,21 @@ async function requestNormalized(
     context: input.context ?? {},
     metadata: input.metadata ?? {},
   };
-  const submit = await fetchWithTimeout(jobsUrl, {
+  const idempotencyKey = `site-${randomUUID()}`;
+  const canRetryCreate = profile.adapter === 'codex-cli'
+    || profile.adapter === 'grok-build'
+    || profile.features.includes('idempotent-job-creation');
+  const submit = await fetchWithTransportRetries(jobsUrl, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      'idempotency-key': idempotencyKey,
+    },
     body: JSON.stringify(body),
-  }, Math.min(30_000, timeoutMs));
+  }, Math.min(30_000, timeoutMs), {
+    attempts: canRetryCreate ? 3 : 1,
+    operation: 'create-job',
+  });
   if (submit.status === 404) return null;
   const accepted = await submit.json().catch(() => null) as NormalizedJobPayload | null;
   if (!submit.ok) {
@@ -227,10 +283,11 @@ async function requestNormalized(
       throw new Error(`RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 2_000));
-    const poll = await fetchWithTimeout(
+    const poll = await fetchWithTransportRetries(
       `${jobsUrl}/${encodeURIComponent(jobId)}`,
       { cache: 'no-store' },
       Math.min(30_000, Math.max(1, timeoutMs - (Date.now() - startedAt))),
+      { attempts: 3, operation: 'poll-job' },
     );
     const payload = await poll.json().catch(() => null) as NormalizedJobPayload | null;
     if (!poll.ok) throw new Error(`RUNTIME_JOB_POLL_FAILED:${poll.status}:${payload?.error?.code || 'unknown'}`);
@@ -276,10 +333,11 @@ async function requestLegacy(profile: RuntimeProfileRecord, input: RuntimeReques
     for (;;) {
       if (Date.now() - startedAt >= timeoutMs) throw new Error(`RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`);
       await new Promise((resolve) => setTimeout(resolve, 2_000));
-      const poll = await fetchWithTimeout(
+      const poll = await fetchWithTransportRetries(
         `${jobsUrl}/${encodeURIComponent(jobId)}`,
         { cache: 'no-store' },
         Math.min(30_000, Math.max(1, timeoutMs - (Date.now() - startedAt))),
+        { attempts: 3, operation: 'poll-legacy-job' },
       );
       const payload = await poll.json().catch(() => null) as LegacyJobPayload | null;
       if (!poll.ok) throw new Error(`RUNTIME_JOB_POLL_FAILED:${poll.status}:${payload?.error || 'unknown'}`);

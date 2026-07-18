@@ -127,6 +127,13 @@ cancel return the normalized job envelope. A terminal job is immutable except
 for redacted diagnostic trace additions; late harness output must not change a
 `canceled` job to `succeeded`.
 
+Adapters that advertise `idempotent-job-creation` accept an `idempotency-key`
+header on `POST /v1/runtime/jobs`. Repeating the same request with the same key
+returns the original job instead of starting another runtime process. Callers
+may retry a transport failure only when this capability is advertised or the
+adapter is a bundled implementation known to support it. Polling GET requests
+may be retried independently because they do not create work.
+
 The adapter must not treat `delegatedActorId` or `initiatedBy` as authenticated
 runtime identity. Service authentication establishes the adapter caller. The
 delegation context explains on whose behalf the job is running.
@@ -192,6 +199,7 @@ site-hosted-skills
 continuations
 image-input
 gateway-credentials
+idempotent-job-creation
 ```
 
 The runtime request lists the Gateway credential keys assigned to that job.
