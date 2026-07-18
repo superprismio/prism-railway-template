@@ -32,12 +32,14 @@ test("source adapter delegates runtime selection to Site", async () => {
 
   let capturedPrompt = "";
   let capturedCredentials: unknown = null;
+  let capturedDispatcher: unknown = null;
   globalThis.fetch = async (input, init) => {
     assert.equal(String(input), "http://site.internal/agent/runtime/invoke");
     assert.equal(new Headers(init?.headers).get("x-service-token"), "test-service-token");
     const requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
     capturedPrompt = String(requestBody.prompt ?? "");
     capturedCredentials = requestBody.credentials;
+    capturedDispatcher = (init as RequestInit & { dispatcher?: unknown })?.dispatcher;
     return Response.json({
       ok: true,
       response: {
@@ -59,6 +61,7 @@ test("source adapter delegates runtime selection to Site", async () => {
     });
     assert.equal(capturedPrompt, "Summarize this meeting.");
     assert.deepEqual(capturedCredentials, [{ key: "sendgrid" }]);
+    assert.ok(capturedDispatcher, "runtime requests use a dispatcher with an extended headers timeout");
     assert.deepEqual(result, {
       responseText: "summary",
       continuationId: "grok-session-1",
