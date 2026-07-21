@@ -22,6 +22,8 @@ update source is `superprismio/prism-railway-template` on `main`.
 
 ### Fixed
 
+- Restore system ownership for an instance workflow only when it exactly matches
+  the deterministic recording built-in v4 contract.
 - Avoid the Codex synthesis step when recording sources already provide the
   standard summary, while keeping raw transcripts private by default.
 - Normalize public Prism Memory artifact URLs and reject internal service URLs
