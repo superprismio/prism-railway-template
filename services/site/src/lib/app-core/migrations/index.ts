@@ -32,6 +32,7 @@ import { compactRecordingHookPayloadMigration } from './032_compact_recording_ho
 import { workflowEventSequenceMigration } from './033_workflow_event_sequence';
 import { externalInteractionsMigration } from './034_external_interactions';
 import { interactionMemoryInstructionsMigration } from './035_interaction_memory_instructions';
+import { deterministicRecordingHandoffMigration } from './036_deterministic_recording_handoff';
 
 export interface Migration {
   name: string;
@@ -73,4 +74,5 @@ export const migrations: Migration[] = [
   workflowEventSequenceMigration,
   externalInteractionsMigration,
   interactionMemoryInstructionsMigration,
+  deterministicRecordingHandoffMigration,
 ];

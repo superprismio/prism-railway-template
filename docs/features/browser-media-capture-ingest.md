@@ -365,9 +365,10 @@ Capture or calls Prism capture APIs behind the scenes.
 
 ## Capture Pipeline And Media-Ingest Hook
 
-For v1, transcription and rolling summary should happen as part of the capture
-pipeline, not only inside a request workflow. The request workflow is better as
-the handoff/review layer after useful transcript artifacts already exist.
+Transcription and first-pass summary generation happen as part of the capture
+pipeline, not inside the built-in request workflow. Hook ingestion
+deterministically prepares the standard request artifacts after useful summary
+and transcript references already exist.
 
 Create a reusable hook, `recording-transcript-completed`, that accepts compact
 recording summary payloads and creates or links a request workflow. The default
@@ -660,10 +661,15 @@ uploaded files, Telegram voice notes, and future Portal session recordings.
   this should not be the default for normal post-meeting hooks.
 - The built-in hook key is `recording-transcript-completed`.
 - The built-in workflow key is `recording-transcript-review-publish`.
-- The built-in workflow is automated by default and has no operator gate. It
-  reuses precomputed summaries and Memory artifact URLs when present, creates
-  downstream plan artifacts, and leaves Portal/outbound behavior to
-  instance-specific workflow extensions.
+- The built-in workflow has no agent synthesis step or operator gate. Hook
+  ingestion reuses precomputed summaries and Memory artifact URLs, creates the
+  standard artifacts, and closes the generic request.
+- Instances may set
+  `constraints.recordingWorkflow.downstreamWorkflowKey` on the hook request
+  template. The built-in processor then idempotently creates a child request,
+  copies the standard artifacts, and optionally auto-starts that instance-owned
+  workflow. Portal, outbound delivery, recurrence, and other workspace policy
+  remain in the child workflow.
 - Consent/disclaimer copy is deferred for v1.
 
 ## Open Questions
