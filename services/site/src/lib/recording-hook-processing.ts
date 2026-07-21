@@ -49,7 +49,7 @@ function recordingConfig(request: ChangeRequestRecord): RecordingWorkflowConfig 
   const config = record(record(request.constraints).recordingWorkflow);
   return {
     downstreamWorkflowKey: text(config.downstreamWorkflowKey ?? config.downstream_workflow_key),
-    autoStartDownstream: config.autoStartDownstream !== false && config.auto_start_downstream !== false,
+    autoStartDownstream: config.autoStartDownstream === true || config.auto_start_downstream === true,
   };
 }
 
@@ -113,7 +113,7 @@ async function saveArtifact(requestId: string, artifact: PreparedArtifact, metad
     mimeType: artifact.mimeType,
     storagePath,
     sizeBytes: artifact.content.byteLength,
-    metadata: { deterministic: true, ...metadata },
+    metadata: { ...metadata, deterministic: true },
     createdBy: "recording-hook",
   });
   if (workflowRun) {
@@ -347,6 +347,13 @@ export async function processBuiltInRecordingHook(input: {
       await saveArtifact(request.id, jsonArtifact("workflow-handoff", "workflow-handoff.json", "Parent-to-child recording workflow handoff.", handoff));
       if (childCreated) {
         await saveArtifact(childRequest.id, jsonArtifact("workflow-handoff", "workflow-handoff.json", "Parent-to-child recording workflow handoff.", handoff));
+      } else {
+        await saveArtifact(childRequest.id, jsonArtifact(
+          "workflow-handoff-attempt",
+          `workflow-handoff-attempt-${request.requestNumber}.json`,
+          "A later parent request reused this idempotent recording workflow handoff.",
+          handoff,
+        ));
       }
       if (config.autoStartDownstream && childCreated) {
         const { autoStartWorkflowRequest } = await import("@/lib/workflow-autostart");

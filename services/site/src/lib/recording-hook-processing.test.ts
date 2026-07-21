@@ -34,6 +34,12 @@ test("recording migration does not overwrite an instance-customized workflow", (
 
 test("built-in recording hook prepares artifacts and creates one idempotent downstream request", async () => {
   const dataRoot = await mkdtemp(path.join(os.tmpdir(), "prism-recording-handoff-"));
+  const previousEnv = {
+    dataRoot: process.env.PRISM_AGENT_DATA_ROOT,
+    publicBaseUrl: process.env.PRISM_MEMORY_PUBLIC_BASE_URL,
+    writeKey: process.env.PRISM_API_WRITE_KEY,
+    apiKey: process.env.PRISM_API_KEY,
+  };
   process.env.PRISM_AGENT_DATA_ROOT = dataRoot;
   process.env.PRISM_MEMORY_PUBLIC_BASE_URL = "memory.example.test";
   delete process.env.PRISM_API_WRITE_KEY;
@@ -148,6 +154,7 @@ test("built-in recording hook prepares artifacts and creates one idempotent down
         "memory-ingest-result.json",
         "downstream-publish-plan.json",
         "workflow-handoff.json",
+        `workflow-handoff-attempt-${secondParent.requestNumber}.json`,
       ]),
     );
     const memoryArtifact = childArtifacts.find((artifact) => artifact.name === "memory-ingest-result.json");
@@ -159,6 +166,32 @@ test("built-in recording hook prepares artifacts and creates one idempotent down
     const parentArtifacts = appCore.listRequestArtifacts(firstParent.id, 100);
     assert.ok(parentArtifacts.some((artifact) => artifact.name === "workflow-handoff.json"));
     assert.equal(appCore.listChangeRequests({ source: child.source }).length, 1);
+    assert.ok(childArtifacts.every((artifact) => artifact.metadata.deterministic === true));
+    const refreshedChildArtifacts = appCore.listRequestArtifacts(child.id, 100);
+    assert.ok(refreshedChildArtifacts.some((artifact) => artifact.name === `workflow-handoff-attempt-${secondParent.requestNumber}.json`));
+
+    const noAutostartParent = appCore.createChangeRequest({
+      title: "Recording transcript completed without autostart configuration",
+      description: "Prepare deterministic recording artifacts.",
+      workflowKey: builtInHook.workflowKey,
+      requestType: "content",
+      source: `hook:${builtInHook.key}`,
+      constraints: {
+        recordingWorkflow: {
+          downstreamWorkflowKey: "test-recording-publish",
+        },
+      },
+    });
+    assert.ok(noAutostartParent);
+    const noAutostart = await processBuiltInRecordingHook({
+      hook: builtInHook,
+      request: noAutostartParent,
+      payload: {
+        ...payload,
+        recording: { ...payload.recording, sessionId: "session-no-autostart" },
+      },
+    });
+    assert.equal(noAutostart.autoStart, null);
 
     const workflowFile = await readFile(path.resolve(process.cwd(), "workflows/recording-transcript-review-publish/workflow.md"), "utf8");
     assert.match(workflowFile, /deterministic/i);
@@ -166,5 +199,13 @@ test("built-in recording hook prepares artifacts and creates one idempotent down
   } finally {
     closeDb();
     await rm(dataRoot, { recursive: true, force: true });
+    if (previousEnv.dataRoot === undefined) delete process.env.PRISM_AGENT_DATA_ROOT;
+    else process.env.PRISM_AGENT_DATA_ROOT = previousEnv.dataRoot;
+    if (previousEnv.publicBaseUrl === undefined) delete process.env.PRISM_MEMORY_PUBLIC_BASE_URL;
+    else process.env.PRISM_MEMORY_PUBLIC_BASE_URL = previousEnv.publicBaseUrl;
+    if (previousEnv.writeKey === undefined) delete process.env.PRISM_API_WRITE_KEY;
+    else process.env.PRISM_API_WRITE_KEY = previousEnv.writeKey;
+    if (previousEnv.apiKey === undefined) delete process.env.PRISM_API_KEY;
+    else process.env.PRISM_API_KEY = previousEnv.apiKey;
   }
 });
