@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import Database from "better-sqlite3";
 import { deterministicRecordingHandoffMigration } from "@/lib/app-core/migrations/036_deterministic_recording_handoff";
+import { restoreRecordingSystemDefaultMigration } from "@/lib/app-core/migrations/037_restore_recording_system_default";
 
 test("recording migration does not overwrite an instance-customized workflow", () => {
   const db = new Database(":memory:");
@@ -30,6 +31,51 @@ test("recording migration does not overwrite an instance-customized workflow", (
   assert.equal(workflow.version, 14);
   assert.equal(JSON.parse(workflow.definition_json).entrypoint, "portal");
   db.close();
+});
+
+test("ownership migration restores only the exact deterministic recording built-in", () => {
+  const databaseWith = (definition: Record<string, unknown>, version = 4) => {
+    const db = new Database(":memory:");
+    db.exec(`
+      CREATE TABLE workflows (
+        key TEXT PRIMARY KEY, version INTEGER, definition_json TEXT,
+        system_default INTEGER, updated_at TEXT
+      );
+    `);
+    db.prepare("INSERT INTO workflows VALUES (?, ?, ?, 0, '2026-01-01')").run(
+      "recording-transcript-review-publish",
+      version,
+      JSON.stringify(definition),
+    );
+    db.exec(restoreRecordingSystemDefaultMigration.sql);
+    return db;
+  };
+  const deterministicDefinition = {
+    hookProcessing: "deterministic-recording-v1",
+    entrypoint: "closed",
+    steps: [{ key: "closed", type: "terminal" }],
+  };
+
+  const restored = databaseWith(deterministicDefinition);
+  assert.equal(
+    (restored.prepare("SELECT system_default FROM workflows").get() as { system_default: number }).system_default,
+    1,
+  );
+  restored.close();
+
+  for (const [definition, version] of [
+    [{ entrypoint: "closed", steps: [{ key: "closed", type: "terminal" }] }, 4],
+    [{ ...deterministicDefinition, entrypoint: "publish" }, 4],
+    [{ ...deterministicDefinition, steps: [{ key: "closed", type: "terminal" }, { key: "custom", type: "agent" }] }, 4],
+    [deterministicDefinition, 14],
+  ] as Array<[Record<string, unknown>, number]>) {
+    const untouched = databaseWith(definition, version);
+    assert.equal(
+      (untouched.prepare("SELECT system_default FROM workflows").get() as { system_default: number }).system_default,
+      0,
+    );
+    untouched.close();
+  }
 });
 
 test("built-in recording hook prepares artifacts and creates one idempotent downstream request", async () => {

@@ -33,6 +33,7 @@ import { workflowEventSequenceMigration } from './033_workflow_event_sequence';
 import { externalInteractionsMigration } from './034_external_interactions';
 import { interactionMemoryInstructionsMigration } from './035_interaction_memory_instructions';
 import { deterministicRecordingHandoffMigration } from './036_deterministic_recording_handoff';
+import { restoreRecordingSystemDefaultMigration } from './037_restore_recording_system_default';
 
 export interface Migration {
   name: string;
@@ -75,4 +76,5 @@ export const migrations: Migration[] = [
   externalInteractionsMigration,
   interactionMemoryInstructionsMigration,
   deterministicRecordingHandoffMigration,
+  restoreRecordingSystemDefaultMigration,
 ];
