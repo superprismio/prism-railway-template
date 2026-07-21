@@ -16,23 +16,73 @@ function memoryWriteKey() {
   ).trim();
 }
 
+function publicArtifactBaseUrl() {
+  const config = loadConfig();
+  const raw = (
+    process.env.PRISM_ARTIFACT_PUBLIC_BASE_URL ??
+    process.env.PRISM_MEMORY_PUBLIC_BASE_URL ??
+    config.prismMemoryBaseUrl
+  ).trim().replace(/\/+$/, "");
+  if (!raw) return null;
+  const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const parsed = new URL(candidate);
+    const hostname = parsed.hostname.toLowerCase();
+    if (
+      hostname === "localhost" ||
+      hostname === "0.0.0.0" ||
+      hostname === "127.0.0.1" ||
+      hostname.endsWith(".railway.internal")
+    ) {
+      return null;
+    }
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
 function artifactUrlFromPath(pathname: string | null | undefined) {
   const filename = pathname?.trim().split("/").filter(Boolean).at(-1) ?? "";
   const artifactId = filename.replace(/\.json$/i, "");
   if (!artifactId || artifactId === filename) {
     return null;
   }
-  const config = loadConfig();
-  const baseUrl = (
-    process.env.PRISM_ARTIFACT_PUBLIC_BASE_URL ??
-    process.env.PRISM_MEMORY_PUBLIC_BASE_URL ??
-    config.prismMemoryBaseUrl
-  ).trim().replace(/\/+$/, "");
+  const baseUrl = publicArtifactBaseUrl();
   return baseUrl ? `${baseUrl}/artifacts/${encodeURIComponent(artifactId)}` : null;
 }
 
 export function publicMemoryArtifactUrl(pathname: string | null | undefined) {
   return artifactUrlFromPath(pathname);
+}
+
+export function normalizePublicMemoryArtifactUrl(value: string | null | undefined) {
+  const candidate = value?.trim() ?? "";
+  if (!candidate) return null;
+  if (/^https?:\/\//i.test(candidate)) {
+    try {
+      const parsed = new URL(candidate);
+      const hostname = parsed.hostname.toLowerCase();
+      const internal = hostname === "localhost"
+        || hostname === "0.0.0.0"
+        || hostname === "127.0.0.1"
+        || hostname.endsWith(".railway.internal")
+        || parsed.pathname.startsWith("/agent/");
+      if (!internal) return candidate;
+      const baseUrl = publicArtifactBaseUrl();
+      return baseUrl && parsed.pathname.startsWith("/artifacts/") ? `${baseUrl}${parsed.pathname}` : null;
+    } catch {
+      return null;
+    }
+  }
+
+  const baseUrl = publicArtifactBaseUrl();
+  if (!baseUrl) return null;
+
+  if (candidate.startsWith("/artifacts/")) {
+    return `${baseUrl}${candidate}`;
+  }
+  return artifactUrlFromPath(candidate);
 }
 
 export async function promoteMeetingSummaryToMemory(input: {

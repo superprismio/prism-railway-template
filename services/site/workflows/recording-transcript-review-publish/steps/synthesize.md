@@ -1,3 +1,7 @@
+# Compatibility-only legacy agent step
+
+This file remains available for instance-customized workflows created before the deterministic recording handoff migration. The built-in workflow no longer references or runs this step. New and migrated instances must use deterministic hook processing and should not add this agent step back to the built-in manifest.
+
 # Synthesize
 
 Read the request context and the `hook-payload.json` artifact. The payload should
@@ -182,3 +186,4 @@ model, or agenda creation capability exists in the template.
   blocked summary.
 - Otherwise finish with a concise summary of the artifacts created and the
   recommended next action.
+

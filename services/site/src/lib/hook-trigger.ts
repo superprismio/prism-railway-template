@@ -17,12 +17,14 @@ import {
 import { randomUUID } from "node:crypto"
 import { parseEstimatedHumanHours } from "@/lib/request-estimates"
 import { autoStartWorkflowRequest } from "@/lib/workflow-autostart"
+import { isBuiltInRecordingHook, processBuiltInRecordingHook } from "@/lib/recording-hook-processing"
 
 type HookTriggerResult = {
   hook: HookRecord
   changeRequest: NonNullable<ReturnType<typeof createChangeRequest>>
   autoStart: Awaited<ReturnType<typeof autoStartWorkflowRequest>> | null
   autoStartQueued?: boolean
+  recordingProcessing?: Awaited<ReturnType<typeof processBuiltInRecordingHook>> | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -266,6 +268,30 @@ export async function triggerHook(
     }))
   }
 
+  let recordingProcessing: Awaited<ReturnType<typeof processBuiltInRecordingHook>> | null = null
+  if (isBuiltInRecordingHook(hook)) {
+    try {
+      recordingProcessing = await processBuiltInRecordingHook({
+        hook,
+        request: changeRequest,
+        payload,
+        baseUrl: options.baseUrl,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "RECORDING_HOOK_PROCESSING_FAILED"
+      updateHookRun(hookRunId, {
+        status: "failed",
+        requestId: changeRequest.id,
+        requestNumber: changeRequest.requestNumber,
+        requestTitle: changeRequest.title,
+        errorMessage: message,
+        result: { error: message },
+        finishedAt: new Date().toISOString(),
+      })
+      throw error
+    }
+  }
+
   const runAutoStart = async () => {
     try {
       return await autoStartWorkflowRequest(changeRequest, { baseUrl: options.baseUrl, requestedSkills })
@@ -281,9 +307,9 @@ export async function triggerHook(
   }
 
   let autoStartQueued = false
-  if (autoRunEnabled && options.waitForAutoStart !== false) {
+  if (autoRunEnabled && !recordingProcessing && options.waitForAutoStart !== false) {
     autoStart = await runAutoStart()
-  } else if (autoRunEnabled) {
+  } else if (autoRunEnabled && !recordingProcessing) {
     autoStartQueued = true
     setTimeout(() => {
       void runAutoStart()
@@ -303,6 +329,9 @@ export async function triggerHook(
       autoStartQueued,
       autoStartStarted: Boolean(autoStart?.started),
       autoStartReason: autoStart?.reason ?? null,
+      recordingProcessingStatus: recordingProcessing?.status ?? null,
+      downstreamRequestId: recordingProcessing?.childRequest?.id ?? null,
+      downstreamRequestNumber: recordingProcessing?.childRequest?.requestNumber ?? null,
     },
     finishedAt: new Date().toISOString(),
   })
@@ -312,5 +341,6 @@ export async function triggerHook(
     changeRequest,
     autoStart,
     autoStartQueued,
+    recordingProcessing,
   }
 }
