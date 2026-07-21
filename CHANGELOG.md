@@ -17,6 +17,8 @@ update source is `superprismio/prism-railway-template` on `main`.
 - Keep the version manifest inside Site's Railway build root.
 - Retry transient runtime job transport failures without creating duplicate
   jobs, and record actionable Site and Discord adapter diagnostics.
+- Allow Discord adapter requests to wait beyond Node's five-minute response
+  headers timeout when the configured runtime timeout is longer.
 
 ## 0.1.0
 

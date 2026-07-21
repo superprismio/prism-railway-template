@@ -1,3 +1,5 @@
+import { Agent } from "undici";
+
 export type SiteRuntimeCredential = string | { key: string };
 
 export type SiteRuntimeResponse = {
@@ -51,18 +53,29 @@ export async function requestSiteRuntime(input: {
   runtimeProfileKey?: string | null;
   timeoutMs: number;
 }): Promise<SiteRuntimeResponse> {
+  const baseUrl = siteBaseUrl();
+  const serviceToken = siteServiceToken();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), input.timeoutMs + 5_000);
+  // Node's default fetch dispatcher stops waiting for response headers after
+  // five minutes. Runtime invocations legitimately run longer because Site
+  // returns headers only after the runtime job completes.
+  const dispatcherTimeoutMs = Math.max(input.timeoutMs + 10_000, 15_000);
+  const dispatcher = new Agent({
+    headersTimeout: dispatcherTimeoutMs,
+    bodyTimeout: dispatcherTimeoutMs,
+  });
   try {
-    const response = await fetch(`${siteBaseUrl()}/agent/runtime/invoke`, {
+    const response = await fetch(`${baseUrl}/agent/runtime/invoke`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-service-token": siteServiceToken(),
+        "x-service-token": serviceToken,
       },
       body: JSON.stringify(input),
       signal: controller.signal,
-    });
+      dispatcher,
+    } as RequestInit & { dispatcher: Agent });
     const payload = await response.json().catch(() => null) as {
       error?: unknown;
       response?: {
@@ -97,5 +110,6 @@ export async function requestSiteRuntime(input: {
     };
   } finally {
     clearTimeout(timer);
+    await dispatcher.close().catch(() => undefined);
   }
 }
