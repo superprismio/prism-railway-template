@@ -1,8 +1,14 @@
-# Codex Runtime Image Generation Pin
+# Codex Runtime Image Generation Version Pin
 
 ## Summary
 
-`services/codex-runtime` pins `@openai/codex` to `0.139.0` because `codex-cli 0.140.0` has a regression in the built-in `image_gen` path when run through `codex exec`.
+`services/codex-runtime` pins `@openai/codex` to `0.144.6`.
+
+The runtime previously stayed on `0.139.0` because Codex CLI `0.140.0` and
+`0.141.0` had a regression in the built-in `image_gen` path when run through
+`codex exec`. OpenAI fixed that persistence bug in `openai/codex#28656`; the
+issue reporter verified the fix in `0.142.0`, and Prism reproduced the fixed
+headless behavior on `0.144.6` before upgrading.
 
 The runtime still enables image generation with:
 
@@ -10,9 +16,10 @@ The runtime still enables image generation with:
 --enable image_generation
 ```
 
-The pin is not a feature toggle. It is a guard against a CLI artifact persistence regression.
+The exact pin is not a feature toggle. It keeps Railway rebuilds reproducible
+and ensures Codex CLI upgrades receive an explicit image-artifact smoke test.
 
-## What We Saw
+## Historical Regression
 
 On June 17, 2026, a local test with `codex-cli 0.140.0` reproduced this behavior:
 
@@ -34,10 +41,24 @@ from interactive/non-`exec` Codex sessions, so this was specific to the headless
 
 ## Public Reports
 
-Two public `openai/codex` issues match this behavior:
+Two public `openai/codex` issues documented this behavior:
 
 - `openai/codex#28526`: built-in `image_gen` succeeds in CLI but never writes the PNG to disk.
 - `openai/codex#28422`: regression in `0.140.0`; valid base64 PNG is present, but no file is written, and rolling back to `0.139.0` restores image saving.
+
+OpenAI merged `openai/codex#28656` on June 17, 2026. The change persists a
+built-in image result whenever image data is present, even when the terminal
+item status remains `generating`. The `#28422` reporter confirmed the repair in
+`0.142.0` and closed the issue as completed.
+
+On July 21, 2026, Prism tested `0.144.6` in an isolated `CODEX_HOME` on the
+production Linux runtime using the headless command below. The command exited
+successfully and produced the same valid 793,503-byte PNG in both:
+
+```text
+$CODEX_HOME/generated_images/<thread-id>/<call-id>.png
+<workspace>/generated.png
+```
 
 Official Codex imagegen skill guidance still expects built-in image generation outputs to be available under `$CODEX_HOME/generated_images/...` so agents can copy project-bound assets into the workspace.
 
@@ -47,9 +68,10 @@ The codex-runtime Dockerfile must install from `package-lock.json`.
 
 Do not switch it back to a loose `npm install` from `package.json` only. A floating install can silently pick up a newer Codex CLI on Railway rebuilds, which makes image behavior change without a code diff.
 
-## When To Revisit
+## Validation For Future Upgrades
 
-Before unpinning or upgrading `@openai/codex`, verify all of the following inside a codex-runtime-like environment:
+Before upgrading `@openai/codex`, verify all of the following inside a
+codex-runtime-like environment:
 
 ```bash
 tmpdir=$(mktemp -d /tmp/codex-imagegen-test-XXXXXX)
