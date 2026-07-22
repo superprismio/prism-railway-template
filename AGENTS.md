@@ -56,6 +56,7 @@ Send service auth as:
 - `PATCH /agent/hooks/:key`
 - `DELETE /agent/hooks/:key`
 - `POST /agent/hooks/:key/trigger`
+- `GET /agent/hooks/:key/requests/:requestNumber/result`
 - `POST /agent/responses`
 - `GET /agent/workflow-events`
 - `GET /agent/target-apps`
@@ -94,6 +95,15 @@ not provider credentials. The first configured profile becomes the default;
 setting `isDefault: true` moves the default to that profile.
 Service adapters use `/agent/runtime/invoke` for utility model calls that should
 follow the Site-owned default runtime profile.
+
+Hook trigger and result routes normally use the service token. A hook with
+`authMode: interface-token` may additionally accept the existing credential
+for the single interface named by `authConfig.interfaceKey`. Send that
+interface name as `x-prism-interface-id` and the credential as
+`x-prism-interface-key`; never expose it to browser code. Interface-authenticated
+result reads are limited to artifacts listed in
+`authConfig.resultArtifactNames` and to requests created by that interface and
+hook.
 
 For source adapter access rules, use `/agent/source-adapter-policy`. Policies are platform-scoped. Use `platforms.discord.targets` for Discord channels or threads, `platforms.discord.groups` for Discord role IDs, and `platforms.discord.users` for Discord user IDs. Use `platforms.telegram.targets` for Telegram chat/group/channel IDs and `platforms.telegram.users` for Telegram user IDs. Telegram DMs are disabled by default unless explicitly enabled in adapter env/config.
 

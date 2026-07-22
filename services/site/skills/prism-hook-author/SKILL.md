@@ -72,6 +72,31 @@ Recommended hook shape:
 }
 ```
 
+`service-token` hooks accept only the internal service token. Use
+`interface-token` when a specific external interface should also be able to
+trigger the hook with its existing inbound credential. The internal service
+token remains valid for every enabled hook.
+
+```json
+{
+  "authMode": "interface-token",
+  "authConfig": {
+    "interfaceKey": "action-items",
+    "resultArtifactNames": ["kpi-snapshot-proposal.json"]
+  }
+}
+```
+
+An interface-token caller sends its interface key in
+`x-prism-interface-id` and its credential in `x-prism-interface-key` (or as a
+Bearer token). The hook accepts only the configured interface. Interaction
+profile modes continue to govern chat behavior; they do not authorize hooks.
+Never put the interface credential itself in hook configuration.
+
+After triggering, the caller may poll the response's `resultUrl`. The result
+route returns HTTP 202 while the workflow is active and exposes only artifact
+names listed in `authConfig.resultArtifactNames` after completion.
+
 Create or update hooks through the agent API:
 
 ```bash

@@ -186,6 +186,7 @@ export {
   getAgentResponseJob,
   getActiveUserInviteByToken,
   getRequestArtifact,
+  getRequestArtifactByName,
   getRequestExternalRef,
   getRequestExternalRefByUrl,
   getSessionSummary,

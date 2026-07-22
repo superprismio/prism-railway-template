@@ -72,6 +72,7 @@ Hooks:
 - `PATCH /agent/hooks/:key`
 - `DELETE /agent/hooks/:key`
 - `POST /agent/hooks/:key/trigger`
+- `GET /agent/hooks/:key/requests/:requestNumber/result`
 
 Workflow event consumers:
 
