@@ -6041,6 +6041,21 @@ export function getRequestArtifact(id: string): RequestArtifactRecord | null {
   return row ? mapRequestArtifactRow(row) : null;
 }
 
+export function getRequestArtifactByName(requestId: string, name: string): RequestArtifactRecord | null {
+  const row = getDb()
+    .prepare(
+      `SELECT id, request_id, workflow_run_id, execution_id, kind, name, description,
+              mime_type, storage_path, size_bytes, metadata_json, created_by, created_at, updated_at
+       FROM request_artifacts
+       WHERE request_id = ? AND name = ?
+       ORDER BY created_at DESC, rowid DESC
+       LIMIT 1`,
+    )
+    .get(requestId, name) as RequestArtifactRow | undefined;
+
+  return row ? mapRequestArtifactRow(row) : null;
+}
+
 export function deleteRequestArtifact(id: string) {
   getDb().prepare('DELETE FROM request_artifacts WHERE id = ?').run(id);
 }

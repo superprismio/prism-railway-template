@@ -3,8 +3,8 @@ import { NextResponse } from "next/server"
 import {
   getChangeRequestByNumber,
   getHookByKey,
+  getRequestArtifactByName,
   getWorkflowRunForRequest,
-  listRequestArtifacts,
   readRequestArtifactFile,
 } from "@/lib/app-core"
 import { authorizeHookAccess, hookResultArtifactNames } from "@/lib/hook-auth"
@@ -41,7 +41,7 @@ export async function GET(request: Request, context: RouteContext) {
   }
   if (
     access.principal.kind === "interface"
-    && changeRequest.source !== `external-interface:${access.principal.interfaceKey}:hook:${hook.key}`
+    && changeRequest.source !== `hook:${hook.key}:external-interface:${access.principal.interfaceKey}`
   ) {
     return NextResponse.json({ ok: false, error: "HOOK_REQUEST_NOT_FOUND" }, { status: 404 })
   }
@@ -78,8 +78,7 @@ export async function GET(request: Request, context: RouteContext) {
     }, { status: 403 })
   }
 
-  const artifact = listRequestArtifacts(changeRequest.id, 500)
-    .find((candidate) => candidate.name === requestedArtifactName)
+  const artifact = getRequestArtifactByName(changeRequest.id, requestedArtifactName)
   if (!artifact) {
     return NextResponse.json({
       ok: false,

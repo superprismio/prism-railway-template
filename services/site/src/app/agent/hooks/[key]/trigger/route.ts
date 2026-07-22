@@ -25,7 +25,7 @@ export async function POST(request: Request, context: RouteContext) {
     const result = await triggerHook(key, payload ?? {}, {
       baseUrl: new URL(request.url).origin,
       source: access.principal.kind === "interface"
-        ? `external-interface:${access.principal.interfaceKey}:hook:${hook.key}`
+        ? `hook:${hook.key}:external-interface:${access.principal.interfaceKey}`
         : `hook:${hook.key}`,
       waitForAutoStart: false,
     })
