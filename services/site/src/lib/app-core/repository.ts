@@ -684,6 +684,7 @@ export interface HookRecord {
   enabled: boolean;
   workflowKey: string;
   authMode: string;
+  authConfig: Record<string, unknown>;
   requestTemplate: Record<string, unknown>;
   autoRun: Record<string, unknown>;
   systemDefault: boolean;
@@ -867,6 +868,7 @@ export interface UpsertHookInput {
   enabled?: boolean;
   workflowKey: string;
   authMode?: string;
+  authConfig?: Record<string, unknown>;
   requestTemplate?: Record<string, unknown>;
   autoRun?: Record<string, unknown>;
   systemDefault?: boolean;
@@ -1187,6 +1189,7 @@ interface HookRow {
   enabled: number;
   workflow_key: string;
   auth_mode: string;
+  auth_config_json: string;
   request_template_json: string;
   auto_run_json: string;
   system_default: number;
@@ -1263,6 +1266,7 @@ function mapHookRow(row: HookRow): HookRecord {
     enabled: row.enabled === 1,
     workflowKey: row.workflow_key,
     authMode: row.auth_mode,
+    authConfig: parseJsonValue<Record<string, unknown>>(row.auth_config_json, {}),
     requestTemplate: parseJsonValue<Record<string, unknown>>(row.request_template_json, {}),
     autoRun: parseJsonValue<Record<string, unknown>>(row.auto_run_json, {}),
     systemDefault: row.system_default === 1,
@@ -6341,7 +6345,7 @@ export function upsertHook(input: UpsertHookInput): HookRecord {
 
   const existing = db
     .prepare(
-      `SELECT id, created_at, system_default, enabled, auth_mode, request_template_json, auto_run_json
+      `SELECT id, created_at, system_default, enabled, auth_mode, auth_config_json, request_template_json, auto_run_json
        FROM hooks
        WHERE key = ?`,
     )
@@ -6352,6 +6356,7 @@ export function upsertHook(input: UpsertHookInput): HookRecord {
         system_default: number;
         enabled: number;
         auth_mode: string;
+        auth_config_json: string;
         request_template_json: string;
         auto_run_json: string;
       }
@@ -6364,6 +6369,18 @@ export function upsertHook(input: UpsertHookInput): HookRecord {
     input.authMode === undefined
       ? existing?.auth_mode ?? 'service-token'
       : normalizeText(input.authMode) || 'service-token';
+  if (!new Set(['service-token', 'interface-token']).has(authMode)) {
+    throw new Error('HOOK_AUTH_MODE_INVALID');
+  }
+  if (authMode === 'interface-token') {
+    const authConfig = input.authConfig ?? parseJsonValue<Record<string, unknown>>(existing?.auth_config_json ?? '{}', {});
+    const interfaceKey = normalizeText(authConfig.interfaceKey ?? authConfig.interface_key);
+    if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(interfaceKey)) {
+      throw new Error('HOOK_INTERFACE_KEY_REQUIRED');
+    }
+  }
+  const authConfigJson =
+    input.authConfig === undefined ? existing?.auth_config_json ?? '{}' : JSON.stringify(input.authConfig);
   const requestTemplateJson =
     input.requestTemplate === undefined ? existing?.request_template_json ?? '{}' : JSON.stringify(input.requestTemplate);
   const autoRunJson =
@@ -6371,10 +6388,10 @@ export function upsertHook(input: UpsertHookInput): HookRecord {
 
   db.prepare(
     `INSERT INTO hooks (
-       id, key, name, description, enabled, workflow_key, auth_mode, request_template_json,
+       id, key, name, description, enabled, workflow_key, auth_mode, auth_config_json, request_template_json,
        auto_run_json, system_default, last_triggered_at, created_at, updated_at
      ) VALUES (
-       @id, @key, @name, @description, @enabled, @workflowKey, @authMode, @requestTemplateJson,
+       @id, @key, @name, @description, @enabled, @workflowKey, @authMode, @authConfigJson, @requestTemplateJson,
        @autoRunJson, @systemDefault, @lastTriggeredAt, @createdAt, @updatedAt
      )
      ON CONFLICT(key) DO UPDATE SET
@@ -6383,6 +6400,7 @@ export function upsertHook(input: UpsertHookInput): HookRecord {
        enabled = excluded.enabled,
        workflow_key = excluded.workflow_key,
        auth_mode = excluded.auth_mode,
+       auth_config_json = excluded.auth_config_json,
        request_template_json = excluded.request_template_json,
        auto_run_json = excluded.auto_run_json,
        updated_at = excluded.updated_at`,
@@ -6394,6 +6412,7 @@ export function upsertHook(input: UpsertHookInput): HookRecord {
     enabled,
     workflowKey,
     authMode,
+    authConfigJson,
     requestTemplateJson,
     autoRunJson,
     systemDefault: systemDefault ? 1 : 0,

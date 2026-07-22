@@ -180,7 +180,24 @@ When a hook creates a request:
 - the raw payload is saved as a `hook-payload.json` artifact with kind `hook-payload`
 - auto-run starts from the workflow entrypoint when `autoRun.enabled` is true
 
-Hooks default to service-token auth in the first implementation. The browser admin UI exposes a Hooks tab for inspection, enable/disable, deletion of custom hooks, endpoint copy, and manual test triggering.
+Hooks default to `service-token` auth. The internal service token can trigger
+every enabled hook. A hook may opt into `interface-token` auth with an
+`authConfig.interfaceKey`; the configured external interface credential may
+then trigger only that hook, while service-token access remains available.
+Interaction profile modes govern chat and do not authorize hooks.
+
+Interface-authenticated hooks can expose selected workflow results without
+granting general request access. List safe artifact names in
+`authConfig.resultArtifactNames`, then poll:
+
+```text
+GET /agent/hooks/<hook-key>/requests/<request-number>/result
+```
+
+The route returns HTTP 202 while the workflow is active and returns only a
+configured result artifact after completion. The browser admin UI exposes a
+Hooks tab for inspection, enable/disable, deletion of custom hooks, endpoint
+copy, and manual test triggering.
 
 See `docs/architecture/hooks.md` for the full hook model.
 
