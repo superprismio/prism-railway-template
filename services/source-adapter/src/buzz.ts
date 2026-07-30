@@ -416,6 +416,34 @@ export class BuzzCliClient {
     }
   }
 
+  async addReaction(eventId: string, emoji: string): Promise<void> {
+    const normalizedEventId = eventId.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(normalizedEventId)) {
+      throw new Error("eventId must be a 64-character lowercase hex value");
+    }
+    const normalizedEmoji = emoji.trim();
+    if (!normalizedEmoji) throw new Error("emoji is required");
+    await this.run([
+      "reactions", "add",
+      "--event", normalizedEventId,
+      "--emoji", normalizedEmoji,
+    ]);
+  }
+
+  async removeReaction(eventId: string, emoji: string): Promise<void> {
+    const normalizedEventId = eventId.trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(normalizedEventId)) {
+      throw new Error("eventId must be a 64-character lowercase hex value");
+    }
+    const normalizedEmoji = emoji.trim();
+    if (!normalizedEmoji) throw new Error("emoji is required");
+    await this.run([
+      "reactions", "remove",
+      "--event", normalizedEventId,
+      "--emoji", normalizedEmoji,
+    ]);
+  }
+
   startTypingIndicator(channelId: string, replyTo?: string | null): BuzzTypingHandle {
     const allowedChannelId = this.ensureAllowedChannel(channelId);
     const normalizedReplyTo = replyTo?.trim().toLowerCase() ?? "";

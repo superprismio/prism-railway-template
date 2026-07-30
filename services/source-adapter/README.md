@@ -155,7 +155,9 @@ While Prism processes an accepted interaction, the adapter publishes the same
 thread-scoped, ephemeral kind `20002` typing indicator used by built-in Buzz
 agents. It refreshes every three seconds and stops when the reply is sent or the
 runtime fails. Typing publication is best-effort and never blocks the runtime
-response path.
+response path. The adapter also adds the managed-agent `💬` working reaction to
+the triggering message before invoking the runtime and removes it after the
+reply or failure.
 
 Telegram uses the Bot API directly. When `TELEGRAM_BOT_TOKEN` is set, the
 adapter polls `getUpdates` to discover groups/channels where the bot is present.

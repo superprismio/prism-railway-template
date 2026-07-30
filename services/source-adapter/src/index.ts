@@ -1633,6 +1633,29 @@ async function runBuzzPrompt(input: {
         : null;
 
   const typing = input.client.startTypingIndicator(input.channel.channelId, input.event.id);
+  let workingReactionAdded = false;
+  try {
+    await input.client.addReaction(input.event.id, "💬");
+    workingReactionAdded = true;
+  } catch (error) {
+    console.warn("[buzz-adapter] working reaction unavailable", {
+      channelId: input.channel.channelId,
+      sourceEventId: input.event.id,
+      error: describeError(error),
+    });
+  }
+  const stopWorkingFeedback = async () => {
+    await typing.stop();
+    if (!workingReactionAdded) return;
+    workingReactionAdded = false;
+    await input.client.removeReaction(input.event.id, "💬").catch((error) => {
+      console.warn("[buzz-adapter] working reaction cleanup failed", {
+        channelId: input.channel.channelId,
+        sourceEventId: input.event.id,
+        error: describeError(error),
+      });
+    });
+  };
   let result: Awaited<ReturnType<typeof runtimeRequest>>;
   try {
     result = await runtimeRequest({
@@ -1660,7 +1683,7 @@ async function runBuzzPrompt(input: {
       },
     });
   } catch (error) {
-    await typing.stop();
+    await stopWorkingFeedback();
     console.error("[buzz-adapter] runtime request failed", {
       channelId: input.channel.channelId,
       sourceEventId: input.event.id,
@@ -1693,7 +1716,7 @@ async function runBuzzPrompt(input: {
       content: result.responseText,
     });
   } finally {
-    await typing.stop();
+    await stopWorkingFeedback();
   }
   try {
     await upsertSourceSession({

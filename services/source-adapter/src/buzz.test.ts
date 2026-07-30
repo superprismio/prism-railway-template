@@ -97,6 +97,23 @@ test("sendMessage creates a threaded reply when replyTo is provided", async () =
   assert.deepEqual(capturedArgs.slice(-2), ["--reply-to", rootEventId]);
 });
 
+test("working reactions use the Buzz CLI add and remove commands", async () => {
+  const calls: string[][] = [];
+  const client = clientWithRunner(async (args) => {
+    calls.push(args);
+    return JSON.stringify({ event_id: "reaction" });
+  });
+  const rootEventId = "a".repeat(64);
+
+  await client.addReaction(rootEventId, "💬");
+  await client.removeReaction(rootEventId, "💬");
+
+  assert.deepEqual(calls, [
+    ["reactions", "add", "--event", rootEventId, "--emoji", "💬"],
+    ["reactions", "remove", "--event", rootEventId, "--emoji", "💬"],
+  ]);
+});
+
 test("Buzz typing events match the built-in agent event shape", () => {
   const rootEventId = "a".repeat(64);
   const event = buildBuzzTypingEvent({
