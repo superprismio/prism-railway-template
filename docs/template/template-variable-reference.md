@@ -104,6 +104,34 @@ Use this while filling out the Railway template composer.
 | `VOICE_TRANSCRIPTION_TIMESTAMPS` | `true` | Requests timestamp segments from the transcription endpoint. | Yes |
 | `CODEX_RUNTIME_REQUEST_TIMEOUT_SECONDS` | `660` | Timeout for adapter calls to Codex Runtime. | No |
 
+## Buzz Adapter
+
+Deploy the source-adapter directory as a separate `buzz-adapter` service. It
+uses the same Prism ingest and checkpoint variables documented above, with the
+following Buzz-specific configuration.
+
+| Variable | Value | Description | Optional? |
+| --- | --- | --- | --- |
+| `SOURCE_KIND` | `buzz` | Selects Buzz collection for `/sync`. | No |
+| `BUZZ_ENABLED` | `true` | Enables Buzz destination discovery, collection, and delivery. | No |
+| `BUZZ_RELAY_URL` | `https://buzz.example.org` | HTTP base URL for the Buzz relay. | No |
+| `BUZZ_PRIVATE_KEY` | secret | Dedicated Nostr private key for the Prism Buzz identity. | No |
+| `BUZZ_PUBLIC_KEY` | public hex key | Public key used to identify and optionally ignore adapter-authored events. | No |
+| `BUZZ_CHANNEL_ALLOWLIST` | channel UUIDs | Required comma-separated collection and delivery boundary. | No |
+| `BUZZ_SYNC_WINDOW_HOURS` | `24` | Initial/reset lookback window. | No |
+| `BUZZ_MAX_MESSAGES_PER_CHANNEL` | `500` | Maximum events fetched per channel per sync. | No |
+| `BUZZ_IGNORE_OWN_MESSAGES` | `true` | Excludes messages authored by the adapter identity from Memory ingestion. | No |
+| `BUZZ_CLI_TIMEOUT_SECONDS` | `30` | Timeout for each signed Buzz CLI operation. | No |
+| `BUZZ_CHECKPOINT_EVENT_LIMIT` | `10000` | Recent event IDs retained to deduplicate overlap and retry windows. | No |
+| `BUZZ_CLI_PATH` | `buzz` | Optional override for the pinned CLI installed in the adapter image. | Yes |
+| `APP_API_BASE_URL` | `http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}` | Private Site API used for profiles, sessions, and runtime invocation. | Required for interaction |
+| `APP_API_SERVICE_TOKEN` | `${{site.INTERNAL_SERVICE_TOKEN}}` | Site service-token reference; do not copy the underlying value. | Required for interaction |
+| `BUZZ_INTERACTION_ENABLED` | `false` | Enables continuous structured-mention polling and replies. | Yes |
+| `BUZZ_INTERACTION_PROFILE_KEY` | profile key | Legacy single-profile label. New deployments route each channel through Site source-adapter policy. | No |
+| `BUZZ_INTERACTION_DISPLAY_NAME` | `Prism` | Leading `@name` removed from the runtime prompt. | Yes |
+| `BUZZ_INTERACTION_POLL_SECONDS` | `5` | Delay between non-overlapping interaction polls. | Yes |
+| `BUZZ_INTERACTION_LOOKBACK_SECONDS` | `3600` | First-start lookback; durable checkpoints are used afterward. | Yes |
+
 ## Codex Runtime
 
 | Variable | Value | Description | Optional? |

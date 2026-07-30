@@ -3,9 +3,9 @@ import path from 'node:path';
 import type { AppConfig } from './config';
 
 export type SourceAdapterAccessMode = 'off' | 'readonly' | 'run-approved' | 'full';
-export type SourceAdapterPlatform = 'discord' | 'telegram';
+export type SourceAdapterPlatform = 'discord' | 'telegram' | 'buzz';
 
-const sourceAdapterPlatforms = new Set<SourceAdapterPlatform>(['discord', 'telegram']);
+const sourceAdapterPlatforms = new Set<SourceAdapterPlatform>(['discord', 'telegram', 'buzz']);
 
 export function isSourceAdapterPlatform(value: string): value is SourceAdapterPlatform {
   return sourceAdapterPlatforms.has(value as SourceAdapterPlatform);
@@ -18,6 +18,7 @@ export interface SourceAdapterRateLimit {
 
 export interface SourceAdapterPolicyRule {
   mode?: SourceAdapterAccessMode;
+  interactionProfileKey?: string;
   capabilities?: string[];
   rateLimit?: Partial<SourceAdapterRateLimit>;
 }
@@ -44,6 +45,7 @@ export interface SourceAdapterIdentityContext {
 
 export interface ResolvedSourceAdapterPolicy {
   mode: SourceAdapterAccessMode;
+  interactionProfileKey: string | null;
   capabilities: string[];
   rateLimit: SourceAdapterRateLimit;
   matchedRules: string[];
@@ -118,6 +120,16 @@ export const defaultSourceAdapterPolicy: SourceAdapterPolicySettings = {
       groups: {},
       users: {},
     },
+    buzz: {
+      defaultMode: 'off',
+      defaultRateLimit: {
+        windowSeconds: 60,
+        maxRequests: 6,
+      },
+      targets: {},
+      groups: {},
+      users: {},
+    },
   },
 };
 
@@ -160,6 +172,12 @@ function parseCapabilities(value: unknown): string[] | undefined {
   return capabilities.length ? Array.from(new Set(capabilities)) : undefined;
 }
 
+function parseInteractionProfileKey(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const key = value.trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9._-]{0,119}$/.test(key) ? key : undefined;
+}
+
 function normalizeRateLimit(value: unknown, fallback: SourceAdapterRateLimit): SourceAdapterRateLimit {
   const record = parseRecord(value);
   return {
@@ -183,11 +201,15 @@ function normalizePartialRateLimit(value: unknown): Partial<SourceAdapterRateLim
 function normalizeRule(value: unknown): SourceAdapterPolicyRule {
   const record = parseRecord(value);
   const mode = parseOptionalAccessMode(record.mode);
+  const interactionProfileKey = parseInteractionProfileKey(
+    record.interactionProfileKey ?? record.interaction_profile_key,
+  );
   const capabilities = parseCapabilities(record.capabilities);
   const rateLimit = normalizePartialRateLimit(record.rateLimit ?? record.rate_limit);
 
   return {
     ...(mode ? { mode } : {}),
+    ...(interactionProfileKey ? { interactionProfileKey } : {}),
     ...(capabilities ? { capabilities } : {}),
     ...(rateLimit ? { rateLimit } : {}),
   };
@@ -272,6 +294,7 @@ function applySourceAdapterPolicyRule(
   const modeChanged = Boolean(rule.mode && rule.mode !== current.mode);
   return {
     mode,
+    interactionProfileKey: rule.interactionProfileKey ?? (modeChanged ? null : current.interactionProfileKey),
     capabilities: rule.capabilities ?? (modeChanged ? sourceAdapterCapabilitiesForMode(mode) : current.capabilities),
     rateLimit: {
       windowSeconds: rule.rateLimit?.windowSeconds ?? current.rateLimit.windowSeconds,
@@ -290,6 +313,7 @@ export function resolveSourceAdapterPolicy(
     ?? disabledPlatformPolicy;
   let resolved: ResolvedSourceAdapterPolicy = {
     mode: platform.defaultMode,
+    interactionProfileKey: null,
     capabilities: sourceAdapterCapabilitiesForMode(platform.defaultMode),
     rateLimit: platform.defaultRateLimit,
     matchedRules: ['default'],

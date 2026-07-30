@@ -177,6 +177,7 @@ def ingest_messages(payload: dict, x_prism_api_key: str | None = Header(default=
 
     space = str(payload.get("space") or settings.space).strip() or settings.space
     source = str(payload.get("source") or "unknown").strip() or "unknown"
+    source_event_type = f"{source.lower().replace('-', '_').replace(' ', '_')}_message"
     batch_id = str(payload.get("batchId") or payload.get("batch_id") or "").strip() or None
     messages = payload.get("messages")
 
@@ -229,7 +230,7 @@ def ingest_messages(payload: dict, x_prism_api_key: str | None = Header(default=
         inbox_payload = {
             "source": str(candidate.get("source") or source).strip() or source,
             "ts": timestamp,
-            "type": "discord_message",
+            "type": source_event_type,
             "content": text or "(empty message)",
             "author": display_name,
             "url": metadata.get("messageUrl"),

@@ -12,6 +12,7 @@ Deploy this directory separately for each upstream source you want to ingest:
 - `discord-adapter`
 - `slack-adapter`
 - `telegram-adapter`
+- `buzz-adapter`
 
 This service should own source-specific collection and normalization, then post normalized batches into `prism-memory`.
 
@@ -107,6 +108,54 @@ Telegram-specific envs:
 - `TELEGRAM_DISCOVERY_ENABLED=true`
 - `TELEGRAM_DM_ENABLED=false`
 - `TELEGRAM_POLL_INTERVAL_SECONDS=10`
+
+Buzz-specific envs (deploy as a separate `buzz-adapter` service):
+
+- `SOURCE_KIND=buzz`
+- `BUZZ_ENABLED=true`
+- `BUZZ_RELAY_URL=https://your-buzz-relay.example`
+- `BUZZ_PRIVATE_KEY=<dedicated service identity; Railway secret>`
+- `BUZZ_PUBLIC_KEY=<64-character public key>`
+- `BUZZ_CHANNEL_ALLOWLIST=<required comma-separated channel UUIDs>`
+- `BUZZ_SYNC_WINDOW_HOURS=24`
+- `BUZZ_MAX_MESSAGES_PER_CHANNEL=500`
+- `BUZZ_IGNORE_OWN_MESSAGES=true`
+- `BUZZ_CLI_TIMEOUT_SECONDS=30`
+- `BUZZ_CHECKPOINT_EVENT_LIMIT=10000`
+- `BUZZ_INTERACTION_ENABLED=false`
+- `BUZZ_INTERACTION_PROFILE_KEY=<legacy single-profile fallback label; channel routing uses Site policy>`
+- `BUZZ_INTERACTION_DISPLAY_NAME=Prism`
+- `BUZZ_INTERACTION_POLL_SECONDS=5`
+- `BUZZ_INTERACTION_LOOKBACK_SECONDS=3600`
+
+Buzz collection and delivery use the checksum-pinned official Buzz `0.5.0`
+CLI installed by this service's Dockerfile. Collection fails closed when the
+allowlist is empty or an allowlisted channel is not visible to the service
+identity. `GET /destinations` exposes only allowlisted Buzz channels, and
+`POST /messages` accepts `buzz:<channel-uuid>` destinations only from that same
+allowlist. Sync uses the shared checkpoint file under
+`SOURCE_ADAPTER_DATA_ROOT`, retains recent Nostr event IDs to make overlap and
+retry idempotent, and posts normalized `buzz` batches to Prism Memory.
+
+When interaction polling is enabled, the adapter responds only to events in an
+allowlisted channel that contain a Nostr `p` tag for `BUZZ_PUBLIC_KEY`. Site's
+source-adapter policy maps each Buzz channel (and optionally an author pubkey)
+to an access mode and `interactionProfileKey`. The profile must exist and its
+mode must match the resolved policy or the request fails closed. Unmapped Buzz
+channels default to `off`. `readonly` receives no Gateway credentials,
+`run-approved` receives no Gateway credentials and carries the profile workflow
+allowlist, and `full` receives credentials selected by the shared source policy.
+Sessions are isolated by profile, channel, and author public key.
+Replies are threaded to the source event, processed event IDs are persisted on
+the adapter volume, and the thread is checked before delivery to prevent a
+duplicate reply after a crash. Operators can trigger a protected diagnostic
+poll with `POST /buzz/interactions/poll` using `X-Adapter-Token`.
+
+While Prism processes an accepted interaction, the adapter publishes the same
+thread-scoped, ephemeral kind `20002` typing indicator used by built-in Buzz
+agents. It refreshes every three seconds and stops when the reply is sent or the
+runtime fails. Typing publication is best-effort and never blocks the runtime
+response path.
 
 Telegram uses the Bot API directly. When `TELEGRAM_BOT_TOKEN` is set, the
 adapter polls `getUpdates` to discover groups/channels where the bot is present.
@@ -359,6 +408,34 @@ role/group equivalent in this adapter yet:
       "users": {
         "12345678": { "mode": "full" }
       }
+    }
+  }
+}
+```
+
+Buzz also defaults to `off`. Targets are Buzz channel UUIDs, users are Nostr
+hex public keys, and there is no group/role context yet. Pair the access mode
+with a Site interaction profile; a missing profile or mode mismatch fails
+closed:
+
+```json
+{
+  "platforms": {
+    "buzz": {
+      "defaultMode": "off",
+      "defaultRateLimit": { "windowSeconds": 60, "maxRequests": 6 },
+      "targets": {
+        "<lab-channel-uuid>": {
+          "mode": "readonly",
+          "interactionProfileKey": "buzz-prism-readonly"
+        },
+        "<ops-channel-uuid>": {
+          "mode": "full",
+          "interactionProfileKey": "buzz-prism-ops"
+        }
+      },
+      "groups": {},
+      "users": {}
     }
   }
 }
