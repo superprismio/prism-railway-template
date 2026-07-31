@@ -249,7 +249,7 @@ export async function downloadPrismSkill(skillName: string) {
   return content;
 }
 
-function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>) {
+export function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>) {
   const requested = new Set<string>();
   const normalized = prompt.toLowerCase();
   const explicit = metadata?.requestedSkills;
@@ -387,6 +387,18 @@ function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>)
     || normalized.includes('target app')
   ) {
     requested.add('target-deploy-ops');
+  }
+
+  const buzzContext = metadata?.transport === 'buzz' || metadata?.source === 'buzz';
+  const buzzChannelSubject = normalized.includes('buzz channel')
+    || normalized.includes('buzz room')
+    || (buzzContext && (normalized.includes('channel') || normalized.includes('room')));
+  const buzzChannelAction = [
+    'create', 'new', 'manage', 'list', 'rename', 'update', 'topic', 'purpose',
+    'archive', 'unarchive', 'member', 'owner', 'admin', 'access',
+  ].some((term) => normalized.includes(term));
+  if (buzzChannelSubject && buzzChannelAction) {
+    requested.add('prism-buzz-channel-admin');
   }
 
   return Array.from(requested);
