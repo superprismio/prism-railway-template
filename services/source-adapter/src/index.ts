@@ -16,7 +16,7 @@ import {
   type TextBasedChannel,
 } from "discord.js";
 import fs from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -34,6 +34,7 @@ import {
   parseBuzzChannelAllowlist,
   selectUnseenBuzzEvents,
   type BuzzChannel,
+  type BuzzChannelMemberRole,
   type BuzzEvent,
 } from "./buzz.js";
 
@@ -1468,21 +1469,109 @@ async function telegramApiRequest<T extends JsonValue>(
   return (payload?.result ?? payload) as T;
 }
 
-function buzzClient(): BuzzCliClient {
+async function configuredBuzzChannelIds(): Promise<string[]> {
+  const config = adapterConfig();
+  const policy = await loadBuzzAccessPolicyConfig();
+  const policyChannels = Object.entries(policy.targets)
+    .filter(([channelId, rule]) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(channelId)
+      && rule.mode !== "off")
+    .map(([channelId]) => channelId);
+  return [...new Set([...config.buzzChannelAllowlist, ...policyChannels])];
+}
+
+async function buzzClient(additionalChannelIds: string[] = []): Promise<BuzzCliClient> {
   const config = adapterConfig();
   if (!config.buzzEnabled) {
     throw new Error("Buzz adapter is disabled");
   }
+  const configuredChannelIds = await configuredBuzzChannelIds();
   return new BuzzCliClient({
     relayUrl: config.buzzRelayUrl,
     privateKey: (process.env.BUZZ_PRIVATE_KEY ?? "").trim(),
     publicKey: config.buzzPublicKey,
-    channelAllowlist: config.buzzChannelAllowlist,
+    channelAllowlist: [...new Set([...configuredChannelIds, ...additionalChannelIds.map((value) => value.trim().toLowerCase())])],
     maxMessagesPerChannel: config.buzzMaxMessagesPerChannel,
     ignoreOwnMessages: config.buzzIgnoreOwnMessages,
     command: (process.env.BUZZ_CLI_PATH ?? "buzz").trim() || "buzz",
     timeoutMs: parseIntEnv("BUZZ_CLI_TIMEOUT_SECONDS", 30, 5, 300) * 1000,
   });
+}
+
+function constantTimeTokenMatches(candidate: string, expected: string): boolean {
+  const candidateBytes = Buffer.from(candidate);
+  const expectedBytes = Buffer.from(expected);
+  return candidateBytes.length === expectedBytes.length && timingSafeEqual(candidateBytes, expectedBytes);
+}
+
+function requireBuzzChannelAdminToken(request: Request): void {
+  const expected = (process.env.BUZZ_CHANNEL_ADMIN_TOKEN ?? "").trim();
+  if (!expected) throw new Error("BUZZ_CHANNEL_ADMIN_NOT_CONFIGURED");
+  const candidate = request.header("X-Buzz-Admin-Token")?.trim() ?? "";
+  if (!candidate || !constantTimeTokenMatches(candidate, expected)) throw new Error("Unauthorized");
+}
+
+function buzzChannelAdminStatus(message: string): number {
+  if (message === "Unauthorized") return 401;
+  if (message === "BUZZ_CHANNEL_ADMIN_NOT_CONFIGURED") return 503;
+  if (message.includes("required") || message.includes("must be") || message.includes("cannot be") || message.includes("at least one")) return 400;
+  return 500;
+}
+
+function buzzChannelUuid(value: unknown): string {
+  const channelId = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(channelId)) {
+    throw new Error("channelId must be a UUID");
+  }
+  return channelId;
+}
+
+function buzzChannelPubkey(value: unknown): string {
+  const pubkey = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!/^[0-9a-f]{64}$/.test(pubkey)) throw new Error("pubkey must be a 64-character hex value");
+  return pubkey;
+}
+
+function buzzChannelAccessMode(value: unknown): Exclude<DiscordAccessMode, "off"> {
+  if (value === undefined || value === null || value === "") return "full";
+  if (value === "readonly" || value === "run-approved" || value === "full") return value;
+  throw new Error("mode must be readonly, run-approved, or full");
+}
+
+async function registerBuzzChannelPolicy(input: {
+  channelId: string;
+  mode: DiscordAccessMode;
+  interactionProfileKey: string;
+}): Promise<JsonObject> {
+  if (input.mode === "off") throw new Error("managed Buzz channels cannot use off mode");
+  await loadBuzzInteractionProfile(input.interactionProfileKey, input.mode);
+  const payload = await appApiRequest("/agent/source-adapter-policy");
+  const currentPolicy = parseStringRecord(payload.policy) as JsonObject;
+  const currentPlatforms = parseStringRecord(currentPolicy.platforms) as JsonObject;
+  const currentBuzz = parseStringRecord(currentPlatforms.buzz) as JsonObject;
+  const currentTargets = parseStringRecord(currentBuzz.targets) as JsonObject;
+  const policy: JsonObject = {
+    ...currentPolicy,
+    platforms: {
+      ...currentPlatforms,
+      buzz: {
+        ...currentBuzz,
+        targets: {
+          ...currentTargets,
+          [input.channelId]: {
+            mode: input.mode,
+            interactionProfileKey: input.interactionProfileKey,
+          },
+        },
+      },
+    },
+  };
+  const updated = await appApiRequest("/agent/source-adapter-policy", {
+    method: "PATCH",
+    body: JSON.stringify({ policy }),
+  });
+  sourceAdapterPolicyCache = null;
+  return parseStringRecord(updated.policy) as JsonObject;
 }
 
 function buzzResultEventId(result: Record<string, unknown>): string | null {
@@ -1779,7 +1868,7 @@ async function runBuzzInteractionPoll(): Promise<JsonObject> {
   }
 
   buzzInteractionStatus.lastPollAt = nowUtcIso();
-  const client = buzzClient();
+  const client = await buzzClient();
   const state = await loadBuzzInteractionState();
   const processed = new Set(state.processedEventIds);
   const initialSince = Math.floor(Date.now() / 1000) - config.buzzInteractionLookbackSeconds;
@@ -1991,7 +2080,7 @@ async function listTelegramDestinations(): Promise<AdapterDestination[]> {
 async function listBuzzDestinations(): Promise<AdapterDestination[]> {
   const config = adapterConfig();
   if (!config.buzzEnabled) return [];
-  return (await buzzClient().listChannels()).map((channel) => ({
+  return (await (await buzzClient()).listChannels()).map((channel) => ({
     adapter: "buzz",
     platform: "buzz",
     id: `buzz:${channel.channelId}`,
@@ -2235,7 +2324,7 @@ async function sendAdapterMessage(adapter: string, destinationId: string, conten
     return sendTelegramMessage(destinationId, content);
   }
   if (adapter === "buzz") {
-    const result = await buzzClient().sendMessage(destinationId, content);
+    const result = await (await buzzClient()).sendMessage(destinationId, content);
     return {
       adapter: "buzz",
       destinationId: destinationId.trim(),
@@ -3060,7 +3149,7 @@ async function collectBuzzBatch(resetCheckpoint = false): Promise<{
   checkpointState: JsonObject;
 }> {
   const config = adapterConfig();
-  const client = buzzClient();
+  const client = await buzzClient();
   const { since, until, checkpoint } = await computeSyncWindow(config, resetCheckpoint, config.buzzWindowHours);
   const migratedLegacyCheckpoint = Boolean(
     checkpoint
@@ -4667,6 +4756,7 @@ async function main(): Promise<void> {
   });
 
   app.get("/capabilities", (_request: Request, response: Response) => {
+    const buzzChannelAdminConfigured = Boolean((process.env.BUZZ_CHANNEL_ADMIN_TOKEN ?? "").trim());
     response.json({
       ok: true,
       adapter: "communication",
@@ -4676,7 +4766,13 @@ async function main(): Promise<void> {
         adapterConfig().buzzEnabled ? "buzz" : null,
         "external-http",
       ].filter(Boolean),
-      capabilities: ["list-destinations", "send-message", "fetch-attachment", "external-interactions"],
+      capabilities: [
+        "list-destinations",
+        "send-message",
+        "fetch-attachment",
+        "external-interactions",
+        ...(buzzChannelAdminConfigured ? ["manage-buzz-channels"] : []),
+      ],
       destinationTypes: [
         "discord-channel",
         "discord-forum",
@@ -4690,6 +4786,13 @@ async function main(): Promise<void> {
         destinations: "/destinations",
         guildChannels: "/guild/channels",
         messages: "/messages",
+        ...(buzzChannelAdminConfigured ? {
+          buzzChannels: "/buzz/channels",
+          buzzChannel: "/buzz/channels/:channelId",
+          buzzChannelAccess: "/buzz/channels/:channelId/access",
+          buzzChannelArchive: "/buzz/channels/:channelId/archive",
+          buzzChannelMembers: "/buzz/channels/:channelId/members",
+        } : {}),
         externalSessions: "/interactions/:key/sessions",
         externalSessionMessages: "/interactions/:key/sessions/:sessionId/messages",
       },
@@ -4945,6 +5048,166 @@ async function main(): Promise<void> {
     } catch (error) {
       const message = describeError(error);
       response.status(message === "Unauthorized" ? 401 : 500).json({ ok: false, error: message });
+    }
+  });
+
+  app.get("/buzz/channels", async (request: Request, response: Response) => {
+    try {
+      requireBuzzChannelAdminToken(request);
+      const channels = await (await buzzClient()).listVisibleChannels();
+      response.json({ ok: true, channels });
+    } catch (error) {
+      const message = describeError(error);
+      response.status(buzzChannelAdminStatus(message)).json({ ok: false, error: message });
+    }
+  });
+
+  app.post("/buzz/channels", async (request: Request, response: Response) => {
+    try {
+      requireBuzzChannelAdminToken(request);
+      const body = parseStringRecord(request.body);
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      const channelType = body.channelType ?? body.channel_type ?? body.type;
+      const visibility = body.visibility;
+      if (!name) throw new Error("name is required");
+      if (channelType !== "stream" && channelType !== "forum") throw new Error("channelType must be stream or forum");
+      if (visibility !== "open" && visibility !== "private") throw new Error("visibility must be open or private");
+      const ttlValue = body.ttlSeconds ?? body.ttl_seconds;
+      const ttlSeconds = ttlValue === undefined || ttlValue === null ? null : Number(ttlValue);
+      const shouldRegister = body.registerPrism !== false && body.register_prism !== false;
+      const mode = buzzChannelAccessMode(body.mode);
+      const interactionProfileKey = typeof body.interactionProfileKey === "string"
+        ? body.interactionProfileKey.trim().toLowerCase()
+        : typeof body.interaction_profile_key === "string"
+          ? body.interaction_profile_key.trim().toLowerCase()
+          : (process.env.BUZZ_CHANNEL_ADMIN_PROFILE_KEY ?? "buzz-prism-ops").trim().toLowerCase();
+      if (shouldRegister) await loadBuzzInteractionProfile(interactionProfileKey, mode);
+      const created = await (await buzzClient()).createChannel({
+        name,
+        channelType,
+        visibility,
+        description: typeof body.description === "string" ? body.description : null,
+        ttlSeconds,
+      });
+      const channelId = buzzChannelUuid(created.channel_id ?? created.channelId);
+      let policy: JsonObject | null = null;
+      if (shouldRegister) {
+        policy = await registerBuzzChannelPolicy({ channelId, mode, interactionProfileKey });
+      }
+      response.status(201).json({ ok: true, channelId, created, registered: shouldRegister, policy });
+    } catch (error) {
+      const message = describeError(error);
+      response.status(buzzChannelAdminStatus(message)).json({ ok: false, error: message });
+    }
+  });
+
+  app.patch("/buzz/channels/:channelId", async (request: Request, response: Response) => {
+    try {
+      requireBuzzChannelAdminToken(request);
+      const channelId = buzzChannelUuid(request.params.channelId);
+      const body = parseStringRecord(request.body);
+      const client = await buzzClient([channelId]);
+      const results: JsonObject = {};
+      const hasMetadata = body.name !== undefined || body.description !== undefined
+        || body.ttlSeconds !== undefined || body.ttl_seconds !== undefined
+        || body.clearTtl !== undefined || body.clear_ttl !== undefined;
+      if (hasMetadata) {
+        results.metadata = await client.updateChannel(channelId, {
+          name: typeof body.name === "string" ? body.name : undefined,
+          description: typeof body.description === "string" ? body.description : undefined,
+          ttlSeconds: body.ttlSeconds !== undefined || body.ttl_seconds !== undefined
+            ? Number(body.ttlSeconds ?? body.ttl_seconds)
+            : undefined,
+          clearTtl: body.clearTtl === true || body.clear_ttl === true,
+        }) as JsonValue;
+      }
+      if (typeof body.topic === "string") {
+        results.topic = await client.setChannelTopic(channelId, body.topic) as JsonValue;
+      }
+      if (typeof body.purpose === "string") {
+        results.purpose = await client.setChannelPurpose(channelId, body.purpose) as JsonValue;
+      }
+      if (Object.keys(results).length === 0) throw new Error("at least one channel field is required");
+      response.json({ ok: true, channelId, results });
+    } catch (error) {
+      const message = describeError(error);
+      response.status(buzzChannelAdminStatus(message)).json({ ok: false, error: message });
+    }
+  });
+
+  app.put("/buzz/channels/:channelId/access", async (request: Request, response: Response) => {
+    try {
+      requireBuzzChannelAdminToken(request);
+      const channelId = buzzChannelUuid(request.params.channelId);
+      const body = parseStringRecord(request.body);
+      const mode = buzzChannelAccessMode(body.mode);
+      const interactionProfileKey = typeof body.interactionProfileKey === "string"
+        ? body.interactionProfileKey.trim().toLowerCase()
+        : typeof body.interaction_profile_key === "string"
+          ? body.interaction_profile_key.trim().toLowerCase()
+          : (process.env.BUZZ_CHANNEL_ADMIN_PROFILE_KEY ?? "buzz-prism-ops").trim().toLowerCase();
+      const policy = await registerBuzzChannelPolicy({ channelId, mode, interactionProfileKey });
+      response.json({ ok: true, channelId, mode, interactionProfileKey, policy });
+    } catch (error) {
+      const message = describeError(error);
+      response.status(buzzChannelAdminStatus(message)).json({ ok: false, error: message });
+    }
+  });
+
+  app.post("/buzz/channels/:channelId/archive", async (request: Request, response: Response) => {
+    try {
+      requireBuzzChannelAdminToken(request);
+      const channelId = buzzChannelUuid(request.params.channelId);
+      const body = parseStringRecord(request.body);
+      if (typeof body.archived !== "boolean") throw new Error("archived must be a boolean");
+      const result = await (await buzzClient([channelId])).setChannelArchived(channelId, body.archived);
+      response.json({ ok: true, channelId, archived: body.archived, result });
+    } catch (error) {
+      const message = describeError(error);
+      response.status(buzzChannelAdminStatus(message)).json({ ok: false, error: message });
+    }
+  });
+
+  app.get("/buzz/channels/:channelId/members", async (request: Request, response: Response) => {
+    try {
+      requireBuzzChannelAdminToken(request);
+      const channelId = buzzChannelUuid(request.params.channelId);
+      const members = await (await buzzClient([channelId])).listChannelMembers(channelId);
+      response.json({ ok: true, channelId, members });
+    } catch (error) {
+      const message = describeError(error);
+      response.status(buzzChannelAdminStatus(message)).json({ ok: false, error: message });
+    }
+  });
+
+  app.post("/buzz/channels/:channelId/members", async (request: Request, response: Response) => {
+    try {
+      requireBuzzChannelAdminToken(request);
+      const channelId = buzzChannelUuid(request.params.channelId);
+      const body = parseStringRecord(request.body);
+      const pubkey = buzzChannelPubkey(body.pubkey);
+      const role = typeof body.role === "string" ? body.role.trim().toLowerCase() : "member";
+      if (!["owner", "admin", "member", "guest", "bot"].includes(role)) {
+        throw new Error("role must be owner, admin, member, guest, or bot");
+      }
+      const result = await (await buzzClient([channelId])).addChannelMember(channelId, pubkey, role as BuzzChannelMemberRole);
+      response.status(201).json({ ok: true, channelId, pubkey, role, result });
+    } catch (error) {
+      const message = describeError(error);
+      response.status(buzzChannelAdminStatus(message)).json({ ok: false, error: message });
+    }
+  });
+
+  app.delete("/buzz/channels/:channelId/members/:pubkey", async (request: Request, response: Response) => {
+    try {
+      requireBuzzChannelAdminToken(request);
+      const channelId = buzzChannelUuid(request.params.channelId);
+      const pubkey = buzzChannelPubkey(request.params.pubkey);
+      const result = await (await buzzClient([channelId])).removeChannelMember(channelId, pubkey);
+      response.json({ ok: true, channelId, pubkey, result });
+    } catch (error) {
+      const message = describeError(error);
+      response.status(buzzChannelAdminStatus(message)).json({ ok: false, error: message });
     }
   });
 

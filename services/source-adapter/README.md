@@ -127,6 +127,8 @@ Buzz-specific envs (deploy as a separate `buzz-adapter` service):
 - `BUZZ_INTERACTION_DISPLAY_NAME=Prism`
 - `BUZZ_INTERACTION_POLL_SECONDS=5`
 - `BUZZ_INTERACTION_LOOKBACK_SECONDS=3600`
+- `BUZZ_CHANNEL_ADMIN_TOKEN=<separate Gateway-leased channel-management secret>`
+- `BUZZ_CHANNEL_ADMIN_PROFILE_KEY=buzz-prism-ops`
 
 Buzz collection and delivery use the checksum-pinned official Buzz `0.5.0`
 CLI installed by this service's Dockerfile. Collection fails closed when the
@@ -150,6 +152,16 @@ Replies are threaded to the source event, processed event IDs are persisted on
 the adapter volume, and the thread is checked before delivery to prevent a
 duplicate reply after a crash. Operators can trigger a protected diagnostic
 poll with `POST /buzz/interactions/poll` using `X-Adapter-Token`.
+
+When `BUZZ_CHANNEL_ADMIN_TOKEN` is configured, `/capabilities` advertises
+`manage-buzz-channels`. The protected `/buzz/channels` routes create and update
+channels, archive/unarchive them, manage members, and register channel access in
+Site's Buzz source policy. They require `X-Buzz-Admin-Token`; the ordinary
+adapter token is not accepted. Permanent deletion is intentionally not exposed.
+Channel IDs configured in non-`off` Site Buzz target rules augment the static
+environment allowlist, so a newly registered channel becomes available to both
+collection/interaction and outbound destination discovery after the policy
+cache refreshes.
 
 While Prism processes an accepted interaction, the adapter publishes the same
 thread-scoped, ephemeral kind `20002` typing indicator used by built-in Buzz

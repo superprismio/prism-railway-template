@@ -25,6 +25,23 @@ export type BuzzChannel = {
   createdAt: number | null;
 };
 
+export type BuzzChannelCreateInput = {
+  name: string;
+  channelType: "stream" | "forum";
+  visibility: "open" | "private";
+  description?: string | null;
+  ttlSeconds?: number | null;
+};
+
+export type BuzzChannelUpdateInput = {
+  name?: string | null;
+  description?: string | null;
+  ttlSeconds?: number | null;
+  clearTtl?: boolean;
+};
+
+export type BuzzChannelMemberRole = "owner" | "admin" | "member" | "guest" | "bot";
+
 export type BuzzEvent = {
   id: string;
   pubkey: string;
@@ -244,6 +261,49 @@ function parseJsonArray(output: string, commandLabel: string): unknown[] {
   return parsed;
 }
 
+function parseJsonObject(output: string, commandLabel: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch (error) {
+    throw new Error(`Buzz CLI returned invalid JSON for ${commandLabel}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`Buzz CLI returned a non-object response for ${commandLabel}`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function normalizedChannelId(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalized)) {
+    throw new Error("channelId must be a UUID");
+  }
+  return normalized;
+}
+
+function normalizedPubkey(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(normalized)) {
+    throw new Error("pubkey must be a 64-character hex value");
+  }
+  return normalized;
+}
+
+function parseBuzzChannels(payload: unknown[]): BuzzChannel[] {
+  return payload.flatMap((candidate): BuzzChannel[] => {
+    const channel = record(candidate);
+    const channelId = stringValue(channel.channel_id ?? channel.channelId ?? channel.id).toLowerCase();
+    if (!channelId) return [];
+    return [{
+      channelId,
+      name: stringValue(channel.name) || channelId,
+      description: stringValue(channel.description) || null,
+      createdAt: numberValue(channel.created_at ?? channel.createdAt),
+    }];
+  });
+}
+
 export function parseBuzzChannelAllowlist(value: string | undefined): string[] {
   return [...new Set((value ?? "")
     .split(/[\s,]+/)
@@ -294,23 +354,106 @@ export class BuzzCliClient {
   async listChannels(): Promise<BuzzChannel[]> {
     const payload = parseJsonArray(await this.run(["channels", "list"]), "channels list");
     const allowlist = new Set(this.config.channelAllowlist);
-    const channels = payload.flatMap((candidate): BuzzChannel[] => {
-      const channel = record(candidate);
-      const channelId = stringValue(channel.channel_id ?? channel.channelId ?? channel.id).toLowerCase();
-      if (!channelId || !allowlist.has(channelId)) return [];
-      return [{
-        channelId,
-        name: stringValue(channel.name) || channelId,
-        description: stringValue(channel.description) || null,
-        createdAt: numberValue(channel.created_at ?? channel.createdAt),
-      }];
-    });
+    const channels = parseBuzzChannels(payload).filter((channel) => allowlist.has(channel.channelId));
     const visible = new Set(channels.map((channel) => channel.channelId));
     const missing = this.config.channelAllowlist.filter((channelId) => !visible.has(channelId));
     if (missing.length > 0) {
       throw new Error(`Allowlisted Buzz channel(s) are not visible to this identity: ${missing.join(", ")}`);
     }
     return channels.sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  async listVisibleChannels(): Promise<BuzzChannel[]> {
+    const payload = parseJsonArray(await this.run(["channels", "list"]), "channels list");
+    return parseBuzzChannels(payload).sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  async createChannel(input: BuzzChannelCreateInput): Promise<Record<string, unknown>> {
+    const name = input.name.trim();
+    if (!name) throw new Error("name is required");
+    const args = [
+      "channels", "create",
+      "--name", name,
+      "--type", input.channelType,
+      "--visibility", input.visibility,
+    ];
+    const description = input.description?.trim() ?? "";
+    if (description) args.push("--description", description);
+    if (input.ttlSeconds !== undefined && input.ttlSeconds !== null) {
+      if (!Number.isSafeInteger(input.ttlSeconds) || input.ttlSeconds <= 0) {
+        throw new Error("ttlSeconds must be a positive integer");
+      }
+      args.push("--ttl", String(input.ttlSeconds));
+    }
+    return parseJsonObject(await this.run(args), "channels create");
+  }
+
+  async updateChannel(channelId: string, input: BuzzChannelUpdateInput): Promise<Record<string, unknown>> {
+    const args = ["channels", "update", "--channel", normalizedChannelId(channelId)];
+    if (input.name !== undefined && input.name !== null) {
+      const name = input.name.trim();
+      if (!name) throw new Error("name cannot be empty");
+      args.push("--name", name);
+    }
+    if (input.description !== undefined && input.description !== null) {
+      args.push("--description", input.description.trim());
+    }
+    if (input.ttlSeconds !== undefined && input.ttlSeconds !== null) {
+      if (!Number.isSafeInteger(input.ttlSeconds) || input.ttlSeconds <= 0) {
+        throw new Error("ttlSeconds must be a positive integer");
+      }
+      args.push("--ttl", String(input.ttlSeconds));
+    }
+    if (input.clearTtl) args.push("--no-ttl");
+    if (args.length === 4) throw new Error("at least one channel field is required");
+    return parseJsonObject(await this.run(args), "channels update");
+  }
+
+  async setChannelTopic(channelId: string, topic: string): Promise<Record<string, unknown>> {
+    return parseJsonObject(await this.run([
+      "channels", "topic", "--channel", normalizedChannelId(channelId), "--topic", topic.trim(),
+    ]), "channels topic");
+  }
+
+  async setChannelPurpose(channelId: string, purpose: string): Promise<Record<string, unknown>> {
+    return parseJsonObject(await this.run([
+      "channels", "purpose", "--channel", normalizedChannelId(channelId), "--purpose", purpose.trim(),
+    ]), "channels purpose");
+  }
+
+  async setChannelArchived(channelId: string, archived: boolean): Promise<Record<string, unknown>> {
+    const command = archived ? "archive" : "unarchive";
+    return parseJsonObject(await this.run([
+      "channels", command, "--channel", normalizedChannelId(channelId),
+    ]), `channels ${command}`);
+  }
+
+  async listChannelMembers(channelId: string): Promise<string[]> {
+    const payload = parseJsonArray(await this.run([
+      "channels", "members", "--channel", normalizedChannelId(channelId),
+    ]), "channels members");
+    return payload.flatMap((value): string[] => {
+      const pubkey = typeof value === "string" ? value.trim().toLowerCase() : "";
+      return /^[0-9a-f]{64}$/.test(pubkey) ? [pubkey] : [];
+    });
+  }
+
+  async addChannelMember(channelId: string, pubkey: string, role?: BuzzChannelMemberRole | null): Promise<Record<string, unknown>> {
+    const args = [
+      "channels", "add-member",
+      "--channel", normalizedChannelId(channelId),
+      "--pubkey", normalizedPubkey(pubkey),
+    ];
+    if (role) args.push("--role", role);
+    return parseJsonObject(await this.run(args), "channels add-member");
+  }
+
+  async removeChannelMember(channelId: string, pubkey: string): Promise<Record<string, unknown>> {
+    return parseJsonObject(await this.run([
+      "channels", "remove-member",
+      "--channel", normalizedChannelId(channelId),
+      "--pubkey", normalizedPubkey(pubkey),
+    ]), "channels remove-member");
   }
 
   async getMessages(channelId: string, since: Date): Promise<BuzzEvent[]> {

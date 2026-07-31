@@ -59,6 +59,66 @@ test("listChannels fails closed when an allowlisted channel is not visible", asy
   await assert.rejects(() => client.listChannels(), /not visible/);
 });
 
+test("listVisibleChannels is not constrained by the message allowlist", async () => {
+  const otherChannelId = "b419a6ec-07ef-4d55-b071-635bc1b4dd4f";
+  const client = clientWithRunner(async () => JSON.stringify([
+    { channel_id: channelId, name: "prism-lab" },
+    { channel_id: otherChannelId, name: "new-room" },
+  ]));
+
+  assert.deepEqual((await client.listVisibleChannels()).map((channel) => channel.channelId), [
+    otherChannelId,
+    channelId,
+  ]);
+});
+
+test("channel management methods map to the pinned Buzz CLI", async () => {
+  const calls: string[][] = [];
+  const client = clientWithRunner(async (args) => {
+    calls.push(args);
+    if (args[1] === "members") return JSON.stringify([humanPubkey]);
+    return JSON.stringify({ ok: true, channel_id: channelId });
+  });
+
+  await client.createChannel({
+    name: "delivery",
+    channelType: "forum",
+    visibility: "private",
+    description: "Delivery coordination",
+    ttlSeconds: 3600,
+  });
+  await client.updateChannel(channelId, { name: "shipping", clearTtl: true });
+  await client.setChannelTopic(channelId, "Q3 delivery");
+  await client.setChannelPurpose(channelId, "Coordinate releases");
+  await client.setChannelArchived(channelId, true);
+  assert.deepEqual(await client.listChannelMembers(channelId), [humanPubkey]);
+  await client.addChannelMember(channelId, humanPubkey, "admin");
+  await client.removeChannelMember(channelId, humanPubkey);
+
+  assert.deepEqual(calls, [
+    ["channels", "create", "--name", "delivery", "--type", "forum", "--visibility", "private", "--description", "Delivery coordination", "--ttl", "3600"],
+    ["channels", "update", "--channel", channelId, "--name", "shipping", "--no-ttl"],
+    ["channels", "topic", "--channel", channelId, "--topic", "Q3 delivery"],
+    ["channels", "purpose", "--channel", channelId, "--purpose", "Coordinate releases"],
+    ["channels", "archive", "--channel", channelId],
+    ["channels", "members", "--channel", channelId],
+    ["channels", "add-member", "--channel", channelId, "--pubkey", humanPubkey, "--role", "admin"],
+    ["channels", "remove-member", "--channel", channelId, "--pubkey", humanPubkey],
+  ]);
+});
+
+test("channel management validates identifiers before invoking Buzz", async () => {
+  let called = false;
+  const client = clientWithRunner(async () => {
+    called = true;
+    return "{}";
+  });
+
+  await assert.rejects(() => client.setChannelArchived("not-a-uuid", true), /UUID/);
+  await assert.rejects(() => client.addChannelMember(channelId, "bad", "member"), /64-character/);
+  assert.equal(called, false);
+});
+
 test("getMessages supplies the lower-bound cursor and ignores the adapter identity", async () => {
   let capturedArgs: string[] = [];
   const client = clientWithRunner(async (args) => {
