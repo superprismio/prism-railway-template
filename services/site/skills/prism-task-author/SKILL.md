@@ -181,6 +181,15 @@ Script runner task shape:
 
 For script-runner tasks, the script itself must be a site-owned task script available through `/agent/task-scripts/:key/content`. Do not rely on local Codex Runtime files, repo-only files, or task-runner env registries for scheduled execution. The task row only references `scriptKey` and passes structured non-secret params. Scripts should write JSON to stdout and may include `shouldNotify:false` to suppress configured output delivery for healthy/no-op runs.
 
+For a deterministic preflight that conditionally hands meaningful results to an
+agent, configure `agentConfig.handoff.enabled=true`, set
+`agentConfig.handoff.when="shouldEscalate"`, and provide
+`instructionConfig.prompt`. The script must return a JSON object. A false or
+missing `shouldEscalate` value completes without invoking Codex; exactly `true`
+starts one agent run with the script result supplied as untrusted data. Put
+requested skill names in `instructionConfig.requestedSkills`. Do not describe
+`shouldEscalate` as advisory when this handoff is enabled.
+
 When a script needs an organization credential, configure it in Gateway and
 declare its credential key in `agentConfig.gatewayCredentials`. Read the leased environment variable
 from `process.env` in the script. Never store credentials in

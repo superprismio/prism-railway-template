@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { deleteCustomTaskByKey, getTaskByKey, getTaskScriptByKey, listTasks, upsertTask } from "@/lib/app-core"
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
+import { validateScriptTaskHandoff } from "@/lib/script-task-handoff-input"
 
 function parseBoolean(value: unknown, fallback = false) {
   if (typeof value === "boolean") return value
@@ -57,6 +58,8 @@ export async function POST(request: Request) {
   const enabled = parseBoolean(body.enabled)
   const taskType = parseString(body.taskType ?? body.task_type) || "builtin"
   const inputConfig = parseConfig(body.inputConfig ?? body.input_config)
+  const instructionConfig = parseConfig(body.instructionConfig ?? body.instruction_config)
+  const agentConfig = parseConfig(body.agentConfig ?? body.agent_config)
   let normalizedInputConfig = inputConfig
   if (taskType === "script-runner") {
     const scriptKey = parseString(inputConfig.scriptKey ?? inputConfig.script_key)
@@ -69,6 +72,10 @@ export async function POST(request: Request) {
     }
     if (enabled && !script.enabled) {
       return NextResponse.json({ ok: false, error: `Task script is disabled: ${scriptKey}` }, { status: 400 })
+    }
+    const handoffError = validateScriptTaskHandoff(instructionConfig, agentConfig)
+    if (handoffError) {
+      return NextResponse.json({ ok: false, error: handoffError }, { status: 400 })
     }
     normalizedInputConfig = { ...inputConfig, scriptKey }
   }
@@ -102,9 +109,9 @@ export async function POST(request: Request) {
     timezone: parseString(body.timezone) || "UTC",
     taskType,
     inputConfig: normalizedInputConfig,
-    instructionConfig: parseConfig(body.instructionConfig ?? body.instruction_config),
+    instructionConfig,
     outputConfig: parseConfig(body.outputConfig ?? body.output_config),
-    agentConfig: parseConfig(body.agentConfig ?? body.agent_config),
+    agentConfig,
   })
 
   return NextResponse.json({ ok: true, task })

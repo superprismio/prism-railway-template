@@ -175,6 +175,32 @@ Scripts should write JSON to stdout. Recommended output:
 }
 ```
 
+To invoke an agent only for meaningful results, add a conditional handoff:
+
+```json
+{
+  "instructionConfig": {
+    "prompt": "Analyze the matching API results and recommend the next action.",
+    "requestedSkills": ["api-result-reviewer"]
+  },
+  "agentConfig": {
+    "handoff": {
+      "enabled": true,
+      "when": "shouldEscalate"
+    },
+    "gatewayCredentials": ["example-api"]
+  }
+}
+```
+
+With handoff enabled, stdout must be a JSON object. Codex Runtime is not called
+unless `shouldEscalate` is exactly `true`. The runner passes the configured
+prompt plus the complete script result as explicitly untrusted data, forwards
+requested skills and Gateway credentials, and stores the script result and
+handoff decision in task-run metadata. The agent response becomes the task body
+used for output delivery. `shouldNotify:false` on the script result suppresses
+that delivery without suppressing the requested agent analysis.
+
 If `outputConfig.outputDestinations` is configured, task-runner posts the script output unless the JSON body contains `shouldNotify:false` or `notify:false`.
 
 For notifications, task-runner prefers a JSON `responseText`, `output_text`, `summary`, `message`, or `text` field before falling back to raw output. Stdout/stderr capture is bounded by `TASK_RUNNER_SCRIPT_OUTPUT_MAX_BYTES` so noisy scripts cannot exhaust task-runner memory.

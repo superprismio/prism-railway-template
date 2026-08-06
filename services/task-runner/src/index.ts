@@ -8,6 +8,10 @@ import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { leaseGatewayCredentials } from "./gateway-lease.js";
 import { legacyGatewayWorkflowFindings } from "./prism-doctor-legacy-gateway.js";
+import {
+  applyScriptAgentHandoff,
+  scriptAgentHandoffConfig,
+} from "./script-agent-handoff.js";
 
 type TaskStatus = "idle" | "running" | "succeeded" | "failed" | "disabled";
 
@@ -616,6 +620,9 @@ function responseTextFromResult(result: TaskRunResult): string {
 }
 
 function taskResultShouldNotify(result: TaskRunResult): boolean {
+  if (result.metadata?.shouldNotify === false) {
+    return false;
+  }
   try {
     const body = JSON.parse(result.body) as Record<string, unknown>;
     if (body.shouldNotify === false || body.notify === false) {
@@ -1030,6 +1037,17 @@ function buildScriptRunnerTask(siteTask: AppTask): RunnableTask | null {
   const timeoutMs = Object.prototype.hasOwnProperty.call(siteTask.inputConfig, "timeoutMs")
     ? intFromConfig(siteTask.inputConfig, "timeoutMs", scriptRunnerTimeoutMs(), 1_000, 3_600_000)
     : null;
+  let handoffConfig: ReturnType<typeof scriptAgentHandoffConfig>;
+  try {
+    handoffConfig = scriptAgentHandoffConfig(siteTask.instructionConfig, siteTask.agentConfig);
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "task.script_runner_handoff_invalid",
+      task: siteTask.key,
+      error: describeError(error),
+    }));
+    return null;
+  }
 
   return {
     key: siteTask.key,
@@ -1039,7 +1057,38 @@ function buildScriptRunnerTask(siteTask: AppTask): RunnableTask | null {
     defaultCron: cron,
     enabled: siteTask.enabled,
     cron,
-    run: async () => runSiteTaskScript({ siteTask, scriptKey, params, timeoutMs }),
+    run: async () => {
+      const scriptResult = await runSiteTaskScript({ siteTask, scriptKey, params, timeoutMs });
+      return applyScriptAgentHandoff({
+        config: handoffConfig,
+        scriptTaskResult: scriptResult,
+        invokeAgent: async ({ prompt, scriptResult: parsedScriptResult, handoff }) => {
+          const baseUrl = requireBaseUrl("CODEX_RUNTIME_BASE_URL", codexRuntimeBaseUrl());
+          return postCodexRuntimeJson(baseUrl, {
+            prompt,
+            sessionId: `script-handoff:${siteTask.key}:${Date.now()}`,
+            codexThreadId: null,
+            recentHistory: [],
+            credentials: requestedGatewayKeysFromConfig(siteTask.agentConfig, [
+              "gatewayCredentials",
+              "gateway_credentials",
+            ]),
+            context: { delegatedActorId: `task:${siteTask.key}` },
+            metadata: {
+              transport: "task-runner",
+              taskKey: siteTask.key,
+              taskName: siteTask.name,
+              taskType: siteTask.taskType,
+              scriptKey,
+              scriptResult: parsedScriptResult,
+              requestedSkills: mergeRequestedSkills(siteTask),
+              allowEmptyResponse: true,
+              handoff,
+            },
+          }, longRunningHttpTimeoutMs());
+        },
+      });
+    },
     outputConfig: siteTask.outputConfig,
   };
 }
