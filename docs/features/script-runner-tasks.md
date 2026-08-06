@@ -103,4 +103,44 @@ For destination messages, task-runner prefers `responseText`, `output_text`, `su
 
 Script stdout and stderr capture is bounded by `TASK_RUNNER_SCRIPT_OUTPUT_MAX_BYTES`, and timed-out scripts receive `SIGTERM` followed by `SIGKILL` after `TASK_RUNNER_SCRIPT_KILL_GRACE_MS`.
 
-Escalation to workflows is intentionally separate from this first slice. A script can return `shouldEscalate:true`; a later task-runner slice can use that to create a request or trigger a workflow.
+## Conditional agent handoff
+
+A script task can invoke Codex only when its JSON output contains
+`shouldEscalate:true`. Configure the handoff on the same task:
+
+```json
+{
+  "taskType": "script-runner",
+  "inputConfig": {
+    "scriptKey": "api-result-check",
+    "params": { "url": "https://example.com/events" }
+  },
+  "instructionConfig": {
+    "prompt": "Review the matching events and recommend the appropriate follow-up.",
+    "requestedSkills": ["event-reviewer"]
+  },
+  "agentConfig": {
+    "handoff": {
+      "enabled": true,
+      "when": "shouldEscalate"
+    },
+    "gatewayCredentials": ["example-api"]
+  }
+}
+```
+
+The execution order is deterministic:
+
+1. Run the script without an LLM.
+2. Require a JSON object on stdout when handoff is enabled.
+3. Finish successfully without invoking Codex unless `shouldEscalate` is
+   exactly `true`.
+4. When true, start one Codex Runtime job with the configured prompt and the
+   full script result. The result is labeled as untrusted data so values from
+   the queried API cannot silently become agent instructions.
+5. Store the script result and handoff decision in the task run metadata. When
+   an agent runs, its response becomes the deliverable task body.
+
+`shouldNotify:false` continues to suppress output-adapter delivery even when an
+agent handoff ran. An enabled handoff supports only `when="shouldEscalate"` and
+requires `instructionConfig.prompt`; Site rejects invalid task definitions.

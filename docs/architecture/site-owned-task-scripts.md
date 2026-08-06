@@ -237,7 +237,11 @@ The response should mention both resources:
 - enabled state
 - manual run result, if triggered
 
-## Open Decisions
+## Conditional Agent Handoff
 
-- Whether scripts should receive selected Prism service credentials automatically or only through explicit task config.
-- Whether `shouldEscalate:true` should remain advisory or trigger a first-class request creation rule in a later slice.
+Scripts receive provider credentials only through explicit
+`agentConfig.gatewayCredentials`. A task may additionally enable
+`agentConfig.handoff` with `when="shouldEscalate"`. The runner invokes Codex
+only when the script returns a JSON object with `shouldEscalate:true`; false or
+missing values are deterministic no-ops. This is an agent response handoff, not
+automatic request or workflow creation.
