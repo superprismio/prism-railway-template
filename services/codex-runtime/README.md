@@ -38,6 +38,14 @@ Gateway service token into prompts, tool arguments, traces, or agent-visible
 configuration. The parent leases selected credential bundles and injects their
 configured variables only into the child job environment.
 
+The runtime image includes Playwright and its pinned Chromium build. Browser
+automation can read Gateway-leased variables from the child job environment in
+the same way as other provider clients. For example, a Reddit connection can map
+secret fields to `REDDIT_USERNAME` and `REDDIT_PASSWORD`; the browser script must
+read those values from `process.env` and must not print them, copy them into task
+input, or persist them in browser storage. Persist reusable browser state under
+the `/data` volume rather than `/app` so it survives deployments.
+
 Site-owned deterministic jobs may assign credential keys through agent config:
 
 ```json

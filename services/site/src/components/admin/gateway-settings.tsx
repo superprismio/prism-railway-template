@@ -73,13 +73,20 @@ type GatewayOverview = {
 };
 
 type SecretField = { envName: string; secretName: string; value: string };
-type ConfigurationField = { name: string; value: string };
+type ConfigurationField = { id: number; name: string; value: string };
 type CredentialDraft = {
   label: string;
   authType: string;
   secrets: SecretField[];
   configuration: ConfigurationField[];
 };
+
+let nextConfigurationFieldId = 0;
+
+function configurationField(name = "", value = ""): ConfigurationField {
+  nextConfigurationFieldId += 1;
+  return { id: nextConfigurationFieldId, name, value };
+}
 
 function secretTemplate(authType: string): SecretField[] {
   const names = authType === "basic"
@@ -268,7 +275,7 @@ export function GatewaySettings() {
   function openEdit(credential: GatewayCredential) {
     setEditing(credential);
     setEditSecrets(secretFieldsForCredential(credential));
-    setEditConfiguration(Object.entries(credential.configuration).map(([name, value]) => ({ name, value })));
+    setEditConfiguration(Object.entries(credential.configuration).map(([name, value]) => configurationField(name, value)));
   }
 
   function updateCredential() {
@@ -491,8 +498,8 @@ function CredentialDialog({
         {draft.secrets.map((field, index) => <div key={`${field.secretName}-${index}`} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><Input aria-label="Environment variable" value={field.envName} onChange={(event) => updateSecret(index, { envName: event.target.value.toUpperCase() })} placeholder={secretPlaceholder(field.secretName)} /><Input aria-label="Secret value" type="password" value={field.value} onChange={(event) => updateSecret(index, { value: event.target.value })} placeholder="Credential value" /><Button type="button" size="icon" variant="outline" title="Remove secret variable" disabled={draft.secrets.length === 1} onClick={() => onDraftChange({ ...draft, secrets: draft.secrets.filter((_, fieldIndex) => fieldIndex !== index) })}><Trash2 className="h-4 w-4" /></Button></div>)}
       </div>
 
-      <div className="grid gap-3"><div className="flex items-center justify-between gap-3"><div><p className="font-medium">Configuration variables</p><p className="text-xs text-muted-foreground">Base URLs, site IDs, buckets, regions, and other non-secret values.</p></div><Button type="button" size="sm" variant="outline" onClick={() => onDraftChange({ ...draft, configuration: [...draft.configuration, { name: "", value: "" }] })}><Plus className="h-4 w-4" />Add</Button></div>
-        {draft.configuration.map((field, index) => <div key={`${field.name}-${index}`} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><Input aria-label="Configuration variable" value={field.name} onChange={(event) => updateConfiguration(index, { name: event.target.value.toUpperCase() })} placeholder="SERVICE_BASE_URL" /><Input aria-label="Configuration value" value={field.value} onChange={(event) => updateConfiguration(index, { value: event.target.value })} placeholder="https://service.example.org" /><Button type="button" size="icon" variant="outline" title="Remove configuration variable" onClick={() => onDraftChange({ ...draft, configuration: draft.configuration.filter((_, fieldIndex) => fieldIndex !== index) })}><Trash2 className="h-4 w-4" /></Button></div>)}
+      <div className="grid gap-3"><div className="flex items-center justify-between gap-3"><div><p className="font-medium">Configuration variables</p><p className="text-xs text-muted-foreground">Base URLs, site IDs, buckets, regions, and other non-secret values.</p></div><Button type="button" size="sm" variant="outline" onClick={() => onDraftChange({ ...draft, configuration: [...draft.configuration, configurationField()] })}><Plus className="h-4 w-4" />Add</Button></div>
+        {draft.configuration.map((field, index) => <div key={field.id} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><Input aria-label="Configuration variable" value={field.name} onChange={(event) => updateConfiguration(index, { name: event.target.value.toUpperCase() })} placeholder="SERVICE_BASE_URL" /><Input aria-label="Configuration value" value={field.value} onChange={(event) => updateConfiguration(index, { value: event.target.value })} placeholder="https://service.example.org" /><Button type="button" size="icon" variant="outline" title="Remove configuration variable" onClick={() => onDraftChange({ ...draft, configuration: draft.configuration.filter((_, fieldIndex) => fieldIndex !== index) })}><Trash2 className="h-4 w-4" /></Button></div>)}
       </div>
     </div>
     <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={onSubmit} disabled={pending || !valid}>{submitLabel}</Button></DialogFooter>
