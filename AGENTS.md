@@ -277,6 +277,19 @@ curl -fsSL \
   -d '{"destinationId":"discord:<channel-id>","content":"Test message"}'
 ```
 
+For a Discord forum, resolve the destination first and preserve its
+`type:"discord-forum"`. Include a title so `/messages` creates a forum post
+instead of trying to send directly to the non-text forum container:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
+  "$COMMUNICATION_ADAPTER_BASE_URL/messages" \
+  -d '{"destinationId":"discord:<forum-id>","type":"discord-forum","title":"CONTENT SEED: Topic","content":"Thread opener"}'
+```
+
 For Telegram, use `destinationId:"telegram:<chat-id>"` or send
 `{"adapter":"telegram","destinationId":"<chat-id>","content":"..."}`. Telegram
 groups/channels appear in `/destinations` after the bot sees an update from that

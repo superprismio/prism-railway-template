@@ -25,6 +25,7 @@ import { ExternalInteractionRateLimiter } from "./external-interaction-rate-limi
 import { buildAdvisoryMemoryInstructions, type AdvisoryMemoryScope } from "./external-interaction-memory-policy.js";
 import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 import { requestSiteRuntime } from "./site-runtime.js";
+import { discordDestinationType } from "./discord-output.js";
 import {
   BuzzCliClient,
   buzzEventMentionsPubkey,
@@ -2099,7 +2100,13 @@ async function sendDiscordMessage(destinationId: string, content: string, option
   if (!normalizedContent) {
     throw new Error("content is required");
   }
-  if (options.type === "discord-forum") {
+  const destinationType = options.type?.trim()
+    ? options.type.trim()
+    : discordDestinationType(
+        null,
+        (await discordApiRequest<JsonObject>(`/channels/${encodeURIComponent(normalizedDestinationId)}`)).type,
+      );
+  if (destinationType === "discord-forum") {
     const message = await discordApiRequest<JsonObject>(
       `/channels/${encodeURIComponent(normalizedDestinationId)}/threads`,
       undefined,
@@ -3637,10 +3644,13 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
             accessPolicy.mode === "readonly"
               ? "This Discord session is readonly. Do not call writer endpoints, create or mutate tasks/workflows/skills/requests, send adapter messages beyond this reply, or modify repositories. Answer from available context only."
               : accessPolicy.mode === "run-approved"
-                ? "This Discord session may run existing approved tasks or workflows, but must not author new skills/tasks/workflows or perform broad administrative changes."
-                : "This Discord session is trusted for full agent behavior, subject to normal Prism safeguards.",
+                ? "This Discord session may run existing approved tasks or workflows, but must not author new skills/tasks/workflows or perform broad administrative changes. When requests.create is granted, start an existing workflow with POST /agent/change-board/requests; attempt that service-token route before claiming request creation is unavailable."
+                : "This Discord session is trusted for full agent behavior, subject to normal Prism safeguards. When requests.create is granted, start an existing workflow with POST /agent/change-board/requests; attempt that service-token route before claiming request creation is unavailable.",
           adapterCapabilities: {
             adapter: "communication",
+            instructions: canSendAdapterMessages
+              ? "Resolve the destination first. For a Discord forum, POST /messages with type=discord-forum and a title; the adapter also infers forum type when omitted."
+              : null,
             capabilities: canSendAdapterMessages ? ["list-destinations", "send-message"] : [],
             destinationTypes: canSendAdapterMessages ? ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"] : [],
           },
