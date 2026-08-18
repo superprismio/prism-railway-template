@@ -8,6 +8,7 @@ import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { leaseGatewayCredentials } from "./gateway-lease.js";
 import { legacyGatewayWorkflowFindings } from "./prism-doctor-legacy-gateway.js";
+import { workflowContextFindings } from "./prism-doctor-workflow-context.js";
 import {
   applyScriptAgentHandoff,
   scriptAgentHandoffConfig,
@@ -2033,6 +2034,7 @@ async function runPrismDoctorTask(): Promise<TaskRunResult> {
   }));
   const initialFindings = [
     ...workflows.flatMap(doctorWorkflowFindings),
+    ...workflows.flatMap(workflowContextFindings),
     ...workflows.flatMap((workflow) => legacyGatewayWorkflowFindings({
       workflow,
       detail: workflowDetails.get(workflowKeyFromRecord(workflow)) ?? null,

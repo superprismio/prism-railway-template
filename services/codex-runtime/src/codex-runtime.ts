@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { config } from './config.js';
 import { loadRelevantPrismSkills } from './prism-skills.js';
 import { gatewayClient } from './runtime-gateway.js';
+import { processInvocationSizeMetrics } from './process-size.js';
 
 type HistoryEntry = {
   role: string;
@@ -671,13 +672,17 @@ function buildPrompt(
   prismSkills: LoadedPrismSkills,
 ) {
   const history = input.recentHistory
-    .slice(-12)
+    .slice(-20)
     .map((entry) => `${entry.role === 'assistant' ? 'Assistant' : 'User'}: ${entry.content}`)
     .join('\n');
+  const selectedSkillNames = new Set(prismSkills.selectedSkills.map((skill) => skill.name));
   const availableSkillsSummary = prismSkills.availableSkills.length
     ? prismSkills.availableSkills
+      .filter((skill) => !selectedSkillNames.has(skill.name))
+      .slice(0, 100)
       .map((skill) => `${skill.name}: ${skill.description}`)
       .join('\n')
+      .slice(0, 16_000)
     : null;
   const policyInstructions = typeof input.metadata?.policyInstructions === 'string'
     ? input.metadata.policyInstructions.trim().slice(0, 40_000)
@@ -686,7 +691,7 @@ function buildPrompt(
     Object.entries(input.metadata ?? {}).filter(([key]) => key !== 'policyInstructions'),
   );
 
-  const sections = [
+  const fixedSections = [
     'You are Codex replying through a transport adapter.',
     'Behave like direct Codex chat, not like a fixed retrieval bot.',
     'Keep replies concise unless the user asks for more detail.',
@@ -699,6 +704,7 @@ function buildPrompt(
     `External session id: ${input.sessionId}`,
     `Runtime mode: ${isResume ? 'resume' : 'start'}`,
   ];
+  const sections = [...fixedSections];
 
   if (policyInstructions) {
     sections.push('', 'Trusted transport policy instructions:', policyInstructions);
@@ -718,12 +724,30 @@ function buildPrompt(
     }
   }
 
-  if (!isResume && history) {
-    sections.push('', 'Recent conversation:', history);
+  if (history) {
+    sections.push('', 'Recent source conversation snapshot:', history);
   }
 
   sections.push('', `Latest user message: ${input.prompt}`);
-  return sections.join('\n');
+  const prompt = sections.join('\n');
+  const bytes = (value: string | null | undefined) => Buffer.byteLength(value ?? '', 'utf8');
+  return {
+    prompt,
+    metrics: {
+      totalBytes: bytes(prompt),
+      sectionBytes: {
+        fixed: bytes(fixedSections.join('\n')),
+        metadata: bytes(JSON.stringify(sessionMetadata)) + bytes(policyInstructions),
+        skillCatalog: bytes(availableSkillsSummary),
+        selectedSkills: prismSkills.selectedSkills.reduce((total, skill) => total + bytes(skill.content), 0),
+        history: bytes(history),
+        latestMessage: bytes(input.prompt),
+      },
+      selectedSkillCount: prismSkills.selectedSkills.length,
+      historyMessageCount: input.recentHistory.slice(-20).length,
+      transport: 'stdin',
+    },
+  };
 }
 
 function parseJsonEvent(rawLine: string) {
@@ -830,7 +854,8 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   const preparedWorkspace = await prepareExecutionWorkspace(input, trace, githubToken);
   input.onTrace?.([...trace]);
   const executionWorkspaceRoot = preparedWorkspace.workspacePath;
-  const prompt = buildPrompt(input, isResume, prismSkills);
+  const composedPrompt = buildPrompt(input, isResume, prismSkills);
+  const prompt = composedPrompt.prompt;
   const args = isResume
     ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
     : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile, '-C', executionWorkspaceRoot];
@@ -843,7 +868,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     args.push('-m', config.codexModel);
   }
 
-  args.push(prompt);
+  args.push('-');
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -864,16 +889,32 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       : {}),
   };
   delete env.PRISM_GATEWAY_TOKEN;
+  const invocationMetrics = processInvocationSizeMetrics(env, args);
   console.log(
     `[codex-runtime] spawn resume=${isResume ? 'yes' : 'no'} session=${input.sessionId} workspace=${executionWorkspaceRoot}`,
   );
+
+  appendTrace(trace, 'prompt.composed', JSON.stringify(composedPrompt.metrics), input.onTrace);
+  if (config.codexRuntimePromptWarnBytes && composedPrompt.metrics.totalBytes > config.codexRuntimePromptWarnBytes) {
+    appendTrace(
+      trace,
+      'prompt.warning',
+      JSON.stringify({ totalBytes: composedPrompt.metrics.totalBytes, warnBytes: config.codexRuntimePromptWarnBytes }),
+      input.onTrace,
+    );
+  }
+  if (config.codexRuntimePromptMaxBytes && composedPrompt.metrics.totalBytes > config.codexRuntimePromptMaxBytes) {
+    const error = new Error(`RUNTIME_PROMPT_TOO_LARGE:${JSON.stringify(composedPrompt.metrics)}`) as CodexRuntimeError;
+    error.trace = trace;
+    throw error;
+  }
 
   try {
     return await new Promise<CodexRuntimeResult>((resolve, reject) => {
       const child = spawn(config.codexBinary, args, {
       cwd: executionWorkspaceRoot,
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
 
     let stderr = '';
@@ -893,6 +934,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       clearTimeout(timeout);
       input.signal?.removeEventListener('abort', cancelRun);
       child.kill('SIGTERM');
+      child.stdin.destroy();
       const forceKill = setTimeout(() => {
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
       }, 5_000);
@@ -909,6 +951,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       if (settled) return;
       settled = true;
       child.kill('SIGTERM');
+      child.stdin.destroy();
       const error = new Error('CODEX_RUNTIME_TIMEOUT') as CodexRuntimeError;
       error.codexThreadId = threadId;
       error.trace = trace;
@@ -921,6 +964,20 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       return;
     }
     input.signal?.addEventListener('abort', cancelRun, { once: true });
+
+    child.stdin.on('error', (stdinError) => {
+      if (settled || child.exitCode !== null || child.signalCode !== null) return;
+      settled = true;
+      clearTimeout(timeout);
+      input.signal?.removeEventListener('abort', cancelRun);
+      child.kill('SIGTERM');
+      recordTrace('prompt.stdin_failed', 'Codex prompt delivery through stdin failed');
+      const error = new Error(`RUNTIME_PROMPT_STDIN_FAILED:${stdinError.message}`) as CodexRuntimeError;
+      error.codexThreadId = threadId;
+      error.trace = trace;
+      reject(error);
+    });
+    child.stdin.end(prompt, 'utf8');
 
     child.stdout.on('data', (chunk) => {
       stdoutBuffer += String(chunk);
@@ -969,10 +1026,20 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       settled = true;
       clearTimeout(timeout);
       input.signal?.removeEventListener('abort', cancelRun);
-      const runtimeError = error as CodexRuntimeError;
+      const errorCode = (error as NodeJS.ErrnoException).code;
+      const runtimeError = (errorCode === 'E2BIG'
+        ? new Error(`RUNTIME_SPAWN_E2BIG:${JSON.stringify({
+            ...invocationMetrics,
+            promptTransport: composedPrompt.metrics.transport,
+            promptBytes: composedPrompt.metrics.totalBytes,
+          })}`)
+        : error) as CodexRuntimeError;
+      if (errorCode === 'E2BIG') {
+        recordTrace('spawn.e2big', JSON.stringify(invocationMetrics));
+      }
       runtimeError.codexThreadId = threadId;
       runtimeError.trace = trace;
-      reject(error);
+      reject(runtimeError);
     });
 
     child.on('close', async (code) => {

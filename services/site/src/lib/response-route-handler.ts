@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
+import { workflowContinuationPolicy } from "@/lib/workflow-context-policy"
+import { continuationWorkflowRunSkills, initialWorkflowRunSkills } from "@/lib/workflow-skill-scope"
 import { NextResponse } from "next/server"
 import {
   buildTargetEnvironmentDeployPlan,
@@ -321,12 +323,6 @@ function readInstructionFile(instructionPath: unknown) {
   } catch {
     return null
   }
-}
-
-function requestedSkillsFromAgentConfig(config: unknown) {
-  if (!isRecord(config)) return []
-  const skills = Array.isArray(config.skills) ? config.skills : []
-  return skills.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim())
 }
 
 function requestedCredentialsFromAgentConfig(config: unknown) {
@@ -1006,6 +1002,11 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       { status: 409 },
     )
   }
+  const nextWorkflowStepAfterRun = runnableWorkflowStep
+    ? nextStepForAction(linkedWorkflowSteps, runnableWorkflowStep, null)
+    : null
+  const runnableStepKey = runnableWorkflowStep ? stepKey(runnableWorkflowStep) : null
+  const nextStepKeyAfterRun = nextWorkflowStepAfterRun ? stepKey(nextWorkflowStepAfterRun) : null
   const workflowStepInstruction = runnableWorkflowStep
     ? readInstructionFile(runnableWorkflowStep.instructionPath)
     : null
@@ -1013,17 +1014,16 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     ...(isRecord(linkedWorkflow?.definition?.agentConfig) ? linkedWorkflow.definition.agentConfig : {}),
     ...(isRecord(runnableWorkflowStep?.agentConfig) ? runnableWorkflowStep?.agentConfig : {}),
   }
-  const requestedSkillsInput: unknown[] = Array.isArray(body.requested_skills ?? body.requestedSkills)
-    ? (body.requested_skills ?? body.requestedSkills) as unknown[]
-    : []
-  const requestedSkills = Array.from(
-    new Set([
-      ...requestedSkillsInput
-        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-        .map((entry: string) => entry.trim()),
-      ...requestedSkillsFromAgentConfig(workflowAgentConfig),
-    ]),
-  )
+  const requestedSkillsInput = body.requested_skills ?? body.requestedSkills
+  const workflowEntrypoint = typeof linkedWorkflow?.definition?.entrypoint === "string"
+    ? linkedWorkflow.definition.entrypoint
+    : null
+  const requestedSkills = initialWorkflowRunSkills({
+    requestedSkills: requestedSkillsInput,
+    agentConfig: workflowAgentConfig,
+    linkedWorkflow: Boolean(linkedWorkflow),
+    isEntrypoint: runnableStepKey === workflowEntrypoint,
+  })
   const includeTrustedRuntimeCredentials = actorType === "admin" || Boolean(linkedWorkflow)
   const activeCredentials = includeTrustedRuntimeCredentials
     ? await listEnabledGatewayCredentialsOrEmpty()
@@ -1044,11 +1044,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     },
   })
 
-  const nextWorkflowStepAfterRun = runnableWorkflowStep
-    ? nextStepForAction(linkedWorkflowSteps, runnableWorkflowStep, null)
-    : null
-  const runnableStepKey = runnableWorkflowStep ? stepKey(runnableWorkflowStep) : null
-  const nextStepKeyAfterRun = nextWorkflowStepAfterRun ? stepKey(nextWorkflowStepAfterRun) : null
   let activeAgentRunId: string | null = providedAgentRunId
 
   if (
@@ -1213,16 +1208,19 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   }
 
   try {
+    const currentContinuationPolicy = workflowContinuationPolicy(workflowAgentConfig)
     const runtimeResponse = await requestPrismRuntimeResponse({
       prompt: latestUserMessage.content,
       sessionId: session.id,
       continuationId:
-        typeof session.meta?.runtimeContinuationId === "string"
+        currentContinuationPolicy === "step"
+          ? null
+          : typeof session.meta?.runtimeContinuationId === "string"
           ? session.meta.runtimeContinuationId
           : typeof session.meta?.codexThreadId === "string"
             ? session.meta.codexThreadId
             : null,
-      recentHistory,
+      recentHistory: currentContinuationPolicy === "step" ? [] : recentHistory,
       credentials: requestedCredentials,
       gatewayContext: {
         delegatedActorId: actorType === "admin" ? "admin-console" : undefined,
@@ -1235,6 +1233,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         runtimeProfileKey: requestedRuntimeProfileKey,
         sessionRuntimeKey: typeof session.meta?.runtimeKey === "string" ? session.meta.runtimeKey : null,
         requestedSkills,
+        skillSelectionMode: linkedWorkflow ? "exact" : "inferred",
         workflow: linkedWorkflow
           ? {
               key: linkedWorkflow.key,
@@ -1242,7 +1241,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
               currentStepKey: runnableStepKey,
               action: workflowAction,
               agentConfig: workflowAgentConfig,
-              stepInstruction: workflowStepInstruction,
             }
           : null,
         linkedChangeRequestId: activeLinkedChangeRequestId,
@@ -1435,12 +1433,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           ...(isRecord(linkedWorkflow?.definition?.agentConfig) ? linkedWorkflow.definition.agentConfig : {}),
           ...(isRecord(continuationStep?.agentConfig) ? continuationStep.agentConfig : {}),
         }
-        const continuationRequestedSkills = Array.from(
-          new Set([
-            ...requestedSkills,
-            ...requestedSkillsFromAgentConfig(continuationAgentConfig),
-          ]),
-        )
+        const continuationRequestedSkills = continuationWorkflowRunSkills(continuationAgentConfig)
+        const continuationPolicy = workflowContinuationPolicy(continuationAgentConfig)
         const continuationCredentials = Array.from(new Set([
           ...activeCredentials.map((credential) => credential.key),
           ...requestedCredentialsFromAgentConfig(continuationAgentConfig),
@@ -1458,8 +1452,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           const continuationResponse = await requestPrismRuntimeResponse({
             prompt: continuationPrompt,
             sessionId: session.id,
-            continuationId: continuationThreadId,
-            recentHistory: continuationHistory,
+            continuationId: continuationPolicy === "step" ? null : continuationThreadId,
+            recentHistory: continuationPolicy === "step" ? [] : continuationHistory,
             credentials: continuationCredentials,
             gatewayContext: {
               requestId: activeLinkedChangeRequestId,
@@ -1471,6 +1465,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
               runtimeProfileKey: requestedRuntimeProfileKey,
               sessionRuntimeKey: continuationRuntimeKey,
               requestedSkills: continuationRequestedSkills,
+              skillSelectionMode: "exact",
               workflow: linkedWorkflow
                 ? {
                     key: linkedWorkflow.key,
@@ -1478,7 +1473,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                     currentStepKey: continuationStepKey,
                     action: null,
                     agentConfig: continuationAgentConfig,
-                    stepInstruction: continuationInstruction,
                     autoContinued: true,
                   }
                 : null,

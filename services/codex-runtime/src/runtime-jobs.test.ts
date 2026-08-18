@@ -39,13 +39,16 @@ test('normalized runtime jobs support discovery, completion, and cancellation', 
   await fs.writeFile(fakeCodex, `#!/usr/bin/env node
 import fs from 'node:fs/promises';
 const args = process.argv.slice(2);
+if (args.at(-1) !== '-') throw new Error('PROMPT_NOT_SENTINEL');
 const outputIndex = args.indexOf('-o');
 const outputFile = outputIndex >= 0 ? args[outputIndex + 1] : null;
-const prompt = args.at(-1) || '';
+let prompt = '';
+for await (const chunk of process.stdin) prompt += chunk;
 console.log(JSON.stringify({ type: 'thread.started', thread_id: 'fake-thread' }));
 if (prompt.includes('WAIT_FOR_CANCEL')) await new Promise((resolve) => setTimeout(resolve, 30000));
-if (outputFile) await fs.writeFile(outputFile, 'NORMALIZED_OK');
-console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'NORMALIZED_OK' } }));
+const response = prompt.includes('LARGE_STDIN_PROMPT') ? 'STDIN_BYTES:' + Buffer.byteLength(prompt) : 'NORMALIZED_OK';
+if (outputFile) await fs.writeFile(outputFile, response);
+console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: response } }));
 `, { mode: 0o700 });
 
   t.after(async () => {
@@ -130,6 +133,19 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
   assert.equal(completed.job.status, 'succeeded');
   assert.equal(completed.job.result.responseText, 'NORMALIZED_OK');
   assert.equal(completed.job.result.continuationId, 'fake-thread');
+
+  const largePrompt = `LARGE_STDIN_PROMPT:${'x'.repeat(256 * 1024)}`;
+  const largeAccepted = await fetch(`${baseUrl}/v1/runtime/jobs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ contractVersion, prompt: largePrompt, sessionId: 'large-stdin-prompt' }),
+  }).then((response) => response.json()) as { jobId: string };
+  const largeCompleted = await pollJob(baseUrl, largeAccepted.jobId) as {
+    job: { status: string; result: { responseText: string } };
+  };
+  assert.equal(largeCompleted.job.status, 'succeeded');
+  assert.match(largeCompleted.job.result.responseText, /^STDIN_BYTES:\d+$/);
+  assert.ok(Number(largeCompleted.job.result.responseText.split(':')[1]) > 256 * 1024);
 
   const completedCancel = await fetch(`${baseUrl}/v1/runtime/jobs/${accepted.jobId}/cancel`, { method: 'POST' })
     .then((response) => response.json()) as { job: { status: string } };

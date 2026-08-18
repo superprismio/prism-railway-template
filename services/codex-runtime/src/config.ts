@@ -18,6 +18,13 @@ function readNumberEnv(name: string, fallback: number) {
   return parsed;
 }
 
+function readOptionalNumberEnv(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 const workspaceRoot = path.resolve(process.cwd());
 
 export const config = {
@@ -56,6 +63,8 @@ export const config = {
   codexRuntimeEnabled: readBooleanEnv('CODEX_RUNTIME_ENABLED', true),
   codexImageGenerationEnabled: readBooleanEnv('CODEX_IMAGE_GENERATION_ENABLED', true),
   codexRuntimeTimeoutMs: readNumberEnv('CODEX_RUNTIME_TIMEOUT_MS', 600_000),
+  codexRuntimePromptWarnBytes: readOptionalNumberEnv('CODEX_RUNTIME_PROMPT_WARN_BYTES'),
+  codexRuntimePromptMaxBytes: readOptionalNumberEnv('CODEX_RUNTIME_PROMPT_MAX_BYTES'),
   codexWorkspaceRoot: process.env.CODEX_WORKSPACE_ROOT?.trim() || workspaceRoot,
   port: readNumberEnv('PORT', 3030),
   workspaceRoot,

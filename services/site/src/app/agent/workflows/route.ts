@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { listWorkflows, loadConfig, upsertWorkflow } from "@/lib/app-core";
 import { requireServiceAccess } from "@/lib/internal-service";
+import { validateWorkflowContextPolicies } from "@/lib/workflow-context-policy";
 
 export async function GET() {
   const access = await requireWorkflowWriteAccess();
@@ -201,6 +202,10 @@ export async function POST(request: Request) {
   }
   if (!Array.isArray(manifest.steps) || !manifest.steps.length) {
     return NextResponse.json({ ok: false, error: "Workflow manifest must include steps" }, { status: 400 });
+  }
+  const contextPolicyError = validateWorkflowContextPolicies(manifest);
+  if (contextPolicyError) {
+    return NextResponse.json({ ok: false, error: contextPolicyError }, { status: 400 });
   }
   const normalizedManifest = normalizeManifestPaths(manifest, workflowRoot);
   if (!validateWorkflowPaths(normalizedManifest, workflowRoot)) {

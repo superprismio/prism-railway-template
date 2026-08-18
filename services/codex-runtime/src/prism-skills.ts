@@ -182,7 +182,10 @@ export async function listPrismSkills() {
     listAppHostedSkills().catch(() => [] as SkillRecord[]),
   ]);
 
-  const skills = [...prismSkills, ...appSkills].sort((left, right) => left.name.localeCompare(right.name));
+  const skillsByName = new Map<string, SkillRecord>();
+  for (const skill of prismSkills) skillsByName.set(skill.name, skill);
+  for (const skill of appSkills) skillsByName.set(skill.name, skill);
+  const skills = Array.from(skillsByName.values()).sort((left, right) => left.name.localeCompare(right.name));
   skillIndexCache = { skills, fetchedAt: Date.now() };
   return skills;
 }
@@ -249,7 +252,7 @@ export async function downloadPrismSkill(skillName: string) {
   return content;
 }
 
-function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>) {
+export function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>) {
   const requested = new Set<string>();
   const normalized = prompt.toLowerCase();
   const explicit = metadata?.requestedSkills;
@@ -260,6 +263,12 @@ function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>)
         requested.add(entry.trim());
       }
     }
+  }
+
+  // Deterministic callers such as request workflows own their skill scope.
+  // Do not expand it from incidental words in the composed prompt.
+  if (metadata?.skillSelectionMode === 'exact') {
+    return Array.from(requested);
   }
 
   if (
@@ -387,6 +396,18 @@ function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>)
     || normalized.includes('target app')
   ) {
     requested.add('target-deploy-ops');
+  }
+
+  const buzzContext = metadata?.transport === 'buzz' || metadata?.source === 'buzz';
+  const buzzChannelSubject = normalized.includes('buzz channel')
+    || normalized.includes('buzz room')
+    || (buzzContext && (normalized.includes('channel') || normalized.includes('room')));
+  const buzzChannelAction = [
+    'create', 'new', 'manage', 'list', 'rename', 'update', 'topic', 'purpose',
+    'archive', 'unarchive', 'member', 'owner', 'admin', 'access',
+  ].some((term) => normalized.includes(term));
+  if (buzzChannelSubject && buzzChannelAction) {
+    requested.add('prism-buzz-channel-admin');
   }
 
   return Array.from(requested);

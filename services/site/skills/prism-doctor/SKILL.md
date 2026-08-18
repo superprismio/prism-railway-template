@@ -26,6 +26,10 @@ Current workflow checks:
 - loop steps have `loop.target`, `next`, and positive `loop.maxIterations`;
 - referenced step keys exist.
 - referenced skills exist;
+- shared workflow skills are reviewed when they expand multiple agent steps;
+- adjacent agent steps with different effective skill sets have an explicit
+  artifact handoff and either `contextPolicy.continuation: step` with
+  `handoff: artifacts`, or a gate/checkpoint justified by a real decision;
 - skill-declared Gateway credentials exist and contain secret values;
 - direct workflow and task Gateway credentials exist and contain secret values.
 - workflow manifests do not declare legacy Gateway toolset or capability fields;

@@ -195,6 +195,7 @@ Use it for:
 - loop control fields for `type: "loop"` steps
 - shared `agentConfig`
 - deterministic delegation policy in `agentConfig.delegation`
+- context isolation policy in `agentConfig.contextPolicy`
 
 When a step uses a skill, put the skill name in `agentConfig.skills`. Generic
 skills remain Gateway-agnostic. Trusted workflow runs inherit active
@@ -204,6 +205,44 @@ Use the provider's normal SDK, CLI, HTTP API, OpenAPI client, or MCP client
 through the leased environment and configuration variables.
 Before enabling a workflow, verify its referenced skills and Gateway
 requirements exist and run Prism Doctor.
+
+Scope skills to the smallest step that needs them. Put a skill in the shared
+workflow `agentConfig.skills` only when every agent step needs it. Do not use
+hook- or request-level requested skills as a substitute for step-local skill
+configuration in a deterministic workflow.
+
+Treat each agent step as a context boundary. For workflows whose steps hand off
+through request artifacts, set the shared policy explicitly:
+
+```json
+{
+  "agentConfig": {
+    "contextPolicy": {
+      "continuation": "step",
+      "handoff": "artifacts"
+    }
+  }
+}
+```
+
+With `continuation: "step"`, each agent step starts a fresh runtime session and
+loads only its effective step skills. The default remains `session` for
+backward compatibility. A step may override the shared policy when preserving
+one Codex session is genuinely required.
+
+For artifact handoffs:
+
+- hand off durable artifacts instead of expecting later steps to inherit the
+  prior agent's prompt or working context
+- name the exact input artifacts in the receiving step's markdown
+- keep large research, operations, publishing, and audit skills off steps that
+  only write, review, or format an existing artifact
+- inspect the effective skill union from workflow, step, hook, and request
+  configuration before enabling the workflow
+
+Do not add gates solely to reset runtime context. Use `continuation: "step"`
+with explicit artifact handoffs. Keep gates for actual human decisions and
+checkpoints for operator-triggered external-state checks.
 
 Omit runtime routing fields to use the instance's current default runtime
 profile. Set `agentConfig.runtimeProfileKey` only when the workflow must be
@@ -260,7 +299,11 @@ Recommended manifest shape:
   "agentConfig": {
     "mode": "main-agent",
     "identity": "prism-workflow-agent",
-    "skills": []
+    "skills": [],
+    "contextPolicy": {
+      "continuation": "step",
+      "handoff": "artifacts"
+    }
   },
   "steps": [
     {
@@ -389,4 +432,9 @@ When creating or changing a workflow:
 5. Keep agent instructions in markdown, not JSON.
 6. Keep state and approvals in DB-backed request/workflow records.
 7. Call out any required skills, scripts, env vars, or adapter capabilities.
-8. Return a concise summary of changed files and expected UI/status behavior.
+8. Verify shared skills are required by every agent step and review each step's
+   effective skill union.
+9. Verify adjacent agent steps with different skill sets use explicit artifact
+   handoffs and `contextPolicy.continuation: "step"` unless session continuity
+   is intentionally required.
+10. Return a concise summary of changed files and expected UI/status behavior.
