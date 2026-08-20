@@ -91,7 +91,7 @@ export function AgentProfileCreate({ hasOperatorIdentity }: { hasOperatorIdentit
           <div><dt className="text-muted-foreground">Ownership</dt><dd className="font-medium">{preview.owner === "admin-agent" ? "Admin Agent" : "Current operator"}</dd></div>
           <div className="sm:col-span-2"><dt className="text-muted-foreground">Mandate</dt><dd>{preview.description || "No description"}</dd></div>
           <div><dt className="text-muted-foreground">Skills</dt><dd>{preview.skills.join(", ") || "None assigned"}</dd></div>
-          <div><dt className="text-muted-foreground">Initial authority</dt><dd>Propose only · no allowlisted actions</dd></div>
+          <div><dt className="text-muted-foreground">Console access</dt><dd>Full · external surfaces must be bound separately</dd></div>
           <div className="sm:col-span-2"><dt className="text-muted-foreground">Persona instructions</dt><dd className="whitespace-pre-wrap">{preview.persona.instructions || "No additional instructions"}</dd></div>
         </dl>
         <p className="mt-4 text-xs text-muted-foreground">Confirmation creates a versioned operational identity. Credentials are not stored in this profile.</p>

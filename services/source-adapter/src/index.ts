@@ -141,6 +141,7 @@ type ResolvedDiscordAccessPolicy = {
   capabilities: string[];
   rateLimit: DiscordRateLimitConfig;
   matchedRules: string[];
+  agentProfile?: ExternalInteractionAuthorization["profile"];
 };
 
 let bridgeClient: Client | null = null;
@@ -665,12 +666,82 @@ async function loadBuzzAccessPolicyConfig(): Promise<DiscordAccessPolicyConfig> 
   return platforms.buzz ?? defaultBuzzAccessPolicy();
 }
 
+async function resolveAgentProfileSurface(input: {
+  surfaceType: "discord" | "telegram" | "buzz";
+  surfaceKey: string;
+  threadId?: string | null;
+  userId: string;
+  groupIds?: string[];
+}): Promise<ResolvedDiscordAccessPolicy | null> {
+  const query = new URLSearchParams({
+    surfaceType: input.surfaceType,
+    surfaceKey: input.surfaceKey,
+    userId: input.userId,
+  });
+  if (input.threadId) query.set("threadId", input.threadId);
+  for (const groupId of input.groupIds ?? []) query.append("groupId", groupId);
+  const payload = await appApiRequest(`/agent/agent-profiles/resolve?${query.toString()}`);
+  const resolved = parseStringRecord(payload.resolved);
+  if (!Object.keys(resolved).length) return null;
+  const rawProfile = parseStringRecord(resolved.profile);
+  const rawPolicy = parseStringRecord(resolved.policy);
+  const persona = parseStringRecord(rawProfile.persona);
+  const memoryScope = parseStringRecord(rawProfile.memoryScope ?? rawProfile.memory_scope);
+  const mode = parseAccessMode(rawPolicy.accessMode ?? rawPolicy.access_mode, "off");
+  const rateLimit = parseRateLimitConfig(rawPolicy.rateLimit ?? rawPolicy.rate_limit, { windowSeconds: 60, maxRequests: 6 });
+  const profileKey = typeof rawProfile.key === "string" ? rawProfile.key.trim() : "";
+  if (!profileKey) throw new Error("Agent Profile resolution returned no profile key");
+  const profile: ExternalInteractionAuthorization["profile"] = {
+    key: profileKey,
+    name: typeof rawProfile.name === "string" && rawProfile.name.trim() ? rawProfile.name.trim() : profileKey,
+    mode,
+    runtimeProfileKey: typeof rawProfile.runtimeProfileKey === "string" && rawProfile.runtimeProfileKey.trim()
+      ? rawProfile.runtimeProfileKey.trim()
+      : null,
+    persona: {
+      name: typeof persona.name === "string" && persona.name.trim() ? persona.name.trim() : null,
+      instructions: typeof persona.instructions === "string" ? persona.instructions.trim() : "",
+    },
+    memoryScope: {
+      knowledgeSourceIds: Array.isArray(memoryScope.knowledgeSourceIds) ? memoryScope.knowledgeSourceIds.filter((value): value is string => typeof value === "string") : [],
+      buckets: Array.isArray(memoryScope.buckets) ? memoryScope.buckets.filter((value): value is string => typeof value === "string") : [],
+      instructions: typeof memoryScope.instructions === "string" ? memoryScope.instructions.trim() : "",
+      enforcement: "instructions-only",
+    },
+    allowedWorkflows: Array.isArray(rawPolicy.allowedWorkflows)
+      ? rawPolicy.allowedWorkflows.filter((value): value is string => typeof value === "string")
+      : [],
+    rateLimit,
+    version: typeof rawProfile.version === "number" && Number.isFinite(rawProfile.version) ? Math.trunc(rawProfile.version) : 1,
+  };
+  return {
+    mode,
+    interactionProfileKey: profile.key,
+    capabilities: Array.isArray(rawPolicy.capabilities)
+      ? rawPolicy.capabilities.filter((value): value is string => typeof value === "string")
+      : capabilitiesForMode(mode),
+    rateLimit,
+    matchedRules: Array.isArray(rawPolicy.matchedRules)
+      ? rawPolicy.matchedRules.filter((value): value is string => typeof value === "string")
+      : ["agent-profile-binding"],
+    agentProfile: profile,
+  };
+}
+
 async function resolveDiscordAccessPolicy(input: {
   channelId: string;
   threadId: string | null;
   authorId: string;
   roleIds: string[];
 }): Promise<ResolvedDiscordAccessPolicy> {
+  const agentPolicy = await resolveAgentProfileSurface({
+    surfaceType: "discord", surfaceKey: input.channelId, threadId: input.threadId,
+    userId: input.authorId, groupIds: input.roleIds,
+  }).catch((error) => {
+    console.warn(`[source-adapter] Agent Profile binding resolution failed; using legacy compatibility: ${describeError(error)}`);
+    return null;
+  });
+  if (agentPolicy) return agentPolicy;
   const config = await loadDiscordAccessPolicyConfig();
   let resolved: ResolvedDiscordAccessPolicy = {
     mode: config.defaultMode,
@@ -696,6 +767,13 @@ async function resolveTelegramAccessPolicy(input: {
   chatId: string;
   authorId: string;
 }): Promise<ResolvedDiscordAccessPolicy> {
+  const agentPolicy = await resolveAgentProfileSurface({
+    surfaceType: "telegram", surfaceKey: input.chatId, userId: input.authorId,
+  }).catch((error) => {
+    console.warn(`[source-adapter] Agent Profile binding resolution failed; using legacy compatibility: ${describeError(error)}`);
+    return null;
+  });
+  if (agentPolicy) return agentPolicy;
   const config = await loadTelegramAccessPolicyConfig();
   let resolved: ResolvedDiscordAccessPolicy = {
     mode: config.defaultMode,
@@ -715,6 +793,13 @@ async function resolveBuzzAccessPolicy(input: {
   channelId: string;
   authorPubkey: string;
 }): Promise<ResolvedDiscordAccessPolicy> {
+  const agentPolicy = await resolveAgentProfileSurface({
+    surfaceType: "buzz", surfaceKey: input.channelId, userId: input.authorPubkey,
+  }).catch((error) => {
+    console.warn(`[source-adapter] Agent Profile binding resolution failed; using legacy compatibility: ${describeError(error)}`);
+    return null;
+  });
+  if (agentPolicy) return agentPolicy;
   const config = await loadBuzzAccessPolicyConfig();
   let resolved: ResolvedDiscordAccessPolicy = {
     mode: config.defaultMode,
@@ -1386,6 +1471,7 @@ async function loadInteractionProfile(
 }
 
 async function referencedInteractionProfile(accessPolicy: ResolvedDiscordAccessPolicy) {
+  if (accessPolicy.agentProfile) return accessPolicy.agentProfile;
   if (!accessPolicy.interactionProfileKey) return null;
   return loadInteractionProfile(accessPolicy.interactionProfileKey, accessPolicy.mode);
 }

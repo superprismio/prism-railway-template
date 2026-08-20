@@ -55,6 +55,7 @@ Send service auth as:
 - `GET /agent/agent-profiles`
 - `POST /agent/agent-profiles`
 - `GET /agent/agent-profiles/resolve`
+- `POST /agent/agent-profiles/:key/bindings`
 - `GET /agent/hooks/:key`
 - `PATCH /agent/hooks/:key`
 - `DELETE /agent/hooks/:key`
@@ -108,13 +109,20 @@ result reads are limited to artifacts listed in
 `authConfig.resultArtifactNames` and to requests created by that interface and
 hook.
 
-For source adapter access rules, use `/agent/source-adapter-policy`. Policies are platform-scoped. Use `platforms.discord.targets` for Discord channels or threads, `platforms.discord.groups` for Discord role IDs, and `platforms.discord.users` for Discord user IDs. Use `platforms.telegram.targets` for Telegram chat/group/channel IDs and `platforms.telegram.users` for Telegram user IDs. Telegram DMs are disabled by default unless explicitly enabled in adapter env/config.
+Agent Profiles are the canonical identity and communication-policy records.
+Use `POST /agent/agent-profiles/:key/bindings` to bind a Discord channel/thread,
+Buzz channel, Telegram chat, external interface, or user surface. Put the
+surface-specific `accessMode`, rate limit, allowed workflows, and narrower
+group/user/thread overrides in the binding `policy`. A binding may narrow but
+never widen its parent Agent Profile. `GET /agent/source-adapter-policy` exists
+only for migration and rollback compatibility; its write route is retired.
+Telegram DMs remain disabled by adapter config unless explicitly enabled.
 
-For named external HTTP chat paths, use the built-in
-`prism-interaction-author` skill and the interaction profile/external interface
-routes. Create non-secret configuration through `/agent/*`, keep new interfaces
-disabled, and direct the operator to **Settings > Interfaces** to generate or
-rotate the inbound API key. Never ask for or return that key through chat.
+For named external HTTP chat paths, create the non-secret interface record,
+bind its key to an Agent Profile with `surfaceType: "external"`, keep the
+interface disabled, and direct the operator to **Settings > Interfaces** to
+generate or rotate the inbound API key. Legacy Interaction Profiles are import
+sources only. Never ask for or return an interface key through chat.
 
 For Gateway integration setup and troubleshooting, use the built-in
 `prism-gateway-author` skill. Gateway agent routes accept non-secret

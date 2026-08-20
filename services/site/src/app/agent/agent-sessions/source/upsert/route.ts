@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { assignAgentProfileToSession, resolveAgentProfileBinding, upsertAgentSessionFromSource } from "@/lib/app-core"
+import { assignAgentProfileToSession, resolveAgentProfileInteraction, upsertAgentSessionFromSource } from "@/lib/app-core"
 
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
 
@@ -32,7 +32,8 @@ export async function POST(request: Request) {
       : surfaceType === "external"
         ? parseString(meta.externalInterfaceKey)
         : ""
-  const boundProfile = surfaceType && surfaceKey ? resolveAgentProfileBinding(surfaceType, surfaceKey) : null
+  const resolvedAgent = surfaceType && surfaceKey ? resolveAgentProfileInteraction({ surfaceType, surfaceKey }) : null
+  const boundProfile = resolvedAgent?.profile ?? null
   const session = upsertAgentSessionFromSource({
     source,
     contextKey,
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
     title: parseNullableString(body.title) ?? undefined,
     linkedChangeRequestId: parseNullableString(body.linkedChangeRequestId ?? body.linked_change_request_id) ?? undefined,
     linkedTargetEnvironmentId: parseNullableString(body.linkedTargetEnvironmentId ?? body.linked_target_environment_id) ?? undefined,
-    meta: { ...meta, ...(boundProfile ? { agentProfileKey: boundProfile.key, agentProfileVersion: boundProfile.version } : {}) },
+    meta: { ...meta, ...(boundProfile ? { agentProfileKey: boundProfile.key, agentProfileVersion: boundProfile.version, agentBindingId: resolvedAgent?.binding.id, accessPolicy: resolvedAgent?.policy } : {}) },
     createdByUserId: parseNullableString(body.createdByUserId ?? body.created_by_user_id) ?? undefined,
     lastMessageAt: parseNullableString(body.lastMessageAt ?? body.last_message_at) ?? undefined,
   })

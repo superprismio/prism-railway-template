@@ -10,6 +10,7 @@ import {
   getAgentSessionProfileAssignment,
   listAgentProfiles,
   resolveAgentProfileBinding,
+  resolveAgentProfileInteraction,
   upsertAgentProfile,
   upsertAgentProfileBinding,
 } from './agent-profiles';
@@ -74,9 +75,37 @@ test('creates owned agents, prevents cycles, and assigns a surface to one primar
     key: owned.key, name: owned.name, ownerType: 'agent', ownerAgentProfileId: child.id,
   }, db), /AGENT_PROFILE_OWNERSHIP_CYCLE/);
   upsertAgentProfileBinding({ profileId: owned.id, surfaceType: 'buzz', surfaceKey: 'veydrift', label: 'Veydrift' }, db);
-  upsertAgentProfileBinding({ profileId: child.id, surfaceType: 'buzz', surfaceKey: 'veydrift', label: 'Veydrift handoff' }, db);
+  upsertAgentProfileBinding({
+    profileId: child.id,
+    surfaceType: 'buzz',
+    surfaceKey: 'veydrift',
+    label: 'Veydrift handoff',
+    configuration: {
+      accessMode: 'full',
+      rateLimit: { windowSeconds: 30, maxRequests: 8 },
+      allowedWorkflows: ['publish'],
+      overrides: { users: { 'readonly-user': { mode: 'readonly' } } },
+    },
+  }, db);
   assert.equal(resolveAgentProfileBinding('buzz', 'veydrift', db)?.id, child.id);
   assert.equal(getAgentProfile(owned.key, db)?.bindings.length, 0);
+  const full = resolveAgentProfileInteraction({ surfaceType: 'buzz', surfaceKey: 'veydrift', userId: 'operator' }, db);
+  assert.equal(full?.policy.accessMode, 'full');
+  assert.equal(full?.policy.rateLimit.maxRequests, 8);
+  assert.deepEqual(full?.policy.allowedWorkflows, ['publish']);
+  const readonly = resolveAgentProfileInteraction({ surfaceType: 'buzz', surfaceKey: 'veydrift', userId: 'readonly-user' }, db);
+  assert.equal(readonly?.policy.accessMode, 'readonly');
+  assert.equal(readonly?.policy.capabilities.includes('workflows.author'), false);
+  upsertAgentProfileBinding({
+    profileId: child.id,
+    surfaceType: 'discord',
+    surfaceKey: 'public-channel',
+    configuration: { accessMode: 'readonly', overrides: { users: { admin: { mode: 'full' } } } },
+  }, db);
+  assert.equal(
+    resolveAgentProfileInteraction({ surfaceType: 'discord', surfaceKey: 'public-channel', userId: 'admin' }, db)?.policy.accessMode,
+    'readonly',
+  );
   db.close();
 });
 

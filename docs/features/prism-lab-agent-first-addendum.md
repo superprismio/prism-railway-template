@@ -408,5 +408,27 @@ requiring them all in the first deployment.
 - Which low-risk Admin Agent repairs may run without human confirmation.
 - Whether non-admin users may create agents or only request creation through the
   Admin Agent.
-- How historical interaction profiles should be migrated into Agent Profiles
-  and bindings after field testing.
+
+## Configuration Consolidation Addendum
+
+Agent Profiles are the single authored identity and communication-policy
+aggregate. Interaction Profiles and the file-backed source-adapter policy are
+legacy import sources only and must not remain parallel authoring systems.
+
+The Prism Console is an implicit authenticated binding and defaults to full
+access. Discord, Buzz, Telegram, external HTTP, and future communication
+bindings each carry an explicit access mode, rate limit, allowed workflows, and
+optional narrower thread/group/user overrides. Neither a binding nor one of its
+overrides may exceed the parent Agent Profile or binding maximum.
+
+Communication adapters own transport, channel discovery, delivery, and trusted
+author identifiers. For every inbound interaction they resolve one effective
+Agent Profile version and binding policy from Site. They do not own personas,
+skills, memory policy, or channel authority.
+
+Existing channel rules are migrated through the Agents review surface. The
+migration creates or reuses an Agent Profile, copies non-secret persona/runtime/
+memory configuration, and creates its bindings. Historical policy records stay
+readable for rollback and attribution, but their public write routes return a
+retired-authoring response. Once all deployed instances have migrated, those
+compatibility reads and the adapter fallback can be removed.

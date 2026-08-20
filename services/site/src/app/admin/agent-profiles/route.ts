@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     stewardUserIds: access.userId ? [access.userId] : [],
     persona: { name, instructions: personaInstructions },
     skills,
-    authority: { mode: 'propose', allowedActions: [] },
+    authority: { mode: 'policy-controlled', maximumAccessMode: 'full', consoleAccessMode: 'full' },
     contextPolicy: { continuation: 'session', handoff: null },
   };
   if (body.confirm !== true) return NextResponse.json({ ok: true, confirmed: false, preview });

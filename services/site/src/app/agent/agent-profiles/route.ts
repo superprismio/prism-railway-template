@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     owner,
     persona: { name, instructions: text(body.personaInstructions ?? body.persona_instructions, 12000) },
     skills: stringList(body.skills),
-    authority: { mode: 'propose', allowedActions: [] },
+    authority: { mode: 'policy-controlled', maximumAccessMode: 'full', consoleAccessMode: 'full' },
     contextPolicy: { continuation: 'session', handoff: null },
   };
   if (body.confirm !== true) return NextResponse.json({ ok: true, confirmed: false, preview });

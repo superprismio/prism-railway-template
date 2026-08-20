@@ -2,6 +2,14 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 
 import { getDb } from './db';
+import { loadConfig } from './config';
+import { listExternalInterfaces, listInteractionProfiles } from './external-interactions';
+import {
+  readSourceAdapterPolicy,
+  sourceAdapterCapabilitiesForMode,
+  type SourceAdapterAccessMode,
+  type SourceAdapterRateLimit,
+} from './source-adapter-policy';
 
 export const adminAgentProfileId = 'agent-profile-admin';
 export const adminAgentProfileKey = 'admin-agent';
@@ -35,6 +43,38 @@ export type AgentProfileBinding = {
   createdByUserId: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type AgentProfileBindingPolicy = {
+  accessMode: SourceAdapterAccessMode;
+  capabilities: string[];
+  rateLimit: SourceAdapterRateLimit;
+  allowedWorkflows: string[];
+  overrides: {
+    threads: Record<string, Partial<AgentProfileBindingPolicy>>;
+    groups: Record<string, Partial<AgentProfileBindingPolicy>>;
+    users: Record<string, Partial<AgentProfileBindingPolicy>>;
+  };
+  legacyInteractionProfileKey: string | null;
+};
+
+export type ResolvedAgentProfileInteraction = {
+  profile: AgentProfileRecord;
+  binding: AgentProfileBinding;
+  policy: Omit<AgentProfileBindingPolicy, 'overrides'> & { matchedRules: string[] };
+};
+
+export type LegacyAgentProfileMigrationCandidate = {
+  interactionProfileKey: string;
+  name: string;
+  description: string | null;
+  alreadyMigrated: boolean;
+  surfaces: Array<{
+    surfaceType: AgentProfileBinding['surfaceType'];
+    surfaceKey: string;
+    label: string | null;
+    accessMode: SourceAdapterAccessMode;
+  }>;
 };
 
 export type AgentProfileRecord = {
@@ -179,6 +219,100 @@ function jsonRecord(value: string): Record<string, unknown> {
   }
 }
 
+function unknownRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+const accessModes = ['off', 'readonly', 'run-approved', 'full'] as const;
+const accessModeRank = new Map(accessModes.map((mode, index) => [mode, index]));
+
+function accessMode(value: unknown, fallback: SourceAdapterAccessMode): SourceAdapterAccessMode {
+  return typeof value === 'string' && accessModes.includes(value as SourceAdapterAccessMode)
+    ? value as SourceAdapterAccessMode
+    : fallback;
+}
+
+function positiveInteger(value: unknown, fallback: number, max: number) {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number.parseInt(value, 10) : fallback;
+  return Number.isFinite(parsed) ? Math.max(1, Math.min(max, Math.trunc(parsed))) : fallback;
+}
+
+function stringList(value: unknown, maxLength = 160) {
+  return Array.isArray(value)
+    ? Array.from(new Set(value.map((item) => text(item, maxLength)).filter(Boolean)))
+    : [];
+}
+
+function policyOverride(value: unknown): Partial<AgentProfileBindingPolicy> {
+  const input = unknownRecord(value);
+  const mode = typeof input.accessMode === 'string' || typeof input.mode === 'string'
+    ? accessMode(input.accessMode ?? input.mode, 'off')
+    : undefined;
+  const rateInput = unknownRecord(input.rateLimit ?? input.rate_limit);
+  return {
+    ...(mode ? { accessMode: mode } : {}),
+    ...(Array.isArray(input.capabilities) ? { capabilities: stringList(input.capabilities, 120) } : {}),
+    ...(Array.isArray(input.allowedWorkflows ?? input.allowed_workflows)
+      ? { allowedWorkflows: stringList(input.allowedWorkflows ?? input.allowed_workflows, 120) }
+      : {}),
+    ...(Object.keys(rateInput).length ? { rateLimit: {
+      windowSeconds: positiveInteger(rateInput.windowSeconds ?? rateInput.window_seconds, 60, 86_400),
+      maxRequests: positiveInteger(rateInput.maxRequests ?? rateInput.max_requests, 6, 10_000),
+    } } : {}),
+  };
+}
+
+function overrideMap(value: unknown) {
+  return Object.fromEntries(Object.entries(unknownRecord(value)).map(([key, rule]) => [key, policyOverride(rule)]));
+}
+
+export function normalizeAgentProfileBindingPolicy(value: unknown): AgentProfileBindingPolicy {
+  const input = unknownRecord(value);
+  const mode = accessMode(input.accessMode ?? input.mode, 'readonly');
+  const rateInput = unknownRecord(input.rateLimit ?? input.rate_limit);
+  const overrides = unknownRecord(input.overrides);
+  return {
+    accessMode: mode,
+    capabilities: Array.isArray(input.capabilities)
+      ? stringList(input.capabilities, 120).filter((capability) => sourceAdapterCapabilitiesForMode(mode).includes(capability))
+      : sourceAdapterCapabilitiesForMode(mode),
+    rateLimit: {
+      windowSeconds: positiveInteger(rateInput.windowSeconds ?? rateInput.window_seconds, 60, 86_400),
+      maxRequests: positiveInteger(rateInput.maxRequests ?? rateInput.max_requests, 6, 10_000),
+    },
+    allowedWorkflows: stringList(input.allowedWorkflows ?? input.allowed_workflows, 120),
+    overrides: {
+      threads: overrideMap(overrides.threads ?? input.threads),
+      groups: overrideMap(overrides.groups ?? input.groups),
+      users: overrideMap(overrides.users ?? input.users),
+    },
+    legacyInteractionProfileKey: text(input.legacyInteractionProfileKey ?? input.legacy_interaction_profile_key, 120) || null,
+  };
+}
+
+function capMode(requested: SourceAdapterAccessMode, maximum: SourceAdapterAccessMode) {
+  return (accessModeRank.get(requested) ?? 0) <= (accessModeRank.get(maximum) ?? 0) ? requested : maximum;
+}
+
+function applyBindingOverride(
+  current: Omit<AgentProfileBindingPolicy, 'overrides'> & { matchedRules: string[] },
+  override: Partial<AgentProfileBindingPolicy> | undefined,
+  label: string,
+) {
+  if (!override) return current;
+  const mode = override.accessMode ?? current.accessMode;
+  return {
+    ...current,
+    accessMode: mode,
+    capabilities: override.capabilities
+      ? override.capabilities.filter((capability) => sourceAdapterCapabilitiesForMode(mode).includes(capability))
+      : override.accessMode ? sourceAdapterCapabilitiesForMode(mode) : current.capabilities,
+    rateLimit: override.rateLimit ?? current.rateLimit,
+    allowedWorkflows: override.allowedWorkflows ?? current.allowedWorkflows,
+    matchedRules: [...current.matchedRules, label],
+  };
+}
+
 function jsonStrings(value: string): string[] {
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -309,7 +443,9 @@ export function upsertAgentProfile(input: UpsertAgentProfileInput, db: Database.
   const persona = input.persona ?? (existing ? jsonRecord(existing.persona_json) : { name, instructions: '' });
   const skills = Array.from(new Set((input.skills ?? (existing ? jsonStrings(existing.skills_json) : [])).map((item) => text(item, 160)).filter(Boolean)));
   const memoryScope = input.memoryScope ?? (existing ? jsonRecord(existing.memory_scope_json) : {});
-  const authority = input.authority ?? (existing ? jsonRecord(existing.authority_json) : { mode: 'propose' });
+  const authority = input.authority ?? (existing ? jsonRecord(existing.authority_json) : {
+    mode: 'policy-controlled', maximumAccessMode: 'full', consoleAccessMode: 'full',
+  });
   const contextPolicy = input.contextPolicy ?? (existing ? jsonRecord(existing.context_policy_json) : { continuation: 'session', handoff: null });
   const runtimeProfileKey = text(input.runtimeProfileKey ?? existing?.runtime_profile_key, 120) || null;
   if (runtimeProfileKey && !db.prepare('SELECT 1 FROM runtime_profiles WHERE key = ?').get(runtimeProfileKey)) throw new Error('RUNTIME_PROFILE_NOT_FOUND');
@@ -365,13 +501,174 @@ export function upsertAgentProfileBinding(input: {
     ON CONFLICT(surface_type, surface_key) DO UPDATE SET profile_id=excluded.profile_id, label=excluded.label,
       enabled=excluded.enabled, configuration_json=excluded.configuration_json, updated_at=excluded.updated_at
   `).run(id, input.profileId, input.surfaceType, surfaceKey, text(input.label, 300) || null, input.enabled === false ? 0 : 1,
-    JSON.stringify(input.configuration ?? {}), input.createdByUserId ?? null, current?.created_at ?? now, now);
+    JSON.stringify(normalizeAgentProfileBindingPolicy(input.configuration)), input.createdByUserId ?? null, current?.created_at ?? now, now);
   return bindingRows(input.profileId, db).find((binding) => binding.id === id)!;
 }
 
 export function resolveAgentProfileBinding(surfaceType: AgentProfileBinding['surfaceType'], surfaceKey: string, db: Database.Database = getDb()) {
   const row = db.prepare('SELECT profile_id FROM agent_profile_bindings WHERE surface_type = ? AND surface_key = ? AND enabled = 1').get(surfaceType, text(surfaceKey, 300)) as { profile_id: string } | undefined;
   return row ? getAgentProfileById(row.profile_id, db) : null;
+}
+
+export function resolveAgentProfileInteraction(input: {
+  surfaceType: AgentProfileBinding['surfaceType'];
+  surfaceKey: string;
+  threadId?: string | null;
+  groupIds?: string[];
+  userId?: string | null;
+}, db: Database.Database = getDb()): ResolvedAgentProfileInteraction | null {
+  const profile = (input.threadId ? resolveAgentProfileBinding(input.surfaceType, input.threadId, db) : null)
+    ?? resolveAgentProfileBinding(input.surfaceType, input.surfaceKey, db);
+  if (!profile) return null;
+  const binding = profile.bindings.find((candidate) => candidate.enabled && (
+    candidate.surfaceKey === input.threadId || candidate.surfaceKey === input.surfaceKey
+  ));
+  if (!binding) return null;
+  const configured = normalizeAgentProfileBindingPolicy(binding.configuration);
+  const profileMaximum = accessMode(profile.authority.maximumAccessMode, 'full');
+  const bindingMaximum = capMode(configured.accessMode, profileMaximum);
+  const baseMode = bindingMaximum;
+  let policy: ResolvedAgentProfileInteraction['policy'] = {
+    accessMode: baseMode,
+    capabilities: configured.capabilities.filter((capability) => sourceAdapterCapabilitiesForMode(baseMode).includes(capability)),
+    rateLimit: configured.rateLimit,
+    allowedWorkflows: configured.allowedWorkflows,
+    legacyInteractionProfileKey: configured.legacyInteractionProfileKey,
+    matchedRules: [`binding:${binding.id}`],
+  };
+  if (input.threadId) policy = applyBindingOverride(policy, configured.overrides.threads[input.threadId], `thread:${input.threadId}`);
+  for (const groupId of input.groupIds ?? []) {
+    policy = applyBindingOverride(policy, configured.overrides.groups[groupId], `group:${groupId}`);
+  }
+  if (input.userId) policy = applyBindingOverride(policy, configured.overrides.users[input.userId], `user:${input.userId}`);
+  const cappedMode = capMode(policy.accessMode, bindingMaximum);
+  if (cappedMode !== policy.accessMode) {
+    policy = {
+      ...policy,
+      accessMode: cappedMode,
+      capabilities: policy.capabilities.filter((capability) => sourceAdapterCapabilitiesForMode(cappedMode).includes(capability)),
+      matchedRules: [...policy.matchedRules, 'binding-maximum'],
+    };
+  }
+  return { profile, binding, policy };
+}
+
+export function listLegacyAgentProfileMigrationCandidates(
+  db: Database.Database = getDb(),
+): LegacyAgentProfileMigrationCandidate[] {
+  const sourcePolicy = readSourceAdapterPolicy(loadConfig());
+  const externalInterfaces = listExternalInterfaces(db);
+  return listInteractionProfiles(db).map((legacy) => {
+    const surfaces: LegacyAgentProfileMigrationCandidate['surfaces'] = [];
+    for (const [platform, policy] of Object.entries(sourcePolicy.platforms)) {
+      if (!['discord', 'telegram', 'buzz'].includes(platform)) continue;
+      for (const [surfaceKey, rule] of Object.entries(policy.targets)) {
+        if (rule.interactionProfileKey !== legacy.key) continue;
+        surfaces.push({
+          surfaceType: platform as AgentProfileBinding['surfaceType'],
+          surfaceKey,
+          label: null,
+          accessMode: rule.mode ?? legacy.mode,
+        });
+      }
+    }
+    for (const externalInterface of externalInterfaces) {
+      if (externalInterface.interactionProfileKey !== legacy.key) continue;
+      surfaces.push({
+        surfaceType: 'external',
+        surfaceKey: externalInterface.key,
+        label: externalInterface.name,
+        accessMode: legacy.mode,
+      });
+    }
+    const existing = profileRowByKey(legacy.key, db);
+    const existingBindings = existing ? bindingRows(existing.id, db) : [];
+    const alreadyMigrated = Boolean(existing) && surfaces.every((surface) => existingBindings.some((binding) => (
+      binding.surfaceType === surface.surfaceType && binding.surfaceKey === surface.surfaceKey
+    )));
+    return {
+      interactionProfileKey: legacy.key,
+      name: legacy.name,
+      description: legacy.description,
+      alreadyMigrated,
+      surfaces,
+    };
+  }).filter((candidate) => !candidate.alreadyMigrated);
+}
+
+export function migrateLegacyInteractionProfileToAgent(input: {
+  interactionProfileKey: string;
+  createdByUserId?: string | null;
+  ownerUserId?: string | null;
+}, db: Database.Database = getDb()) {
+  const legacyKey = text(input.interactionProfileKey, 120).toLowerCase();
+  const legacy = listInteractionProfiles(db).find((profile) => profile.key === legacyKey);
+  if (!legacy) throw new Error('LEGACY_INTERACTION_PROFILE_NOT_FOUND');
+  let profile = getAgentProfile(legacy.key, db);
+  if (!profile) {
+    profile = upsertAgentProfile({
+      key: legacy.key,
+      name: legacy.name,
+      description: legacy.description,
+      status: 'active',
+      ownerType: input.ownerUserId ? 'user' : 'agent',
+      ownerUserId: input.ownerUserId ?? null,
+      ownerAgentProfileId: input.ownerUserId ? null : adminAgentProfileId,
+      stewardUserIds: input.createdByUserId ? [input.createdByUserId] : [],
+      persona: legacy.persona,
+      runtimeProfileKey: legacy.runtimeProfileKey,
+      memoryScope: legacy.memoryScope,
+      authority: { mode: 'policy-controlled', maximumAccessMode: 'full', consoleAccessMode: 'full' },
+      contextPolicy: { continuation: 'session', handoff: null },
+      createdByUserId: input.createdByUserId ?? null,
+    }, db);
+  }
+  const sourcePolicy = readSourceAdapterPolicy(loadConfig());
+  const migratedBindings: AgentProfileBinding[] = [];
+  const compatibleOverrides = (rules: Record<string, { interactionProfileKey?: string }>) => Object.fromEntries(
+    Object.entries(rules).filter(([, rule]) => !rule.interactionProfileKey || rule.interactionProfileKey === legacy.key),
+  );
+  for (const [platform, platformPolicy] of Object.entries(sourcePolicy.platforms)) {
+    if (!['discord', 'telegram', 'buzz'].includes(platform)) continue;
+    for (const [surfaceKey, rule] of Object.entries(platformPolicy.targets)) {
+      if (rule.interactionProfileKey !== legacy.key) continue;
+      migratedBindings.push(upsertAgentProfileBinding({
+        profileId: profile.id,
+        surfaceType: platform as AgentProfileBinding['surfaceType'],
+        surfaceKey,
+        configuration: {
+          accessMode: rule.mode ?? legacy.mode,
+          capabilities: rule.capabilities,
+          rateLimit: { ...legacy.rateLimit, ...(rule.rateLimit ?? {}) },
+          allowedWorkflows: legacy.allowedWorkflows,
+          overrides: {
+            groups: compatibleOverrides(platformPolicy.groups),
+            users: compatibleOverrides(platformPolicy.users),
+          },
+          legacyInteractionProfileKey: legacy.key,
+        },
+        createdByUserId: input.createdByUserId ?? null,
+      }, db));
+    }
+  }
+  for (const externalInterface of listExternalInterfaces(db)) {
+    if (externalInterface.interactionProfileKey !== legacy.key) continue;
+    migratedBindings.push(upsertAgentProfileBinding({
+      profileId: profile.id,
+      surfaceType: 'external',
+      surfaceKey: externalInterface.key,
+      label: externalInterface.name,
+      enabled: externalInterface.enabled,
+      configuration: {
+        accessMode: legacy.mode,
+        rateLimit: legacy.rateLimit,
+        allowedWorkflows: legacy.allowedWorkflows,
+        legacyInteractionProfileKey: legacy.key,
+      },
+      createdByUserId: input.createdByUserId ?? null,
+    }, db));
+  }
+  return { profile: getAgentProfileById(profile.id, db)!, bindings: migratedBindings };
 }
 
 export function assignAgentProfileToSession(input: {

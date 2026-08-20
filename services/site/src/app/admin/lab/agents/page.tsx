@@ -2,6 +2,7 @@ import Link from "next/link"
 import { Activity, Bot, Cable, ShieldCheck, UserRound } from "lucide-react"
 
 import { AgentProfileCreate } from "@/components/prism-lab/agent-profile-create"
+import { LegacyAgentProfileMigration } from "@/components/prism-lab/legacy-agent-profile-migration"
 import { RequestInboxUnavailable } from "@/components/prism-lab/request-inbox"
 import { Badge } from "@/components/ui/badge"
 import { getAdminWorkspaceData } from "@/lib/admin"
@@ -41,6 +42,7 @@ export default async function LabAgentsPage() {
       {admin ? <section className="mt-5"><div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Built in</div><ProfileCard profile={admin} /></section> : null}
       <section className="mt-7"><div className="mb-2 flex items-center justify-between"><h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Agents</h2><span className="text-xs text-muted-foreground">{agents.length}</span></div>{agents.length ? <div className="grid gap-3 lg:grid-cols-2">{agents.map((profile) => <ProfileCard key={profile.id} profile={profile} />)}</div> : <div className="border border-dashed border-border/70 p-6 text-sm text-muted-foreground">No additional agents yet. Every created agent receives a Console and may later be connected to external channels.</div>}</section>
       {workspace.data.session.capabilities.includes("canManageSettings") ? <section className="mt-8"><AgentProfileCreate hasOperatorIdentity={Boolean(workspace.data.session.userId)} /></section> : null}
+      {workspace.data.session.capabilities.includes("canManageSettings") ? <LegacyAgentProfileMigration /> : null}
     </div></div>
   )
 }
