@@ -1,0 +1,69 @@
+import { NextResponse } from 'next/server';
+
+import {
+  adminAgentProfileId,
+  createAuditLog,
+  listAgentProfiles,
+  upsertAgentProfile,
+} from '@/lib/app-core';
+import { requireServiceAccess } from '@/lib/internal-service';
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function text(value: unknown, maxLength: number) {
+  return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+}
+
+function stringList(value: unknown) {
+  return Array.isArray(value)
+    ? Array.from(new Set(value.map((item) => text(item, 160)).filter(Boolean)))
+    : text(value, 4000).split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+export async function GET() {
+  const access = await requireServiceAccess();
+  if (!access.ok) return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
+  return NextResponse.json({ ok: true, profiles: listAgentProfiles() });
+}
+
+export async function POST(request: Request) {
+  const access = await requireServiceAccess();
+  if (!access.ok) return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
+  const body = record(await request.json().catch(() => null));
+  const key = text(body.key, 120);
+  const name = text(body.name, 160);
+  if (!key || !name) return NextResponse.json({ ok: false, error: 'key and name are required' }, { status: 400 });
+  const owner = body.owner === 'workspace' ? 'workspace' : 'admin-agent';
+  const preview = {
+    key,
+    name,
+    description: text(body.description, 2000) || null,
+    status: 'active' as const,
+    owner,
+    persona: { name, instructions: text(body.personaInstructions ?? body.persona_instructions, 12000) },
+    skills: stringList(body.skills),
+    authority: { mode: 'propose', allowedActions: [] },
+    contextPolicy: { continuation: 'session', handoff: null },
+  };
+  if (body.confirm !== true) return NextResponse.json({ ok: true, confirmed: false, preview });
+  try {
+    const profile = upsertAgentProfile({
+      ...preview,
+      ownerType: owner === 'workspace' ? 'workspace' : 'agent',
+      ownerAgentProfileId: owner === 'admin-agent' ? adminAgentProfileId : null,
+      stewardUserIds: stringList(body.stewardUserIds ?? body.steward_user_ids),
+    });
+    createAuditLog({
+      actorUserId: null,
+      actionType: 'agent.agent_profile.create',
+      targetType: 'agent_profile',
+      targetId: profile.id,
+      meta: { key: profile.key, ownerType: profile.owner.type, ownerAgentProfileId: profile.owner.agentProfileId },
+    });
+    return NextResponse.json({ ok: true, confirmed: true, profile }, { status: 201 });
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'AGENT_PROFILE_CREATE_FAILED' }, { status: 400 });
+  }
+}

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { upsertAgentSessionFromSource } from "@/lib/app-core"
+import { assignAgentProfileToSession, resolveAgentProfileBinding, upsertAgentSessionFromSource } from "@/lib/app-core"
 
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
 
@@ -23,6 +23,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "source and contextKey are required" }, { status: 400 })
   }
 
+  const meta = body.meta && typeof body.meta === "object" && !Array.isArray(body.meta) ? body.meta as Record<string, unknown> : {}
+  const surfaceType = source === "buzz" || source === "telegram" || source === "external" ? source : null
+  const surfaceKey = surfaceType === "buzz"
+    ? parseString(meta.channelId)
+    : surfaceType === "telegram"
+      ? parseString(meta.chatId)
+      : surfaceType === "external"
+        ? parseString(meta.externalInterfaceKey)
+        : ""
+  const boundProfile = surfaceType && surfaceKey ? resolveAgentProfileBinding(surfaceType, surfaceKey) : null
   const session = upsertAgentSessionFromSource({
     source,
     contextKey,
@@ -30,10 +40,21 @@ export async function POST(request: Request) {
     title: parseNullableString(body.title) ?? undefined,
     linkedChangeRequestId: parseNullableString(body.linkedChangeRequestId ?? body.linked_change_request_id) ?? undefined,
     linkedTargetEnvironmentId: parseNullableString(body.linkedTargetEnvironmentId ?? body.linked_target_environment_id) ?? undefined,
-    meta: body.meta && typeof body.meta === "object" && !Array.isArray(body.meta) ? body.meta as Record<string, unknown> : {},
+    meta: { ...meta, ...(boundProfile ? { agentProfileKey: boundProfile.key, agentProfileVersion: boundProfile.version } : {}) },
     createdByUserId: parseNullableString(body.createdByUserId ?? body.created_by_user_id) ?? undefined,
     lastMessageAt: parseNullableString(body.lastMessageAt ?? body.last_message_at) ?? undefined,
   })
+  if (session && boundProfile) {
+    try {
+      assignAgentProfileToSession({
+        sessionId: session.id,
+        profileId: boundProfile.id,
+        conversationScope: surfaceType === "external" ? "individual" : "channel",
+      })
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "AGENT_SESSION_PROFILE_MISMATCH") throw error
+    }
+  }
 
   return NextResponse.json({ ok: true, session }, { status: 201 })
 }

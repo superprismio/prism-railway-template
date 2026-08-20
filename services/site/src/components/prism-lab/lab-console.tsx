@@ -2,10 +2,11 @@
 
 import { useCallback, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { AudioLines, CheckCircle2, FlaskConical, Loader2, MessageSquareText, SendToBack } from "lucide-react"
+import { AudioLines, Bot, CheckCircle2, FlaskConical, Loader2, MessageSquareText, SendToBack } from "lucide-react"
 
 import { CaptureWorkspace } from "@/components/admin/capture-workspace"
 import { CodexConsole, type ConsoleSessionSnapshot } from "@/components/admin/codex-console"
+import { AgentProfileCreate } from "@/components/prism-lab/agent-profile-create"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -38,10 +39,12 @@ export function LabConsole({
   workflows,
   targets,
   initialPrompt,
+  canCreateAgents,
 }: {
   workflows: ConsoleWorkflow[]
   targets: ConsoleTarget[]
   initialPrompt: string
+  canCreateAgents: boolean
 }) {
   const router = useRouter()
   const [mode, setMode] = useState<ConsoleMode>("conversation")
@@ -49,6 +52,7 @@ export function LabConsole({
   const [promoting, setPromoting] = useState(false)
   const [promotionError, setPromotionError] = useState<string | null>(null)
   const [promotionOpen, setPromotionOpen] = useState(false)
+  const [agentCreationOpen, setAgentCreationOpen] = useState(false)
   const enabledWorkflows = useMemo(() => workflows.filter((workflow) => workflow.enabled), [workflows])
   const defaultWorkflow = enabledWorkflows.find((workflow) => workflow.key === "change-request-default") ?? enabledWorkflows[0] ?? null
   const [promotionWorkflowKey, setPromotionWorkflowKey] = useState(defaultWorkflow?.key ?? "")
@@ -91,8 +95,8 @@ export function LabConsole({
         <header className="flex flex-col gap-4 border-b border-border/60 pb-5 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary"><span>Live instance</span><span aria-hidden="true">·</span><span>Console</span></div>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Prism Console</h1>
-            <p className="mt-1 text-sm text-muted-foreground">A durable workspace conversation, separate from every request conversation.</p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Admin Console</h1>
+            <p className="mt-1 text-sm text-muted-foreground">A durable Admin Agent conversation. It is observable by authorized workspace operators and separate from every request conversation.</p>
           </div>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Console input mode">
             <Button type="button" size="sm" variant={mode === "conversation" ? "secondary" : "ghost"} onClick={() => setMode("conversation")}><MessageSquareText aria-hidden="true" />Conversation</Button>
@@ -110,7 +114,10 @@ export function LabConsole({
               <Button type="button" variant="outline" size="sm" disabled={!snapshot.sessionId || snapshot.pending} onClick={() => setPromotionOpen((value) => !value)}>
                 <SendToBack aria-hidden="true" />Promote to request
               </Button>
+              {canCreateAgents ? <Button type="button" variant="outline" size="sm" onClick={() => setAgentCreationOpen((value) => !value)}><Bot aria-hidden="true" />Create agent</Button> : null}
             </div>
+
+            {agentCreationOpen ? <div className="border-b border-border/60 bg-background/45 p-4"><AgentProfileCreate hasOperatorIdentity /></div> : null}
 
             {promotionOpen ? (
               <form action={promote} className="grid gap-4 border-b border-border/60 bg-background/45 p-4" aria-label="Promote console conversation to request">
@@ -134,7 +141,7 @@ export function LabConsole({
               </form>
             ) : null}
 
-            <CodexConsole isActive initialDraft={initialPrompt} onSessionSnapshot={onSnapshot} />
+            <CodexConsole isActive agentProfileKey="admin-agent" executionMode="orchestrator" initialDraft={initialPrompt} onSessionSnapshot={onSnapshot} />
           </div>
         ) : (
           <div className="mt-4 border border-border/60 bg-card/35">

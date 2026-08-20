@@ -52,6 +52,9 @@ Send service auth as:
 - `PATCH /agent/runtime-profiles/:key`
 - `DELETE /agent/runtime-profiles/:key`
 - `POST /agent/runtime/invoke`
+- `GET /agent/agent-profiles`
+- `POST /agent/agent-profiles`
+- `GET /agent/agent-profiles/resolve`
 - `GET /agent/hooks/:key`
 - `PATCH /agent/hooks/:key`
 - `DELETE /agent/hooks/:key`

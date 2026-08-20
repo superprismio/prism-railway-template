@@ -22,6 +22,7 @@ import {
   TerminalSquare,
   Upload,
   UserRound,
+  UsersRound,
   XCircle,
 } from "lucide-react"
 
@@ -69,6 +70,11 @@ type ReviewRun = {
   finishedAt: string | null
   result: Record<string, unknown>
   trace: Array<Record<string, unknown>>
+  agentProfileId?: string | null
+  agentProfileVersion?: number | null
+  agentProfileKey?: string | null
+  agentProfileName?: string | null
+  executionMode?: string | null
 }
 
 type ReviewArtifact = {
@@ -376,6 +382,16 @@ export function RequestWorkspace({
   }) : [], [review])
   const state = review ? workspaceState(review) : null
   const activeRun = review?.agentRuns.some((run) => activeRunStatuses.has(run.status.toLowerCase())) ?? false
+  const participatingAgents = useMemo(() => {
+    const profiles = new Map<string, { key: string | null; name: string }>()
+    for (const run of review?.agentRuns ?? []) {
+      if (!run.agentProfileId || !run.agentProfileName) continue
+      profiles.set(run.agentProfileId, { key: run.agentProfileKey ?? null, name: run.agentProfileName })
+    }
+    return [...profiles.values()]
+  }, [review])
+  const currentExecutor = review?.agentRuns.find((run) => activeRunStatuses.has(run.status.toLowerCase()) && run.agentProfileName)
+    ?? review?.agentRuns.find((run) => run.agentProfileName)
   const terminal = state === "completed"
   const attention = review?.changeRequest.workflowAttention ?? null
   const canComment = review?.capabilities.canComment === true
@@ -546,6 +562,8 @@ export function RequestWorkspace({
                 <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
                   <div className="flex items-center gap-2"><GitBranch aria-hidden="true" /><dt className="sr-only">Current phase</dt><dd>{step.label} · {step.type}</dd></div>
                   <div className="flex items-center gap-2"><TerminalSquare aria-hidden="true" /><dt className="sr-only">Runs</dt><dd>{review.agentRuns.length} recorded run{review.agentRuns.length === 1 ? "" : "s"}</dd></div>
+                  <div className="flex items-center gap-2"><Bot aria-hidden="true" /><dt className="sr-only">Current executor</dt><dd>{currentExecutor?.agentProfileName ? <>Executor · {currentExecutor.agentProfileKey ? <Link className="underline" href={`/admin/lab/agents/${encodeURIComponent(currentExecutor.agentProfileKey)}`}>{currentExecutor.agentProfileName}</Link> : currentExecutor.agentProfileName}{currentExecutor.executionMode ? ` · ${currentExecutor.executionMode}` : ""}</> : "Executor · Legacy / unattributed"}</dd></div>
+                  <div className="flex items-center gap-2"><UsersRound aria-hidden="true" /><dt className="sr-only">Participating agents</dt><dd>{participatingAgents.length ? <>Participants · {participatingAgents.map((profile, index) => <span key={profile.key || profile.name}>{index ? ", " : ""}{profile.key ? <Link className="underline" href={`/admin/lab/agents/${encodeURIComponent(profile.key)}`}>{profile.name}</Link> : profile.name}</span>)}</> : "Participants · Legacy / unattributed"}</dd></div>
                 </dl>
               </div>
             </div>
@@ -731,7 +749,7 @@ export function RequestWorkspace({
             <TechnicalSection summary="Agent runs" count={review.agentRuns.length}>
               {review.agentRuns.length ? <ol className="space-y-3">{review.agentRuns.slice(0, 30).map((run) => (
                 <li key={run.id} className="text-sm">
-                  <div className="flex flex-wrap items-center gap-2"><Badge variant={failedRunStatuses.has(run.status.toLowerCase()) ? "destructive" : "outline"}>{run.status}</Badge><span className="font-mono text-xs">{run.workflowStepKey || run.kind}</span></div>
+                  <div className="flex flex-wrap items-center gap-2"><Badge variant={failedRunStatuses.has(run.status.toLowerCase()) ? "destructive" : "outline"}>{run.status}</Badge><span className="font-mono text-xs">{run.workflowStepKey || run.kind}</span>{run.agentProfileName ? <span className="text-xs">{run.agentProfileKey ? <Link className="underline" href={`/admin/lab/agents/${encodeURIComponent(run.agentProfileKey)}`}>{run.agentProfileName}</Link> : run.agentProfileName}{run.executionMode ? ` · ${run.executionMode}` : ""}</span> : <span className="text-xs text-muted-foreground">Legacy / unattributed</span>}</div>
                   <p className="mt-1 text-xs text-muted-foreground">Queued {displayTime(run.queuedAt)}{run.finishedAt ? ` · finished ${displayTime(run.finishedAt)}` : ""}</p>
                   {run.errorMessage ? <p className="mt-1 text-xs text-destructive">{run.errorMessage}</p> : null}
                   <details className="mt-2">

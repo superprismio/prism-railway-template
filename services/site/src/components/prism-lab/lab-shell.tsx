@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import {
   Activity,
   ArrowUpRight,
+  Bot,
   FlaskConical,
   Inbox,
   MessageSquareText,
@@ -37,10 +38,18 @@ const labSections: readonly LabSection[] = [
     capability: "canViewRequests",
   },
   {
-    label: "Console",
-    description: "Workspace conversation",
+    label: "Admin Console",
+    description: "Admin Agent control plane",
     href: "/admin/lab/console",
     icon: MessageSquareText,
+    available: true,
+    capability: "canRunAgent",
+  },
+  {
+    label: "Agents",
+    description: "Identity and activity",
+    href: "/admin/lab/agents",
+    icon: Bot,
     available: true,
     capability: "canRunAgent",
   },

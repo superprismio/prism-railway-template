@@ -36,6 +36,7 @@ import { deterministicRecordingHandoffMigration } from './036_deterministic_reco
 import { restoreRecordingSystemDefaultMigration } from './037_restore_recording_system_default';
 import { hookAuthConfigMigration } from './038_hook_auth_config';
 import { requestOriginsMigration } from './039_request_origins';
+import { agentProfilesMigration } from './040_agent_profiles';
 
 export interface Migration {
   name: string;
@@ -81,4 +82,5 @@ export const migrations: Migration[] = [
   restoreRecordingSystemDefaultMigration,
   hookAuthConfigMigration,
   requestOriginsMigration,
+  agentProfilesMigration,
 ];

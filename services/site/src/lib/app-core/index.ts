@@ -1,5 +1,30 @@
 export { loadConfig, type AppConfig, type CommunityProvider } from './config';
 export { getDb, closeDb, runMigrations } from './db';
+export {
+  adminAgentProfileId,
+  adminAgentProfileKey,
+  agentExecutionModes,
+  assignAgentProfileToSession,
+  ensureAdminAgentStewards,
+  getAgentProfile,
+  getAgentProfileById,
+  getAgentProfileSessionDetail,
+  getAgentSessionProfileAssignment,
+  listAgentProfiles,
+  listAgentProfileActivity,
+  listAgentProfileSessions,
+  resolveAgentProfileBinding,
+  upsertAgentProfile,
+  upsertAgentProfileBinding,
+  type AgentConversationScope,
+  type AgentExecutionMode,
+  type AgentProfileBinding,
+  type AgentProfileRecord,
+  type AgentProfileActivityItem,
+  type AgentProfileSessionSummary,
+  type AgentProfileSessionDetail,
+  type UpsertAgentProfileInput,
+} from './agent-profiles';
 export { getAdminBoardSnapshot, getAdminSetupStatus } from './admin-read';
 export {
   getRequestOrigin,

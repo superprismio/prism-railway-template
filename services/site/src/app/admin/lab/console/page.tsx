@@ -33,6 +33,7 @@ export default async function LabConsolePage({
       workflows={workflows}
       targets={workspace.data.targetApps.map((target) => ({ id: target.id, name: target.name, agentEnabled: target.agentEnabled }))}
       initialPrompt={configurationPromptForFocus(focus)}
+      canCreateAgents={workspace.data.session.capabilities.includes("canManageSettings")}
     />
   )
 }

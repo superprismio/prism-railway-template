@@ -5,6 +5,7 @@ import {
   findAgentSessionBySourceContext,
   findLatestAgentSessionByChangeRequest,
   getAgentSession,
+  getAgentProfileById,
   getChangeRequest,
   getTargetApp,
   getTargetEnvironment,
@@ -131,6 +132,14 @@ export async function GET(request: Request, context: RouteContext) {
   const workflowRun = getWorkflowRunForRequest(changeRequest.id)
   const legacyExecutions = listChangeRequestExecutions(changeRequest.id)
   const agentRuns = listAgentRuns({ requestId: changeRequest.id, limit: 100 })
+  const agentRunsWithProfiles = agentRuns.map((run) => {
+    const profile = run.agentProfileId ? getAgentProfileById(run.agentProfileId) : null
+    return {
+      ...run,
+      agentProfileKey: profile?.key ?? null,
+      agentProfileName: profile?.name ?? null,
+    }
+  })
   const workflowEvents = listWorkflowEventsForRequest(changeRequest.id, eventLimit)
   const artifacts = listRequestArtifacts(changeRequest.id, artifactLimit)
   const externalRefs = listRequestExternalRefs(changeRequest.id)
@@ -158,11 +167,11 @@ export async function GET(request: Request, context: RouteContext) {
     deployPlan,
     workflow,
     workflowRun,
-    latestAgentRun: agentRuns[0] ?? null,
+    latestAgentRun: agentRunsWithProfiles[0] ?? null,
     latestExecution: null,
     legacyExecutions,
     executions: legacyExecutions,
-    agentRuns,
+    agentRuns: agentRunsWithProfiles,
     workflowEvents,
     artifacts,
     externalRefs,

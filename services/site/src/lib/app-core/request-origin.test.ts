@@ -13,7 +13,7 @@ function testDb() {
     CREATE TABLE change_requests (id TEXT PRIMARY KEY, requested_by_user_id TEXT, source TEXT, created_at TEXT NOT NULL);
     CREATE TABLE agent_sessions (
       id TEXT PRIMARY KEY, source TEXT NOT NULL, title TEXT, discord_channel_id TEXT, discord_thread_id TEXT,
-      linked_change_request_id TEXT, meta_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+      linked_change_request_id TEXT, meta_json TEXT NOT NULL DEFAULT '{}', created_by_user_id TEXT, created_at TEXT NOT NULL
     );
     CREATE TABLE agent_messages (
       id TEXT PRIMARY KEY, session_id TEXT NOT NULL, role TEXT NOT NULL, source_message_id TEXT,
@@ -27,9 +27,10 @@ function testDb() {
 test('trusted Discord session resolves an immutable request origin', () => {
   const db = testDb();
   db.prepare('INSERT INTO change_requests VALUES (?, ?, ?, ?)').run('request-1', null, 'discord-source-adapter', '2026-01-01T00:00:00.000Z');
-  db.prepare('INSERT INTO agent_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+  db.prepare('INSERT INTO agent_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
     'session-1', 'discord', 'Conversation', 'channel-1', 'thread-1', null,
     JSON.stringify({ channelName: 'product', interactionProfileKey: 'dev-agent', interactionProfileVersion: 3 }),
+    null,
     '2026-01-01T00:00:01.000Z',
   );
   db.prepare('INSERT INTO agent_messages VALUES (?, ?, ?, ?, ?, ?)').run(
@@ -59,9 +60,10 @@ test('trusted Discord session resolves an immutable request origin', () => {
 test('external subject is never copied into request provenance', () => {
   const db = testDb();
   db.prepare('INSERT INTO change_requests VALUES (?, ?, ?, ?)').run('request-2', null, 'external-interface', '2026-01-01T00:00:00.000Z');
-  db.prepare('INSERT INTO agent_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+  db.prepare('INSERT INTO agent_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
     'session-2', 'external', 'Partner API', null, null, null,
     JSON.stringify({ externalInterfaceKey: 'partner-api', externalSubject: 'secret-customer@example.org', interactionProfileKey: 'partner-readonly', interactionProfileVersion: 7 }),
+    null,
     '2026-01-01T00:00:01.000Z',
   );
   db.prepare('INSERT INTO agent_messages VALUES (?, ?, ?, ?, ?, ?)').run(
@@ -73,6 +75,22 @@ test('external subject is never copied into request provenance', () => {
   assert.equal(origin.actorId, null);
   assert.equal(origin.actorDisplayName, null);
   assert.equal(JSON.stringify(origin).includes('secret-customer'), false);
+  db.close();
+});
+
+test('authenticated Console ownership and scheduled-task identity are resolved prospectively', () => {
+  const db = testDb();
+  db.prepare('INSERT INTO profiles VALUES (?, ?)').run('site-user', 'Site Operator');
+  db.prepare('INSERT INTO agent_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+    'console-session', 'admin-console', 'Console', null, null, null, '{}', 'site-user', '2026-01-01T00:00:01.000Z',
+  );
+  const siteOrigin = resolveRequestOriginSnapshot({ sourceSessionId: 'console-session', rawSource: 'admin-console', capturedAt: '2026-01-01T00:00:02.000Z' }, db);
+  assert.equal(siteOrigin.actorId, 'site-user');
+  assert.equal(siteOrigin.actorDisplayName, 'Site Operator');
+  const taskOrigin = resolveRequestOriginSnapshot({ rawSource: 'task:veydrift-autopilot', capturedAt: '2026-01-01T00:00:03.000Z' }, db);
+  assert.equal(taskOrigin.platform, 'task');
+  assert.equal(taskOrigin.actorType, 'task');
+  assert.equal(taskOrigin.actorId, 'veydrift-autopilot');
   db.close();
 });
 

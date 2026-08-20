@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server"
 
 import {
+  assignAgentProfileToSession,
+  agentExecutionModes,
   createAgentRun,
   createAgentResponseJob,
   createAgentSession,
+  getAgentProfile,
   getAgentRun,
   getAgentResponseJob,
   getAgentSession,
+  getAgentSessionProfileAssignment,
   updateAgentRun,
   updateAgentResponseJob,
 } from "@/lib/app-core"
@@ -133,6 +137,15 @@ export async function POST(request: Request) {
   }
 
   const body = payload && typeof payload === "object" ? payload as Record<string, unknown> : {}
+  const requestedExecutionMode = parseString(body.execution_mode ?? body.executionMode) || "worker"
+  if (!agentExecutionModes.includes(requestedExecutionMode as (typeof agentExecutionModes)[number])) {
+    return NextResponse.json({ ok: false, error: "Invalid Agent execution mode" }, { status: 400 })
+  }
+  const requestedAgentProfileKey = parseString(body.agent_profile_key ?? body.agentProfileKey)
+  const requestedAgentProfile = requestedAgentProfileKey ? getAgentProfile(requestedAgentProfileKey) : null
+  if (requestedAgentProfileKey && (!requestedAgentProfile || requestedAgentProfile.status !== "active")) {
+    return NextResponse.json({ ok: false, error: "Agent Profile is unavailable" }, { status: 400 })
+  }
   const inputMessages = parseInputMessages(body.input)
   const latestUserMessage = [...inputMessages].reverse().find((entry) => entry.role === "user") ?? null
   if (!latestUserMessage) {
@@ -149,6 +162,12 @@ export async function POST(request: Request) {
   let session = requestedSessionId ? getAgentSession(requestedSessionId) : null
   if (requestedSessionId && (!session || session.source !== "admin-console")) {
     return NextResponse.json({ ok: false, error: "Agent session not found" }, { status: 404 })
+  }
+  if (session && requestedAgentProfile) {
+    const assignment = getAgentSessionProfileAssignment(session.id)
+    if (assignment?.profileId && assignment.profileId !== requestedAgentProfile.id) {
+      return NextResponse.json({ ok: false, error: "Console session belongs to another Agent Profile" }, { status: 409 })
+    }
   }
   if (!session) {
     session = createAgentSession({
@@ -167,18 +186,29 @@ export async function POST(request: Request) {
           : typeof body.linkedTargetEnvironmentId === "string"
             ? body.linkedTargetEnvironmentId
             : null,
-      createdByUserId: null,
-      meta: { transport: "site" },
+      createdByUserId: access.userId,
+      meta: {
+        transport: "site",
+        ...(requestedAgentProfile ? { agentProfileKey: requestedAgentProfile.key, agentProfileVersion: requestedAgentProfile.version } : {}),
+      },
       lastMessageAt: new Date().toISOString(),
     })
   }
   if (!session) {
     return NextResponse.json({ ok: false, error: "AGENT_SESSION_CREATE_FAILED" }, { status: 500 })
   }
+  if (requestedAgentProfile) {
+    try {
+      assignAgentProfileToSession({ sessionId: session.id, profileId: requestedAgentProfile.id, conversationScope: "individual" })
+    } catch (error) {
+      return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "AGENT_SESSION_PROFILE_ASSIGNMENT_FAILED" }, { status: 409 })
+    }
+  }
 
   const input = {
     ...body,
     session_id: session.id,
+    execution_mode: requestedExecutionMode,
   }
   const linkedChangeRequestId = parseString(body.linked_change_request_id ?? body.linkedChangeRequestId)
   const linkedTargetEnvironmentId = parseString(body.linked_target_environment_id ?? body.linkedTargetEnvironmentId)

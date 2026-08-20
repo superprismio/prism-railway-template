@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       requestType,
       priority,
       source: "manual",
-      requestedByUserId: null,
+      requestedByUserId: access.userId,
       targetAppId: targetAppId || null,
       targetEnvironmentId: targetAppId ? getDefaultTargetEnvironmentForApp(targetAppId)?.id ?? null : null,
       estimatedHumanHours: estimatedHumanHours ?? null,
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     })
 
     createAuditLog({
-      actorUserId: null,
+      actorUserId: access.userId,
       actionType: "admin.change_board_request.create",
       targetType: "change_request",
       targetId: changeRequest?.id ?? null,

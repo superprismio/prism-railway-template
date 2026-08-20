@@ -534,6 +534,9 @@ export interface AgentRunRecord {
   taskKey: string | null;
   hookKey: string | null;
   sessionId: string | null;
+  agentProfileId: string | null;
+  agentProfileVersion: number | null;
+  executionMode: string | null;
   source: string;
   input: Record<string, unknown>;
   result: Record<string, unknown>;
@@ -1183,6 +1186,9 @@ interface AgentRunRow {
   task_key: string | null;
   hook_key: string | null;
   session_id: string | null;
+  agent_profile_id?: string | null;
+  agent_profile_version?: number | null;
+  execution_mode?: string | null;
   source: string;
   input_json: string;
   result_json: string;
@@ -1922,6 +1928,9 @@ function mapAgentRunRow(row: AgentRunRow, input: { queuePosition?: number | null
     taskKey: row.task_key,
     hookKey: row.hook_key,
     sessionId: row.session_id,
+    agentProfileId: row.agent_profile_id ?? null,
+    agentProfileVersion: row.agent_profile_version ?? null,
+    executionMode: row.execution_mode ?? null,
     source: row.source,
     input: parseJsonValue<Record<string, unknown>>(row.input_json, {}),
     result: parseJsonValue<Record<string, unknown>>(row.result_json, {}),

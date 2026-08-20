@@ -53,8 +53,6 @@ type ConsolePollError = Error & {
   transient?: boolean;
 };
 
-const consoleSessionStorageKey = "prism-console-session-id";
-const consoleActiveJobStorageKey = "prism-console-active-job-id";
 const transientPollStatuses = new Set([408, 429, 502, 503, 504]);
 
 function isTouchFirstInputEnvironment() {
@@ -104,13 +102,20 @@ export function CodexConsole({
   isActive = true,
   sessionControlsTargetId,
   initialDraft = "",
+  agentProfileKey,
+  executionMode,
   onSessionSnapshot,
 }: {
   isActive?: boolean;
   sessionControlsTargetId?: string;
   initialDraft?: string;
+  agentProfileKey?: string;
+  executionMode?: "worker" | "orchestrator" | "verifier" | "reviewer" | "judge" | "repair";
   onSessionSnapshot?: (snapshot: ConsoleSessionSnapshot) => void;
 }) {
+  const storageScope = agentProfileKey?.trim() || "legacy";
+  const consoleSessionStorageKey = `prism-console-session-id:${storageScope}`;
+  const consoleActiveJobStorageKey = `prism-console-active-job-id:${storageScope}`;
   const [draft, setDraft] = useState(initialDraft);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConsoleMessage[]>([]);
@@ -410,6 +415,8 @@ export function CodexConsole({
         body: JSON.stringify({
           input: [{ role: "user", content: runtimePrompt }],
           session_id: sessionId,
+          ...(agentProfileKey ? { agent_profile_key: agentProfileKey } : {}),
+          ...(executionMode ? { execution_mode: executionMode } : {}),
           ...(attachedArtifacts.length ? { requested_skills: ["prism-api-reader"] } : {}),
         }),
       });

@@ -86,7 +86,7 @@ export function normalizeRequestOriginPlatform(value: unknown): RequestOriginPla
   if (normalized === 'telegram' || normalized.startsWith('telegram-')) return 'telegram';
   if (normalized === 'buzz' || normalized.startsWith('buzz-')) return 'buzz';
   if (normalized === 'external' || normalized.startsWith('external-')) return 'external';
-  if (normalized === 'task-runner' || normalized === 'task' || normalized.startsWith('task:')) return 'task';
+  if (normalized === 'task-runner' || normalized === 'scheduled-task' || normalized === 'task' || normalized.startsWith('task:')) return 'task';
   if (normalized === 'hook' || normalized.startsWith('hook:')) return 'hook';
   if (normalized === 'system' || normalized.startsWith('system:') || normalized.startsWith('prism-doctor')) {
     return 'system';
@@ -154,7 +154,7 @@ export function resolveRequestOriginSnapshot(input: {
   const rawSource = text(input.rawSource, 200);
   const session = sourceSessionId
     ? db.prepare(`
-        SELECT id, source, title, discord_channel_id, discord_thread_id, meta_json
+        SELECT id, source, title, discord_channel_id, discord_thread_id, meta_json, created_by_user_id
         FROM agent_sessions WHERE id = ?
       `).get(sourceSessionId) as {
         id: string;
@@ -163,6 +163,7 @@ export function resolveRequestOriginSnapshot(input: {
         discord_channel_id: string | null;
         discord_thread_id: string | null;
         meta_json: string;
+        created_by_user_id: string | null;
       } | undefined
     : undefined;
   if (sourceSessionId && !session) throw new Error('SOURCE_SESSION_NOT_FOUND');
@@ -212,8 +213,9 @@ export function resolveRequestOriginSnapshot(input: {
   );
   const interactionProfileVersion = integer(sessionMeta.interactionProfileVersion);
   const actorType = platformActorType(platform);
-  const profile = input.requestedByUserId
-    ? db.prepare('SELECT display_name FROM profiles WHERE user_id = ?').get(input.requestedByUserId) as {
+  const trustedSiteUserId = text(input.requestedByUserId ?? session?.created_by_user_id, 300);
+  const profile = trustedSiteUserId
+    ? db.prepare('SELECT display_name FROM profiles WHERE user_id = ?').get(trustedSiteUserId) as {
         display_name: string | null;
       } | undefined
     : undefined;
@@ -224,7 +226,7 @@ export function resolveRequestOriginSnapshot(input: {
   const actorId = platform === 'external'
     ? null
     : text(
-        input.requestedByUserId
+        trustedSiteUserId
           ?? messageMeta.authorId
           ?? messageMeta.authorPubkey
           ?? (actorType === 'task' || actorType === 'hook' || actorType === 'system'

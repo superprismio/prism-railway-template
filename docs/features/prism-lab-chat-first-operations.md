@@ -5,6 +5,12 @@
 Future feature specification. Slices 0–5 are implemented on the Lab feature
 branch; later slices remain proposed.
 
+The agent identity, ownership, navigation, and execution direction for the next
+slices has been refined by field testing. See
+[`prism-lab-agent-first-addendum.md`](./prism-lab-agent-first-addendum.md). The
+addendum supersedes this document's profile split and Slices 6–8 where they
+conflict; the implemented Slices 0–5 remain valid foundations.
+
 This document proposes an additive, field-testable replacement for the current
 Prism admin workspace. The new experience lives at `/admin/lab` inside the
 existing Site service, operates on the live Prism instance through existing
@@ -80,6 +86,13 @@ validate /admin/lab
 ```
 
 ### Profiles have distinct meanings
+
+> **Superseded for future slices:** Field testing showed that these concerns
+> need one first-class Agent Profile identity with supporting templates, skills,
+> modes, bindings, ownership, and immutable run snapshots. See the
+> [Agent-First Operations Addendum](./prism-lab-agent-first-addendum.md). The
+> Interaction Profile records implemented for source policy remain valid
+> migration substrate.
 
 Do not use one overloaded "agent profile" object for every concern.
 
@@ -769,6 +782,10 @@ so request viewers, run operators, and settings managers see only their
 available surfaces.
 
 ### Slice 6: Execution-profile registry and run snapshots
+
+> **Replaced:** Use the revised "Agent Identity And Observability Foundation"
+> slice in the
+> [Agent-First Operations Addendum](./prism-lab-agent-first-addendum.md).
 
 **Depends on:** Slice 4 for useful observability.
 

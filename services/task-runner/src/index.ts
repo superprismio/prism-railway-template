@@ -2244,7 +2244,7 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
         workflowKey,
         requestType: stringFromConfig(requestConfig, "requestType", "content"),
         priority: stringFromConfig(requestConfig, "priority", "normal"),
-        source: "task-runner",
+        source: `task:${siteTask.key}`,
         autoStart: autoRunEnabled,
         requestedSkills: mergeRequestedSkills(siteTask),
         targetAppId: requestConfig.targetAppId ?? null,
