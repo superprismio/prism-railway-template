@@ -2,7 +2,8 @@
 
 ## Status
 
-Future feature specification.
+Future feature specification. Slices 0–3 are implemented on the Lab feature
+branch; later slices remain proposed.
 
 This document proposes an additive, field-testable replacement for the current
 Prism admin workspace. The new experience lives at `/admin/lab` inside the
@@ -687,6 +688,15 @@ Acceptance criteria:
 - Filters are server-backed and do not require loading every request into the
   browser.
 - External subject privacy rules are tested.
+
+Implementation note (2026-08-20): Slice 3 uses an immutable, nullable
+`request_origins` record rather than mutable live channel/profile joins. New
+agent-created requests may provide only a Site-owned source session/message
+reference; platform, target, profile, and actor fields are resolved from that
+trusted state. Historical rows are conservatively backfilled and labeled
+`partial` or `unknown`, and external subject values are deliberately omitted.
+Lab filtering remains server-rendered, so unrendered request records are not
+hydrated into the browser.
 
 ### Slice 4: Unified timeline, workflow exploration, and attention view
 

@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { Footer } from "@/components/shared/footer";
 import { Button } from "@/components/ui/button";
+import { isPrismLabEnabled } from "@/lib/prism-lab/feature-flag";
 
 const apiBase =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
@@ -29,6 +30,7 @@ async function getHealth() {
 
 export default async function Page() {
   const health = await getHealth();
+  const labEnabled = isPrismLabEnabled(process.env.PRISM_LAB_ENABLED);
 
   return (
     <div className="flex min-h-screen w-full flex-col">
@@ -64,6 +66,11 @@ export default async function Page() {
                 <Button asChild className="holographic-shimmer-hover">
                   <Link href="/admin">Open admin board</Link>
                 </Button>
+                {labEnabled ? (
+                  <Button asChild variant="secondary">
+                    <Link href="/admin/lab">Open Prism Lab</Link>
+                  </Button>
+                ) : null}
                 <Button asChild variant="secondary">
                   <Link href="/docs">Read user docs</Link>
                 </Button>

@@ -479,6 +479,8 @@ export function RequestWorkspace({
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="font-mono">#{request.requestNumber}</Badge>
           <Badge variant="muted">{request.source.label}</Badge>
+          {request.origin?.targetId ? <Badge variant="outline">{request.origin.targetName || request.origin.targetId}</Badge> : null}
+          {request.origin?.interactionProfileKey ? <Badge variant="outline">Profile · {request.origin.interactionProfileKey}</Badge> : null}
           {state ? (
           <Badge variant={state === "failed" || state === "blocked" ? "destructive" : "outline"} className="gap-1">
               <StateIcon state={state} />
@@ -488,6 +490,10 @@ export function RequestWorkspace({
         </div>
         <h2 className="mt-3 text-2xl font-semibold tracking-tight">{request.title}</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{request.description || "No request description was provided."}</p>
+        <dl className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+          <div><dt className="font-medium text-foreground">Initiator</dt><dd>{request.requestedByDisplayName || "Unknown initiator"}</dd></div>
+          <div><dt className="font-medium text-foreground">Origin snapshot</dt><dd>{request.origin ? `${request.origin.platform} · ${request.origin.backfillStatus}` : "Unavailable · historical origin unknown"}</dd></div>
+        </dl>
       </header>
 
       {loading && !review ? (

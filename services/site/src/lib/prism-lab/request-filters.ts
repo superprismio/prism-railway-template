@@ -17,6 +17,9 @@ export const defaultLabRequestFilters: LabRequestFilterState = {
   phase: null,
   priority: null,
   source: null,
+  target: null,
+  profile: null,
+  initiator: null,
   attention: "all",
   sort: "attention",
 };
@@ -39,7 +42,10 @@ export function parseLabRequestFilters(params: URLSearchParams): LabRequestFilte
     ),
     phase: oneLine(params.get("phase")),
     priority: oneLine(params.get("priority")),
-    source: oneLine(params.get("source")),
+    source: oneLine(params.get("platform") ?? params.get("source")),
+    target: oneLine(params.get("target")),
+    profile: oneLine(params.get("profile")),
+    initiator: oneLine(params.get("initiator")),
     attention: enumValue<LabRequestAttentionFilter>(
       params.get("attention"),
       labRequestAttentionFilters,
@@ -62,7 +68,10 @@ export function labRequestFiltersToSearchParams(filters: LabRequestFilterState) 
   }
   if (filters.phase) params.set("phase", filters.phase);
   if (filters.priority) params.set("priority", filters.priority);
-  if (filters.source) params.set("source", filters.source);
+  if (filters.source) params.set("platform", filters.source);
+  if (filters.target) params.set("target", filters.target);
+  if (filters.profile) params.set("profile", filters.profile);
+  if (filters.initiator) params.set("initiator", filters.initiator);
   if (filters.attention !== defaultLabRequestFilters.attention) {
     params.set("attention", filters.attention);
   }
@@ -139,6 +148,9 @@ export function filterAndSortLabRequests(
       if (filters.phase && item.phase.key !== filters.phase) return false;
       if (filters.priority && item.priority !== filters.priority) return false;
       if (filters.source && item.source.key !== filters.source) return false;
+      if (filters.target && (item.origin?.targetId ?? "unknown") !== filters.target) return false;
+      if (filters.profile && (item.origin?.interactionProfileKey ?? "unknown") !== filters.profile) return false;
+      if (filters.initiator && (item.origin?.actorId ?? item.origin?.actorType ?? "unknown") !== filters.initiator) return false;
       return !query || item.searchText.includes(query);
     })
     .sort((left, right) => compareRequests(left, right, filters.sort));
@@ -147,12 +159,22 @@ export function filterAndSortLabRequests(
 export function labRequestFilterOptions(requests: readonly LabRequestListItem[]) {
   const phaseLabels = new Map<string, string>();
   const sourceLabels = new Map<string, string>();
+  const targetLabels = new Map<string, string>();
+  const profileLabels = new Map<string, string>();
+  const initiatorLabels = new Map<string, string>();
   const priorities = new Set<string>();
 
   for (const request of requests) {
     if (request.phase.key) phaseLabels.set(request.phase.key, request.phase.label);
     sourceLabels.set(request.source.key, request.source.label);
     if (request.priority) priorities.add(request.priority);
+    const origin = request.origin;
+    targetLabels.set(origin?.targetId ?? "unknown", origin?.targetName ?? origin?.targetId ?? "Unknown target");
+    profileLabels.set(origin?.interactionProfileKey ?? "unknown", origin?.interactionProfileKey ?? "No profile snapshot");
+    initiatorLabels.set(
+      origin?.actorId ?? origin?.actorType ?? "unknown",
+      request.requestedByDisplayName ?? origin?.actorId ?? (origin?.actorType === "external-subject" ? "External subject" : "Unknown initiator"),
+    );
   }
 
   const labelEntries = (entries: Iterable<[string, string]>) =>
@@ -166,5 +188,8 @@ export function labRequestFilterOptions(requests: readonly LabRequestListItem[])
       (left, right) => (priorityRank[right] ?? 0) - (priorityRank[left] ?? 0) || left.localeCompare(right),
     ),
     sources: labelEntries(sourceLabels.entries()),
+    targets: labelEntries(targetLabels.entries()),
+    profiles: labelEntries(profileLabels.entries()),
+    initiators: labelEntries(initiatorLabels.entries()),
   };
 }

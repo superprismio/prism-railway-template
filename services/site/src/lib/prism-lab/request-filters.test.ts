@@ -57,7 +57,7 @@ test("filters default to open and serialize canonically without default noise", 
   );
   assert.equal(
     labRequestFiltersToSearchParams(parsed).toString(),
-    "q=blocked+request&lifecycle=all&source=discord&sort=created-desc",
+    "q=blocked+request&lifecycle=all&platform=discord&sort=created-desc",
   );
   assert.deepEqual(parseLabRequestFilters(labRequestFiltersToSearchParams(parsed)), parsed);
 });
@@ -141,5 +141,25 @@ test("filter options are unique and deterministically ordered", () => {
       { value: "discord", label: "Discord" },
       { value: "site", label: "Site" },
     ],
+    targets: [{ value: "unknown", label: "Unknown target" }],
+    profiles: [{ value: "unknown", label: "No profile snapshot" }],
+    initiators: [{ value: "unknown", label: "Unknown initiator" }],
   });
+});
+
+test("origin platform, target, profile, and initiator filters compose", () => {
+  const discord = item({
+    id: "discord-origin",
+    source: { key: "discord", label: "Discord", raw: "discord", known: true },
+    requestedByDisplayName: "Ada",
+    origin: {
+      sourceSessionId: "session-1", platform: "discord", targetId: "channel-1", targetName: "Product",
+      threadId: null, interfaceKey: null, interactionProfileKey: "dev-agent", interactionProfileVersion: 2,
+      actorType: "user", actorId: "user-1", actorDisplayName: "Ada", sourceMessageId: "message-1",
+      rawSource: "discord-source-adapter", backfillStatus: "complete", capturedAt: "2026-01-01T00:00:00.000Z",
+    },
+  });
+  const filters = { ...defaultLabRequestFilters, source: "discord", target: "channel-1", profile: "dev-agent", initiator: "user-1" };
+  assert.deepEqual(filterAndSortLabRequests([item(), discord], filters).map(({ id }) => id), ["discord-origin"]);
+  assert.equal(labRequestFiltersToSearchParams(filters).toString(), "platform=discord&target=channel-1&profile=dev-agent&initiator=user-1");
 });

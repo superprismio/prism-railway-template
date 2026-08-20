@@ -172,3 +172,11 @@ Short evidence log for the Slices 0–2 implementation gauntlet.
 - Fix: removed `planned` from request-workspace active execution semantics
 - Result: 96 Site tests, 13 Codex Runtime tests, both typechecks/builds, 82-route Site production build, diff check, isolated HTTP probes, and authenticated Playwright inspection at 1440×1000 and 390×844 pass
 - Remaining risks: split-service paths were contract-tested without a live legacy API; split-service Ask remains deliberately unavailable; non-bundled runtimes require explicit read-only authority support; populated real request detail was logic-tested but not browser-probed
+
+## Iteration 19 — Direct Slice 3 provenance build
+
+- Component: request-origin provenance and interaction-profile segmentation
+- Evaluated: trusted session resolution, immutable snapshots, conservative legacy backfill, external-subject privacy, Lab facets, and Discord/Telegram profile parity with Buzz/external
+- Fix: added nullable `request_origins`, accepted only source session/message references at request creation, resolved and snapshotted Site-owned metadata, exposed platform/target/profile/initiator filters and provenance labels, and applied referenced profile runtime/persona/memory/version behavior across communication adapters
+- Result: focused provenance/privacy/filter/auth tests, the 102-test Site suite, the 24-test Source Adapter suite, both typechecks/builds, and a complete fresh 39-migration database run pass
+- Remaining risk: deployed end-to-end validation still needs real Discord, Telegram, Buzz, and external-interface traffic; legacy split-service mode returns origin snapshots only when its upstream request-detail deployment includes Slice 3

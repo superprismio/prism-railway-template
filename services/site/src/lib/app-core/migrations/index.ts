@@ -35,6 +35,7 @@ import { interactionMemoryInstructionsMigration } from './035_interaction_memory
 import { deterministicRecordingHandoffMigration } from './036_deterministic_recording_handoff';
 import { restoreRecordingSystemDefaultMigration } from './037_restore_recording_system_default';
 import { hookAuthConfigMigration } from './038_hook_auth_config';
+import { requestOriginsMigration } from './039_request_origins';
 
 export interface Migration {
   name: string;
@@ -79,4 +80,5 @@ export const migrations: Migration[] = [
   deterministicRecordingHandoffMigration,
   restoreRecordingSystemDefaultMigration,
   hookAuthConfigMigration,
+  requestOriginsMigration,
 ];

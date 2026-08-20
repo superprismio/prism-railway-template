@@ -138,6 +138,12 @@ If a request creation call sends an invalid type or priority, the `400` response
 
 Agent-created requests should include `estimatedHumanHours` when there is enough context to infer a coarse whole-request human effort estimate. Include expected human gates, review/approval time, coordination, and likely loopbacks such as review changes that return the workflow to an earlier step. Choose the nearest bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`. The field is optional and must be a finite number from `0` through `999`.
 
+When a request originates in a Site-owned communication session, include
+`sourceSessionId` and, when available, `sourceMessageId`. Site resolves the
+immutable platform, channel/target, interaction profile, and initiator snapshot
+from that trusted session. Callers must not provide display identity fields;
+external subject values are intentionally excluded from request provenance.
+
 Source attachment ingest:
 
 ```bash

@@ -18,7 +18,7 @@ export default async function LabLayout({ children }: { children: React.ReactNod
 
   return (
     <LabShell enabled={enabled}>
-      {access?.ok ? children : <LoginCard error="Sign in to access the live Prism Lab workspace." />}
+      {access?.ok ? children : <LoginCard error="Sign in to access the live Prism Lab workspace." returnTo="/admin/lab" />}
     </LabShell>
   )
 }

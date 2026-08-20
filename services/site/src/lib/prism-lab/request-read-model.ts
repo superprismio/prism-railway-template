@@ -215,7 +215,11 @@ export function buildLabRequestListItems(
         : active
           ? "running"
           : "open";
-    const source = labRequestSource(request.source);
+    const origin = request.origin ?? null;
+    const source = labRequestSource(origin?.platform ?? request.source);
+    const requestedByDisplayName = origin?.actorDisplayName
+      ?? request.requestedByDisplayName
+      ?? (origin?.actorType === "external-subject" ? "External subject" : null);
     const estimatedHumanHours = estimate(request.estimatedHumanHours);
     const allowedActions = labRequestAllowedActions({
       capabilities,
@@ -235,7 +239,11 @@ export function buildLabRequestListItems(
       phase.label,
       source.raw,
       source.label,
-      request.requestedByDisplayName,
+      origin?.targetId,
+      origin?.targetName,
+      origin?.interactionProfileKey,
+      origin?.actorId,
+      requestedByDisplayName,
     ]
       .filter((value) => value !== null && value !== undefined)
       .join(" ")
@@ -264,7 +272,8 @@ export function buildLabRequestListItems(
       hasHumanGate: !completed && phase.type === "gate",
       estimatedHumanHours,
       estimatedHumanHoursLabel: estimateLabel(estimatedHumanHours),
-      requestedByDisplayName: request.requestedByDisplayName,
+      requestedByDisplayName,
+      origin,
       createdAt: request.createdAt,
       updatedAt: request.updatedAt,
       allowedActions,

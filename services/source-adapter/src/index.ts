@@ -152,7 +152,7 @@ const discordPromptQueues = new Map<string, Promise<void>>();
 const discordRateLimitBuckets = new Map<string, { windowStartMs: number; count: number }>();
 const externalInteractionRateLimiter = new ExternalInteractionRateLimiter();
 let sourceAdapterPolicyCache: { expiresAt: number; platforms: Record<string, DiscordAccessPolicyConfig> } | null = null;
-const buzzInteractionProfileCache = new Map<string, {
+const interactionProfileCache = new Map<string, {
   expiresAt: number;
   profile: ExternalInteractionAuthorization["profile"];
 }>();
@@ -1324,18 +1324,18 @@ function externalInteractionMemoryScope(authorization: ExternalInteractionAuthor
   };
 }
 
-async function loadBuzzInteractionProfile(
+async function loadInteractionProfile(
   profileKey: string,
   expectedMode: DiscordAccessMode,
 ): Promise<ExternalInteractionAuthorization["profile"]> {
   const normalizedKey = profileKey.trim().toLowerCase();
   if (!/^[a-z0-9][a-z0-9._-]{0,119}$/.test(normalizedKey)) {
-    throw new Error("Buzz source policy must specify a valid interactionProfileKey");
+    throw new Error("Source policy must specify a valid interactionProfileKey");
   }
-  const cached = buzzInteractionProfileCache.get(normalizedKey);
+  const cached = interactionProfileCache.get(normalizedKey);
   if (cached && cached.expiresAt > Date.now()) {
     if (cached.profile.mode !== expectedMode) {
-      throw new Error(`Buzz source policy mode ${expectedMode} does not match profile ${normalizedKey} mode ${cached.profile.mode}`);
+      throw new Error(`Source policy mode ${expectedMode} does not match profile ${normalizedKey} mode ${cached.profile.mode}`);
     }
     return cached.profile;
   }
@@ -1345,10 +1345,10 @@ async function loadBuzzInteractionProfile(
   const raw = parseStringRecord(payload.profile);
   const mode = raw.mode;
   if (mode !== "readonly" && mode !== "run-approved" && mode !== "full") {
-    throw new Error(`Buzz interaction profile has an invalid mode: ${String(mode || "missing")}`);
+    throw new Error(`Interaction profile has an invalid mode: ${String(mode || "missing")}`);
   }
   if (mode !== expectedMode) {
-    throw new Error(`Buzz source policy mode ${expectedMode} does not match profile ${normalizedKey} mode ${mode}`);
+    throw new Error(`Source policy mode ${expectedMode} does not match profile ${normalizedKey} mode ${mode}`);
   }
   const persona = parseStringRecord(raw.persona);
   const memoryScope = parseStringRecord(raw.memoryScope ?? raw.memory_scope);
@@ -1381,8 +1381,25 @@ async function loadBuzzInteractionProfile(
     rateLimit,
     version,
   };
-  buzzInteractionProfileCache.set(normalizedKey, { profile, expiresAt: Date.now() + 30_000 });
+  interactionProfileCache.set(normalizedKey, { profile, expiresAt: Date.now() + 30_000 });
   return profile;
+}
+
+async function referencedInteractionProfile(accessPolicy: ResolvedDiscordAccessPolicy) {
+  if (!accessPolicy.interactionProfileKey) return null;
+  return loadInteractionProfile(accessPolicy.interactionProfileKey, accessPolicy.mode);
+}
+
+function communicationProfileInstructions(
+  profile: ExternalInteractionAuthorization["profile"] | null,
+  accessPolicy: ResolvedDiscordAccessPolicy,
+) {
+  if (profile) return externalInteractionPolicyInstructions(buzzInteractionAuthorization(profile, []));
+  return accessPolicy.mode === "readonly"
+    ? "This session is readonly. Do not call writer endpoints, create or mutate tasks/workflows/skills/requests, send adapter messages beyond this reply, or modify repositories. Answer from available context only."
+    : accessPolicy.mode === "run-approved"
+      ? "This session may run existing approved tasks or workflows, but must not author new skills/tasks/workflows or perform broad administrative changes."
+      : "This session is trusted for full agent behavior, subject to normal Prism safeguards.";
 }
 
 function buzzInteractionAuthorization(
@@ -1678,7 +1695,13 @@ async function runBuzzPrompt(input: {
         externalAccessMode: input.profile.mode,
         allowedWorkflows: input.profile.allowedWorkflows,
         memoryScope: externalInteractionMemoryScope(authorization),
-        policyInstructions: externalInteractionPolicyInstructions(authorization),
+        requestOrigin: { sourceSessionId: String(session.id), sourceMessageId: input.event.id },
+        policyInstructions: [
+          externalInteractionPolicyInstructions(authorization),
+          input.profile.mode !== "readonly"
+            ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${String(session.id)} and sourceMessageId ${input.event.id}; do not supply identity display fields.`
+            : "",
+        ].filter(Boolean).join("\n\n"),
         sourceAccessPolicy: input.accessPolicy,
         credentialPolicy: input.credentials.length ? "source-policy" : "none",
       },
@@ -1828,7 +1851,7 @@ async function runBuzzInteractionPoll(): Promise<JsonObject> {
 
     let profile: ExternalInteractionAuthorization["profile"];
     try {
-      const loaded = await loadBuzzInteractionProfile(accessPolicy.interactionProfileKey, accessPolicy.mode);
+      const loaded = await loadInteractionProfile(accessPolicy.interactionProfileKey, accessPolicy.mode);
       profile = { ...loaded, rateLimit: accessPolicy.rateLimit };
     } catch (error) {
       console.error("[buzz-adapter] Buzz interaction profile resolution failed", {
@@ -2434,6 +2457,14 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
     await sendSanitizedTelegramAssistantMessage(transport, readonlyWriteAccessMessage());
     return;
   }
+  let interactionProfile: ExternalInteractionAuthorization["profile"] | null = null;
+  try {
+    interactionProfile = await referencedInteractionProfile(accessPolicy);
+  } catch (error) {
+    console.error("[source-adapter] Telegram interaction profile resolution failed", describeError(error));
+    await sendSanitizedTelegramAssistantMessage(transport, "Prism's interaction profile is unavailable for this chat. Please try again later.");
+    return;
+  }
 
   const userLimit = checkDiscordRateLimit(
     `telegram:user:${transport.authorId}:${accessPolicy.mode}`,
@@ -2473,6 +2504,8 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       chatType: transport.chatType,
       chatTitle: transport.chatTitle,
       accessPolicy,
+      interactionProfileKey: interactionProfile?.key ?? null,
+      interactionProfileVersion: interactionProfile?.version ?? null,
     },
     lastMessageAt: transport.createdAt,
   });
@@ -2503,6 +2536,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
 
   const existingSession = existing?.session && typeof existing.session === "object" ? (existing.session as JsonObject) : {};
   const sessionMeta = session.meta && typeof session.meta === "object" ? (session.meta as JsonObject) : {};
+  const existingMeta = externalSessionMeta(existingSession);
   const sessionRuntimeKey =
     (typeof existingSession.meta === "object" && existingSession.meta && typeof (existingSession.meta as JsonObject).runtimeKey === "string"
       ? String((existingSession.meta as JsonObject).runtimeKey)
@@ -2517,6 +2551,10 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
     (typeof sessionMeta.runtimeContinuationId === "string"
       ? sessionMeta.runtimeContinuationId
       : typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
+  if (
+    (existingMeta.interactionProfileKey ?? null) !== (interactionProfile?.key ?? null)
+    || (existingMeta.interactionProfileVersion ?? null) !== (interactionProfile?.version ?? null)
+  ) runtimeContinuationId = null;
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
   const gatewayCredentials = await resolveInteractiveGatewayCredentials({
     platform: "telegram",
@@ -2538,6 +2576,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       continuationId: runtimeContinuationId,
       recentHistory,
       credentials: gatewayCredentials,
+      runtimeProfileKey: interactionProfile?.runtimeProfileKey ?? null,
       gatewayContext: {
         delegatedActorId: `telegram:${transport.authorId}`,
       },
@@ -2548,12 +2587,17 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
         telegramChatType: transport.chatType,
         telegramAuthorId: transport.authorId,
         telegramAccessPolicy: accessPolicy,
-        policyInstructions:
-          accessPolicy.mode === "readonly"
-            ? "This Telegram session is readonly. Do not call writer endpoints, create or mutate tasks/workflows/skills/requests, send adapter messages beyond this reply, or modify repositories. Answer from available context only."
-            : accessPolicy.mode === "run-approved"
-              ? "This Telegram session may run existing approved tasks or workflows, but must not author new skills/tasks/workflows or perform broad administrative changes."
-              : "This Telegram session is trusted for full agent behavior, subject to normal Prism safeguards.",
+        interactionProfileKey: interactionProfile?.key ?? null,
+        interactionProfileVersion: interactionProfile?.version ?? null,
+        allowedWorkflows: interactionProfile?.allowedWorkflows ?? [],
+        memoryScope: interactionProfile?.memoryScope ?? null,
+        requestOrigin: { sourceSessionId: String(session.id), sourceMessageId: transport.userSourceMessageId },
+        policyInstructions: [
+          communicationProfileInstructions(interactionProfile, accessPolicy),
+          accessPolicy.mode !== "readonly" && accessPolicy.capabilities.includes("requests.create")
+            ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${String(session.id)}${transport.userSourceMessageId ? ` and sourceMessageId ${transport.userSourceMessageId}` : ""}; do not supply identity display fields.`
+            : "",
+        ].filter(Boolean).join("\n\n"),
         adapterCapabilities: {
           adapter: "communication",
           capabilities: canSendAdapterMessages ? ["list-destinations", "send-message"] : [],
@@ -2583,6 +2627,8 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
           chatId: transport.chatId,
           chatType: transport.chatType,
           chatTitle: transport.chatTitle,
+          interactionProfileKey: interactionProfile?.key ?? null,
+          interactionProfileVersion: interactionProfile?.version ?? null,
           runtimeContinuationId,
           runtimeKey: result.runtimeKey,
           runtimeProvider: result.provider,
@@ -3523,6 +3569,14 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
     await sendSanitizedAssistantMessage(transport, readonlyWriteAccessMessage());
     return;
   }
+  let interactionProfile: ExternalInteractionAuthorization["profile"] | null = null;
+  try {
+    interactionProfile = await referencedInteractionProfile(accessPolicy);
+  } catch (error) {
+    console.error("[discord-adapter] interaction profile resolution failed", describeError(error));
+    await sendSanitizedAssistantMessage(transport, "Prism's interaction profile is unavailable for this channel. Please try again later.");
+    return;
+  }
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
 
   const userLimit = checkDiscordRateLimit(
@@ -3563,6 +3617,8 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
       threadName: transport.threadName,
       discordContext: transport.context,
       accessPolicy,
+      interactionProfileKey: interactionProfile?.key ?? null,
+      interactionProfileVersion: interactionProfile?.version ?? null,
     },
     lastMessageAt: transport.createdAt,
   });
@@ -3595,6 +3651,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
 
   const existingSession = existing?.session && typeof existing.session === "object" ? (existing.session as JsonObject) : {};
   const sessionMeta = session.meta && typeof session.meta === "object" ? (session.meta as JsonObject) : {};
+  const existingMeta = externalSessionMeta(existingSession);
   const sessionRuntimeKey =
     (typeof existingSession.meta === "object" && existingSession.meta && typeof (existingSession.meta as JsonObject).runtimeKey === "string"
       ? String((existingSession.meta as JsonObject).runtimeKey)
@@ -3609,6 +3666,10 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
     (typeof sessionMeta.runtimeContinuationId === "string"
       ? sessionMeta.runtimeContinuationId
       : typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
+  if (
+    (existingMeta.interactionProfileKey ?? null) !== (interactionProfile?.key ?? null)
+    || (existingMeta.interactionProfileVersion ?? null) !== (interactionProfile?.version ?? null)
+  ) runtimeContinuationId = null;
   const gatewayCredentials = await resolveInteractiveGatewayCredentials({
     platform: "discord",
     targetId: transport.channelId,
@@ -3627,6 +3688,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         continuationId: runtimeContinuationId,
         recentHistory,
         credentials: gatewayCredentials,
+        runtimeProfileKey: interactionProfile?.runtimeProfileKey ?? null,
         gatewayContext: {
           delegatedActorId: `discord:${transport.authorId}`,
         },
@@ -3640,12 +3702,17 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
           discordAuthorRoleIds: transport.authorRoleIds,
           discordContext: transport.context,
           discordAccessPolicy: accessPolicy,
-          policyInstructions:
-            accessPolicy.mode === "readonly"
-              ? "This Discord session is readonly. Do not call writer endpoints, create or mutate tasks/workflows/skills/requests, send adapter messages beyond this reply, or modify repositories. Answer from available context only."
-              : accessPolicy.mode === "run-approved"
-                ? "This Discord session may run existing approved tasks or workflows, but must not author new skills/tasks/workflows or perform broad administrative changes. When requests.create is granted, start an existing workflow with POST /agent/change-board/requests; attempt that service-token route before claiming request creation is unavailable."
-                : "This Discord session is trusted for full agent behavior, subject to normal Prism safeguards. When requests.create is granted, start an existing workflow with POST /agent/change-board/requests; attempt that service-token route before claiming request creation is unavailable.",
+          interactionProfileKey: interactionProfile?.key ?? null,
+          interactionProfileVersion: interactionProfile?.version ?? null,
+          allowedWorkflows: interactionProfile?.allowedWorkflows ?? [],
+          memoryScope: interactionProfile?.memoryScope ?? null,
+          requestOrigin: { sourceSessionId: String(session.id), sourceMessageId: transport.userSourceMessageId },
+          policyInstructions: [
+            communicationProfileInstructions(interactionProfile, accessPolicy),
+            accessPolicy.mode !== "readonly" && accessPolicy.capabilities.includes("requests.create")
+              ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${String(session.id)} and sourceMessageId ${transport.userSourceMessageId ?? "null"}; do not supply identity display fields.`
+              : "",
+          ].filter(Boolean).join("\n\n"),
           adapterCapabilities: {
             adapter: "communication",
             instructions: canSendAdapterMessages
@@ -3680,6 +3747,8 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
             transport: "discord",
             channelName: transport.channelName,
             threadName: transport.threadName,
+            interactionProfileKey: interactionProfile?.key ?? null,
+            interactionProfileVersion: interactionProfile?.version ?? null,
             runtimeContinuationId,
             runtimeKey: result.runtimeKey,
             runtimeProvider: result.provider,
@@ -4854,7 +4923,13 @@ async function main(): Promise<void> {
           externalAccessMode: authorization.profile.mode,
           allowedWorkflows: authorization.profile.allowedWorkflows,
           memoryScope: externalInteractionMemoryScope(authorization),
-          policyInstructions: externalInteractionPolicyInstructions(authorization),
+          requestOrigin: { sourceSessionId: sessionId, sourceMessageId },
+          policyInstructions: [
+            externalInteractionPolicyInstructions(authorization),
+            authorization.profile.mode !== "readonly"
+              ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${sessionId}${sourceMessageId ? ` and sourceMessageId ${sourceMessageId}` : ""}; do not supply identity display fields.`
+              : "",
+          ].filter(Boolean).join("\n\n"),
           credentialPolicy: authorization.profile.mode === "full" ? "trusted-source" : "none",
         },
       });

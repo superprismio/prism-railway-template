@@ -4,6 +4,7 @@ import {
   buildTargetEnvironmentDeployPlan,
   findAgentSessionBySourceContext,
   findLatestAgentSessionByChangeRequest,
+  getAgentSession,
   getChangeRequest,
   getTargetApp,
   getTargetEnvironment,
@@ -136,7 +137,8 @@ export async function GET(request: Request, context: RouteContext) {
   const agentSession = findAgentSessionBySourceContext({
     source: "admin-console",
     contextKey: `prism-lab-request:${changeRequest.id}`,
-  }) ?? findLatestAgentSessionByChangeRequest(changeRequest.id)
+  }) ?? (changeRequest.origin?.sourceSessionId ? getAgentSession(changeRequest.origin.sourceSessionId) : null)
+    ?? findLatestAgentSessionByChangeRequest(changeRequest.id)
   const agentMessages = agentSession ? listAgentMessages(agentSession.id, messageLimit) : []
 
   return NextResponse.json({

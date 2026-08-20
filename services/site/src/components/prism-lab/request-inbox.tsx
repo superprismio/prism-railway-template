@@ -163,11 +163,25 @@ function RequestRow({
             <dt className="sr-only">Source</dt>
             <dd className="truncate">{request.source.label}</dd>
           </div>
+          {request.origin?.targetId ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <Inbox className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <dt className="sr-only">Target or channel</dt>
+              <dd className="truncate">{request.origin.targetName || request.origin.targetId}</dd>
+            </div>
+          ) : null}
           <div className="flex min-w-0 items-center gap-2">
             <UserRound className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <dt className="sr-only">Initiator</dt>
             <dd className="truncate">{request.requestedByDisplayName || "Unknown initiator"}</dd>
           </div>
+          {request.origin?.interactionProfileKey ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <Bot className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <dt className="sr-only">Interaction profile</dt>
+              <dd className="truncate">{request.origin.interactionProfileKey}</dd>
+            </div>
+          ) : null}
           <div className="flex min-w-0 items-center gap-2">
             <Clock3 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <dt className="sr-only">Human estimate and last update</dt>
@@ -229,6 +243,9 @@ export function RequestInbox({
     filters.phase,
     filters.priority,
     filters.source,
+    filters.target,
+    filters.profile,
+    filters.initiator,
     filters.attention !== "all" ? filters.attention : null,
     filters.sort !== "attention" ? filters.sort : null,
   ].filter(Boolean).length
@@ -278,7 +295,7 @@ export function RequestInbox({
 
         <form action="/admin/lab" method="get" className="border border-border/60 bg-card/40 p-3 sm:p-4">
           <input type="hidden" name="lifecycle" value={filters.lifecycle} />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-8">
             <div className="space-y-1.5 sm:col-span-2 lg:col-span-2">
               <Label htmlFor="lab-request-search" className="text-xs text-muted-foreground">Search requests</Label>
               <div className="relative">
@@ -301,9 +318,21 @@ export function RequestInbox({
               <option value="">All priorities</option>
               {options.priorities.map((priority) => <option key={priority} value={priority}>{priority}</option>)}
             </FilterSelect>
-            <FilterSelect id="lab-source" name="source" label="Source" value={filters.source ?? ""}>
-              <option value="">All sources</option>
+            <FilterSelect id="lab-source" name="platform" label="Platform" value={filters.source ?? ""}>
+              <option value="">All platforms</option>
               {options.sources.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </FilterSelect>
+            <FilterSelect id="lab-target" name="target" label="Target / channel" value={filters.target ?? ""}>
+              <option value="">All targets</option>
+              {options.targets.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </FilterSelect>
+            <FilterSelect id="lab-profile" name="profile" label="Interaction profile" value={filters.profile ?? ""}>
+              <option value="">All profiles</option>
+              {options.profiles.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </FilterSelect>
+            <FilterSelect id="lab-initiator" name="initiator" label="Initiator" value={filters.initiator ?? ""}>
+              <option value="">All initiators</option>
+              {options.initiators.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </FilterSelect>
             <FilterSelect id="lab-attention" name="attention" label="Attention" value={filters.attention}>
               {attentionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
@@ -311,7 +340,7 @@ export function RequestInbox({
             <FilterSelect id="lab-sort" name="sort" label="Sort" value={filters.sort}>
               {sortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </FilterSelect>
-            <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-5 lg:justify-end">
+            <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-8 lg:justify-end">
               <Button type="submit" size="sm">Apply filters</Button>
               <Link href="/admin/lab" className={buttonVariants({ variant: "ghost", size: "sm" })}>
                 <RotateCcw aria-hidden="true" />

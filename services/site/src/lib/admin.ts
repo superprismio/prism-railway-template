@@ -1,4 +1,4 @@
-import { getAdminBoardSnapshot, getAdminSetupStatus, loadConfig, readSiteContent } from "@/lib/app-core"
+import { getAdminBoardSnapshot, getAdminSetupStatus, loadConfig, readSiteContent, type RequestOriginSnapshot } from "@/lib/app-core"
 import { requireAdminSession } from "@/lib/admin-auth"
 import { getPrismUpdateStatus, type PrismUpdateStatus } from "@/lib/prism-version"
 import type { Capability } from "@/lib/role-access"
@@ -61,7 +61,8 @@ export type ChangeRequestRecord = {
   source: string
   requestedByUserId: string | null
   requestedByDisplayName: string | null
-  targetAppId: string | null
+  origin?: RequestOriginSnapshot | null
+  targetAppId?: string | null
   targetAppSlug: string | null
   targetAppName: string | null
   targetEnvironmentId: string | null

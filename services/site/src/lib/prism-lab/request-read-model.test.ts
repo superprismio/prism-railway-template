@@ -201,3 +201,22 @@ test("null request phase resolves the configured workflow entrypoint before the 
   assert.equal(item.allowedActions.continueHumanGate.allowed, true);
   assert.equal(item.allowedActions.invokeCurrentStep.allowed, false);
 });
+
+test("immutable origin snapshot overrides loose source labels without exposing external subjects", () => {
+  const data = board([request({
+      source: "caller-controlled-label",
+      requestedByDisplayName: null,
+      origin: {
+        sourceSessionId: "external-session", platform: "external", targetId: "partner-api", targetName: "Partner API",
+        threadId: null, interfaceKey: "partner-api", interactionProfileKey: "partner-readonly", interactionProfileVersion: 4,
+        actorType: "external-subject", actorId: null, actorDisplayName: null, sourceMessageId: "event-1",
+        rawSource: "external", backfillStatus: "complete", capturedAt: "2026-01-01T00:00:00.000Z",
+      },
+    })]);
+  const [item] = buildLabRequestListItems(data, ["canViewRequests"]);
+  assert.equal(item.source.key, "external");
+  assert.equal(item.requestedByDisplayName, "External subject");
+  assert.equal(item.origin?.interactionProfileKey, "partner-readonly");
+  assert.equal(item.searchText.includes("partner-api"), true);
+  assert.equal(item.searchText.includes("caller-controlled-label"), false);
+});

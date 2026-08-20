@@ -3,6 +3,13 @@ import { loadConfig } from './config';
 import { getDb } from './db';
 import { getDefaultHomeModules, getHomeModuleDefinition, normalizeHomeModuleConfig } from './home-modules';
 import { normalizeSiteContent, writeSiteContent } from './site-content';
+import {
+  getRequestOrigin,
+  insertRequestOrigin,
+  listRequestOrigins,
+  resolveRequestOriginSnapshot,
+  type RequestOriginSnapshot,
+} from './request-origin';
 
 interface UserRow {
   id: string;
@@ -325,6 +332,7 @@ export interface ChangeRequestRecord {
   source: string;
   requestedByUserId: string | null;
   requestedByDisplayName: string | null;
+  origin?: RequestOriginSnapshot | null;
   targetAppId?: string | null;
   targetAppSlug: string | null;
   targetAppName: string | null;
@@ -427,6 +435,11 @@ export interface UpdateTargetEnvironmentInput {
 export interface ListChangeRequestsInput {
   targetAppId?: string;
   source?: string;
+  platform?: string;
+  originTargetId?: string;
+  interactionProfileKey?: string;
+  originActor?: string;
+  query?: string;
   openOnly?: boolean;
   limit?: number;
 }
@@ -439,6 +452,10 @@ export interface CreateChangeRequestInput {
   priority?: string;
   source?: string;
   requestedByUserId?: string | null;
+  /** Trusted Site-owned source session used to resolve immutable provenance. */
+  sourceSessionId?: string | null;
+  /** Optional source message within sourceSessionId; display identity is never accepted here. */
+  sourceMessageId?: string | null;
   targetAppId?: string | null;
   targetEnvironmentId?: string | null;
   triageSummary?: string | null;
@@ -1697,6 +1714,7 @@ function parseTrackedChangeRequestRow(row: {
     source: row.source,
     requestedByUserId: row.requested_by_user_id,
     requestedByDisplayName: row.requested_by_display_name,
+    origin: null,
     targetAppId: row.target_app_id,
     targetAppSlug: row.target_app_slug,
     targetAppName: row.target_app_name,
@@ -2101,6 +2119,13 @@ function withWorkflowAttention<T extends ChangeRequestRecord>(request: T, attent
   return {
     ...request,
     workflowAttention: attention === undefined ? getWorkflowAttentionForRequest(request.id) : attention,
+  };
+}
+
+function withRequestOrigin(request: ChangeRequestRecord, origin?: RequestOriginSnapshot | null): ChangeRequestRecord {
+  return {
+    ...request,
+    origin: origin === undefined ? getRequestOrigin(request.id) : origin,
   };
 }
 
@@ -3728,6 +3753,36 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     conditions.push('cr.source = ?');
     params.push(input.source);
   }
+  if (input.platform) {
+    conditions.push('EXISTS (SELECT 1 FROM request_origins ro WHERE ro.request_id = cr.id AND ro.platform = ?)');
+    params.push(input.platform);
+  }
+  if (input.originTargetId) {
+    conditions.push('EXISTS (SELECT 1 FROM request_origins ro WHERE ro.request_id = cr.id AND ro.target_id = ?)');
+    params.push(input.originTargetId);
+  }
+  if (input.interactionProfileKey) {
+    conditions.push('EXISTS (SELECT 1 FROM request_origins ro WHERE ro.request_id = cr.id AND ro.interaction_profile_key = ?)');
+    params.push(input.interactionProfileKey);
+  }
+  if (input.originActor) {
+    conditions.push('EXISTS (SELECT 1 FROM request_origins ro WHERE ro.request_id = cr.id AND COALESCE(ro.actor_id, ro.actor_type, \'unknown\') = ?)');
+    params.push(input.originActor);
+  }
+  if (input.query) {
+    conditions.push(`(
+      CAST(cr.request_number AS TEXT) LIKE ? OR lower(cr.title) LIKE ? OR lower(cr.description) LIKE ?
+      OR EXISTS (
+        SELECT 1 FROM request_origins ro WHERE ro.request_id = cr.id AND lower(
+          COALESCE(ro.target_name, '') || ' ' || COALESCE(ro.target_id, '') || ' '
+          || COALESCE(ro.interaction_profile_key, '') || ' ' || COALESCE(ro.actor_display_name, '') || ' '
+          || COALESCE(ro.actor_id, '') || ' ' || COALESCE(ro.raw_source, '')
+        ) LIKE ?
+      )
+    )`);
+    const query = `%${input.query.toLocaleLowerCase()}%`;
+    params.push(query, query, query, query);
+  }
   if (input.openOnly) {
     conditions.push("COALESCE(wr.status, 'active') != 'completed'");
     conditions.push('cr.completed_at IS NULL');
@@ -3780,7 +3835,11 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
 
   const requests = rows.map(parseTrackedChangeRequestRow);
   const attentionByRequestId = listWorkflowAttentionForRequests(requests);
-  return requests.map((request) => withWorkflowAttention(request, attentionByRequestId.get(request.id) ?? null));
+  const originsByRequestId = listRequestOrigins(requests.map((request) => request.id));
+  return requests.map((request) => withRequestOrigin(
+    withWorkflowAttention(request, attentionByRequestId.get(request.id) ?? null),
+    originsByRequestId.get(request.id) ?? null,
+  ));
 }
 
 export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) {
@@ -3891,7 +3950,7 @@ export function getNextQueuedChangeRequest(input: ListChangeRequestsInput = {}) 
       }
     | undefined;
 
-  return row ? withWorkflowAttention(parseTrackedChangeRequestRow(row)) : null;
+  return row ? withRequestOrigin(withWorkflowAttention(parseTrackedChangeRequestRow(row))) : null;
 }
 
 export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {}) {
@@ -3969,7 +4028,7 @@ export function getCurrentActiveChangeRequest(input: ListChangeRequestsInput = {
   params.push(...activeAgentRunStatuses);
 
   const row = getDb().prepare(sql).get(...params) as Parameters<typeof parseTrackedChangeRequestRow>[0] | undefined;
-  return row ? withWorkflowAttention(parseTrackedChangeRequestRow(row)) : null;
+  return row ? withRequestOrigin(withWorkflowAttention(parseTrackedChangeRequestRow(row))) : null;
 }
 
 export function getChangeRequest(changeRequestId: string) {
@@ -4050,7 +4109,7 @@ export function getChangeRequest(changeRequestId: string) {
       }
     | undefined;
 
-  return row ? withWorkflowAttention(parseTrackedChangeRequestRow(row)) : null;
+  return row ? withRequestOrigin(withWorkflowAttention(parseTrackedChangeRequestRow(row))) : null;
 }
 
 export function getChangeRequestByNumber(requestNumber: number) {
@@ -4090,6 +4149,13 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
     }
   }
   const db = getDb();
+  const origin = resolveRequestOriginSnapshot({
+    sourceSessionId: input.sourceSessionId,
+    sourceMessageId: input.sourceMessageId,
+    rawSource: input.source ?? 'manual',
+    requestedByUserId: input.requestedByUserId,
+    capturedAt: now,
+  }, db);
   db.transaction(() => {
     db
       .prepare(
@@ -4121,6 +4187,15 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
         now,
         now,
       );
+
+    insertRequestOrigin(id, origin, db);
+    if (origin.sourceSessionId) {
+      db.prepare(`
+        UPDATE agent_sessions
+        SET linked_change_request_id = COALESCE(linked_change_request_id, ?), updated_at = ?
+        WHERE id = ?
+      `).run(id, now, origin.sourceSessionId);
+    }
 
     ensureWorkflowRunForRequest({
       requestId: id,

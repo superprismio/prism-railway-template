@@ -34,6 +34,9 @@ export type LabRequestFilterState = {
   phase: string | null;
   priority: string | null;
   source: string | null;
+  target: string | null;
+  profile: string | null;
+  initiator: string | null;
   attention: LabRequestAttentionFilter;
   sort: LabRequestSort;
 };
@@ -103,6 +106,7 @@ export type LabRequestListItem = {
   estimatedHumanHours: number | null;
   estimatedHumanHoursLabel: string | null;
   requestedByDisplayName: string | null;
+  origin?: LabRequestOriginSnapshot | null;
   createdAt: string;
   updatedAt: string;
   allowedActions: LabRequestAllowedActions;
@@ -127,7 +131,8 @@ export type LabRequestOriginSnapshot = {
     | "external"
     | "task"
     | "hook"
-    | "system";
+    | "system"
+    | "unknown";
   targetId: string | null;
   targetName: string | null;
   threadId: string | null;
@@ -138,6 +143,8 @@ export type LabRequestOriginSnapshot = {
   actorId: string | null;
   actorDisplayName: string | null;
   sourceMessageId: string | null;
+  rawSource: string | null;
+  backfillStatus: "complete" | "partial" | "unknown";
   capturedAt: string;
 };
 

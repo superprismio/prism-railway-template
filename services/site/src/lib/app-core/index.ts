@@ -1,6 +1,16 @@
 export { loadConfig, type AppConfig, type CommunityProvider } from './config';
 export { getDb, closeDb, runMigrations } from './db';
 export { getAdminBoardSnapshot, getAdminSetupStatus } from './admin-read';
+export {
+  getRequestOrigin,
+  insertRequestOrigin,
+  listRequestOrigins,
+  normalizeRequestOriginPlatform,
+  resolveRequestOriginSnapshot,
+  type RequestOriginBackfillStatus,
+  type RequestOriginPlatform,
+  type RequestOriginSnapshot,
+} from './request-origin';
 export { buildTargetEnvironmentDeployPlan, type TargetEnvironmentDeployPlan } from './deploy-adapters';
 export { buildHostedSkillArchive, deleteCustomSkill, listHostedSkills, readHostedSkillMarkdown, upsertCustomSkill, type HostedSkillSummary } from './hosted-skills';
 export {
