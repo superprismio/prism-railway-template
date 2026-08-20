@@ -107,6 +107,25 @@ test("remote review composition preserves the local aggregate contract", () => {
   })
 })
 
+test("promoted console origin is not reused as the request conversation", () => {
+  const review = composeRemotePrismLabReview(
+    {
+      detail: { changeRequest: { id: "req-1", requestNumber: 43, origin: { sourceSessionId: "console-1" } } },
+      executions: {}, events: {}, artifacts: {}, externalRefs: {},
+      agentThread: {
+        session: { id: "console-1", source: "admin-console" },
+        messages: [{ id: "private-console-message" }],
+      },
+    },
+    { messageLimit: 10, eventLimit: 10, artifactLimit: 10 },
+    { canRunAgent: true, canComment: true },
+  )
+  assert.equal(review.ok, true)
+  if (!review.ok) return
+  assert.equal(review.agentSession, null)
+  assert.deepEqual(review.agentMessages, [])
+})
+
 test("remote continuation body cannot carry caller-selected routing or skills", () => {
   const body = buildRemotePrismLabContinueBody({
     prompt: "Continue normally.",

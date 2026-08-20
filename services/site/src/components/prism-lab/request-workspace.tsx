@@ -28,9 +28,12 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { RequestTimeline } from "@/components/prism-lab/request-timeline"
+import { WorkflowExplorer } from "@/components/prism-lab/workflow-explorer"
 import { cn } from "@/lib/utils"
 import type { LabRequestListItem } from "@/lib/prism-lab/contracts"
 import { decideConversationViewportUpdate } from "@/lib/prism-lab/conversation-viewport"
+import { buildRequestTimeline } from "@/lib/prism-lab/request-timeline"
 import {
   beginRequestReviewLoad,
   captureRequestReviewScope,
@@ -39,6 +42,7 @@ import {
   isCurrentRequestReviewScope,
   selectRequestReviewScope,
 } from "@/lib/prism-lab/request-review-coordinator"
+import { buildWorkflowExplorer } from "@/lib/prism-lab/workflow-explorer"
 
 type ReviewCapabilities = {
   canViewRequests: boolean
@@ -117,6 +121,8 @@ type RequestReview = {
     } | null
   }
   workflow: {
+    key?: string
+    name?: string
     definition?: {
       steps?: Array<Record<string, unknown>>
     }
@@ -356,6 +362,18 @@ export function RequestWorkspace({
   }, [lastMessageId, request.id, review])
 
   const step = useMemo(() => review ? currentStep(review) : null, [review])
+  const timeline = useMemo(() => review ? buildRequestTimeline({
+    messages: review.agentMessages,
+    runs: review.agentRuns,
+    artifacts: review.artifacts,
+    events: review.workflowEvents,
+    externalRefs: review.externalRefs,
+  }) : [], [review])
+  const workflowExplorer = useMemo(() => review ? buildWorkflowExplorer({
+    definition: review.workflow?.definition as Record<string, unknown> | undefined,
+    currentStepKey: review.workflowRun?.currentStepKey || review.changeRequest.currentWorkflowStepKey,
+    events: review.workflowEvents,
+  }) : [], [review])
   const state = review ? workspaceState(review) : null
   const activeRun = review?.agentRuns.some((run) => activeRunStatuses.has(run.status.toLowerCase())) ?? false
   const terminal = state === "completed"
@@ -671,6 +689,18 @@ export function RequestWorkspace({
             {notice ? <p className="flex items-center gap-2 text-sm text-primary"><CheckCircle2 aria-hidden="true" />{notice}</p> : null}
             {loadError && review ? <p className="text-xs text-muted-foreground">Background refresh failed: {loadError}</p> : null}
           </div>
+
+          <WorkflowExplorer
+            workflowName={review.workflow?.name || review.workflow?.key || request.workflowKey}
+            workflowStatus={review.workflowRun?.status ?? null}
+            steps={workflowExplorer}
+          />
+
+          <RequestTimeline
+            requestId={request.id}
+            items={timeline}
+            canViewArtifacts={canViewRequests}
+          />
 
           <section aria-labelledby="technical-heading" className="mt-5 border border-border/60 bg-card/30">
             <div className="flex items-center justify-between gap-3 px-4 py-3">

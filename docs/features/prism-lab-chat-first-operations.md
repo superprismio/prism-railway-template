@@ -2,7 +2,7 @@
 
 ## Status
 
-Future feature specification. Slices 0–3 are implemented on the Lab feature
+Future feature specification. Slices 0–5 are implemented on the Lab feature
 branch; later slices remain proposed.
 
 This document proposes an additive, field-testable replacement for the current
@@ -721,6 +721,18 @@ Acceptance criteria:
 - Timeline ordering remains stable while new events arrive.
 - Raw traces are available without becoming the default reading experience.
 
+Implementation note (2026-08-20): request review now deterministically merges
+messages, workflow events, agent runs, artifacts, and external references by
+timestamp, event kind, and durable identifier. The newest review window is
+shown first with incremental older-event disclosure; message bodies and raw
+run traces remain collapsed by default. Artifacts link to their producing run
+when that relationship is known. The workflow explorer marks current,
+observed, completed, terminal, branch, and backward-loop states from the live
+definition and recorded events. `/admin/lab/activity` provides auto-refreshed
+cross-request Activity and Needs Attention views from the capability-filtered
+canonical request snapshot without adding privileged run payloads to the
+board response.
+
 ### Slice 5: Console, capture, and simplified settings integration
 
 **Depends on:** Slices 1-2.
@@ -742,6 +754,19 @@ Acceptance criteria:
 - Promoting a conversation preserves source-session provenance.
 - Credential entry and rotation remain explicit settings operations.
 - No credential value enters model prompts, request artifacts, or chat.
+
+Implementation note (2026-08-20): `/admin/lab/console` reuses the existing
+durable admin-console job/session contract and exposes browser Capture as a
+clearly labeled console context mode. An operator may promote an unlinked
+console session exactly once into a canonical request. Site validates the
+workflow, target, type, and priority, snapshots the console session as request
+origin provenance, creates a distinct empty request conversation, records an
+audit event, and invokes normal workflow auto-start. `/admin/lab/settings`
+links Gateway, Interfaces, Runtimes, and Source Policies to their existing
+credential-safe settings flows. Its Console assistance links prefill only
+allowlisted non-secret planning prompts. Lab navigation is capability-filtered
+so request viewers, run operators, and settings managers see only their
+available surfaces.
 
 ### Slice 6: Execution-profile registry and run snapshots
 

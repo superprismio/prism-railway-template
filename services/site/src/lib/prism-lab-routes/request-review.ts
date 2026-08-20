@@ -55,7 +55,14 @@ export function composeRemotePrismLabReview(
     .slice(0, limits.eventLimit)
   const artifacts = recordArray(payloads.artifacts.artifacts).slice(0, limits.artifactLimit)
   const externalRefs = recordArray(payloads.externalRefs.externalRefs)
-  const agentMessages = recordArray(payloads.agentThread.messages).slice(-limits.messageLimit)
+  const remoteSession = optionalRecord(payloads.agentThread.session)
+  const requestOrigin = optionalRecord(changeRequest.origin)
+  const isPromotedConsoleOrigin = remoteSession?.source === "admin-console"
+    && typeof remoteSession.id === "string"
+    && remoteSession.id === requestOrigin?.sourceSessionId
+  const agentMessages = isPromotedConsoleOrigin
+    ? []
+    : recordArray(payloads.agentThread.messages).slice(-limits.messageLimit)
 
   return {
     ok: true as const,
@@ -78,7 +85,7 @@ export function composeRemotePrismLabReview(
     workflowEvents,
     artifacts,
     externalRefs,
-    agentSession: optionalRecord(payloads.agentThread.session),
+    agentSession: isPromotedConsoleOrigin ? null : remoteSession,
     agentMessages,
   }
 }

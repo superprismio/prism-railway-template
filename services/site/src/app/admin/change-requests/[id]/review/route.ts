@@ -134,11 +134,15 @@ export async function GET(request: Request, context: RouteContext) {
   const workflowEvents = listWorkflowEventsForRequest(changeRequest.id, eventLimit)
   const artifacts = listRequestArtifacts(changeRequest.id, artifactLimit)
   const externalRefs = listRequestExternalRefs(changeRequest.id)
-  const agentSession = findAgentSessionBySourceContext({
+  const requestConversation = findAgentSessionBySourceContext({
     source: "admin-console",
     contextKey: `prism-lab-request:${changeRequest.id}`,
-  }) ?? (changeRequest.origin?.sourceSessionId ? getAgentSession(changeRequest.origin.sourceSessionId) : null)
-    ?? findLatestAgentSessionByChangeRequest(changeRequest.id)
+  })
+  const originSession = changeRequest.origin?.sourceSessionId ? getAgentSession(changeRequest.origin.sourceSessionId) : null
+  const latestLinkedSession = findLatestAgentSessionByChangeRequest(changeRequest.id)
+  const agentSession = requestConversation
+    ?? (originSession?.source !== "admin-console" ? originSession : null)
+    ?? (latestLinkedSession?.id !== originSession?.id ? latestLinkedSession : null)
   const agentMessages = agentSession ? listAgentMessages(agentSession.id, messageLimit) : []
 
   return NextResponse.json({

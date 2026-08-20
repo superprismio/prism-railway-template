@@ -19,6 +19,12 @@ type ConsoleMessage = {
   content: string;
 };
 
+export type ConsoleSessionSnapshot = {
+  sessionId: string | null;
+  messages: ReadonlyArray<ConsoleMessage>;
+  pending: boolean;
+};
+
 type StoredConsoleMessage = {
   id: string;
   role: string;
@@ -97,11 +103,15 @@ function isTransientConsolePollError(error: unknown) {
 export function CodexConsole({
   isActive = true,
   sessionControlsTargetId,
+  initialDraft = "",
+  onSessionSnapshot,
 }: {
   isActive?: boolean;
   sessionControlsTargetId?: string;
+  initialDraft?: string;
+  onSessionSnapshot?: (snapshot: ConsoleSessionSnapshot) => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialDraft);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConsoleMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -121,6 +131,15 @@ export function CodexConsole({
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const isPending = isSubmitting || Boolean(activeJobId);
+
+  useEffect(() => {
+    if (!initialDraft) return;
+    setDraft((current) => current.trim() ? current : initialDraft);
+  }, [initialDraft]);
+
+  useEffect(() => {
+    onSessionSnapshot?.({ sessionId, messages, pending: isPending });
+  }, [isPending, messages, onSessionSnapshot, sessionId]);
 
   useEffect(() => {
     const coarsePointerQuery = window.matchMedia("(pointer: coarse)");

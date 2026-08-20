@@ -16,6 +16,7 @@ import { ThemeToggle } from "@/components/shared/theme-toggle"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import type { Capability } from "@/lib/role-access"
 
 type LabSection = {
   label: string
@@ -23,6 +24,7 @@ type LabSection = {
   href: string
   icon: typeof Inbox
   available: boolean
+  capability: Capability
 }
 
 const labSections: readonly LabSection[] = [
@@ -32,38 +34,43 @@ const labSections: readonly LabSection[] = [
     href: "/admin/lab",
     icon: Inbox,
     available: true,
+    capability: "canViewRequests",
   },
   {
     label: "Console",
     description: "Workspace conversation",
     href: "/admin/lab/console",
     icon: MessageSquareText,
-    available: false,
+    available: true,
+    capability: "canRunAgent",
   },
   {
     label: "Activity",
     description: "Cross-request attention",
     href: "/admin/lab/activity",
     icon: Activity,
-    available: false,
+    available: true,
+    capability: "canViewRequests",
   },
   {
     label: "Settings",
     description: "Focused configuration",
     href: "/admin/lab/settings",
     icon: Settings,
-    available: false,
+    available: true,
+    capability: "canManageSettings",
   },
 ]
 
-function LabNavigation({ compact = false }: { compact?: boolean }) {
+function LabNavigation({ compact = false, capabilities }: { compact?: boolean; capabilities: readonly Capability[] }) {
   const pathname = usePathname()
+  const visibleSections = labSections.filter((section) => capabilities.includes(section.capability))
 
   if (compact) {
     return (
       <nav aria-label="Lab sections" className="overflow-x-auto border-b border-border/60 bg-card/35 lg:hidden">
         <ul className="flex min-w-max items-center gap-1 px-3 py-2">
-          {labSections.map((section) => {
+          {visibleSections.map((section) => {
             const Icon = section.icon
             const active = section.available && (
               pathname === section.href ||
@@ -112,7 +119,7 @@ function LabNavigation({ compact = false }: { compact?: boolean }) {
         Workspace
       </p>
       <ul className="mt-3 space-y-1">
-        {labSections.map((section) => {
+        {visibleSections.map((section) => {
           const Icon = section.icon
           const active = section.available && (
             pathname === section.href ||
@@ -202,10 +209,13 @@ function LabUnavailable() {
 export function LabShell({
   children,
   enabled = true,
+  capabilities = [],
 }: {
   children: ReactNode
   enabled?: boolean
+  capabilities?: readonly Capability[]
 }) {
+  const showNavigation = enabled && capabilities.length > 0
   return (
     <div data-lab-shell className="min-h-screen w-full bg-background text-foreground">
       <a
@@ -247,12 +257,12 @@ export function LabShell({
         </div>
       </header>
 
-      {enabled ? <LabNavigation compact /> : null}
+      {showNavigation ? <LabNavigation compact capabilities={capabilities} /> : null}
 
-      <div className={cn("mx-auto w-full max-w-[112rem]", enabled && "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]")}>
-        {enabled ? (
+      <div className={cn("mx-auto w-full max-w-[112rem]", showNavigation && "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]")}>
+        {showNavigation ? (
           <aside className="hidden min-h-[calc(100vh-4rem)] border-r border-border/60 bg-card/25 px-4 py-6 lg:block">
-            <LabNavigation />
+            <LabNavigation capabilities={capabilities} />
           </aside>
         ) : null}
         <main id="lab-content" tabIndex={-1} className="min-w-0 outline-none">

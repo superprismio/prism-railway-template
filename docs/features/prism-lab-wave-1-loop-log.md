@@ -180,3 +180,19 @@ Short evidence log for the Slices 0–2 implementation gauntlet.
 - Fix: added nullable `request_origins`, accepted only source session/message references at request creation, resolved and snapshotted Site-owned metadata, exposed platform/target/profile/initiator filters and provenance labels, and applied referenced profile runtime/persona/memory/version behavior across communication adapters
 - Result: focused provenance/privacy/filter/auth tests, the 102-test Site suite, the 24-test Source Adapter suite, both typechecks/builds, and a complete fresh 39-migration database run pass
 - Remaining risk: deployed end-to-end validation still needs real Discord, Telegram, Buzz, and external-interface traffic; legacy split-service mode returns origin snapshots only when its upstream request-detail deployment includes Slice 3
+
+## Iteration 20 — Direct Slice 4 operations observability build
+
+- Component: unified request timeline, workflow explorer, and cross-request Activity/Needs Attention views
+- Evaluated: deterministic same-timestamp ordering, bounded older-event disclosure, artifact-to-run provenance, workflow branch/loop rendering, attention precedence, capability-safe cross-request summaries, and live refresh behavior
+- Fix: merged request messages/events/runs/artifacts/external refs into one chronological read model, added an event-linked workflow map, promoted Activity to a real Lab route, and kept raw traces in the existing collapsed technical evidence surface
+- Result: focused timeline/workflow/activity regressions, the 106-test Site suite, Site typecheck, 83-route production build, and diff check pass
+- Remaining risk: cross-request Activity intentionally uses the minimal canonical board projection rather than distributing privileged run/event payloads; deeper event-level global pagination can be added behind a dedicated capability-checked feed if field testing shows it is needed
+
+## Iteration 21 — Direct Slice 5 console and focused-settings build
+
+- Component: Lab Console, Capture context mode, console-to-request promotion, focused Settings, and capability-aware navigation
+- Evaluated: durable session/job reuse, console/request conversation isolation, trusted provenance, bounded promotion fields, workflow/target validation, normal auto-start, credential-safe configuration links, and role capability visibility
+- Fix: enabled Console and Settings routes, embedded existing Capture behavior as a console mode, added a capability-checked promotion boundary with a separate request session, and added allowlisted non-secret configuration planning prompts
+- Result: focused promotion/configuration/session-isolation tests, the 110-test Site suite, Site typecheck, production build with Console/Settings/promotion routes, and diff check pass
+- Remaining risk: split-service promotion depends on the upstream Slice 3 request-create contract honoring `sourceSessionId`; the local Site-owned path enforces and tests the complete provenance boundary
