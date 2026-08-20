@@ -46,7 +46,15 @@ let prompt = '';
 for await (const chunk of process.stdin) prompt += chunk;
 console.log(JSON.stringify({ type: 'thread.started', thread_id: 'fake-thread' }));
 if (prompt.includes('WAIT_FOR_CANCEL')) await new Promise((resolve) => setTimeout(resolve, 30000));
-const response = prompt.includes('LARGE_STDIN_PROMPT') ? 'STDIN_BYTES:' + Buffer.byteLength(prompt) : 'NORMALIZED_OK';
+const response = prompt.includes('AUTHORITY_PROBE')
+  ? JSON.stringify({
+      args,
+      env: Object.fromEntries([
+        'OPENAI_API_KEY', 'PRISM_AGENT_SERVICE_TOKEN', 'APP_API_SERVICE_TOKEN',
+        'COMMUNICATION_ADAPTER_TOKEN', 'PRISM_GATEWAY_TOKEN', 'TARGET_REPO_GITHUB_TOKEN',
+      ].map((key) => [key, process.env[key] ?? null])),
+    })
+  : prompt.includes('LARGE_STDIN_PROMPT') ? 'STDIN_BYTES:' + Buffer.byteLength(prompt) : 'NORMALIZED_OK';
 if (outputFile) await fs.writeFile(outputFile, response);
 console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: response } }));
 `, { mode: 0o700 });
@@ -69,6 +77,11 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
       PRISM_GATEWAY_ENABLED: 'false',
       APP_API_BASE_URL: '',
       APP_API_SERVICE_TOKEN: '',
+      OPENAI_API_KEY: 'provider-secret',
+      PRISM_AGENT_SERVICE_TOKEN: 'site-secret',
+      COMMUNICATION_ADAPTER_TOKEN: 'adapter-secret',
+      PRISM_GATEWAY_TOKEN: 'gateway-secret',
+      TARGET_REPO_GITHUB_TOKEN: 'repo-secret',
       PRISM_API_BASE: '',
       PRISM_API_KEY: '',
       PRISM_API_READ_KEY: '',
@@ -105,6 +118,76 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
     body: JSON.stringify({ contractVersion: 'invalid', prompt: 'test', sessionId: 'invalid-version' }),
   });
   assert.equal(invalid.status, 400);
+
+  const invalidAuthority = await fetch(`${baseUrl}/v1/runtime/jobs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      contractVersion,
+      prompt: 'test',
+      sessionId: 'invalid-authority',
+      authorityMode: 'nearly-read-only',
+    }),
+  });
+  assert.equal(invalidAuthority.status, 400);
+  assert.equal((await invalidAuthority.json() as { error: { code: string } }).error.code, 'RUNTIME_AUTHORITY_MODE_INVALID');
+
+  const restrictedAccepted = await fetch(`${baseUrl}/v1/runtime/jobs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      contractVersion,
+      prompt: 'AUTHORITY_PROBE',
+      sessionId: 'restricted-authority',
+      authorityMode: 'read_only_utility',
+      continuationId: 'must-not-resume',
+      skills: [{ name: 'mutation-skill' }],
+      credentials: [{ key: 'crm-write' }],
+      metadata: { requestedSkills: ['another-mutation-skill'] },
+    }),
+  }).then((response) => response.json()) as {
+    jobId: string;
+  };
+  const restrictedCompleted = await pollJob(baseUrl, restrictedAccepted.jobId) as {
+    job: { status: string; result: { responseText: string } };
+  };
+  assert.equal(restrictedCompleted.job.status, 'succeeded');
+  const authorityProbe = JSON.parse(restrictedCompleted.job.result.responseText) as {
+    args: string[];
+    env: Record<string, string | null>;
+  };
+  assert.ok(authorityProbe.args.includes('read-only'));
+  assert.ok(!authorityProbe.args.includes('resume'));
+  assert.ok(!authorityProbe.args.includes('--dangerously-bypass-approvals-and-sandbox'));
+  assert.equal(authorityProbe.env.OPENAI_API_KEY, 'provider-secret');
+  for (const key of [
+    'PRISM_AGENT_SERVICE_TOKEN', 'APP_API_SERVICE_TOKEN', 'COMMUNICATION_ADAPTER_TOKEN',
+    'PRISM_GATEWAY_TOKEN', 'TARGET_REPO_GITHUB_TOKEN',
+  ]) {
+    assert.equal(authorityProbe.env[key], null, `${key} reached the restricted child`);
+  }
+
+  // The compatibility job response exposes its normalized input, allowing the
+  // shared request normalizer's stored boundary to be asserted directly.
+  const storedRestricted = await fetch(`${baseUrl}/v1/responses/jobs`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      prompt: 'AUTHORITY_PROBE',
+      sessionId: 'restricted-stored-input',
+      authorityMode: 'read_only_utility',
+      continuationId: 'must-not-resume',
+      skills: [{ name: 'mutation-skill' }],
+      credentials: [{ key: 'crm-write' }],
+      metadata: { requestedSkills: ['another-mutation-skill'] },
+    }),
+  }).then((response) => response.json()) as {
+    job: { input: { authorityMode: string; codexThreadId: string | null; credentials: string[]; metadata: Record<string, unknown> } };
+  };
+  assert.equal(storedRestricted.job.input.authorityMode, 'read_only_utility');
+  assert.equal(storedRestricted.job.input.codexThreadId, null);
+  assert.deepEqual(storedRestricted.job.input.credentials, []);
+  assert.equal(storedRestricted.job.input.metadata.requestedSkills, undefined);
 
   const accepted = await fetch(`${baseUrl}/v1/runtime/jobs`, {
     method: 'POST',

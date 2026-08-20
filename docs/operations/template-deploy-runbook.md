@@ -242,6 +242,7 @@ NEXT_PUBLIC_INTERACTION_BASE_URL="https://${{discord-adapter.RAILWAY_PUBLIC_DOMA
 API_INTERNAL_BASE_URL="http://${{site.RAILWAY_PRIVATE_DOMAIN}}:${{site.PORT}}" # Server-side API URL used by the site.
 COMMUNICATION_ADAPTER_BASE_URL="http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}" # Private communication adapter URL used by Site server routes.
 SITE_USE_LOCAL_APP_API="true" # Site owns the app API and SQLite runtime state.
+PRISM_LAB_ENABLED="false" # Opt-in Lab rollout. Set exactly true only for intentional field testing.
 PRISM_AGENT_DATA_ROOT="/data" # Mounted data directory for site runtime state.
 ADMIN_EMAIL="admin@local.agent" # Initial admin account email.
 ADMIN_PASSWORD="changeme" # Temporary admin password; change after deploy.

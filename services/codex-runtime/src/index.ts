@@ -16,6 +16,7 @@ const responseJobAbortControllers = new Map<string, AbortController>();
 const responseJobIdempotencyKeys = new Map<string, string>();
 const runtimeContractVersion = '2026-07-10' as const;
 const runtimeKey = process.env.PRISM_RUNTIME_KEY?.trim() || 'codex-default';
+type RuntimeAuthorityMode = 'full' | 'read_only_utility';
 
 const standardJsonParser = express.json({ limit: '1mb' });
 app.use(standardJsonParser);
@@ -24,6 +25,7 @@ type RuntimeRequestBody = {
   contractVersion?: unknown;
   prompt?: unknown;
   sessionId?: unknown;
+  authorityMode?: unknown;
   continuationId?: unknown;
   codexThreadId?: unknown;
   recentHistory?: Array<{ role?: unknown; content?: unknown }>;
@@ -56,6 +58,7 @@ type RuntimeResponseJob = {
   input: {
     prompt: string;
     sessionId: string;
+    authorityMode: RuntimeAuthorityMode;
     codexThreadId: string | null;
     recentHistory: Array<{ role: string; content: string }>;
     credentials: string[];
@@ -70,6 +73,12 @@ type RuntimeResponseJob = {
   startedAt: string | null;
   finishedAt: string | null;
 };
+
+function hasInvalidAuthorityMode(body: RuntimeRequestBody) {
+  return body.authorityMode !== undefined
+    && body.authorityMode !== 'full'
+    && body.authorityMode !== 'read_only_utility';
+}
 
 async function pathExists(filePath: string) {
   return fs.access(filePath).then(
@@ -93,6 +102,12 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
     return null;
   }
 
+  const requestedAuthorityMode = body.authorityMode === undefined ? 'full' : body.authorityMode;
+  if (requestedAuthorityMode !== 'full' && requestedAuthorityMode !== 'read_only_utility') {
+    return null;
+  }
+  const authorityMode: RuntimeAuthorityMode = requestedAuthorityMode;
+
   const metadata = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
     ? body.metadata
     : {};
@@ -100,14 +115,21 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
   const existingRequestedSkills = Array.isArray(metadata.requestedSkills)
     ? metadata.requestedSkills.filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()))
     : [];
+  const normalizedMetadata = { ...metadata };
+  if (authorityMode === 'read_only_utility') {
+    delete normalizedMetadata.requestedSkills;
+  } else if (requestedSkills.length) {
+    normalizedMetadata.requestedSkills = Array.from(new Set([...existingRequestedSkills, ...requestedSkills]));
+  }
 
   return {
     prompt,
     sessionId,
+    authorityMode,
     codexThreadId: typeof body.continuationId === 'string'
-      ? body.continuationId.trim()
+      ? authorityMode === 'read_only_utility' ? null : body.continuationId.trim()
       : typeof body.codexThreadId === 'string'
-        ? body.codexThreadId.trim()
+        ? authorityMode === 'read_only_utility' ? null : body.codexThreadId.trim()
         : null,
     recentHistory: Array.isArray(body.recentHistory)
       ? body.recentHistory
@@ -117,11 +139,9 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
         }))
         .filter((entry) => entry.content.trim())
       : [],
-    credentials: normalizeRuntimeCredentials(body.credentials),
+    credentials: authorityMode === 'read_only_utility' ? [] : normalizeRuntimeCredentials(body.credentials),
     gatewayContext: normalizeGatewayContext(body.context),
-    metadata: requestedSkills.length
-      ? { ...metadata, requestedSkills: Array.from(new Set([...existingRequestedSkills, ...requestedSkills])) }
-      : metadata,
+    metadata: normalizedMetadata,
   };
 }
 
@@ -400,6 +420,7 @@ app.get('/v1/runtime/manifest', (_req, res) => {
       traceEvents: true,
       gatewayCredentials: true,
       workspaceAssignment: true,
+      authorityModes: ['full', 'read_only_utility'],
     },
   });
 });
@@ -419,6 +440,7 @@ app.get('/v1/runtime/capabilities', (_req, res) => {
       'trace-events',
       'cancellation',
       'idempotent-job-creation',
+      'read-only-utility-authority',
     ],
   });
 });
@@ -434,7 +456,12 @@ app.get('/skills', async (_req, res) => {
 });
 
 app.post('/v1/responses', async (req, res) => {
-  const input = normalizeRuntimeRequest(req.body as RuntimeRequestBody);
+  const body = req.body as RuntimeRequestBody;
+  if (hasInvalidAuthorityMode(body)) {
+    res.status(400).json({ ok: false, error: 'RUNTIME_AUTHORITY_MODE_INVALID' });
+    return;
+  }
+  const input = normalizeRuntimeRequest(body);
 
   if (!input) {
     res.status(400).json({ ok: false, error: 'prompt and sessionId are required' });
@@ -450,7 +477,12 @@ app.post('/v1/responses', async (req, res) => {
 });
 
 app.post('/v1/responses/jobs', (req, res) => {
-  const input = normalizeRuntimeRequest(req.body as RuntimeRequestBody);
+  const body = req.body as RuntimeRequestBody;
+  if (hasInvalidAuthorityMode(body)) {
+    res.status(400).json({ ok: false, error: 'RUNTIME_AUTHORITY_MODE_INVALID' });
+    return;
+  }
+  const input = normalizeRuntimeRequest(body);
   if (!input) {
     res.status(400).json({ ok: false, error: 'prompt and sessionId are required' });
     return;
@@ -490,6 +522,17 @@ app.post('/v1/runtime/jobs', (req, res) => {
       error: {
         code: 'RUNTIME_CONTRACT_VERSION_UNSUPPORTED',
         message: `contractVersion must be ${runtimeContractVersion}`,
+        retryable: false,
+      },
+    });
+    return;
+  }
+  if (hasInvalidAuthorityMode(body)) {
+    res.status(400).json({
+      ok: false,
+      error: {
+        code: 'RUNTIME_AUTHORITY_MODE_INVALID',
+        message: 'authorityMode must be full or read_only_utility',
         retryable: false,
       },
     });

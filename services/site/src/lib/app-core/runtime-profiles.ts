@@ -3,6 +3,7 @@ import { loadConfig } from './config';
 import { getDb } from './db';
 
 export const prismRuntimeContractVersion = '2026-07-10' as const;
+export const readOnlyUtilityAuthorityFeature = 'read-only-utility-authority' as const;
 
 export interface RuntimeProfileRecord {
   key: string;
@@ -199,8 +200,34 @@ export function deleteRuntimeProfile(key: string, db: Database.Database = getDb(
 
 export function ensureBootstrapRuntimeProfile(db: Database.Database = getDb()) {
   const count = Number((db.prepare('SELECT COUNT(*) AS count FROM runtime_profiles').get() as { count: number }).count);
-  if (count > 0) return;
   const baseUrl = loadConfig().codexRuntimeBaseUrl;
+  if (count > 0) {
+    // Upgrade only the exact Site-managed bundled profile. Never infer this
+    // security capability from a user-selected key or an external adapter.
+    const existing = rowByKey('codex-default', db);
+    if (
+      baseUrl
+      && existing?.adapter === 'codex-cli'
+      && existing.base_url === baseUrl.replace(/\/+$/, '')
+      && existing.contract_version === prismRuntimeContractVersion
+    ) {
+      let parsedFeatures: unknown = [];
+      try {
+        parsedFeatures = JSON.parse(existing.features_json || '[]');
+      } catch {
+        parsedFeatures = [];
+      }
+      const features = normalizeFeatures(parsedFeatures);
+      if (!features.includes(readOnlyUtilityAuthorityFeature)) {
+        db.prepare('UPDATE runtime_profiles SET features_json = ?, updated_at = ? WHERE key = ?').run(
+          JSON.stringify(normalizeFeatures([...features, readOnlyUtilityAuthorityFeature])),
+          new Date().toISOString(),
+          'codex-default',
+        );
+      }
+    }
+    return;
+  }
   if (!baseUrl) return;
   upsertRuntimeProfile({
     key: 'codex-default',
@@ -210,6 +237,7 @@ export function ensureBootstrapRuntimeProfile(db: Database.Database = getDb()) {
     enabled: true,
     isDefault: true,
     contractVersion: prismRuntimeContractVersion,
+    features: [readOnlyUtilityAuthorityFeature],
   }, db);
 }
 

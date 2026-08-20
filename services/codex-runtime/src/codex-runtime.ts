@@ -54,6 +54,7 @@ export type CodexRuntimeInput = {
   prompt: string;
   recentHistory: HistoryEntry[];
   sessionId: string;
+  authorityMode?: 'full' | 'read_only_utility';
   codexThreadId?: string | null;
   credentials?: string[];
   gatewayContext?: Record<string, string>;
@@ -666,11 +667,12 @@ async function finalizeGitWorkspace(
 
 type LoadedPrismSkills = Awaited<ReturnType<typeof loadRelevantPrismSkills>>;
 
-function buildPrompt(
+export function buildPrompt(
   input: CodexRuntimeInput,
   isResume: boolean,
   prismSkills: LoadedPrismSkills,
 ) {
+  const isReadOnlyUtility = input.authorityMode === 'read_only_utility';
   const history = input.recentHistory
     .slice(-20)
     .map((entry) => `${entry.role === 'assistant' ? 'Assistant' : 'User'}: ${entry.content}`)
@@ -696,9 +698,19 @@ function buildPrompt(
     'Behave like direct Codex chat, not like a fixed retrieval bot.',
     'Keep replies concise unless the user asks for more detail.',
     'Prism memory is optional. Only use it if it materially helps answer the user.',
-    'If Prism memory is useful, query it from the shell with curl against $PRISM_API_BASE and send X-Prism-Api-Key using $PRISM_API_READ_KEY or $PRISM_API_KEY.',
+    ...(isReadOnlyUtility
+      ? [
+          'This is a runtime-enforced read-only utility invocation. Inspect and explain only.',
+          'Do not modify files, repository state, workflows, requests, external services, or other persistent state.',
+          'No Site, adapter, Gateway, or repository mutation credentials are available.',
+        ]
+      : [
+          'If Prism memory is useful, query it from the shell with curl against $PRISM_API_BASE and send X-Prism-Api-Key using $PRISM_API_READ_KEY or $PRISM_API_KEY.',
+        ]),
     'Prism skills are authoritative when they apply. Use the loaded Prism skill instructions before probing ad hoc local paths or browser admin routes.',
-    'Do not treat missing local files under /data/codex/skills, /data/workflows, or /app as a blocker for Prism-managed content. Skills, workflows, tasks, hooks, artifacts, and settings are owned by the site service and should be managed through /agent/* routes with service-token auth.',
+    ...(isReadOnlyUtility
+      ? []
+      : ['Do not treat missing local files under /data/codex/skills, /data/workflows, or /app as a blocker for Prism-managed content. Skills, workflows, tasks, hooks, artifacts, and settings are owned by the site service and should be managed through /agent/* routes with service-token auth.']),
     'Avoid unnecessary tool use. Return only the assistant reply text.',
     '',
     `External session id: ${input.sessionId}`,
@@ -820,6 +832,86 @@ function booleanMetadata(metadata: Record<string, unknown> | undefined, key: str
   return metadata?.[key] === true;
 }
 
+const readOnlyEnvironmentKeys = [
+  'PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ',
+  'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
+  'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
+  // Provider authentication is the sole credential class allowed in this mode.
+  'OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_ORGANIZATION',
+  'OPENAI_ORG_ID', 'OPENAI_PROJECT_ID', 'AZURE_OPENAI_API_KEY',
+  'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_API_VERSION',
+] as const;
+
+export function buildCodexChildEnvironment(
+  authorityMode: 'full' | 'read_only_utility',
+  inherited: NodeJS.ProcessEnv,
+  leasedEnv: Record<string, string>,
+  githubToken: string | null,
+) {
+  if (authorityMode === 'read_only_utility') {
+    const env: NodeJS.ProcessEnv = {};
+    for (const key of readOnlyEnvironmentKeys) {
+      if (inherited[key]) env[key] = inherited[key];
+    }
+    if (config.codexHome) env.CODEX_HOME = config.codexHome;
+    return env;
+  }
+
+  const env: NodeJS.ProcessEnv = {
+    ...inherited,
+    ...leasedEnv,
+    GIT_AUTHOR_NAME: config.gitAuthorName,
+    GIT_AUTHOR_EMAIL: config.gitAuthorEmail,
+    GIT_COMMITTER_NAME: config.gitCommitterName,
+    GIT_COMMITTER_EMAIL: config.gitCommitterEmail,
+    ...(config.codexHome ? { CODEX_HOME: config.codexHome } : {}),
+    ...(config.appApiBaseUrl ? { PRISM_AGENT_API_BASE_URL: config.appApiBaseUrl } : {}),
+    ...(config.appServiceToken ? { PRISM_AGENT_SERVICE_TOKEN: config.appServiceToken } : {}),
+    ...(githubToken
+      ? {
+          TARGET_REPO_GITHUB_TOKEN: githubToken,
+          GITHUB_TOKEN: inherited.GITHUB_TOKEN?.trim() || githubToken,
+          GH_TOKEN: inherited.GH_TOKEN?.trim() || githubToken,
+        }
+      : {}),
+  };
+  delete env.PRISM_GATEWAY_TOKEN;
+  return env;
+}
+
+export function buildCodexArgs(
+  input: Pick<CodexRuntimeInput, 'codexThreadId' | 'authorityMode'>,
+  outputFile: string,
+  executionWorkspaceRoot: string,
+) {
+  const isResume = Boolean(input.codexThreadId);
+  if (input.authorityMode === 'read_only_utility') {
+    // This mode is intentionally text-in/text-out: the evidence required to
+    // answer must be supplied in the prompt. Disabling every model-facing
+    // execution/integration surface keeps provider auth usable by the CLI
+    // without making it observable to the model through a tool.
+    const disabledFeatures = [
+      'shell_tool', 'unified_exec', 'code_mode', 'code_mode_host',
+      'browser_use', 'browser_use_external', 'browser_use_full_cdp_access', 'in_app_browser', 'computer_use',
+      'apps', 'enable_mcp_apps', 'hooks', 'image_generation',
+      'multi_agent', 'multi_agent_v2', 'remote_plugin', 'plugin_sharing',
+      'skill_mcp_dependency_install', 'tool_suggest',
+      'auth_elicitation', 'tool_call_mcp_elicitation',
+    ].flatMap((feature) => ['--disable', feature]);
+    return [
+      'exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only',
+      '--ephemeral', '--ignore-user-config', '--ignore-rules',
+      '-c', 'mcp_servers={}',
+      ...disabledFeatures,
+      '-o', outputFile, '-C', executionWorkspaceRoot,
+    ];
+  }
+  return isResume
+    ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
+    : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile, '-C', executionWorkspaceRoot];
+}
+
 function emptyResponseFallback(input: CodexRuntimeInput) {
   if (!booleanMetadata(input.metadata, 'allowEmptyResponse')) {
     return null;
@@ -837,12 +929,15 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   const outputFile = path.join(os.tmpdir(), `codex-runtime-${randomUUID()}.txt`);
   const isResume = Boolean(input.codexThreadId);
   const trace: CodexRuntimeResult['trace'] = [];
-  const prismSkills = await loadRelevantPrismSkills(input.prompt, input.metadata);
+  const authorityMode = input.authorityMode ?? 'full';
+  const prismSkills: LoadedPrismSkills = authorityMode === 'read_only_utility'
+    ? { availableSkills: [], selectedSkills: [] }
+    : await loadRelevantPrismSkills(input.prompt, input.metadata);
   const effectiveCredentials = Array.from(new Set([
     ...(input.credentials ?? []),
     ...prismSkills.selectedSkills.flatMap((skill) => skill.requiredCredentials),
   ]));
-  const credentialLeaseKeys = effectiveCredentials;
+  const credentialLeaseKeys = authorityMode === 'read_only_utility' ? [] : effectiveCredentials;
   const lease = credentialLeaseKeys.length
     ? await gatewayClient.leaseCredentials({
         credentials: credentialLeaseKeys,
@@ -850,17 +945,26 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       })
     : { env: {} };
   const leasedEnv = lease.env;
-  const githubToken = leasedEnv.TARGET_REPO_GITHUB_TOKEN || config.githubToken;
-  const preparedWorkspace = await prepareExecutionWorkspace(input, trace, githubToken);
+  const githubToken = authorityMode === 'read_only_utility'
+    ? null
+    : leasedEnv.TARGET_REPO_GITHUB_TOKEN || config.githubToken;
+  const preparedWorkspace = authorityMode === 'read_only_utility'
+    ? {
+        workspacePath: config.codexWorkspaceRoot,
+        repoUrl: null,
+        branchName: null,
+        commitSha: null,
+        baseBranch: null,
+        baseCommitSha: null,
+      }
+    : await prepareExecutionWorkspace(input, trace, githubToken);
   input.onTrace?.([...trace]);
   const executionWorkspaceRoot = preparedWorkspace.workspacePath;
   const composedPrompt = buildPrompt(input, isResume, prismSkills);
   const prompt = composedPrompt.prompt;
-  const args = isResume
-    ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
-    : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile, '-C', executionWorkspaceRoot];
+  const args = buildCodexArgs(input, outputFile, executionWorkspaceRoot);
 
-  if (config.codexImageGenerationEnabled) {
+  if (authorityMode === 'full' && config.codexImageGenerationEnabled) {
     args.push('--enable', 'image_generation');
   }
 
@@ -870,25 +974,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
 
   args.push('-');
 
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    ...leasedEnv,
-    GIT_AUTHOR_NAME: config.gitAuthorName,
-    GIT_AUTHOR_EMAIL: config.gitAuthorEmail,
-    GIT_COMMITTER_NAME: config.gitCommitterName,
-    GIT_COMMITTER_EMAIL: config.gitCommitterEmail,
-    ...(config.codexHome ? { CODEX_HOME: config.codexHome } : {}),
-    ...(config.appApiBaseUrl ? { PRISM_AGENT_API_BASE_URL: config.appApiBaseUrl } : {}),
-    ...(config.appServiceToken ? { PRISM_AGENT_SERVICE_TOKEN: config.appServiceToken } : {}),
-    ...(githubToken
-      ? {
-          TARGET_REPO_GITHUB_TOKEN: githubToken,
-          GITHUB_TOKEN: process.env.GITHUB_TOKEN?.trim() || githubToken,
-          GH_TOKEN: process.env.GH_TOKEN?.trim() || githubToken,
-        }
-      : {}),
-  };
-  delete env.PRISM_GATEWAY_TOKEN;
+  const env = buildCodexChildEnvironment(authorityMode, process.env, leasedEnv, githubToken);
   const invocationMetrics = processInvocationSizeMetrics(env, args);
   console.log(
     `[codex-runtime] spawn resume=${isResume ? 'yes' : 'no'} session=${input.sessionId} workspace=${executionWorkspaceRoot}`,
