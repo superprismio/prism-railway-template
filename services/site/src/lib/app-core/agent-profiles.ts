@@ -781,7 +781,20 @@ export function listAgentProfileSessions(profileId: string, limit = 100, db: Dat
   const boundedLimit = Math.max(1, Math.min(Math.trunc(limit), 200));
   return (db.prepare(`
     SELECT s.id, s.source, s.status, s.title, s.conversation_scope, s.created_by_user_id,
-      p.display_name AS created_by_display_name, s.linked_change_request_id,
+      COALESCE(
+        p.display_name,
+        (
+          SELECT NULLIF(TRIM(json_extract(
+            CASE WHEN json_valid(am.meta_json) THEN am.meta_json ELSE '{}' END,
+            '$.authorName'
+          )), '')
+          FROM agent_messages am
+          WHERE am.session_id = s.id AND am.role = 'user'
+          ORDER BY am.created_at, am.id
+          LIMIT 1
+        )
+      ) AS created_by_display_name,
+      s.linked_change_request_id,
       cr.request_number, cr.title AS request_title,
       (SELECT COUNT(*) FROM agent_messages am WHERE am.session_id = s.id) AS message_count,
       s.last_message_at, s.created_at, s.updated_at

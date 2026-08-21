@@ -27,6 +27,7 @@ import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 import { requestSiteRuntime } from "./site-runtime.js";
 import { discordDestinationType } from "./discord-output.js";
 import { discordAgentRoutingStatus, unavailableDiscordAgentMessage, unconfiguredDiscordChannelMessage } from "./discord-agent-routing.js";
+import { AppApiRequestError, isAppApiNotFound } from "./app-api-error.js";
 import {
   BuzzCliClient,
   buzzEventMentionsPubkey,
@@ -1157,7 +1158,7 @@ async function appApiRequest(pathname: string, init: RequestInit = {}): Promise<
     },
   });
   if (!response.ok) {
-    throw new Error(`APP_API_REQUEST_FAILED:${response.status}:${(await response.text()).slice(0, 200)}`);
+    throw new AppApiRequestError(response.status, await response.text());
   }
   return (await response.json()) as JsonObject;
 }
@@ -1168,7 +1169,12 @@ async function lookupDiscordSession(discordChannelId: string | null, discordThre
     threadId: discordThreadId ?? "",
     limit: String(limit),
   });
-  return appApiRequest(`/agent/agent-sessions/discord/lookup?${params.toString()}`);
+  try {
+    return await appApiRequest(`/agent/agent-sessions/discord/lookup?${params.toString()}`);
+  } catch (error) {
+    if (isAppApiNotFound(error)) return null;
+    throw error;
+  }
 }
 
 async function lookupSourceSession(source: string, contextKey: string, limit = 25): Promise<JsonObject | null> {
@@ -1177,7 +1183,12 @@ async function lookupSourceSession(source: string, contextKey: string, limit = 2
     contextKey,
     limit: String(limit),
   });
-  return appApiRequest(`/agent/agent-sessions/source/lookup?${params.toString()}`);
+  try {
+    return await appApiRequest(`/agent/agent-sessions/source/lookup?${params.toString()}`);
+  } catch (error) {
+    if (isAppApiNotFound(error)) return null;
+    throw error;
+  }
 }
 
 async function upsertDiscordSession(input: {

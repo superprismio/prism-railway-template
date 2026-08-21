@@ -11,9 +11,11 @@ import {
   adminAgentProfileId,
   assignAgentProfileToSession,
   getAgentProfile,
+  getAgentProfileSessionDetail,
   getAgentProfileVersion,
   getAgentSessionProfileAssignment,
   listAgentProfiles,
+  listAgentProfileSessions,
   listAgentProfileQueueStates,
   resolveAgentProfileBinding,
   resolveAgentProfileInteraction,
@@ -36,14 +38,18 @@ function testDb() {
       linked_change_request_id TEXT, created_by_user_id TEXT, last_message_at TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );
-    CREATE TABLE agent_messages (id TEXT PRIMARY KEY, session_id TEXT, role TEXT, content TEXT);
+    CREATE TABLE agent_messages (
+      id TEXT PRIMARY KEY, session_id TEXT, role TEXT, source TEXT,
+      source_message_id TEXT, content TEXT, meta_json TEXT, created_at TEXT
+    );
     CREATE TABLE agent_response_jobs (
       id TEXT PRIMARY KEY, session_id TEXT, status TEXT, input_json TEXT, response_json TEXT,
       trace_json TEXT, created_at TEXT, updated_at TEXT
     );
     CREATE TABLE agent_runs (
       id TEXT PRIMARY KEY, kind TEXT, status TEXT, request_id TEXT, workflow_step_key TEXT,
-      session_id TEXT, input_json TEXT NOT NULL DEFAULT '{}', created_at TEXT, started_at TEXT, finished_at TEXT
+      session_id TEXT, input_json TEXT NOT NULL DEFAULT '{}', error_message TEXT,
+      created_at TEXT, started_at TEXT, finished_at TEXT
     );
     INSERT INTO users VALUES ('admin-user'), ('owner-user');
     INSERT INTO profiles VALUES ('admin-user', 'Ada Admin'), ('owner-user', 'Omar Owner');
@@ -151,6 +157,30 @@ test('pins session and new job/run records to an immutable agent profile version
   db.prepare(`INSERT INTO agent_runs (id, kind, status, session_id, input_json, created_at) VALUES ('run-2', 'console', 'running', 'session-1', '{}', '2026-01-02')`).run();
   db.prepare(`INSERT INTO agent_runs (id, kind, status, session_id, input_json, created_at) VALUES ('run-3', 'console', 'completed', 'session-1', '{}', '2026-01-03')`).run();
   assert.deepEqual(listAgentProfileQueueStates(db), [{ profileId: profile.id, queued: 1, claimed: 0, running: 1 }]);
+  db.close();
+});
+
+test('uses durable source-message attribution for external session participant summaries', () => {
+  const db = testDb();
+  const profile = upsertAgentProfile({
+    key: 'sync-steward', name: 'Sync Steward', status: 'active', ownerType: 'agent', ownerAgentProfileId: adminAgentProfileId,
+  }, db);
+  db.prepare(`
+    INSERT INTO agent_sessions (id, source, status, title, last_message_at, created_at, updated_at)
+    VALUES ('telegram-session', 'telegram', 'active', 'Telegram chat: Sync Steward', '2026-08-21T21:12:54Z', '2026-08-21T21:12:42Z', '2026-08-21T21:12:54Z')
+  `).run();
+  assignAgentProfileToSession({ sessionId: 'telegram-session', profileId: profile.id, conversationScope: 'channel' }, db);
+  db.prepare(`
+    INSERT INTO agent_messages (id, session_id, role, source, source_message_id, content, meta_json, created_at)
+    VALUES ('telegram-user-message', 'telegram-session', 'user', 'telegram', '1', 'who are you', ?, '2026-08-21T21:12:42Z')
+  `).run(JSON.stringify({ authorId: '1234', authorName: 'Dekan Brown' }));
+  db.prepare(`
+    INSERT INTO agent_messages (id, session_id, role, source, source_message_id, content, meta_json, created_at)
+    VALUES ('telegram-assistant-message', 'telegram-session', 'assistant', 'telegram', '2', 'I am Sync Steward.', '{}', '2026-08-21T21:12:54Z')
+  `).run();
+
+  assert.equal(listAgentProfileSessions(profile.id, 10, db)[0]?.createdByDisplayName, 'Dekan Brown');
+  assert.equal(getAgentProfileSessionDetail(profile.id, 'telegram-session', db)?.createdByDisplayName, 'Dekan Brown');
   db.close();
 });
 
