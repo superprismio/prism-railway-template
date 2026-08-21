@@ -1,7 +1,7 @@
 import { ActivityView } from "@/components/prism-lab/activity-view"
 import { RequestInboxUnavailable } from "@/components/prism-lab/request-inbox"
 import { getAdminWorkspaceData } from "@/lib/admin"
-import { buildCrossRequestActivity } from "@/lib/prism-lab/activity-read-model"
+import { buildCrossRequestActivity, buildUnifiedActivityPage, parseLabActivityFilters } from "@/lib/prism-lab/activity-read-model"
 import { isPrismLabEnabled } from "@/lib/prism-lab/feature-flag"
 import { buildLabRequestListItems } from "@/lib/prism-lab/request-read-model"
 import { listAgentProfiles, listAgentProfileSessions } from "@/lib/app-core"
@@ -18,18 +18,18 @@ export default async function LabActivityPage({
     return <RequestInboxUnavailable reason="unauthorized" />
   }
 
-  const rawView = (await searchParams)?.view
-  const view = (Array.isArray(rawView) ? rawView[0] : rawView) === "attention" ? "attention" : "all"
+  const filters = parseLabActivityFilters((await searchParams) ?? {})
   const requests = buildLabRequestListItems(workspace.data, workspace.data.session.capabilities)
-  const allItems = buildCrossRequestActivity(requests)
-  const attentionCount = allItems.filter((item) => item.state === "attention").length
-  const items = view === "attention" ? allItems.filter((item) => item.state === "attention") : allItems
+  const requestActivity = buildCrossRequestActivity(requests)
+  const attentionCount = requestActivity.filter((item) => item.state === "attention").length
   const canInspectAllSessions = workspace.data.session.capabilities.includes("canRunAgent")
-  const conversations = view === "attention" ? [] : listAgentProfiles().flatMap((profile) =>
-    listAgentProfileSessions(profile.id, 30)
+  const profiles = listAgentProfiles()
+  const conversations = profiles.flatMap((profile) =>
+    listAgentProfileSessions(profile.id, 200)
       .filter((session) => canInspectAllSessions || (session.source === "prism-memory-explorer" && session.createdByUserId === workspace.data.session.userId))
       .map((session) => ({ ...session, agentKey: profile.key, agentName: profile.name })),
-  ).sort((left, right) => (right.lastMessageAt ?? right.updatedAt).localeCompare(left.lastMessageAt ?? left.updatedAt)).slice(0, 50)
+  )
+  const activityPage = buildUnifiedActivityPage({ requests: requestActivity, conversations, filters })
 
-  return <ActivityView items={items} conversations={conversations} attentionCount={attentionCount} view={view} />
+  return <ActivityView activityPage={activityPage} filters={filters} attentionCount={attentionCount} agents={profiles.map((profile) => ({ key: profile.key, name: profile.name }))} />
 }

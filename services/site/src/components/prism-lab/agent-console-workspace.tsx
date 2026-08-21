@@ -670,7 +670,7 @@ export function AgentConsoleWorkspace({
                     </div>
                   ))}
                 </div>
-                {canManageSettings && !profile.systemKey ? (
+                {canManageSettings ? (
                   <div className="mt-3">
                     <AgentBindingForm profileKey={profile.key} />
                   </div>
