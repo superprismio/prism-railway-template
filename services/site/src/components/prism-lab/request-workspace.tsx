@@ -28,6 +28,15 @@ import {
 
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { RequestTimeline } from "@/components/prism-lab/request-timeline"
 import { WorkflowExplorer } from "@/components/prism-lab/workflow-explorer"
@@ -146,7 +155,8 @@ type RequestReview = {
 }
 
 type WorkspaceState = "queued" | "running" | "failed" | "blocked" | "attention" | "completed" | "ready"
-type MutationKind = "ask" | "comment" | "continue" | "upload" | null
+type MutationKind = "ask" | "comment" | "continue" | "upload" | "stop-run" | "cancel-request" | null
+type InterruptionDialog = "stop-run" | "cancel-request" | null
 
 const activeRunStatuses = new Set(["queued", "claimed", "running"])
 const failedRunStatuses = new Set(["failed", "canceled"])
@@ -263,6 +273,8 @@ export function RequestWorkspace({
   const [hasNewMessages, setHasNewMessages] = useState(false)
   const [draft, setDraft] = useState("")
   const [mutation, setMutation] = useState<MutationKind>(null)
+  const [interruptionDialog, setInterruptionDialog] = useState<InterruptionDialog>(null)
+  const [interruptionReason, setInterruptionReason] = useState("")
   const uploadFormRef = useRef<HTMLFormElement>(null)
   const conversationRef = useRef<HTMLDivElement>(null)
   const conversationNearBottomRef = useRef(true)
@@ -331,6 +343,8 @@ export function RequestWorkspace({
     setNotice(null)
     setHasNewMessages(false)
     setDraft("")
+    setInterruptionDialog(null)
+    setInterruptionReason("")
     uploadFormRef.current?.reset()
     conversationNearBottomRef.current = true
     revealLatestConversationRef.current = false
@@ -381,7 +395,8 @@ export function RequestWorkspace({
     events: review.workflowEvents,
   }) : [], [review])
   const state = review ? workspaceState(review) : null
-  const activeRun = review?.agentRuns.some((run) => activeRunStatuses.has(run.status.toLowerCase())) ?? false
+  const activeAgentRun = review?.agentRuns.find((run) => activeRunStatuses.has(run.status.toLowerCase())) ?? null
+  const activeRun = Boolean(activeAgentRun)
   const participatingAgents = useMemo(() => {
     const profiles = new Map<string, { key: string | null; name: string }>()
     for (const run of review?.agentRuns ?? []) {
@@ -478,6 +493,45 @@ export function RequestWorkspace({
     if (succeeded && content) setDraft("")
   }
 
+  async function stopCurrentRun() {
+    const reason = interruptionReason.trim()
+    if (!activeAgentRun || !reason || !canRun) return
+    const succeeded = await mutate(
+      "stop-run",
+      () => fetch(
+        `/admin/change-requests/${encodeURIComponent(request.id)}/runs/${encodeURIComponent(activeAgentRun.id)}/cancel`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ reason }),
+        },
+      ),
+      "Current agent run stopped. The request remains on the same workflow step.",
+    )
+    if (succeeded) {
+      setInterruptionDialog(null)
+      setInterruptionReason("")
+    }
+  }
+
+  async function cancelRequest() {
+    const reason = interruptionReason.trim()
+    if (!reason || !canRun || terminal) return
+    const succeeded = await mutate(
+      "cancel-request",
+      () => fetch(`/admin/change-requests/${encodeURIComponent(request.id)}/workflow/cancel`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ comment: reason }),
+      }),
+      "Request canceled. Active work has been stopped and the workflow is closed.",
+    )
+    if (succeeded) {
+      setInterruptionDialog(null)
+      setInterruptionReason("")
+    }
+  }
+
   async function uploadArtifact(formData: FormData) {
     if (!canComment) return
     const file = formData.get("file")
@@ -503,10 +557,27 @@ export function RequestWorkspace({
           <ArrowLeft aria-hidden="true" />
           Back to inbox
         </Link>
-        <Button type="button" variant="ghost" size="sm" onClick={() => void loadReview()} disabled={refreshing}>
-          <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden="true" />
-          Refresh
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {review && canRun && !terminal ? (
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                setInterruptionReason("Cancel this request because it should no longer continue.")
+                setInterruptionDialog("cancel-request")
+              }}
+              disabled={mutation !== null}
+            >
+              <XCircle aria-hidden="true" />
+              Cancel request
+            </Button>
+          ) : null}
+          <Button type="button" variant="ghost" size="sm" onClick={() => void loadReview()} disabled={refreshing}>
+            <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden="true" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <header className="mt-4 border-b border-border/60 pb-5">
@@ -565,6 +636,22 @@ export function RequestWorkspace({
                   <div className="flex items-center gap-2"><Bot aria-hidden="true" /><dt className="sr-only">Current executor</dt><dd>{currentExecutor?.agentProfileName ? <>Executor · {currentExecutor.agentProfileKey ? <Link className="underline" href={`/admin/lab/agents/${encodeURIComponent(currentExecutor.agentProfileKey)}`}>{currentExecutor.agentProfileName}</Link> : currentExecutor.agentProfileName}{currentExecutor.executionMode ? ` · ${currentExecutor.executionMode}` : ""}</> : "Executor · Legacy / unattributed"}</dd></div>
                   <div className="flex items-center gap-2"><UsersRound aria-hidden="true" /><dt className="sr-only">Participating agents</dt><dd>{participatingAgents.length ? <>Participants · {participatingAgents.map((profile, index) => <span key={profile.key || profile.name}>{index ? ", " : ""}{profile.key ? <Link className="underline" href={`/admin/lab/agents/${encodeURIComponent(profile.key)}`}>{profile.name}</Link> : profile.name}</span>)}</> : "Participants · Legacy / unattributed"}</dd></div>
                 </dl>
+                {activeAgentRun && canRun ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-4 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => {
+                      setInterruptionReason("Stop this run so I can review the request before retrying.")
+                      setInterruptionDialog("stop-run")
+                    }}
+                    disabled={mutation !== null}
+                  >
+                    <XCircle aria-hidden="true" />
+                    Stop current run
+                  </Button>
+                ) : null}
               </div>
             </div>
             {attention ? (
@@ -762,6 +849,66 @@ export function RequestWorkspace({
           </section>
         </>
       ) : null}
+
+      <Dialog
+        open={interruptionDialog !== null}
+        onOpenChange={(open) => {
+          if (!open && mutation === null) {
+            setInterruptionDialog(null)
+            setInterruptionReason("")
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {interruptionDialog === "stop-run" ? "Stop current run" : "Cancel request"}
+            </DialogTitle>
+            <DialogDescription>
+              {interruptionDialog === "stop-run"
+                ? "This stops the active agent run but keeps the request open on its current workflow step. You can add context and retry afterward."
+                : "This stops active work, closes the workflow, and marks the request canceled. Reopening requires a separate audited action."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="request-interruption-reason">Reason</Label>
+            <Textarea
+              id="request-interruption-reason"
+              value={interruptionReason}
+              onChange={(event) => setInterruptionReason(event.target.value)}
+              rows={4}
+              disabled={mutation !== null}
+              placeholder="Explain why this action is needed."
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setInterruptionDialog(null)
+                setInterruptionReason("")
+              }}
+              disabled={mutation !== null}
+            >
+              Keep working
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void (interruptionDialog === "stop-run" ? stopCurrentRun() : cancelRequest())}
+              disabled={!interruptionReason.trim() || mutation !== null}
+            >
+              {mutation === "stop-run" || mutation === "cancel-request" ? (
+                <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : (
+                <XCircle aria-hidden="true" />
+              )}
+              {interruptionDialog === "stop-run" ? "Stop current run" : "Cancel request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

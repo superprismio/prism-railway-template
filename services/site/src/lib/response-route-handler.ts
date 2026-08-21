@@ -390,6 +390,7 @@ async function requestPrismRuntimeResponse(input: {
   onProgress?: (progress: {
     status: string
     runtimeJobId: string
+    runtimeKey: string
     threadId: string | null
     trace: RuntimeTraceEntry[]
   }) => void
@@ -927,25 +928,45 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       { status: 409 },
     )
   }
-  const recordRuntimeProgress = responseJobId
-    ? (progress: {
-        status: string
-        runtimeJobId: string
-        threadId: string | null
-        trace: RuntimeTraceEntry[]
-      }) => {
-        updateAgentResponseJob(responseJobId, {
-          status: "running",
-          response: {
-            runtimeJobId: progress.runtimeJobId,
-            runtimeJobStatus: progress.status,
-            runtimeThreadId: progress.threadId,
-            lastProgressAt: new Date().toISOString(),
-          },
-          trace: progress.trace,
-        })
+  const recordRuntimeProgress = (agentRunId: string | null) =>
+    responseJobId || agentRunId
+      ? (progress: {
+          status: string
+          runtimeJobId: string
+          runtimeKey: string
+          threadId: string | null
+          trace: RuntimeTraceEntry[]
+        }) => {
+        if (responseJobId) {
+          updateAgentResponseJob(responseJobId, {
+            status: "running",
+            response: {
+              runtimeJobId: progress.runtimeJobId,
+              runtimeJobStatus: progress.status,
+              runtimeThreadId: progress.threadId,
+              lastProgressAt: new Date().toISOString(),
+            },
+            trace: progress.trace,
+          })
+        }
+        if (agentRunId) {
+          const agentRun = getAgentRun(agentRunId)
+          if (agentRun && !isStoppedAgentRunStatus(agentRun.status)) {
+            updateAgentRun(agentRunId, {
+              result: {
+                ...agentRun.result,
+                runtimeJobId: progress.runtimeJobId,
+                runtimeKey: progress.runtimeKey,
+                runtimeJobStatus: progress.status,
+                runtimeThreadId: progress.threadId,
+                lastProgressAt: new Date().toISOString(),
+              },
+              trace: progress.trace,
+            })
+          }
+        }
       }
-    : undefined
+      : undefined
   const linkedWorkflow = linkedChangeRequest ? getWorkflowByKey(linkedChangeRequest.workflowKey) : null
   const linkedWorkflowSteps = workflowSteps(linkedWorkflow?.definition)
   const linkedWorkflowRun = linkedChangeRequest
@@ -1144,7 +1165,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         workflow_action: gateEventAction(workflowAction),
         workflow_step_key: runnableStepKey,
       },
-      onProgress: recordRuntimeProgress,
     })
   }
 
@@ -1314,6 +1334,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             ].filter(Boolean).join("\n\n")
           : null,
       },
+      onProgress: recordRuntimeProgress(activeAgentRunId),
     })
 
     const responseText = (runtimeResponse.responseText || runtimeResponse.output_text || "").trim()
@@ -1534,7 +1555,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                 "Auto-continue is enabled; the site will run the next agent step until the workflow reaches a gate, checkpoint, or terminal step.",
               ].filter(Boolean).join("\n\n"),
             },
-            onProgress: recordRuntimeProgress,
+            onProgress: recordRuntimeProgress(continuationAgentRunId),
           })
 
           const continuationText = (continuationResponse.responseText || continuationResponse.output_text || "").trim()

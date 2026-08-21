@@ -250,6 +250,20 @@ Lab Settings should initially emphasize:
 Credentials remain explicit UI operations. Chat may explain configuration or
 prepare non-secret changes, but it must not request or return secrets.
 
+### Operator interruption controls
+
+Lab distinguishes stopping current work from canceling the request. `Stop
+current run` interrupts a queued or running agent run while preserving the
+request on its current workflow step for corrected context and retry. `Cancel
+request` is available from every nonterminal workflow state, cancels active
+runs, records an operator reason, and closes the workflow.
+
+Both controls require `canRunAgent`, explicit confirmation, durable audit
+events, idempotent server behavior, and protection against late Runtime results.
+When Runtime exposes a cancellable job, Site persists its non-secret job
+reference and requests process cancellation in addition to making the Site run
+state authoritative.
+
 ## Provenance Model
 
 Prism needs three related but separate provenance layers.
@@ -647,13 +661,17 @@ Deliver:
 - Comment/context submission.
 - Normal workflow continue from human gates.
 - Agent-run invocation for the current runnable step.
+- Stop-current-run control that preserves the current workflow step.
+- Cancel-request control from every nonterminal workflow state, including while
+  an agent run is queued or running.
 - File upload or existing artifact attachment as additional context.
 - Clear running, queued, failed, blocked, and completed states.
 - Secondary technical drawer for artifacts, events, refs, and raw run detail.
 
-Higher-risk controls such as cancel, reopen, blocker override, or direct step
-mutation should remain in the legacy UI until their Lab affordances and
-capability checks are reviewed.
+Higher-risk controls such as reopen, blocker override, or direct step mutation
+should remain in the legacy UI until their Lab affordances and capability
+checks are reviewed. Stop-current-run and cancel-request are required pilot
+controls.
 
 Acceptance criteria:
 
@@ -663,6 +681,10 @@ Acceptance criteria:
   expected event and agent run exactly once.
 - Adding conversational context is visible in both Lab and legacy request
   history.
+- Stopping an active run leaves the request on the same workflow step and a
+  late completion cannot advance it.
+- Canceling from any nonterminal step closes the request and cancels every
+  active run.
 - A failed mutation is explicit and does not leave optimistic UI state behind.
 
 ### Slice 3: Request-origin provenance and profile segmentation
@@ -916,6 +938,8 @@ GET  /agent/change-board/requests
 GET  /agent/change-board/requests/by-number/:number/review
 GET  /agent/change-board/requests/by-number/:number/timeline
 POST /agent/change-board/requests/by-number/:number/workflow/continue
+POST /agent/change-board/requests/by-number/:number/runs/:runId/cancel
+POST /agent/change-board/requests/by-number/:number/workflow/cancel
 POST /agent/responses
 
 GET  /agent/execution-profiles
@@ -1006,6 +1030,10 @@ Recommended non-sensitive measures:
 - Site request creation and Lab request operation.
 - Discord, Telegram, Buzz, external interface, task, and hook request origins.
 - Gate continuation creates exactly one next-step run across retries.
+- Run cancellation preserves the current workflow step and makes a late Runtime
+  completion non-authoritative.
+- Request cancellation works from agent, checkpoint, loop, and gate steps,
+  including with queued or running agent runs.
 - Worker-to-verifier handoff contains only declared artifacts and no runtime
   continuation.
 - Judge output routes only through allowed workflow edges.

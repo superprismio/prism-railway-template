@@ -150,6 +150,7 @@ export {
   type UpsertRuntimeProfileInput,
 } from './runtime-profiles';
 export {
+  cancelRuntimeJob,
   requestRuntimeResponse,
   requestRuntimeResponseWithProfile,
   type RuntimeRequestInput,

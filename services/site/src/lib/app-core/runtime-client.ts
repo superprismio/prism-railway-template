@@ -41,6 +41,7 @@ export type RuntimeRequestInput = {
   onProgress?: (progress: {
     status: string;
     runtimeJobId: string;
+    runtimeKey: string;
     threadId: string | null;
     trace: RuntimeTraceEntry[];
   }) => void;
@@ -334,6 +335,15 @@ async function requestNormalized(
   }
   const jobId = typeof accepted?.jobId === 'string' ? accepted.jobId : '';
   if (!jobId) throw new Error('RUNTIME_JOB_CREATE_INVALID_RESPONSE');
+  input.onProgress?.({
+    status: typeof accepted?.job?.status === 'string' ? accepted.job.status : 'queued',
+    runtimeJobId: jobId,
+    runtimeKey: profile.key,
+    threadId: typeof accepted?.job?.result?.continuationId === 'string'
+      ? accepted.job.result.continuationId
+      : null,
+    trace: traceEntries(accepted?.job?.trace),
+  });
 
   for (;;) {
     if (Date.now() - startedAt >= timeoutMs) {
@@ -354,6 +364,7 @@ async function requestNormalized(
     input.onProgress?.({
       status,
       runtimeJobId: jobId,
+      runtimeKey: profile.key,
       threadId: typeof job?.result?.continuationId === 'string' ? job.result.continuationId : null,
       trace: traceEntries(job?.trace),
     });
@@ -389,6 +400,13 @@ async function requestLegacy(profile: RuntimeProfileRecord, input: RuntimeReques
     if (!submit.ok) throw new Error(`RUNTIME_JOB_CREATE_FAILED:${submit.status}:${accepted?.error || 'unknown'}`);
     const jobId = typeof accepted?.jobId === 'string' ? accepted.jobId : '';
     if (!jobId) throw new Error('RUNTIME_JOB_CREATE_INVALID_RESPONSE');
+    input.onProgress?.({
+      status: typeof accepted?.job?.status === 'string' ? accepted.job.status : 'queued',
+      runtimeJobId: jobId,
+      runtimeKey: profile.key,
+      threadId: accepted?.job?.threadId ?? null,
+      trace: traceEntries(accepted?.job?.trace),
+    });
     for (;;) {
       if (Date.now() - startedAt >= timeoutMs) throw new Error(`RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`);
       await new Promise((resolve) => setTimeout(resolve, 2_000));
@@ -402,7 +420,7 @@ async function requestLegacy(profile: RuntimeProfileRecord, input: RuntimeReques
       if (!poll.ok) throw new Error(`RUNTIME_JOB_POLL_FAILED:${poll.status}:${payload?.error || 'unknown'}`);
       const status = payload?.job?.status ?? '';
       const trace = traceEntries(payload?.trace ?? payload?.job?.trace);
-      input.onProgress?.({ status, runtimeJobId: jobId, threadId: payload?.thread_id ?? payload?.job?.threadId ?? null, trace });
+      input.onProgress?.({ status, runtimeJobId: jobId, runtimeKey: profile.key, threadId: payload?.thread_id ?? payload?.job?.threadId ?? null, trace });
       if (status === 'queued' || status === 'running') continue;
       if (status === 'succeeded') return legacyResponse(profile, payload?.response ?? payload?.job?.response);
       throw new Error(`RUNTIME_REQUEST_FAILED:${payload?.error || payload?.job?.error || 'Runtime job failed'}`);
@@ -428,6 +446,21 @@ export async function requestRuntimeResponse(input: RuntimeRequestInput) {
     ...input,
     continuationId: sessionRuntimeKey && sessionRuntimeKey !== profile.key ? null : input.continuationId,
   });
+}
+
+export async function cancelRuntimeJob(input: { runtimeKey: string; runtimeJobId: string }) {
+  const runtimeKey = input.runtimeKey.trim();
+  const runtimeJobId = input.runtimeJobId.trim();
+  if (!runtimeKey || !runtimeJobId) throw new Error('RUNTIME_JOB_CANCEL_INPUT_INVALID');
+  const profile = resolveRuntimeProfile(runtimeKey);
+  const response = await fetchWithTimeout(
+    `${profile.baseUrl}/v1/runtime/jobs/${encodeURIComponent(runtimeJobId)}/cancel`,
+    { method: 'POST' },
+    10_000,
+  );
+  if (response.status === 404) return { requested: false, status: response.status };
+  if (!response.ok) throw new Error(`RUNTIME_JOB_CANCEL_FAILED:${response.status}`);
+  return { requested: true, status: response.status };
 }
 
 export async function requestRuntimeResponseWithProfile(

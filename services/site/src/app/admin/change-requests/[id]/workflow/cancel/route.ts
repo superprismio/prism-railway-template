@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import {
+  cancelRuntimeJob,
   cancelActiveAgentRunsForRequest,
   createAgentMessage,
   createAgentSession,
@@ -10,15 +11,22 @@ import {
   getWorkflowRunForRequest,
   listAgentMessages,
   updateAgentSession,
+  updateAgentRun,
   updateChangeRequest,
   updateWorkflowRun,
 } from "@/lib/app-core"
 import { adminFetch } from "@/lib/admin"
-import { parseString, readRouteParam, requireLocalAdminAccess, useLocalAppApi } from "@/lib/local-admin-api"
+import { requireCapabilityAccess } from "@/lib/admin-auth"
+import { parseString, readRouteParam, useLocalAppApi } from "@/lib/local-admin-api"
 import { wakeWorkflowAgentRunDispatcher } from "@/lib/workflow-agent-run-queue"
 
 type RouteContext = {
   params: Promise<{ id: string }>
+}
+
+function resultString(result: Record<string, unknown>, key: string) {
+  const value = result[key]
+  return typeof value === "string" && value.trim() ? value.trim() : null
 }
 
 export async function POST(request: Request, context: RouteContext) {
@@ -44,7 +52,7 @@ export async function POST(request: Request, context: RouteContext) {
     })
   }
 
-  const access = await requireLocalAdminAccess()
+  const access = await requireCapabilityAccess("canRunAgent")
   if (!access.ok) {
     return NextResponse.json({ ok: false, error: access.error }, { status: access.status })
   }
@@ -88,12 +96,45 @@ export async function POST(request: Request, context: RouteContext) {
       ? terminalStep.key
       : "closed"
 
+  const workflowRun = getWorkflowRunForRequest(changeRequest.id)
+  if (workflowRun?.status === "canceled") {
+    return NextResponse.json({
+      ok: true,
+      duplicate: true,
+      canceledAgentRuns: [],
+      changeRequest,
+      workflowRun,
+      messages: null,
+    })
+  }
+
   const canceledAgentRuns = cancelActiveAgentRunsForRequest({
     requestId: changeRequest.id,
     reason: operatorNote,
   })
   wakeWorkflowAgentRunDispatcher()
-  const workflowRun = getWorkflowRunForRequest(changeRequest.id)
+  const canceledAgentRunsWithRuntime = await Promise.all(canceledAgentRuns.map(async (run) => {
+    const runtimeJobId = resultString(run.result, "runtimeJobId")
+    const runtimeKey = resultString(run.result, "runtimeKey")
+    if (!runtimeJobId || !runtimeKey) return run
+    let runtimeCancellation: { requested: boolean; status: number | null; error: string | null }
+    try {
+      const result = await cancelRuntimeJob({ runtimeKey, runtimeJobId })
+      runtimeCancellation = { requested: result.requested, status: result.status, error: null }
+    } catch (error) {
+      runtimeCancellation = {
+        requested: false,
+        status: null,
+        error: error instanceof Error ? error.message : "RUNTIME_JOB_CANCEL_FAILED",
+      }
+    }
+    return updateAgentRun(run.id, {
+      result: {
+        ...run.result,
+        runtimeCancellation,
+      },
+    }) ?? run
+  }))
   updateChangeRequest(changeRequest.id, {
     workflowStepKey: terminalStepKey,
     resolutionSummary: operatorNote,
@@ -113,7 +154,7 @@ export async function POST(request: Request, context: RouteContext) {
       actorType: "admin",
       note: operatorNote,
       payload: {
-        canceledAgentRunIds: canceledAgentRuns.map((run) => run.id),
+        canceledAgentRunIds: canceledAgentRunsWithRuntime.map((run) => run.id),
         previousStepKey: workflowRun.currentStepKey,
         terminalStepKey,
         comment: operatorNote,
@@ -165,7 +206,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   return NextResponse.json({
     ok: true,
-    canceledAgentRuns,
+    canceledAgentRuns: canceledAgentRunsWithRuntime,
     changeRequest: getChangeRequest(changeRequest.id) ?? changeRequest,
     workflowRun: getWorkflowRunForRequest(changeRequest.id),
     messages,

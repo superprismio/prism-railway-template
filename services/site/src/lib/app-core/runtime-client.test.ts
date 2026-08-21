@@ -6,6 +6,7 @@ import type { RuntimeProfileRecord } from './runtime-profiles';
 
 test('runtime client uses the normalized contract without adapter-specific parsing', async (t) => {
   const submitted: { body?: Record<string, unknown> } = {};
+  const progress: Array<{ runtimeJobId: string; runtimeKey: string; status: string }> = [];
   let capabilitiesCalls = 0;
   const server = createServer((request, response) => {
     if (request.method === 'GET' && request.url === '/v1/runtime/capabilities') {
@@ -73,6 +74,7 @@ test('runtime client uses the normalized contract without adapter-specific parsi
     skills: ['test-skill'],
     credentials: ['sendgrid'],
     timeoutMs: 10_000,
+    onProgress: (entry) => progress.push(entry),
   });
 
   assert.equal(result.responseText, 'GROK_NORMALIZED_OK');
@@ -85,6 +87,10 @@ test('runtime client uses the normalized contract without adapter-specific parsi
   assert.deepEqual(submitted.body?.skills, []);
   assert.deepEqual(submitted.body?.credentials, []);
   assert.equal(capabilitiesCalls, 1);
+  assert.ok(progress.length >= 1);
+  assert.equal(progress[0]?.runtimeJobId, 'job-1');
+  assert.equal(progress[0]?.runtimeKey, 'grok-local');
+  assert.equal(progress[0]?.status, 'queued');
 });
 
 test('restricted authority fails closed when live capabilities omit support', async (t) => {
