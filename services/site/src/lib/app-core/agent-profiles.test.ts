@@ -5,6 +5,8 @@ import Database from 'better-sqlite3';
 import { agentProfilesMigration } from './migrations/040_agent_profiles';
 import { agentProfileAvatarMigration } from './migrations/041_agent_profile_avatar';
 import { agentProfileAccentColorMigration } from './migrations/042_agent_profile_accent_color';
+import { activeAgentExecutorFallbackMigration } from './migrations/043_active_agent_executor_fallback';
+import { taskAgentExecutor, workflowAgentExecutor } from './agent-executors';
 import {
   adminAgentProfileId,
   assignAgentProfileToSession,
@@ -143,5 +145,47 @@ test('pins session and new job/run records to an immutable agent profile version
   db.prepare(`INSERT INTO agent_runs (id, kind, status, session_id, input_json, created_at) VALUES ('run-2', 'console', 'running', 'session-1', '{}', '2026-01-02')`).run();
   db.prepare(`INSERT INTO agent_runs (id, kind, status, session_id, input_json, created_at) VALUES ('run-3', 'console', 'completed', 'session-1', '{}', '2026-01-03')`).run();
   assert.deepEqual(listAgentProfileQueueStates(db), [{ profileId: profile.id, queued: 1, claimed: 0, running: 1 }]);
+  db.close();
+});
+
+test('resolves workflow and task executors with an Admin Agent legacy fallback', () => {
+  const db = testDb();
+  const veydrift = upsertAgentProfile({
+    key: 'veydrift-agent', name: 'Veydrift Agent', status: 'active', ownerType: 'user', ownerUserId: 'owner-user',
+  }, db);
+  const inherited = workflowAgentExecutor({ defaultAgent: 'veydrift-agent' }, { key: 'operate' }, db);
+  assert.deepEqual(inherited, {
+    profileId: veydrift.id, profileKey: veydrift.key, profileVersion: 1, executionMode: 'worker',
+  });
+  const verifier = workflowAgentExecutor(
+    { defaultAgent: 'veydrift-agent' },
+    { key: 'verify', executorAgent: 'admin-agent', executionMode: 'verifier' },
+    db,
+  );
+  assert.equal(verifier.profileId, adminAgentProfileId);
+  assert.equal(verifier.executionMode, 'verifier');
+  assert.equal(workflowAgentExecutor({}, {}, db).profileId, adminAgentProfileId);
+  assert.equal(taskAgentExecutor({}, db).profileId, adminAgentProfileId);
+  assert.equal(taskAgentExecutor({ executorAgent: 'veydrift-agent', executionMode: 'repair' }, db).executionMode, 'repair');
+  assert.throws(
+    () => workflowAgentExecutor({ defaultAgent: 'missing-agent' }, {}, db),
+    /AGENT_EXECUTOR_NOT_FOUND:missing-agent/,
+  );
+  db.close();
+});
+
+test('migration attributes only currently active unassigned runs to the Admin Agent', () => {
+  const db = testDb();
+  db.prepare(`INSERT INTO agent_runs (id, kind, status, input_json, created_at) VALUES (?, 'workflow_step', ?, '{}', '2026-01-01')`).run('active-unassigned', 'running');
+  db.prepare(`INSERT INTO agent_runs (id, kind, status, input_json, created_at) VALUES (?, 'workflow_step', ?, '{}', '2025-01-01')`).run('historical-unassigned', 'completed');
+  db.exec(activeAgentExecutorFallbackMigration.sql);
+  assert.deepEqual(
+    db.prepare('SELECT agent_profile_id, agent_profile_version, execution_mode FROM agent_runs WHERE id = ?').get('active-unassigned'),
+    { agent_profile_id: adminAgentProfileId, agent_profile_version: 1, execution_mode: 'worker' },
+  );
+  assert.deepEqual(
+    db.prepare('SELECT agent_profile_id, agent_profile_version, execution_mode FROM agent_runs WHERE id = ?').get('historical-unassigned'),
+    { agent_profile_id: null, agent_profile_version: null, execution_mode: null },
+  );
   db.close();
 });

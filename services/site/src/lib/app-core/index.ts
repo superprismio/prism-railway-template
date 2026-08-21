@@ -38,6 +38,12 @@ export {
 } from './agent-profiles';
 export { getAdminBoardSnapshot, getAdminSetupStatus } from './admin-read';
 export {
+  resolveAgentExecutor,
+  taskAgentExecutor,
+  workflowAgentExecutor,
+  type AgentExecutorSnapshot,
+} from './agent-executors';
+export {
   getRequestOrigin,
   insertRequestOrigin,
   listRequestOrigins,

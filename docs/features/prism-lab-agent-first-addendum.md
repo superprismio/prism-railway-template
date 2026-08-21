@@ -305,6 +305,25 @@ Executing one step does not transfer request ownership. Each run snapshots the
 executor Agent Profile, version, mode, effective authority, and declared input
 and output artifacts.
 
+### Executor attribution iteration
+
+Automated activity must never become operationally ownerless merely because it
+has no chat session. Executor selection is canonical and ordered:
+
+1. `steps[].executorAgent` (or the equivalent step `agentConfig` field);
+2. workflow `defaultAgent`;
+3. the required Admin Agent for legacy definitions with no explicit executor.
+
+Direct tasks use `agentConfig.executorAgent`; hook activity inherits its
+workflow default. Every new run snapshots the resolved profile id, version, and
+bounded execution mode when it is created. Workflow execution also creates an
+automated, profile-scoped session so persona, runtime scope, skills, and memory
+are applied rather than merely displayed as attribution.
+
+The rollout repair assigns only already-active unassigned runs to the Admin
+Agent. Completed historical runs remain unknown unless durable evidence proves
+their executor; the UI must not manufacture historical provenance.
+
 Cross-agent handoffs use explicit bounded artifacts rather than shared runtime
 continuations. A handoff includes objective, relevant facts, declared inputs,
 constraints, delegated authority, outputs, evidence, unresolved blockers, and

@@ -3,6 +3,7 @@ import { loadConfig } from './config';
 import { getDb } from './db';
 import { getDefaultHomeModules, getHomeModuleDefinition, normalizeHomeModuleConfig } from './home-modules';
 import { normalizeSiteContent, writeSiteContent } from './site-content';
+import { taskAgentExecutor, workflowAgentExecutor } from './agent-executors';
 import {
   getRequestOrigin,
   insertRequestOrigin,
@@ -581,6 +582,9 @@ export interface CreateAgentRunInput {
   taskKey?: string | null;
   hookKey?: string | null;
   sessionId?: string | null;
+  agentProfileId?: string | null;
+  agentProfileVersion?: number | null;
+  executionMode?: string | null;
   source?: string;
   input?: Record<string, unknown>;
   result?: Record<string, unknown>;
@@ -4954,10 +4958,11 @@ export function createAgentRun(input: CreateAgentRunInput) {
     .prepare(
       `INSERT INTO agent_runs (
          id, kind, status, lane, priority, idempotency_key, request_id, workflow_run_id, workflow_step_key,
-         task_key, hook_key, session_id, source, input_json, result_json, trace_json,
+         task_key, hook_key, session_id, agent_profile_id, agent_profile_version, execution_mode,
+         source, input_json, result_json, trace_json,
          error_message, queued_at, claimed_at, lease_expires_at, queue_reason,
          started_at, finished_at, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -4972,6 +4977,9 @@ export function createAgentRun(input: CreateAgentRunInput) {
       normalizeText(input.taskKey) || null,
       normalizeText(input.hookKey) || null,
       normalizeText(input.sessionId) || null,
+      normalizeText(input.agentProfileId) || null,
+      input.agentProfileVersion == null ? null : Math.max(1, Math.trunc(input.agentProfileVersion)),
+      normalizeText(input.executionMode) || null,
       source,
       JSON.stringify(input.input ?? {}),
       JSON.stringify(input.result ?? {}),
@@ -6553,11 +6561,16 @@ export function createHookRun(input: CreateHookRunInput): HookRunRecord {
   const source = normalizeText(input.source) || 'hook';
   const hookName = normalizeText(input.hookName) || null;
   const workflowKey = normalizeText(input.workflowKey) || null;
+  const workflow = workflowKey ? getWorkflowByKey(workflowKey) : null;
+  const executor = workflowAgentExecutor(workflow?.definition, null);
   const agentRun = createAgentRun({
     kind: 'hook',
     status: 'running',
     idempotencyKey: `hook:${id}`,
     hookKey,
+    agentProfileId: executor.profileId,
+    agentProfileVersion: executor.profileVersion,
+    executionMode: executor.executionMode,
     source,
     input: {
       hookRunId: id,
@@ -6729,11 +6742,15 @@ export function createTaskRun(input: CreateTaskRunInput): TaskRunRecord {
   const resultSummary = normalizeText(input.resultSummary) || null;
   const errorMessage = normalizeText(input.errorMessage) || null;
   const finishedAt = status === 'running' || status === 'queued' ? null : now;
+  const executor = taskAgentExecutor(task.agentConfig);
   const agentRun = createAgentRun({
     kind: 'task',
     status,
     idempotencyKey: `task:${id}`,
     taskKey: task.key,
+    agentProfileId: executor.profileId,
+    agentProfileVersion: executor.profileVersion,
+    executionMode: executor.executionMode,
     source: triggerSource,
     input: {
       taskRunId: id,

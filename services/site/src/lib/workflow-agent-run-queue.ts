@@ -3,6 +3,7 @@ import {
   claimNextQueuedAgentRun,
   countRunningAgentRuns,
   createAgentRun,
+  createAgentSession,
   createWorkflowEvent,
   ensureWorkflowRunForRequest,
   expireStaleRunningAgentRuns,
@@ -13,6 +14,8 @@ import {
   updateAgentRun,
   updateChangeRequest,
   updateWorkflowRun,
+  assignAgentProfileToSession,
+  workflowAgentExecutor,
   type AgentRunRecord,
 } from "@/lib/app-core"
 import { handleResponsePost } from "@/lib/response-route-handler"
@@ -135,16 +138,41 @@ async function executeClaimedWorkflowAgentRun(agentRun: AgentRunRecord) {
   }
 
   try {
+    let sessionId = agentRun.sessionId
+    if (!sessionId && agentRun.agentProfileId) {
+      const session = createAgentSession({
+        source: "workflow",
+        status: "active",
+        title: `${request.title} · ${agentRun.workflowStepKey ?? "workflow step"}`,
+        linkedChangeRequestId: request.id,
+        meta: {
+          transport: "site",
+          workflowRunId: agentRun.workflowRunId,
+          workflowStepKey: agentRun.workflowStepKey,
+        },
+        lastMessageAt: new Date().toISOString(),
+      })
+      if (!session) throw new Error("WORKFLOW_AGENT_SESSION_CREATE_FAILED")
+      assignAgentProfileToSession({
+        sessionId: session.id,
+        profileId: agentRun.agentProfileId,
+        conversationScope: "automated",
+      })
+      sessionId = session.id
+      updateAgentRun(agentRun.id, { sessionId })
+    }
     const response = await handleResponsePost(
       new Request(new URL("/agent/responses", workflowAgentRunString(input, "baseUrl")?.trim() || defaultBaseUrl()), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           input: [{ role: "user", content: prompt }],
+          session_id: sessionId,
           linked_change_request_id: request.id,
           workflow_action: workflowAgentRunString(input, "workflowAction"),
           requested_skills: workflowAgentRunStringArray(input, "requestedSkills"),
           agent_run_id: agentRun.id,
+          execution_mode: agentRun.executionMode ?? "worker",
         }),
       }),
       async () => ({ ok: true as const }),
@@ -396,6 +424,17 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
     return { queued: true, duplicate: true, status: 202, agentRun: existing }
   }
 
+  let executor
+  try {
+    executor = workflowAgentExecutor(workflow?.definition, runnableStep)
+  } catch (error) {
+    return {
+      queued: false,
+      reason: error instanceof Error ? error.message : "AGENT_EXECUTOR_RESOLUTION_FAILED",
+      status: 409,
+    }
+  }
+
   const agentRun = createAgentRun({
     kind: "workflow_step",
     status: "queued",
@@ -405,6 +444,9 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
     requestId: input.request.id,
     workflowRunId: workflowRun.id,
     workflowStepKey: runnableStepKey,
+    agentProfileId: executor.profileId,
+    agentProfileVersion: executor.profileVersion,
+    executionMode: executor.executionMode,
     source: "site",
     input: {
       prompt: buildWorkflowAgentRunPrompt({
