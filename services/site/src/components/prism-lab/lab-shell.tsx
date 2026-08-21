@@ -4,7 +4,7 @@ import type { ReactNode } from "react"
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Activity, ArrowUpRight, Brain, FlaskConical, Inbox, Menu, PanelLeftClose, Settings, X } from "lucide-react"
+import { Activity, ArrowUpRight, Brain, FlaskConical, Inbox, LoaderCircle, Menu, PanelLeftClose, Settings, X } from "lucide-react"
 
 import { AgentAvatar } from "@/components/prism-lab/agent-avatar"
 import { ThemeToggle } from "@/components/shared/theme-toggle"
@@ -13,7 +13,8 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { Capability } from "@/lib/role-access"
 
-export type LabAgentNavigationItem = { key: string; name: string; avatarUrl: string | null; accentColor: string; systemKey: string | null; status: string }
+type LabAgentQueue = { queued: number; claimed: number; running: number }
+export type LabAgentNavigationItem = { key: string; name: string; avatarUrl: string | null; accentColor: string; systemKey: string | null; status: string; queue: LabAgentQueue }
 
 const workspaceSections = [
   { label: "Requests", href: "/admin/lab", icon: Inbox, capability: "canViewRequests" as const },
@@ -24,6 +25,13 @@ const workspaceSections = [
 
 function activeFor(pathname: string, href: string) {
   return pathname === href || (href === "/admin/lab" ? pathname.startsWith("/admin/lab/requests") : pathname.startsWith(`${href}/`))
+}
+
+function AgentQueueIndicator({ queue, accentColor }: { queue: LabAgentQueue; accentColor: string }) {
+  const working = queue.claimed + queue.running
+  if (working > 0) return <span className="flex h-5 w-5 items-center justify-center" aria-label={`${working} working, ${queue.queued} queued`} title={`${working} working · ${queue.queued} queued`}><LoaderCircle className="h-3.5 w-3.5 animate-spin" style={{ color: accentColor }} aria-hidden="true" /></span>
+  if (queue.queued > 0) return <span className="flex h-5 w-5 items-center justify-center" aria-label={`${queue.queued} queued`} title={`${queue.queued} queued`}><span className="h-2.5 w-2.5 animate-pulse rounded-full" style={{ backgroundColor: accentColor }} aria-hidden="true" /></span>
+  return null
 }
 
 function Navigator({ capabilities, agents, memoryConfigured, onNavigate }: { capabilities: readonly Capability[]; agents: readonly LabAgentNavigationItem[]; memoryConfigured: boolean; onNavigate?: () => void }) {
@@ -49,7 +57,7 @@ function Navigator({ capabilities, agents, memoryConfigured, onNavigate }: { cap
             const href = `/admin/lab/agents/${encodeURIComponent(agent.key)}`
             const active = activeFor(pathname, href)
             const labelColor = `color-mix(in oklab, ${agent.accentColor} 72%, var(--foreground))`
-            return <li key={agent.key}><Link href={href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={cn("flex min-h-11 items-center gap-2.5 rounded-md border-l-2 px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "bg-primary/12 text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")} style={{ borderLeftColor: active ? agent.accentColor : "transparent" }}><AgentAvatar name={agent.name} avatarUrl={agent.avatarUrl} accentColor={agent.accentColor} className="h-7 w-7 rounded-md" /><span className="min-w-0 flex-1 truncate font-medium" style={{ color: labelColor }}>{agent.name}</span>{agent.systemKey === "admin-agent" ? <span className="text-[0.58rem] uppercase tracking-wider" style={{ color: labelColor }}>Admin</span> : null}</Link></li>
+            return <li key={agent.key}><Link href={href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={cn("flex min-h-11 items-center gap-2.5 rounded-md border-l-2 px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "bg-primary/12 text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")} style={{ borderLeftColor: active ? agent.accentColor : "transparent" }}><AgentAvatar name={agent.name} avatarUrl={agent.avatarUrl} accentColor={agent.accentColor} className="h-7 w-7 rounded-md" /><span className="min-w-0 flex-1 truncate font-medium" style={{ color: labelColor }}>{agent.name}</span>{agent.systemKey === "admin-agent" ? <span className="text-[0.58rem] uppercase tracking-wider" style={{ color: labelColor }}>Admin</span> : null}<AgentQueueIndicator queue={agent.queue} accentColor={agent.accentColor} /></Link></li>
           })}
         </ul>
       </div> : null}
@@ -66,7 +74,29 @@ export function LabShell({ children, enabled = true, capabilities = [], agents =
   const showNavigation = enabled && capabilities.length > 0
   const [leftOpen, setLeftOpen] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [liveQueues, setLiveQueues] = useState<Record<string, LabAgentQueue>>(() => Object.fromEntries(agents.map((agent) => [agent.key, agent.queue])))
   useEffect(() => { setLeftOpen(window.localStorage.getItem("prism-lab-left-nav") !== "closed") }, [])
+  useEffect(() => { setLiveQueues(Object.fromEntries(agents.map((agent) => [agent.key, agent.queue]))) }, [agents])
+  useEffect(() => {
+    if (!showNavigation || !agents.length) return
+    let stopped = false
+    let pending = false
+    const load = async () => {
+      if (pending || document.visibilityState === "hidden") return
+      pending = true
+      try {
+        const response = await fetch("/admin/agent-profiles/queue", { cache: "no-store" })
+        const payload = await response.json().catch(() => null) as { queues?: Array<{ key: string } & LabAgentQueue> } | null
+        if (!stopped && response.ok && payload?.queues) setLiveQueues(Object.fromEntries(payload.queues.map((queue) => [queue.key, queue])))
+      } catch {
+        // Preserve the last canonical queue snapshot during transient network failures.
+      } finally { pending = false }
+    }
+    void load()
+    const timer = window.setInterval(() => void load(), 5000)
+    return () => { stopped = true; window.clearInterval(timer) }
+  }, [showNavigation, agents.length])
+  const agentsWithLiveQueues = agents.map((agent) => ({ ...agent, queue: liveQueues[agent.key] ?? { queued: 0, claimed: 0, running: 0 } }))
   function toggleLeft() { setLeftOpen((open) => { window.localStorage.setItem("prism-lab-left-nav", open ? "closed" : "open"); return !open }) }
   return <div data-lab-shell className="min-h-screen w-full bg-background text-foreground">
     <a href="#lab-content" className="fixed left-3 top-3 z-[70] -translate-y-20 bg-background px-3 py-2 text-sm focus:translate-y-0 focus:ring-2 focus:ring-ring">Skip to content</a>
@@ -75,9 +105,9 @@ export function LabShell({ children, enabled = true, capabilities = [], agents =
       <Link href="/admin/lab" className="ml-1 flex min-w-0 items-center gap-2" title={branding?.workspaceLabel || branding?.brandName || "Prism Lab"}><span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/70 bg-primary/10 text-primary">{branding?.logoUrl ? <img src={branding.logoUrl} alt={branding.logoAlt || `${branding.brandName || "Workspace"} avatar`} className="h-full w-full object-cover" /> : <FlaskConical className="h-4 w-4" />}</span><span className="truncate text-sm font-semibold">Prism</span><Badge className="text-[0.58rem] uppercase tracking-wider">Lab</Badge><span className="hidden max-w-48 truncate border-l border-border/60 pl-2 text-xs text-muted-foreground sm:inline">{branding?.workspaceLabel || branding?.brandName || "Workspace"}</span></Link>
       <div className="ml-auto"><ThemeToggle /></div>
     </header>
-    {showNavigation && mobileOpen ? <div className="fixed inset-0 z-[60] lg:hidden"><button className="absolute inset-0 bg-black/55" aria-label="Close navigator" onClick={() => setMobileOpen(false)} /><aside className="relative h-full w-[18rem] max-w-[88vw] border-r border-border bg-background pt-3 shadow-2xl"><div className="flex items-center justify-between px-3 pb-3"><span className="text-sm font-semibold">Navigator</span><Button variant="ghost" size="icon" onClick={() => setMobileOpen(false)} aria-label="Close navigator"><X /></Button></div><Navigator capabilities={capabilities} agents={agents} memoryConfigured={memoryConfigured} onNavigate={() => setMobileOpen(false)} /></aside></div> : null}
+    {showNavigation && mobileOpen ? <div className="fixed inset-0 z-[60] lg:hidden"><button className="absolute inset-0 bg-black/55" aria-label="Close navigator" onClick={() => setMobileOpen(false)} /><aside className="relative h-full w-[18rem] max-w-[88vw] border-r border-border bg-background pt-3 shadow-2xl"><div className="flex items-center justify-between px-3 pb-3"><span className="text-sm font-semibold">Navigator</span><Button variant="ghost" size="icon" onClick={() => setMobileOpen(false)} aria-label="Close navigator"><X /></Button></div><Navigator capabilities={capabilities} agents={agentsWithLiveQueues} memoryConfigured={memoryConfigured} onNavigate={() => setMobileOpen(false)} /></aside></div> : null}
     <div className={cn("min-h-[calc(100vh-3.5rem)]", showNavigation && leftOpen && "lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]")}>
-      {showNavigation && leftOpen ? <aside id="lab-agent-navigator" className="sticky top-14 hidden h-[calc(100vh-3.5rem)] border-r border-border/60 bg-card/20 py-5 lg:block"><Navigator capabilities={capabilities} agents={agents} memoryConfigured={memoryConfigured} /></aside> : null}
+      {showNavigation && leftOpen ? <aside id="lab-agent-navigator" className="sticky top-14 hidden h-[calc(100vh-3.5rem)] border-r border-border/60 bg-card/20 py-5 lg:block"><Navigator capabilities={capabilities} agents={agentsWithLiveQueues} memoryConfigured={memoryConfigured} /></aside> : null}
       <main id="lab-content" tabIndex={-1} className="min-w-0 outline-none">{enabled ? children : <LabUnavailable />}</main>
     </div>
   </div>

@@ -12,6 +12,7 @@ import {
   getAgentProfileVersion,
   getAgentSessionProfileAssignment,
   listAgentProfiles,
+  listAgentProfileQueueStates,
   resolveAgentProfileBinding,
   resolveAgentProfileInteraction,
   upsertAgentProfile,
@@ -139,5 +140,8 @@ test('pins session and new job/run records to an immutable agent profile version
   assert.deepEqual(db.prepare('SELECT agent_profile_id, agent_profile_version, execution_mode FROM agent_runs WHERE id = ?').get('run-1'), {
     agent_profile_id: profile.id, agent_profile_version: 1, execution_mode: 'orchestrator',
   });
+  db.prepare(`INSERT INTO agent_runs (id, kind, status, session_id, input_json, created_at) VALUES ('run-2', 'console', 'running', 'session-1', '{}', '2026-01-02')`).run();
+  db.prepare(`INSERT INTO agent_runs (id, kind, status, session_id, input_json, created_at) VALUES ('run-3', 'console', 'completed', 'session-1', '{}', '2026-01-03')`).run();
+  assert.deepEqual(listAgentProfileQueueStates(db), [{ profileId: profile.id, queued: 1, claimed: 0, running: 1 }]);
   db.close();
 });

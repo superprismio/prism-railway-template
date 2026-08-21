@@ -219,3 +219,10 @@ Short evidence log for the Slices 0–2 implementation gauntlet.
 - Fix: added bounded authenticated `GET /memory/dates`, backed by canonical rolling files with section/entry/bucket counts; Site now consumes that index and exposes a rollout warning when an older Memory deployment lacks it
 - Result: deterministic newest-first storage/index tests, focused Site parsing tests, full Site regression/build gates, and Python compile validation pass
 - Deployment note: both Site and Prism Memory must use this branch for the historical timeline; the latest-only fallback remains honest during a staggered rollout
+
+## Iteration 25 — Agent navigator working queue
+
+- Component: high-level multi-agent queue awareness in the persistent Lab navigator
+- Fix: added a minimal capability-checked queue projection keyed by Agent Profile and five-second visible-tab polling; queued work pulses, while claimed/running work spins in the agent's accent color
+- Correctness boundary: only canonical `queued`, `claimed`, and `running` agent runs activate the label; open sessions and workflow projections do not create false working signals, and run inputs/results/traces never enter the feed
+- Compatibility: unattributed legacy/system activity remains explicitly unknown rather than being silently assigned to an agent

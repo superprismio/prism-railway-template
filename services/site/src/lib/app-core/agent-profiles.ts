@@ -156,6 +156,13 @@ export type AgentProfileActivityItem = {
   actorDisplayName: string | null;
 };
 
+export type AgentProfileQueueState = {
+  profileId: string;
+  queued: number;
+  claimed: number;
+  running: number;
+};
+
 export type AgentProfileSessionDetail = AgentProfileSessionSummary & {
   profileId: string;
   profileVersion: number | null;
@@ -836,6 +843,24 @@ export function listAgentProfileActivity(profileId: string, limit = 100, db: Dat
   return [...sessions, ...runs]
     .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt) || left.id.localeCompare(right.id))
     .slice(0, boundedLimit);
+}
+
+export function listAgentProfileQueueStates(db: Database.Database = getDb()): AgentProfileQueueState[] {
+  const rows = db.prepare(`
+    SELECT agent_profile_id,
+      SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) AS queued,
+      SUM(CASE WHEN status = 'claimed' THEN 1 ELSE 0 END) AS claimed,
+      SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) AS running
+    FROM agent_runs
+    WHERE agent_profile_id IS NOT NULL AND status IN ('queued', 'claimed', 'running')
+    GROUP BY agent_profile_id
+  `).all() as Array<{ agent_profile_id: string; queued: number; claimed: number; running: number }>;
+  return rows.map((row) => ({
+    profileId: row.agent_profile_id,
+    queued: Number(row.queued) || 0,
+    claimed: Number(row.claimed) || 0,
+    running: Number(row.running) || 0,
+  }));
 }
 
 export function getAgentProfileSessionDetail(profileId: string, sessionId: string, db: Database.Database = getDb()): AgentProfileSessionDetail | null {
