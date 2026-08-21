@@ -4,6 +4,7 @@ import Database from 'better-sqlite3';
 
 import { agentProfilesMigration } from './migrations/040_agent_profiles';
 import { agentProfileAvatarMigration } from './migrations/041_agent_profile_avatar';
+import { agentProfileAccentColorMigration } from './migrations/042_agent_profile_accent_color';
 import {
   adminAgentProfileId,
   assignAgentProfileToSession,
@@ -48,6 +49,7 @@ function testDb() {
   `);
   db.exec(agentProfilesMigration.sql);
   db.exec(agentProfileAvatarMigration.sql);
+  db.exec(agentProfileAccentColorMigration.sql);
   return db;
 }
 
@@ -68,12 +70,14 @@ test('creates owned agents, prevents cycles, and assigns a surface to one primar
   const db = testDb();
   const owned = upsertAgentProfile({
     key: 'veydrift-agent', name: 'Veydrift Agent', status: 'active', ownerType: 'user',
-    ownerUserId: 'owner-user', stewardUserIds: ['admin-user'], skills: ['veydrift', 'veydrift'], avatarUrl: 'https://example.com/agent.png',
+    ownerUserId: 'owner-user', stewardUserIds: ['admin-user'], skills: ['veydrift', 'veydrift'], avatarUrl: 'https://example.com/agent.png', accentColor: '#FF4FD8',
   }, db);
   assert.equal(owned.owner.userId, 'owner-user');
   assert.deepEqual(owned.stewards.map((steward) => steward.userId).sort(), ['admin-user', 'owner-user']);
   assert.deepEqual(owned.skills, ['veydrift']);
   assert.equal(owned.avatarUrl, 'https://example.com/agent.png');
+  assert.equal(owned.accentColor, '#FF4FD8');
+  assert.throws(() => upsertAgentProfile({ key: owned.key, name: owned.name, accentColor: '#000000' }, db), /AGENT_PROFILE_ACCENT_COLOR_INVALID/);
   assert.throws(() => upsertAgentProfile({ key: owned.key, name: owned.name, avatarUrl: 'javascript:alert(1)' }, db), /AGENT_PROFILE_AVATAR_URL_INVALID/);
   const child = upsertAgentProfile({
     key: 'channel-agent', name: 'Channel Agent', status: 'active', ownerType: 'agent',

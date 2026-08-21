@@ -17,11 +17,13 @@ export default async function AgentSessionPage({ params }: { params: Promise<{ k
   if (!isPrismLabEnabled(process.env.PRISM_LAB_ENABLED)) return null
   const workspace = await getAdminWorkspaceData()
   if (!workspace.ok) return <RequestInboxUnavailable reason={workspace.reason} />
-  if (!workspace.data.session.capabilities.includes("canRunAgent")) return <RequestInboxUnavailable reason="unauthorized" />
+  if (!workspace.data.session.capabilities.includes("canChatAgents")) return <RequestInboxUnavailable reason="unauthorized" />
   const route = await params
   const profile = getAgentProfile(route.key)
   const session = profile ? getAgentProfileSessionDetail(profile.id, route.sessionId) : null
   if (!profile || !session) return <div className="p-8"><h1 className="text-xl font-semibold">Session not found</h1><Link href="/admin/lab/agents" className="mt-4 inline-block text-sm underline">Return to Agents</Link></div>
+  const canInspectAll = workspace.data.session.capabilities.includes("canRunAgent")
+  if (!canInspectAll && (session.source !== "prism-memory-explorer" || session.createdByUserId !== workspace.data.session.userId)) return <RequestInboxUnavailable reason="unauthorized" />
   createAuditLog({ actorUserId: workspace.data.session.userId, actionType: "admin.agent_session.transcript.view", targetType: "agent_session", targetId: session.id, meta: { agentProfileId: profile.id, messageCount: session.messages.length } })
   return (
     <div className="px-4 py-5 sm:px-6 lg:px-8"><div className="mx-auto max-w-5xl">

@@ -196,3 +196,18 @@ Short evidence log for the Slices 0–2 implementation gauntlet.
 - Fix: enabled Console and Settings routes, embedded existing Capture behavior as a console mode, added a capability-checked promotion boundary with a separate request session, and added allowlisted non-secret configuration planning prompts
 - Result: focused promotion/configuration/session-isolation tests, the 110-test Site suite, Site typecheck, production build with Console/Settings/promotion routes, and diff check pass
 - Remaining risk: split-service promotion depends on the upstream Slice 3 request-create contract honoring `sourceSessionId`; the local Site-owned path enforces and tests the complete provenance boundary
+
+## Iteration 22 — Scoped Memory Explorer and agent conversations
+
+- Component: workspace Memory navigation, Timeline, Knowledge search, Agent Profile Memory scopes, and read-only agent conversation handoff
+- Evaluated: configuration/offline states, rolling-date aliases, evidence provenance, knowledge facets and audience policy, browser-reference distrust, immutable profile-version scope, member versus Admin Agent access, runtime mutation authority, durable session attribution, and Activity visibility
+- Fix: added authenticated Site-owned Memory read contracts, Timeline and Knowledge UI, `canChatAgents`, fail-closed versioned Memory scopes, eligible-agent resolution across every selected record, and observable `prism-memory-explorer` sessions backed by the runtime-enforced `read_only_utility` mode
+- Result: focused scope/reference/authorization tests, the 111-test Site suite, Site typecheck, a 92-page production build containing `/admin/lab/memory`, and diff check pass
+- Remaining risk: the deployed Prism Memory instance must expose its existing rolling-memory and knowledge endpoints; a full relationship graph remains intentionally deferred until stable explicit edge provenance exists
+
+## Iteration 23 — Workspace and agent identity polish
+
+- Component: persistent Lab identity cues and Agent Profile visual differentiation
+- Fix: surfaced the configured workspace avatar and label in the Lab header; added a versioned, allowlisted neon accent to Agent Profiles, deterministic fallbacks for existing agents, accessible theme-aware labels, and accent-aware avatars/navigation/profile headers
+- Result: fresh 41-migration database pass, focused profile validation, the 111-test Site suite, typecheck, production build, and diff check pass
+- Remaining risk: custom workspace logos still rely on the existing branding URL and upload/configuration path; this slice does not introduce another image store

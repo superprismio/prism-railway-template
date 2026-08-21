@@ -38,6 +38,7 @@ import { hookAuthConfigMigration } from './038_hook_auth_config';
 import { requestOriginsMigration } from './039_request_origins';
 import { agentProfilesMigration } from './040_agent_profiles';
 import { agentProfileAvatarMigration } from './041_agent_profile_avatar';
+import { agentProfileAccentColorMigration } from './042_agent_profile_accent_color';
 
 export interface Migration {
   name: string;
@@ -85,4 +86,5 @@ export const migrations: Migration[] = [
   requestOriginsMigration,
   agentProfilesMigration,
   agentProfileAvatarMigration,
+  agentProfileAccentColorMigration,
 ];

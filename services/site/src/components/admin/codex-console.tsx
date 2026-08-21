@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bot, Copy, Cpu, ExternalLink, LoaderCircle, Plus, X } from "lucide-react";
+import {
+  Bot,
+  Copy,
+  Cpu,
+  ExternalLink,
+  LoaderCircle,
+  Plus,
+  X,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,8 +42,30 @@ type StoredConsoleMessage = {
 type ConsoleSession = {
   meta?: {
     runtimeKey?: string | null;
+    memoryReferences?: unknown;
   } | null;
 };
+
+async function fetchJsonMemoryConversation(input: {
+  question: string;
+  sessionId: string;
+  agentProfileKey: string;
+  references: unknown[];
+}) {
+  const response = await fetch("/admin/memory/api/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const payload = (await response.json().catch(() => null)) as {
+    session?: { id: string };
+    messages?: StoredConsoleMessage[];
+    error?: string;
+  } | null;
+  if (!response.ok || !payload?.session || !Array.isArray(payload.messages))
+    throw new Error(payload?.error || "Memory conversation failed");
+  return { session: payload.session, messages: payload.messages };
+}
 
 type RuntimeProfile = {
   key: string;
@@ -71,7 +101,9 @@ function displayConsoleContent(role: string, content: string) {
   if (role !== "user") return content;
   const marker = "\n\nConsole question:\n";
   const markerIndex = content.lastIndexOf(marker);
-  return markerIndex >= 0 ? content.slice(markerIndex + marker.length).trim() : content;
+  return markerIndex >= 0
+    ? content.slice(markerIndex + marker.length).trim()
+    : content;
 }
 
 function scrollToLatestMessage(
@@ -107,16 +139,26 @@ export function CodexConsole({
   configuredRuntimeKey,
   configuredProfileVersion,
   consoleFirstLayout = false,
+  initialSessionId,
+  readOnlyMemory = false,
   onSessionSnapshot,
 }: {
   isActive?: boolean;
   sessionControlsTargetId?: string;
   initialDraft?: string;
   agentProfileKey?: string;
-  executionMode?: "worker" | "orchestrator" | "verifier" | "reviewer" | "judge" | "repair";
+  executionMode?:
+    | "worker"
+    | "orchestrator"
+    | "verifier"
+    | "reviewer"
+    | "judge"
+    | "repair";
   configuredRuntimeKey?: string | null;
   configuredProfileVersion?: number;
   consoleFirstLayout?: boolean;
+  initialSessionId?: string | null;
+  readOnlyMemory?: boolean;
   onSessionSnapshot?: (snapshot: ConsoleSessionSnapshot) => void;
 }) {
   const storageScope = agentProfileKey?.trim() || "legacy";
@@ -130,12 +172,19 @@ export function CodexConsole({
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [activeJobTrace, setActiveJobTrace] = useState<ConsoleTraceEntry[]>([]);
   const [runtimeProfiles, setRuntimeProfiles] = useState<RuntimeProfile[]>([]);
-  const [sessionRuntimeKey, setSessionRuntimeKey] = useState<string | null>(null);
-  const [sessionAgentProfileVersion, setSessionAgentProfileVersion] = useState<number | null>(null);
+  const [sessionRuntimeKey, setSessionRuntimeKey] = useState<string | null>(
+    null,
+  );
+  const [sessionAgentProfileVersion, setSessionAgentProfileVersion] = useState<
+    number | null
+  >(null);
   const [pollNotice, setPollNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [usesTouchFirstInput, setUsesTouchFirstInput] = useState(false);
-  const [attachedArtifacts, setAttachedArtifacts] = useState<UploadedMemoryArtifact[]>([]);
+  const [attachedArtifacts, setAttachedArtifacts] = useState<
+    UploadedMemoryArtifact[]
+  >([]);
+  const [memoryReferences, setMemoryReferences] = useState<unknown[]>([]);
   const [sessionControlsTarget, setSessionControlsTarget] =
     useState<HTMLElement | null>(null);
   const transcriptRef = useRef<HTMLDivElement | null>(null);
@@ -146,7 +195,7 @@ export function CodexConsole({
 
   useEffect(() => {
     if (!initialDraft) return;
-    setDraft((current) => current.trim() ? current : initialDraft);
+    setDraft((current) => (current.trim() ? current : initialDraft));
   }, [initialDraft]);
 
   useEffect(() => {
@@ -168,43 +217,57 @@ export function CodexConsole({
     };
   }, []);
 
-  const loadConsoleHistory = useCallback(async (targetSessionId: string) => {
-    const response = await fetch(
-      `/admin/responses?session_id=${encodeURIComponent(targetSessionId)}`,
-      {
-        cache: "no-store",
-      },
-    );
-    const payload = (await response.json()) as {
-      ok?: boolean;
-      session?: ConsoleSession;
-      agentProfileAssignment?: { profileVersion?: number | null } | null;
-      messages?: StoredConsoleMessage[];
-      error?: string;
-    };
-    if (!response.ok || payload.ok === false) {
-      throw new Error(payload.error || "Could not load console history");
-    }
-    const restoredMessages = Array.isArray(payload.messages)
-      ? payload.messages
-          .filter(
-            (message) =>
-              message.role === "user" || message.role === "assistant",
-          )
-          .map((message) => ({
-            id: message.id,
-            role: message.role as "user" | "assistant",
-            content: displayConsoleContent(message.role, message.content),
-          }))
-      : [];
-    setSessionId(targetSessionId);
-    setSessionRuntimeKey(payload.session?.meta?.runtimeKey ?? null);
-    setSessionAgentProfileVersion(payload.agentProfileAssignment?.profileVersion ?? null);
-    setMessages(restoredMessages);
-  }, []);
+  const loadConsoleHistory = useCallback(
+    async (targetSessionId: string) => {
+      const response = await fetch(
+        readOnlyMemory
+          ? `/admin/memory/api/chat?sessionId=${encodeURIComponent(targetSessionId)}`
+          : `/admin/responses?session_id=${encodeURIComponent(targetSessionId)}`,
+        {
+          cache: "no-store",
+        },
+      );
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        session?: ConsoleSession;
+        agentProfileAssignment?: { profileVersion?: number | null } | null;
+        messages?: StoredConsoleMessage[];
+        error?: string;
+      };
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || "Could not load console history");
+      }
+      const restoredMessages = Array.isArray(payload.messages)
+        ? payload.messages
+            .filter(
+              (message) =>
+                message.role === "user" || message.role === "assistant",
+            )
+            .map((message) => ({
+              id: message.id,
+              role: message.role as "user" | "assistant",
+              content: displayConsoleContent(message.role, message.content),
+            }))
+        : [];
+      setSessionId(targetSessionId);
+      setSessionRuntimeKey(payload.session?.meta?.runtimeKey ?? null);
+      setMemoryReferences(
+        Array.isArray(payload.session?.meta?.memoryReferences)
+          ? payload.session.meta.memoryReferences
+          : [],
+      );
+      setSessionAgentProfileVersion(
+        payload.agentProfileAssignment?.profileVersion ?? null,
+      );
+      setMessages(restoredMessages);
+    },
+    [readOnlyMemory],
+  );
 
   const loadRuntimeProfiles = useCallback(async () => {
-    const response = await fetch("/admin/runtime-profiles", { cache: "no-store" });
+    const response = await fetch("/admin/runtime-profiles", {
+      cache: "no-store",
+    });
     if (!response.ok) return;
     const payload = (await response.json().catch(() => null)) as {
       profiles?: RuntimeProfile[];
@@ -220,9 +283,8 @@ export function CodexConsole({
   }, [isActive, loadRuntimeProfiles]);
 
   useEffect(() => {
-    const storedSessionId = window.localStorage.getItem(
-      consoleSessionStorageKey,
-    );
+    const storedSessionId =
+      initialSessionId || window.localStorage.getItem(consoleSessionStorageKey);
     const storedJobId = window.localStorage.getItem(consoleActiveJobStorageKey);
     if (storedJobId) {
       setActiveJobId(storedJobId);
@@ -235,7 +297,7 @@ export function CodexConsole({
         window.localStorage.removeItem(consoleSessionStorageKey);
       })
       .finally(() => setIsLoadingHistory(false));
-  }, [loadConsoleHistory]);
+  }, [initialSessionId, loadConsoleHistory]);
 
   useEffect(() => {
     scrollToLatestMessage(
@@ -394,7 +456,8 @@ export function CodexConsole({
       ? [
           "Attached Prism Memory working documents:",
           ...attachedArtifacts.map(
-            (artifact) => `- ${artifact.title} (artifact ${artifact.id}): ${artifact.viewUrl}`,
+            (artifact) =>
+              `- ${artifact.title} (artifact ${artifact.id}): ${artifact.viewUrl}`,
           ),
           "Use Prism Memory reader access to fetch the full artifacts when needed.",
         ].join("\n")
@@ -416,6 +479,32 @@ export function CodexConsole({
     setIsSubmitting(true);
 
     try {
+      if (readOnlyMemory) {
+        if (!sessionId || !agentProfileKey || !memoryReferences.length) {
+          throw new Error("Memory session context is unavailable");
+        }
+        const payload = await fetchJsonMemoryConversation({
+          question: prompt,
+          sessionId,
+          agentProfileKey,
+          references: memoryReferences,
+        });
+        setSessionId(payload.session.id);
+        setMessages(
+          payload.messages
+            .filter(
+              (message) =>
+                message.role === "user" || message.role === "assistant",
+            )
+            .map((message) => ({
+              id: message.id,
+              role: message.role as "user" | "assistant",
+              content: message.content,
+            })),
+        );
+        setDraft("");
+        return;
+      }
       const response = await fetch("/admin/console/jobs", {
         method: "POST",
         headers: {
@@ -426,7 +515,9 @@ export function CodexConsole({
           session_id: sessionId,
           ...(agentProfileKey ? { agent_profile_key: agentProfileKey } : {}),
           ...(executionMode ? { execution_mode: executionMode } : {}),
-          ...(attachedArtifacts.length ? { requested_skills: ["prism-api-reader"] } : {}),
+          ...(attachedArtifacts.length
+            ? { requested_skills: ["prism-api-reader"] }
+            : {}),
         }),
       });
 
@@ -477,10 +568,12 @@ export function CodexConsole({
   const visibleTrace = activeJobTrace
     .filter((entry) => entry.message?.trim())
     .slice(-5);
-  const defaultRuntime = runtimeProfiles.find((profile) => profile.isDefault) ?? null;
+  const defaultRuntime =
+    runtimeProfiles.find((profile) => profile.isDefault) ?? null;
   const effectiveRuntimeKey = sessionRuntimeKey ?? configuredRuntimeKey ?? null;
   const activeRuntime = effectiveRuntimeKey
-    ? runtimeProfiles.find((profile) => profile.key === effectiveRuntimeKey) ?? null
+    ? (runtimeProfiles.find((profile) => profile.key === effectiveRuntimeKey) ??
+      null)
     : defaultRuntime;
   const activeRuntimeLabel = activeRuntime?.name ?? effectiveRuntimeKey ?? null;
 
@@ -493,16 +586,26 @@ export function CodexConsole({
             <Cpu className="h-4 w-4" />
             <span>{activeRuntimeLabel}</span>
             <Badge variant="outline" className="font-normal">
-              {sessionRuntimeKey ? "Session" : configuredRuntimeKey ? "Profile" : "Default"}
+              {sessionRuntimeKey
+                ? "Session"
+                : configuredRuntimeKey
+                  ? "Profile"
+                  : "Default"}
             </Badge>
           </span>
         ) : null}
         <span className="flex items-center gap-2 text-xs">
           <Bot className="h-4 w-4" />
-          <span>{sessionId ? `Session live${sessionAgentProfileVersion ? ` · profile v${sessionAgentProfileVersion}` : ""}` : configuredProfileVersion ? `New session · profile v${configuredProfileVersion}` : "New session"}</span>
+          <span>
+            {sessionId
+              ? `Session live${sessionAgentProfileVersion ? ` · profile v${sessionAgentProfileVersion}` : ""}${readOnlyMemory ? " · Memory read-only" : ""}`
+              : configuredProfileVersion
+                ? `New session · profile v${configuredProfileVersion}`
+                : "New session"}
+          </span>
         </span>
       </div>
-      {sessionId ? (
+      {sessionId && !readOnlyMemory ? (
         <Button
           type="button"
           variant="outline"
@@ -517,7 +620,9 @@ export function CodexConsole({
   );
 
   return (
-    <div className={`flex min-h-0 flex-col ${consoleFirstLayout ? "h-[calc(100vh-7.5rem)]" : "h-[calc(100vh-248px)]"}`}>
+    <div
+      className={`flex min-h-0 flex-col ${consoleFirstLayout ? "h-[calc(100vh-7.5rem)]" : "h-[calc(100vh-248px)]"}`}
+    >
       {sessionControlsTarget
         ? createPortal(sessionControls, sessionControlsTarget)
         : null}
@@ -557,8 +662,8 @@ export function CodexConsole({
             ))
           ) : (
             <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              Send a message to start this Agent Profile session. Session history
-              is durable and visible to authorized workspace operators.
+              Send a message to start this Agent Profile session. Session
+              history is durable and visible to authorized workspace operators.
             </div>
           )}
         </div>
@@ -573,14 +678,29 @@ export function CodexConsole({
           {attachedArtifacts.length ? (
             <div className="space-y-2 border-l-2 border-primary/50 bg-muted/20 p-3">
               {attachedArtifacts.map((artifact) => (
-                <div key={artifact.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <div
+                  key={artifact.id}
+                  className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                >
                   <div className="min-w-0">
                     <p className="truncate font-medium">{artifact.title}</p>
-                    <p className="truncate text-xs text-muted-foreground">{artifact.filename} · {artifact.status}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {artifact.filename} · {artifact.status}
+                    </p>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button asChild type="button" variant="ghost" size="icon" title="Open artifact">
-                      <a href={artifact.viewUrl} target="_blank" rel="noreferrer">
+                    <Button
+                      asChild
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      title="Open artifact"
+                    >
+                      <a
+                        href={artifact.viewUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         <ExternalLink className="h-4 w-4" />
                       </a>
                     </Button>
@@ -591,8 +711,17 @@ export function CodexConsole({
                       title="Copy artifact link"
                       onClick={() => {
                         void navigator.clipboard
-                          .writeText(new URL(artifact.viewUrl, window.location.origin).toString())
-                          .catch(() => setError("Could not copy the artifact link. Open the artifact and copy its URL instead."));
+                          .writeText(
+                            new URL(
+                              artifact.viewUrl,
+                              window.location.origin,
+                            ).toString(),
+                          )
+                          .catch(() =>
+                            setError(
+                              "Could not copy the artifact link. Open the artifact and copy its URL instead.",
+                            ),
+                          );
                       }}
                     >
                       <Copy className="h-4 w-4" />
@@ -602,7 +731,11 @@ export function CodexConsole({
                       variant="ghost"
                       size="icon"
                       title="Remove from chat"
-                      onClick={() => setAttachedArtifacts((current) => current.filter((item) => item.id !== artifact.id))}
+                      onClick={() =>
+                        setAttachedArtifacts((current) =>
+                          current.filter((item) => item.id !== artifact.id),
+                        )
+                      }
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -672,13 +805,23 @@ export function CodexConsole({
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-3">
-              <MemoryDocumentUploadButton
-                disabled={isPending}
-                label="Upload"
-                onUploaded={(artifact) => {
-                  setAttachedArtifacts((current) => current.some((item) => item.id === artifact.id) ? current : [...current, artifact]);
-                }}
-              />
+              {!readOnlyMemory ? (
+                <MemoryDocumentUploadButton
+                  disabled={isPending}
+                  label="Upload"
+                  onUploaded={(artifact) => {
+                    setAttachedArtifacts((current) =>
+                      current.some((item) => item.id === artifact.id)
+                        ? current
+                        : [...current, artifact],
+                    );
+                  }}
+                />
+              ) : (
+                <Badge variant="outline">
+                  Memory context locked · read-only
+                </Badge>
+              )}
               <p className="text-xs text-muted-foreground">
                 {usesTouchFirstInput
                   ? "Return adds a new line. Use Send when ready."

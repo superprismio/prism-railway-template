@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { adminFetch } from "@/lib/admin"
-import { requireAdminSession } from "@/lib/admin-auth"
+import { requireCapabilityAccess } from "@/lib/admin-auth"
 
 export type PrismArtifactSummary = {
   id: string
@@ -121,6 +121,10 @@ function prismMemoryBaseUrl() {
     process.env.PRISM_API_BASE ||
     ""
   ).trim().replace(/\/+$/, "")
+}
+
+export function isPrismMemoryConfigured() {
+  return Boolean(prismMemoryBaseUrl())
 }
 
 function prismMemoryReadKey() {
@@ -293,12 +297,12 @@ function useLocalAppApi() {
 }
 
 async function requireAdminAccess() {
-  const session = await requireAdminSession()
+  const session = await requireCapabilityAccess("canViewMemory")
   if (!session.ok) {
     return {
       ok: false as const,
-      status: 401,
-      error: "Unauthorized",
+      status: session.status,
+      error: session.error,
     }
   }
 
@@ -334,6 +338,39 @@ async function requireAdminAccess() {
           ? error.message
           : "Admin API request failed",
     }
+  }
+}
+
+export async function fetchPrismMemoryJson<T = unknown>(
+  path: string,
+  incomingSearchParams: URLSearchParams = new URLSearchParams(),
+  allowedParams: string[] = [],
+) {
+  const baseUrl = prismMemoryBaseUrl()
+  const readKey = prismMemoryReadKey()
+  if (!baseUrl) return { ok: false as const, status: 503, error: "PRISM_MEMORY_BASE_URL is not configured", data: null }
+  if (!readKey) return { ok: false as const, status: 503, error: "PRISM_API_READ_KEY or PRISM_API_KEY is not configured", data: null }
+  if (!isSafePrismMemoryProxyPath(path)) return { ok: false as const, status: 400, error: "Invalid Prism Memory proxy path", data: null }
+
+  const url = new URL(`${baseUrl}${path}`)
+  const safeParams = copyAllowedSearchParams(incomingSearchParams, allowedParams)
+  for (const [key, value] of safeParams.entries()) url.searchParams.set(key, value)
+  try {
+    const response = await fetch(url, { cache: "no-store", headers: { "X-Prism-Api-Key": readKey } })
+    const data = await response.json().catch(() => null) as T | null
+    if (!response.ok) {
+      const payload = recordValue(data)
+      const nestedError = recordValue(payload?.error)
+      return {
+        ok: false as const,
+        status: response.status,
+        error: stringValue(payload?.detail) ?? stringValue(payload?.error) ?? stringValue(nestedError?.message) ?? `Prism Memory returned ${response.status}`,
+        data,
+      }
+    }
+    return { ok: true as const, status: response.status, error: null, data: data as T }
+  } catch (error) {
+    return { ok: false as const, status: 502, error: error instanceof Error ? error.message : "Prism Memory request failed", data: null }
   }
 }
 

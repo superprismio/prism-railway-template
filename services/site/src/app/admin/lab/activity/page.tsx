@@ -4,6 +4,7 @@ import { getAdminWorkspaceData } from "@/lib/admin"
 import { buildCrossRequestActivity } from "@/lib/prism-lab/activity-read-model"
 import { isPrismLabEnabled } from "@/lib/prism-lab/feature-flag"
 import { buildLabRequestListItems } from "@/lib/prism-lab/request-read-model"
+import { listAgentProfiles, listAgentProfileSessions } from "@/lib/app-core"
 
 export default async function LabActivityPage({
   searchParams,
@@ -23,6 +24,12 @@ export default async function LabActivityPage({
   const allItems = buildCrossRequestActivity(requests)
   const attentionCount = allItems.filter((item) => item.state === "attention").length
   const items = view === "attention" ? allItems.filter((item) => item.state === "attention") : allItems
+  const canInspectAllSessions = workspace.data.session.capabilities.includes("canRunAgent")
+  const conversations = view === "attention" ? [] : listAgentProfiles().flatMap((profile) =>
+    listAgentProfileSessions(profile.id, 30)
+      .filter((session) => canInspectAllSessions || (session.source === "prism-memory-explorer" && session.createdByUserId === workspace.data.session.userId))
+      .map((session) => ({ ...session, agentKey: profile.key, agentName: profile.name })),
+  ).sort((left, right) => (right.lastMessageAt ?? right.updatedAt).localeCompare(left.lastMessageAt ?? left.updatedAt)).slice(0, 50)
 
-  return <ActivityView items={items} attentionCount={attentionCount} view={view} />
+  return <ActivityView items={items} conversations={conversations} attentionCount={attentionCount} view={view} />
 }

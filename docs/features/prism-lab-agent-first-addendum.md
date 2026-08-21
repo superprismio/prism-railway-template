@@ -2,10 +2,11 @@
 
 ## Status
 
-Implemented foundation with an active console-first navigation iteration. This addendum
-supersedes the profile, ownership, and post-Slice-5 navigation model in
-`prism-lab-chat-first-operations.md` where the documents conflict. Slices 0–5
-remain implemented and valid foundations.
+Implemented agent-identity foundation, console-first navigation, and the first
+scoped Memory Explorer field-test slice. This addendum supersedes the profile,
+ownership, and post-Slice-5
+navigation model in `prism-lab-chat-first-operations.md` where the documents
+conflict. Slices 0–5 remain implemented and valid foundations.
 
 ## Why This Addendum Exists
 
@@ -64,6 +65,7 @@ The Lab shell uses a collapsible Agent Navigator:
 Workspace
   Requests
   Activity
+  Memory (when Prism Memory is configured)
   Settings
 
 Agents
@@ -100,6 +102,11 @@ right inspector contains profile configuration and observability:
 The left navigator can be collapsed without changing the selected agent. The
 right inspector is closed by default so conversation remains the visual focus.
 
+Memory is a workspace context surface rather than another agent identity. Its
+Lab route uses the same collapsible navigator and opens a timeline and durable
+knowledge explorer. Selecting Memory records may start a scoped conversation
+with an eligible Agent Profile; it does not create a separate "Memory Agent."
+
 Agent Console execution resolves its scope from the Site-owned session/profile
 assignment, not browser-supplied metadata. The resolved immutable profile
 version provides persona instructions, runtime profile, skills, memory scope,
@@ -116,7 +123,7 @@ silos.
 An Agent Profile is a versioned operational identity, not only a prompt or a
 runtime configuration. Its resolved non-secret configuration includes:
 
-- stable key and display identity;
+- stable key, display identity, avatar, and constrained visual accent;
 - mandate and persona;
 - status and profile version;
 - owner principal: user, workspace, or another Agent Profile;
@@ -136,14 +143,14 @@ the child the parent's authority or credentials automatically.
 
 Keep these meanings distinct:
 
-| Concept | Meaning |
-| --- | --- |
-| Agent Profile | Durable identity with ownership, sessions, authority, and activity. |
-| Agent Template | Reusable starting configuration without operational identity or ownership. |
-| Skill | A capability an agent or workflow step may use, such as research. |
-| Mode | A bounded execution posture such as worker, orchestrator, verifier, reviewer, judge, or repair. |
-| Runtime Profile | Adapter and runtime transport configuration; not an agent identity. |
-| Binding | Associates an Agent Profile with a communication surface. |
+| Concept         | Meaning                                                                                         |
+| --------------- | ----------------------------------------------------------------------------------------------- |
+| Agent Profile   | Durable identity with ownership, sessions, authority, and activity.                             |
+| Agent Template  | Reusable starting configuration without operational identity or ownership.                      |
+| Skill           | A capability an agent or workflow step may use, such as research.                               |
+| Mode            | A bounded execution posture such as worker, orchestrator, verifier, reviewer, judge, or repair. |
+| Runtime Profile | Adapter and runtime transport configuration; not an agent identity.                             |
+| Binding         | Associates an Agent Profile with a communication surface.                                       |
 
 Do not create an agent merely because a capability has a name. Research is
 normally a skill. It becomes a distinct agent only when it needs a durable
@@ -446,3 +453,251 @@ memory configuration, and creates its bindings. Historical policy records stay
 readable for rollback and attribution, but their public write routes return a
 retired-authoring response. Once all deployed instances have migrated, those
 compatibility reads and the adapter fallback can be removed.
+
+## Next Slice: Scoped Memory Explorer And Agent Conversations
+
+Implementation status: the first field-test slice is implemented on the Lab
+branch. It includes configuration-aware navigation, Timeline and Knowledge
+browsing, server-side facets and authorization, versioned profile Memory scope,
+eligible-agent selection, durable observable Memory sessions, and a
+runtime-enforced read-only conversation handoff. Relationship graphs, reusable
+reference collections, and explicit promotion into operational work remain
+deferred as described below.
+
+### Product boundary
+
+Prism Memory is durable, inspectable context. An Agent Profile provides the
+identity, persona, runtime, authority, and conversation. The Lab must not model
+Memory as its own chatbot or introduce a second unowned console.
+
+The Memory destination appears under Workspace when
+`PRISM_MEMORY_BASE_URL` is configured:
+
+```text
+Workspace
+  Requests
+  Activity
+  Memory
+  Settings
+```
+
+Configuration and availability are different states. If Memory is configured
+but unreachable, keep the destination visible and render an honest unavailable
+state with the last known space and health information. Do not make navigation
+disappear during an outage.
+
+The first Lab Memory surface has two primary modes:
+
+```text
+Memory
+  Timeline
+    Latest daily snapshot
+    Daily rollups grouped by week
+    Meeting and source-bucket indicators
+    Decisions, action items, open threads, facts, and upcoming items
+    Evidence quotes and source references
+
+  Knowledge
+    Text search
+    Kind, tag, entity, source, audience, and stability facets
+    Document content, metadata, and provenance
+    Related-document links
+    Knowledge sources and synchronization status
+```
+
+`memory/rolling/latest` is an alias for the newest daily rolling snapshot, not
+a separate type of daily. Weeks organize navigation over daily records. The
+currently implemented weekly outputs are content-suggestion rollups; the UI
+must not label them as weekly rolling memory. A true weekly memory product may
+be introduced later under an explicit contract.
+
+Meeting indicators are derived from canonical source digest paths and bucket
+metadata. A selected highlight preserves its section, source digest, author,
+timestamp, external jump URL, and evidence quote. The UI must not convert
+deterministic evidence into unattributed prose.
+
+### Memory and knowledge contracts
+
+The existing Prism Memory service already exposes daily rolling memory,
+per-date and per-bucket digests, recent activity, daily and weekly content
+suggestions, knowledge document search, tag and entity indexes, knowledge
+sources, and derived objectives/signals/throughlines. The current Site Memory
+Explorer proxies artifacts, sources, objectives, signals, and throughlines but
+does not provide the proposed timeline or first-class knowledge search.
+
+Add the smallest read contracts needed by Lab rather than probing filesystem
+paths from the browser:
+
+1. A bounded index of available rolling dates with section and bucket counts.
+2. A daily rolling-memory read returning canonical evidence references.
+3. Knowledge search with server-side text and metadata filters.
+4. Knowledge document detail and metadata reads.
+5. Tag, entity, kind, and source facet values.
+6. Related-document edges when the existing related index can be exposed with
+   stable provenance.
+
+The browser calls only authenticated Site `/admin/*` proxies. The Site calls
+Prism Memory server-side with its read credential. Prism Memory keys, internal
+base URLs, and raw filesystem paths never enter browser state.
+
+Search and a document detail pane are the default Knowledge experience. A node
+graph is deferred until the relationship contract has explicit, stable edges.
+Shared tags and entities may support a small Connections panel first; the UI
+must not imply that co-tagging is a stronger relationship than the source data
+establishes.
+
+### Capability model
+
+Conversation and operational execution must not share one capability. Add
+`canChatAgents` alongside the existing Memory capabilities:
+
+| Capability               | Grants                                                              |
+| ------------------------ | ------------------------------------------------------------------- |
+| `canViewMemory`          | Browse Memory records the user is permitted to see.                 |
+| `canChatAgents`          | Start and continue non-mutating conversations with eligible agents. |
+| `canRunAgent`            | Invoke authorized workflow, task, tool, or mutation operations.     |
+| `canManageMemorySources` | Configure, synchronize, or retire knowledge sources.                |
+
+Members receive `canViewMemory` and `canChatAgents` by default. This does not
+grant Admin Agent access, source management, workflow continuation, Memory
+writes, or unrestricted tool execution. Moderator and administrator grants
+remain explicit through the existing role/capability system.
+
+Record-level access is enforced by the Site as the intersection of:
+
+```text
+authenticated user access
+  AND selected Agent Profile memory scope
+  AND selected surface/session authority
+```
+
+Agent scope never replaces user authorization. An all-memory Admin Agent cannot
+reveal operator-only documents to a member. Conversely, a user who can inspect
+a document cannot force an agent to retrieve it when the profile excludes that
+source or bucket.
+
+The initial normalized Agent Profile memory scope supports:
+
+- rolling-memory buckets;
+- knowledge source IDs;
+- optional knowledge kinds, tags, entities, audiences, and stability classes;
+- profile-specific retrieval instructions;
+- an explicit workspace-wide scope reserved for suitably governed agents.
+
+An empty or malformed scope fails closed. Profile edits create a new immutable
+version; existing sessions retain the scope snapshot with which they began.
+The required Admin Agent may have workspace-wide operational Memory scope, but
+its availability to a user remains capability- and policy-controlled.
+
+### Ask an agent
+
+The Memory Explorer replaces the legacy standalone Memory Chat with an
+agent-selection handoff:
+
+```text
+select day, evidence, documents, or sources
+  -> Ask an agent
+  -> choose among eligible Agent Profiles
+  -> create a normal profile-scoped session
+  -> open the selected agent Console with visible Memory references
+```
+
+The chooser lists only agents the user may chat with whose immutable profile
+scope covers every selected record. If no one agent covers the selection, the
+UI explains which references are excluded and allows the user to narrow the
+selection. It never silently widens an agent's scope or defaults a member to
+the Admin Agent.
+
+The most recently used eligible agent may be suggested, but agent selection is
+explicit. Console-only agents are valid choices; an external communication
+binding is not required.
+
+A Memory-originated session defaults to a server-enforced read-only retrieval
+posture. It may answer, compare, summarize, and cite the selected records, but
+cannot continue a workflow, publish or modify knowledge, create requests, or
+invoke mutating tools merely because the underlying profile can do so. An
+authorized user may later choose an explicit operational action in the agent
+Console; that transition requires `canRunAgent`, fresh policy evaluation, and
+the normal confirmation or workflow boundary.
+
+Selected records are stored as typed references, not trusted browser-supplied
+content. The server resolves and authorizes each reference before assembling
+bounded runtime context. Responses cite stable artifact IDs, document slugs,
+source URLs, digest paths, or external jump URLs. Context limits and omitted
+records are visible rather than silently truncating evidence.
+
+### Ownership and observability
+
+A Memory-originated conversation is a normal observable Agent Profile session,
+not a private chat. It records:
+
+- initiating user;
+- selected Agent Profile and immutable version;
+- read-only Memory posture and effective capability decision;
+- typed Memory and knowledge references;
+- source surface (`prism-memory-explorer`);
+- chronological messages, retrievals, citations, and errors;
+- any later explicit operational transition and resulting canonical actions.
+
+The session appears in the selected agent's Activity and Sessions views and in
+workspace Activity. Authorized operators and stewards can drill into the
+transcript and causal records under the existing audit model.
+
+### Ordered delivery
+
+1. Add configuration-aware Memory navigation and `/admin/lab/memory`, including
+   configured-offline and unauthorized states.
+2. Add the rolling-date index and build Timeline with weekly grouping, daily
+   selection, deterministic sections, meeting/source indicators, and evidence
+   drill-down.
+3. Add Knowledge search, metadata facets, document detail, provenance, related
+   links, and knowledge-source status.
+4. Add `canChatAgents`, default role grants, and distinct read-only versus
+   operational authority checks.
+5. Normalize and enforce versioned Agent Profile memory scopes at every Site
+   retrieval boundary.
+6. Add the eligible-agent chooser and create observable, profile-scoped,
+   read-only Memory sessions with typed references and citations.
+7. Add "Open in agent Console" and an explicit, separately authorized path
+   from read-only investigation to operational work.
+8. Field-test search and Connections before defining or rendering a graph API.
+
+### Acceptance criteria
+
+- Memory appears under Workspace only when configured and remains visible with
+  an honest offline state when the configured service is unavailable.
+- A user with `canViewMemory` can browse only records allowed by Site policy.
+- Daily navigation never presents `latest` as a second daily record or labels
+  weekly content suggestions as weekly rolling memory.
+- Timeline highlights retain section, bucket, source, author, timestamp, and
+  evidence provenance when available.
+- Knowledge search supports server-side text and metadata filters and returns
+  stable document identifiers and provenance.
+- A member with `canChatAgents` but without `canRunAgent` can ask an eligible
+  ordinary agent about selected Memory without gaining mutation authority.
+- The Admin Agent is not offered to a member unless an explicit policy grant
+  makes it eligible.
+- The server rejects a selected record when either user access or the immutable
+  Agent Profile scope excludes it.
+- Browser-supplied content cannot masquerade as an authorized Memory record.
+- A read-only Memory session cannot continue workflows, create requests,
+  publish knowledge, or call mutating tools.
+- Every Memory conversation identifies the initiating user, agent profile and
+  version, selected references, retrieval decisions, and citations.
+- Memory sessions are visible in agent and workspace Activity and are never
+  described as private.
+- Source-management controls require `canManageMemorySources`; conversational
+  access never implies configuration access.
+- No Prism Memory credential or internal service URL is exposed to the browser,
+  transcript, activity payload, or model prompt.
+
+### Deferred decisions
+
+- Whether a dedicated weekly rolling-memory product is useful beyond grouping
+  daily snapshots and the existing weekly content suggestions.
+- Whether source-level audiences need more granularity than the initial
+  workspace/operator policy classes.
+- Whether a mature relationship contract justifies a full node graph.
+- Whether users may save reusable Memory reference collections.
+- Whether agents may propose knowledge inbox entries directly from read-only
+  conversations or only after an explicit operational transition.

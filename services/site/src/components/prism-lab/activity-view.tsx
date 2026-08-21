@@ -22,10 +22,12 @@ function ActivityIcon({ state }: { state: LabCrossRequestActivity["state"] }) {
 
 export function ActivityView({
   items,
+  conversations,
   attentionCount,
   view,
 }: {
   items: LabCrossRequestActivity[]
+  conversations: Array<{ id: string; source: string; title: string | null; messageCount: number; lastMessageAt: string | null; updatedAt: string; createdByDisplayName: string | null; agentKey: string; agentName: string }>
   attentionCount: number
   view: "all" | "attention"
 }) {
@@ -87,6 +89,7 @@ export function ActivityView({
             </div>
           )}
         </section>
+        {view === "all" ? <section className="mt-6 border border-border/60 bg-card/35" aria-label="Recent agent conversations"><div className="border-b border-border/60 px-4 py-3"><h2 className="font-semibold">Agent conversations</h2><p className="mt-1 text-xs text-muted-foreground">Observable Console, Memory, and external-channel sessions</p></div>{conversations.length ? <ol className="divide-y divide-border/60">{conversations.map((session) => <li key={session.id} className="p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><Link href={`/admin/lab/agents/${encodeURIComponent(session.agentKey)}/sessions/${encodeURIComponent(session.id)}`} className="font-medium hover:text-primary hover:underline">{session.title || `${session.agentName} session`}</Link><p className="mt-1 text-xs text-muted-foreground">{session.agentName} · {session.source} · {session.createdByDisplayName || "Unknown participant"}</p></div><div className="text-right text-xs text-muted-foreground"><Badge variant="outline">{session.messageCount} messages</Badge><div className="mt-1">{displayTime(session.lastMessageAt ?? session.updatedAt)}</div></div></div></li>)}</ol> : <p className="p-5 text-sm text-muted-foreground">No observable agent conversations yet.</p>}</section> : null}
       </div>
     </div>
   )

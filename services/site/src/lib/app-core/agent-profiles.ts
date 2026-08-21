@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 
 import { getDb } from './db';
 import { loadConfig } from './config';
+import { agentAccentColorForKey, normalizeAgentAccentColor } from '../agent-profile-colors';
 import { listExternalInterfaces, listInteractionProfiles } from './external-interactions';
 import {
   readSourceAdapterPolicy,
@@ -83,6 +84,7 @@ export type AgentProfileRecord = {
   name: string;
   description: string | null;
   avatarUrl: string | null;
+  accentColor: string;
   status: AgentProfileStatus;
   systemKey: string | null;
   owner: AgentProfileOwner;
@@ -105,6 +107,7 @@ export type UpsertAgentProfileInput = {
   name: string;
   description?: string | null;
   avatarUrl?: string | null;
+  accentColor?: string | null;
   status?: AgentProfileStatus;
   ownerType?: AgentProfileOwnerType;
   ownerUserId?: string | null;
@@ -187,6 +190,7 @@ type AgentProfileRow = {
   name: string;
   description: string | null;
   avatar_url?: string | null;
+  accent_color?: string | null;
   status: AgentProfileStatus;
   system_key: string | null;
   owner_type: AgentProfileOwnerType;
@@ -369,7 +373,8 @@ function stewardRows(profileId: string, db: Database.Database): AgentProfileStew
 
 function mapRow(row: AgentProfileRow, db: Database.Database): AgentProfileRecord {
   return {
-    id: row.id, key: row.key, name: row.name, description: row.description, avatarUrl: row.avatar_url ?? null, status: row.status,
+    id: row.id, key: row.key, name: row.name, description: row.description, avatarUrl: row.avatar_url ?? null,
+    accentColor: normalizeAgentAccentColor(row.accent_color) ?? agentAccentColorForKey(row.key), status: row.status,
     systemKey: row.system_key,
     owner: { type: row.owner_type, userId: row.owner_user_id, agentProfileId: row.owner_agent_profile_id },
     stewards: stewardRows(row.id, db), persona: jsonRecord(row.persona_json), runtimeProfileKey: row.runtime_profile_key,
@@ -390,7 +395,8 @@ function profileRowById(profileId: string, db: Database.Database) {
 
 function snapshot(record: AgentProfileRecord) {
   return {
-    key: record.key, name: record.name, description: record.description, avatarUrl: record.avatarUrl, status: record.status,
+    key: record.key, name: record.name, description: record.description, avatarUrl: record.avatarUrl,
+    accentColor: record.accentColor, status: record.status,
     systemKey: record.systemKey, owner: record.owner,
     stewards: record.stewards.map(({ userId, role }) => ({ userId, role })),
     persona: record.persona, runtimeProfileKey: record.runtimeProfileKey, skills: record.skills,
@@ -455,6 +461,7 @@ export function getAgentProfileVersion(profileId: string, version: number | null
     name: text(stored.name, 160) || current.name,
     description: stored.description === null ? null : text(stored.description, 2000) || current.description,
     avatarUrl: stored.avatarUrl === null ? null : text(stored.avatarUrl, 2000) || null,
+    accentColor: normalizeAgentAccentColor(stored.accentColor) ?? agentAccentColorForKey(current.key),
     persona: unknownRecord(stored.persona),
     runtimeProfileKey: text(stored.runtimeProfileKey, 120) || null,
     skills: stringList(stored.skills),
@@ -481,6 +488,10 @@ export function upsertAgentProfile(input: UpsertAgentProfileInput, db: Database.
   const avatarUrl = input.avatarUrl === undefined
     ? existing?.avatar_url ?? null
     : normalizedAvatarUrl(input.avatarUrl);
+  const accentColor = input.accentColor === undefined
+    ? normalizeAgentAccentColor(existing?.accent_color) ?? agentAccentColorForKey(profileKey)
+    : normalizeAgentAccentColor(input.accentColor);
+  if (!accentColor) throw new Error('AGENT_PROFILE_ACCENT_COLOR_INVALID');
   const status = input.status ?? existing?.status ?? 'draft';
   const persona = input.persona ?? (existing ? jsonRecord(existing.persona_json) : { name, instructions: '' });
   const skills = Array.from(new Set((input.skills ?? (existing ? jsonStrings(existing.skills_json) : [])).map((item) => text(item, 160)).filter(Boolean)));
@@ -499,13 +510,14 @@ export function upsertAgentProfile(input: UpsertAgentProfileInput, db: Database.
 
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO agent_profiles (id, key, name, description, avatar_url, status, system_key, owner_type, owner_user_id,
+      INSERT INTO agent_profiles (id, key, name, description, avatar_url, accent_color, status, system_key, owner_type, owner_user_id,
         owner_agent_profile_id, persona_json, runtime_profile_key, skills_json, memory_scope_json, authority_json,
         context_policy_json, version, created_by_user_id, created_at, updated_at)
-      VALUES (@id, @key, @name, @description, @avatarUrl, @status, NULL, @ownerType, @ownerUserId, @ownerAgentProfileId,
+      VALUES (@id, @key, @name, @description, @avatarUrl, @accentColor, @status, NULL, @ownerType, @ownerUserId, @ownerAgentProfileId,
         @persona, @runtimeProfileKey, @skills, @memoryScope, @authority, @contextPolicy, @version,
         @createdByUserId, @createdAt, @updatedAt)
-      ON CONFLICT(key) DO UPDATE SET name=excluded.name, description=excluded.description, avatar_url=excluded.avatar_url, status=excluded.status,
+      ON CONFLICT(key) DO UPDATE SET name=excluded.name, description=excluded.description, avatar_url=excluded.avatar_url,
+        accent_color=excluded.accent_color, status=excluded.status,
         owner_type=excluded.owner_type, owner_user_id=excluded.owner_user_id,
         owner_agent_profile_id=excluded.owner_agent_profile_id, persona_json=excluded.persona_json,
         runtime_profile_key=excluded.runtime_profile_key, skills_json=excluded.skills_json,
@@ -513,7 +525,7 @@ export function upsertAgentProfile(input: UpsertAgentProfileInput, db: Database.
         context_policy_json=excluded.context_policy_json, version=excluded.version, updated_at=excluded.updated_at
     `).run({ id, key: profileKey, name, description: input.description === undefined
       ? existing?.description ?? null
-      : text(input.description, 2000) || null, avatarUrl,
+      : text(input.description, 2000) || null, avatarUrl, accentColor,
       status, ownerType, ownerUserId, ownerAgentProfileId, persona: JSON.stringify(persona), runtimeProfileKey,
       skills: JSON.stringify(skills), memoryScope: JSON.stringify(memoryScope), authority: JSON.stringify(authority),
       contextPolicy: JSON.stringify(contextPolicy), version: nextVersion, createdByUserId,

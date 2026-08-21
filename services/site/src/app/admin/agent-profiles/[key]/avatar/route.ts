@@ -13,7 +13,7 @@ import { requireCapabilityAccess } from '@/lib/admin-auth';
 type RouteContext = { params: Promise<{ key: string }> };
 
 export async function GET(_request: Request, context: RouteContext) {
-  const access = await requireCapabilityAccess('canRunAgent');
+  const access = await requireCapabilityAccess('canChatAgents');
   if (!access.ok) return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
   const profile = getAgentProfile((await context.params).key);
   if (!profile) return NextResponse.json({ ok: false, error: 'Agent Profile not found' }, { status: 404 });

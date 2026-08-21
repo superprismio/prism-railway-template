@@ -6,7 +6,7 @@ import { resolveAgentProfileRuntimeScope } from "./agent-profile-runtime-scope"
 test("assigned Agent Profile controls runtime identity, runtime, and skills", () => {
   const scope = resolveAgentProfileRuntimeScope({
     profile: {
-      id: "profile-1", key: "research", name: "Research Agent", description: "Ground decisions in evidence.", avatarUrl: null,
+      id: "profile-1", key: "research", name: "Research Agent", description: "Ground decisions in evidence.", avatarUrl: null, accentColor: "#36E7FF",
       status: "active", systemKey: null, owner: { type: "workspace", userId: null, agentProfileId: null }, stewards: [],
       persona: { name: "Rook", instructions: "Cite sources and state uncertainty." }, runtimeProfileKey: "careful-runtime",
       skills: ["research-reader"], memoryScope: { buckets: ["research"] }, authority: { maximumAccessMode: "readonly" },

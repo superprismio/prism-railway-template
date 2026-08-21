@@ -4,9 +4,12 @@ import { createAuditLog, getAgentProfile, upsertAgentProfile } from '@/lib/app-c
 import { requireCapabilityAccess } from '@/lib/admin-auth';
 
 export async function GET(_request: Request, context: { params: Promise<{ key: string }> }) {
-  const access = await requireCapabilityAccess('canRunAgent');
+  const access = await requireCapabilityAccess('canChatAgents');
   if (!access.ok) return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
   const profile = getAgentProfile((await context.params).key);
+  if (profile?.systemKey === 'admin-agent' && !access.capabilities.includes('canRunAgent')) {
+    return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 });
+  }
   return profile
     ? NextResponse.json({ ok: true, profile })
     : NextResponse.json({ ok: false, error: 'Agent Profile not found' }, { status: 404 });
@@ -19,6 +22,22 @@ function text(value: unknown, maxLength: number) {
 function stringList(value: unknown) {
   if (Array.isArray(value)) return value.map((entry) => text(entry, 160)).filter(Boolean);
   return text(value, 4000).split(',').map((entry) => entry.trim()).filter(Boolean);
+}
+
+function memoryScopeInput(body: Record<string, unknown>, existing: Record<string, unknown>) {
+  if (!Object.prototype.hasOwnProperty.call(body, 'memoryScope')) return existing;
+  const input = body.memoryScope;
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const scope = input as Record<string, unknown>;
+  const mode = text(scope.scope, 80);
+  return {
+    ...(mode ? { scope: mode } : {}),
+    buckets: stringList(scope.buckets),
+    knowledgeSourceIds: stringList(scope.knowledgeSourceIds ?? scope.knowledge_source_ids),
+    kinds: stringList(scope.kinds), tags: stringList(scope.tags), entities: stringList(scope.entities),
+    audiences: stringList(scope.audiences), stabilities: stringList(scope.stabilities),
+    instructions: text(scope.instructions, 10_000),
+  };
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ key: string }> }) {
@@ -37,6 +56,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ key: 
       name,
       description: text(body.description, 2000) || null,
       avatarUrl: text(body.avatarUrl ?? body.avatar_url, 2000) || null,
+      accentColor: text(body.accentColor ?? body.accent_color, 20) || profile.accentColor,
       status: profile.status,
       ownerType: profile.owner.type,
       ownerUserId: profile.owner.userId,
@@ -45,7 +65,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ key: 
       persona: { ...profile.persona, name, instructions: personaInstructions },
       runtimeProfileKey: text(body.runtimeProfileKey ?? body.runtime_profile_key, 120) || null,
       skills: stringList(body.skills),
-      memoryScope: profile.memoryScope,
+      memoryScope: memoryScopeInput(body, profile.memoryScope),
       authority: profile.authority,
       contextPolicy: profile.contextPolicy,
       createdByUserId: access.userId,

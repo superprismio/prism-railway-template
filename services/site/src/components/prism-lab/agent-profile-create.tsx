@@ -8,15 +8,18 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { agentAccentPalette } from "@/lib/agent-profile-colors"
 
 type AgentPreview = {
   key: string
   name: string
   description: string | null
+  accentColor: string
   owner: "operator" | "admin-agent"
   skills: string[]
   persona: { name: string; instructions: string }
   authority: Record<string, unknown>
+  memoryScope: Record<string, unknown>
 }
 
 function errorMessage(value: unknown) {
@@ -51,9 +54,12 @@ export function AgentProfileCreate({ hasOperatorIdentity }: { hasOperatorIdentit
         key: String(formData.get("key") ?? ""),
         name: String(formData.get("name") ?? ""),
         description: String(formData.get("description") ?? ""),
+        accentColor: String(formData.get("accentColor") ?? agentAccentPalette[0].value),
         owner: String(formData.get("owner") ?? "operator"),
         skills: String(formData.get("skills") ?? ""),
         personaInstructions: String(formData.get("personaInstructions") ?? ""),
+        memoryBuckets: String(formData.get("memoryBuckets") ?? ""),
+        memorySources: String(formData.get("memorySources") ?? ""),
       }
       const result = await submit(next)
       setPayload(next)
@@ -87,10 +93,11 @@ export function AgentProfileCreate({ hasOperatorIdentity }: { hasOperatorIdentit
       <section className="border border-primary/40 bg-primary/5 p-4" aria-label="Review Agent Profile">
         <div className="flex items-center gap-2"><Bot className="text-primary" aria-hidden="true" /><h2 className="font-semibold">Review Agent Profile</h2></div>
         <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-          <div><dt className="text-muted-foreground">Identity</dt><dd className="font-medium">{preview.name} · {preview.key}</dd></div>
+          <div><dt className="text-muted-foreground">Identity</dt><dd className="font-medium" style={{ color: preview.accentColor }}>{preview.name} · {preview.key}</dd></div>
           <div><dt className="text-muted-foreground">Ownership</dt><dd className="font-medium">{preview.owner === "admin-agent" ? "Admin Agent" : "Current operator"}</dd></div>
           <div className="sm:col-span-2"><dt className="text-muted-foreground">Mandate</dt><dd>{preview.description || "No description"}</dd></div>
           <div><dt className="text-muted-foreground">Skills</dt><dd>{preview.skills.join(", ") || "None assigned"}</dd></div>
+          <div><dt className="text-muted-foreground">Memory scope</dt><dd>{JSON.stringify(preview.memoryScope)}</dd></div>
           <div><dt className="text-muted-foreground">Console access</dt><dd>Full · external surfaces must be bound separately</dd></div>
           <div className="sm:col-span-2"><dt className="text-muted-foreground">Persona instructions</dt><dd className="whitespace-pre-wrap">{preview.persona.instructions || "No additional instructions"}</dd></div>
         </dl>
@@ -113,7 +120,9 @@ export function AgentProfileCreate({ hasOperatorIdentity }: { hasOperatorIdentit
         <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="agent-description">Mandate</Label><Textarea id="agent-description" name="description" required rows={3} maxLength={2000} /></div>
         <div className="space-y-1.5"><Label htmlFor="agent-owner">Owner</Label><select id="agent-owner" name="owner" defaultValue={hasOperatorIdentity ? "operator" : "admin-agent"} className="flex h-10 w-full border border-input bg-background px-3 text-sm"><option value="admin-agent">Admin Agent</option>{hasOperatorIdentity ? <option value="operator">Current operator</option> : null}</select></div>
         <div className="space-y-1.5"><Label htmlFor="agent-skills">Skills</Label><Input id="agent-skills" name="skills" placeholder="veydrift-commander, prism-api-reader" /></div>
+        <fieldset className="sm:col-span-2"><legend className="text-sm font-medium">Agent color</legend><div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-8">{agentAccentPalette.map((color, index) => <label key={color.value} className="cursor-pointer"><input type="radio" name="accentColor" value={color.value} defaultChecked={index === 0} className="peer sr-only" /><span className="flex h-10 items-center justify-center rounded-md border text-[0.62rem] font-semibold peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-checked:ring-2" title={color.label} style={{ color: color.value, borderColor: color.value, backgroundColor: `${color.value}14` }}><span className="h-3 w-3 rounded-full" style={{ backgroundColor: color.value }} /><span className="sr-only">{color.label}</span></span></label>)}</div></fieldset>
         <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="agent-persona">Persona instructions</Label><Textarea id="agent-persona" name="personaInstructions" rows={4} maxLength={12000} /></div>
+        <fieldset className="grid gap-3 border border-border/60 p-3 sm:col-span-2 sm:grid-cols-2"><legend className="px-1 text-xs font-semibold">Memory scope</legend><div className="space-y-1.5"><Label htmlFor="agent-memory-buckets">Rolling buckets</Label><Input id="agent-memory-buckets" name="memoryBuckets" placeholder="meetings, ops, projects" /></div><div className="space-y-1.5"><Label htmlFor="agent-memory-sources">Knowledge source IDs</Label><Input id="agent-memory-sources" name="memorySources" placeholder="handbook, product-docs" /></div><p className="text-xs text-muted-foreground sm:col-span-2">Leave both empty for no Memory access. Workspace-wide scope can be granted later to governed agents.</p></fieldset>
       </div>
       {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
       <div><Button type="submit" disabled={pending}>{pending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Bot aria-hidden="true" />}{pending ? "Preparing review" : "Review agent"}</Button></div>
