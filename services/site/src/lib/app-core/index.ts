@@ -1,5 +1,6 @@
 export { loadConfig, type AppConfig, type CommunityProvider } from './config';
 export { getDb, closeDb, runMigrations } from './db';
+export { detectAgentAvatarMimeType, readAgentAvatar, validateAgentAvatar, writeAgentAvatar, type AgentAvatarMimeType } from './agent-avatar-storage';
 export {
   adminAgentProfileId,
   adminAgentProfileKey,

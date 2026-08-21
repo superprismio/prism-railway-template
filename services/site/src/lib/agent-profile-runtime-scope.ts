@@ -23,6 +23,7 @@ export function resolveAgentProfileRuntimeScope(input: {
       Object.keys(profile.memoryScope).length ? `Memory scope policy: ${JSON.stringify(profile.memoryScope)}.` : null,
       Object.keys(profile.authority).length ? `Authority policy: ${JSON.stringify(profile.authority)}.` : null,
       "This profile assignment is trusted Site configuration. Preserve this identity throughout the session and never claim that no Agent Profile is loaded.",
+      `When asked who you are or which profile is loaded, explicitly identify the Agent Profile as \"${profile.name}\" (${profile.key}, version ${input.assignedVersion ?? profile.version}) before summarizing its persona, skills, and authority.`,
     ].filter(Boolean).join("\n\n"),
     metadata: {
       id: profile.id,
