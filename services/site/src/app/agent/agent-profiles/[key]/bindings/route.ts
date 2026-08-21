@@ -43,6 +43,17 @@ export async function POST(request: Request, context: { params: Promise<{ key: s
     });
     return NextResponse.json({ ok: true, binding }, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'AGENT_PROFILE_BINDING_FAILED' }, { status: 400 });
+    const message = error instanceof Error ? error.message : 'AGENT_PROFILE_BINDING_FAILED';
+    const prefix = 'AGENT_PROFILE_BINDING_DESTINATION_IN_USE:';
+    if (message.startsWith(prefix)) {
+      const assignedAgentKey = message.slice(prefix.length);
+      return NextResponse.json({
+        ok: false,
+        code: 'AGENT_PROFILE_BINDING_DESTINATION_IN_USE',
+        assignedAgentKey,
+        error: `This destination is already assigned to ${assignedAgentKey}. Disable that binding before assigning another agent.`,
+      }, { status: 409 });
+    }
+    return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
 }

@@ -558,7 +558,17 @@ export function upsertAgentProfileBinding(input: {
   const surfaceKey = text(input.surfaceKey, 300);
   if (!surfaceKey) throw new Error('AGENT_PROFILE_BINDING_KEY_REQUIRED');
   const now = new Date().toISOString();
-  const current = db.prepare('SELECT id, created_at FROM agent_profile_bindings WHERE surface_type = ? AND surface_key = ?').get(input.surfaceType, surfaceKey) as { id: string; created_at: string } | undefined;
+  const current = db.prepare(`
+    SELECT apb.id, apb.profile_id, apb.enabled, apb.created_at, ap.key AS profile_key
+    FROM agent_profile_bindings apb
+    JOIN agent_profiles ap ON ap.id = apb.profile_id
+    WHERE apb.surface_type = ? AND apb.surface_key = ?
+  `).get(input.surfaceType, surfaceKey) as {
+    id: string; profile_id: string; enabled: number; created_at: string; profile_key: string;
+  } | undefined;
+  if (current && current.profile_id !== input.profileId && current.enabled === 1) {
+    throw new Error(`AGENT_PROFILE_BINDING_DESTINATION_IN_USE:${current.profile_key}`);
+  }
   const id = current?.id ?? randomUUID();
   db.prepare(`
     INSERT INTO agent_profile_bindings (id, profile_id, surface_type, surface_key, label, enabled, configuration_json,

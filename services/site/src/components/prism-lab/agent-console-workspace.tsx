@@ -19,7 +19,7 @@ import { CaptureWorkspace } from "@/components/admin/capture-workspace";
 import { CodexConsole } from "@/components/admin/codex-console";
 import { AgentAvatar } from "@/components/prism-lab/agent-avatar";
 import { agentAccentPalette } from "@/lib/agent-profile-colors";
-import { AgentBindingForm } from "@/components/prism-lab/agent-binding-form";
+import { AgentBindingForm, AgentBindingToggle } from "@/components/prism-lab/agent-binding-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -662,11 +662,15 @@ export function AgentConsoleWorkspace({
                         <span className="truncate font-medium">
                           {binding.label || binding.surfaceKey}
                         </span>
-                        <Badge variant="outline">{binding.surfaceType}</Badge>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline">{binding.surfaceType}</Badge>
+                          <Badge variant={binding.enabled ? "default" : "outline"}>{binding.enabled ? "active" : "disabled"}</Badge>
+                        </div>
                       </div>
                       <div className="mt-1 truncate font-mono text-muted-foreground">
                         {binding.surfaceKey}
                       </div>
+                      {canManageSettings ? <AgentBindingToggle profileKey={profile.key} bindingId={binding.id} enabled={binding.enabled} /> : null}
                     </div>
                   ))}
                 </div>

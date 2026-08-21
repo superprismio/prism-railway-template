@@ -255,6 +255,20 @@ The Prism Console is implicit for every agent and does not require an external
 binding record. A new Console session explicitly selects an agent; Admin Console
 always selects the Admin Agent.
 
+Installing one transport bot in a workspace does not authorize an agent in
+every channel. External routing resolves in this order: thread binding, channel
+binding, any future explicitly configured category/workspace fallback, then
+unconfigured. An unconfigured Discord mention receives a deterministic setup
+message naming the destination and Agents configuration surface. It must not
+invoke a runtime, read Memory or requests, or create a durable agent session.
+An explicitly disabled binding remains silent.
+
+A surface can have only one active primary Agent Profile. Assigning a second
+agent to an occupied destination fails with a visible conflict naming the
+current agent. An authorized operator must disable the existing binding before
+assigning the destination elsewhere; assignment must never silently move a
+channel between personas.
+
 Session terminology describes the communication shape, not privacy:
 
 - Console session: one active authenticated participant;
@@ -465,6 +479,11 @@ Communication adapters own transport, channel discovery, delivery, and trusted
 author identifiers. For every inbound interaction they resolve one effective
 Agent Profile version and binding policy from Site. They do not own personas,
 skills, memory policy, or channel authority.
+
+An installed adapter with no Site-owned Agent Profile binding is explicitly
+unconfigured, even if historical source-policy defaults would otherwise allow
+readonly interaction. This fail-closed state exposes migration and setup gaps
+rather than hiding them behind an anonymous fallback persona.
 
 Existing channel rules are migrated through the Agents review surface. The
 migration creates or reuses an Agent Profile, copies non-secret persona/runtime/

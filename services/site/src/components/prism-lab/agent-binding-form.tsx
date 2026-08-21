@@ -43,7 +43,38 @@ export function AgentBindingForm({ profileKey }: { profileKey: string }) {
       <div className="space-y-1.5"><Label htmlFor="binding-workflows">Allowed workflows</Label><Input id="binding-workflows" name="allowedWorkflows" placeholder="workflow-one, workflow-two" /></div>
       <div className="grid grid-cols-2 gap-2"><div className="space-y-1.5"><Label htmlFor="binding-window">Rate window</Label><Input id="binding-window" name="rateLimitWindowSeconds" type="number" min="1" defaultValue="60" /></div><div className="space-y-1.5"><Label htmlFor="binding-limit">Max requests</Label><Input id="binding-limit" name="rateLimitMaxRequests" type="number" min="1" defaultValue="6" /></div></div>
       {error ? <p className="text-sm text-destructive sm:col-span-3" role="alert">{error}</p> : null}
-      <div className="sm:col-span-3"><Button type="submit" size="sm" disabled={pending}>{pending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Link2 aria-hidden="true" />}Add or move binding</Button></div>
+      <div className="sm:col-span-3"><Button type="submit" size="sm" disabled={pending}>{pending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Link2 aria-hidden="true" />}Add binding</Button></div>
     </form>
+  )
+}
+
+export function AgentBindingToggle({ profileKey, bindingId, enabled }: { profileKey: string; bindingId: string; enabled: boolean }) {
+  const router = useRouter()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function toggle() {
+    setPending(true)
+    setError(null)
+    try {
+      const response = await fetch(`/admin/agent-profiles/${encodeURIComponent(profileKey)}/bindings`, {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ bindingId, enabled: !enabled }),
+      })
+      const payload = await response.json().catch(() => null) as { error?: string } | null
+      if (!response.ok) throw new Error(payload?.error || "Binding could not be updated")
+      router.refresh()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Binding could not be updated")
+    } finally {
+      setPending(false)
+    }
+  }
+  return (
+    <div className="mt-2 flex items-center justify-between gap-2">
+      {error ? <span className="text-destructive" role="alert">{error}</span> : <span />}
+      <Button type="button" variant="outline" size="sm" disabled={pending} onClick={toggle}>
+        {pending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+        {enabled ? "Disable" : "Enable"}
+      </Button>
+    </div>
   )
 }

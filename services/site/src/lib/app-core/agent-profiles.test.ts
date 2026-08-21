@@ -90,6 +90,12 @@ test('creates owned agents, prevents cycles, and assigns a surface to one primar
     key: owned.key, name: owned.name, ownerType: 'agent', ownerAgentProfileId: child.id,
   }, db), /AGENT_PROFILE_OWNERSHIP_CYCLE/);
   upsertAgentProfileBinding({ profileId: owned.id, surfaceType: 'buzz', surfaceKey: 'veydrift', label: 'Veydrift' }, db);
+  assert.throws(() => upsertAgentProfileBinding({
+    profileId: child.id, surfaceType: 'buzz', surfaceKey: 'veydrift', label: 'Veydrift handoff',
+  }, db), /AGENT_PROFILE_BINDING_DESTINATION_IN_USE:veydrift-agent/);
+  upsertAgentProfileBinding({
+    profileId: owned.id, surfaceType: 'buzz', surfaceKey: 'veydrift', label: 'Veydrift', enabled: false,
+  }, db);
   upsertAgentProfileBinding({
     profileId: child.id,
     surfaceType: 'buzz',

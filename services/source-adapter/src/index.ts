@@ -26,6 +26,7 @@ import { buildAdvisoryMemoryInstructions, type AdvisoryMemoryScope } from "./ext
 import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 import { requestSiteRuntime } from "./site-runtime.js";
 import { discordDestinationType } from "./discord-output.js";
+import { discordAgentRoutingStatus, unavailableDiscordAgentMessage, unconfiguredDiscordChannelMessage } from "./discord-agent-routing.js";
 import {
   BuzzCliClient,
   buzzEventMentionsPubkey,
@@ -142,6 +143,7 @@ type ResolvedDiscordAccessPolicy = {
   rateLimit: DiscordRateLimitConfig;
   matchedRules: string[];
   agentProfile?: ExternalInteractionAuthorization["profile"];
+  agentResolutionFailed?: boolean;
 };
 
 let bridgeClient: Client | null = null;
@@ -737,11 +739,13 @@ async function resolveDiscordAccessPolicy(input: {
   authorId: string;
   roleIds: string[];
 }): Promise<ResolvedDiscordAccessPolicy> {
+  let agentResolutionFailed = false;
   const agentPolicy = await resolveAgentProfileSurface({
     surfaceType: "discord", surfaceKey: input.channelId, threadId: input.threadId,
     userId: input.authorId, groupIds: input.roleIds,
   }).catch((error) => {
     console.warn(`[source-adapter] Agent Profile binding resolution failed; using legacy compatibility: ${describeError(error)}`);
+    agentResolutionFailed = true;
     return null;
   });
   if (agentPolicy) return agentPolicy;
@@ -763,7 +767,7 @@ async function resolveDiscordAccessPolicy(input: {
   }
   resolved = mergePolicyRule(resolved, config.users[input.authorId], `user:${input.authorId}`);
 
-  return resolved;
+  return { ...resolved, agentResolutionFailed };
 }
 
 async function resolveTelegramAccessPolicy(input: {
@@ -3659,7 +3663,16 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
     authorId: transport.authorId,
     roleIds: transport.authorRoleIds,
   });
-  if (accessPolicy.mode === "off") {
+  const routingStatus = discordAgentRoutingStatus(accessPolicy);
+  if (routingStatus === "unavailable") {
+    await sendSanitizedAssistantMessage(transport, unavailableDiscordAgentMessage);
+    return;
+  }
+  if (routingStatus === "unconfigured") {
+    await sendSanitizedAssistantMessage(transport, unconfiguredDiscordChannelMessage(transport.channelId));
+    return;
+  }
+  if (routingStatus === "disabled") {
     await sendSanitizedAssistantMessage(
       transport,
       "Prism is not enabled for this Discord channel.",
@@ -3953,7 +3966,19 @@ async function handleDiscordChatMessage(message: Message): Promise<void> {
     authorId: message.author.id,
     roleIds: roleIdsFromMessage(message),
   });
-  if (sourcePolicy.mode === "off") {
+  const routingStatus = discordAgentRoutingStatus(sourcePolicy);
+  if (routingStatus === "unavailable") {
+    await message.reply({ content: unavailableDiscordAgentMessage, allowedMentions: { repliedUser: false } });
+    return;
+  }
+  if (routingStatus === "unconfigured") {
+    await message.reply({
+      content: unconfiguredDiscordChannelMessage(sourceChannelId),
+      allowedMentions: { repliedUser: false },
+    });
+    return;
+  }
+  if (routingStatus === "disabled") {
     return;
   }
   const targetChannel = (await ensureConversationThread(message)) ?? message.channel;
