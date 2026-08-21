@@ -8,6 +8,7 @@ import {
   findAgentSessionBySourceContext,
   findLatestAgentSessionByChangeRequest,
   getChangeRequest,
+  getSessionSummary,
   getWorkflowByKey,
   getWorkflowRunForRequest,
   listAgentMessages,
@@ -73,6 +74,7 @@ export async function POST(request: Request, context: RouteContext) {
       : {}
   const operatorNote =
     parseString(body.comment ?? body.note) || "Canceled by an admin operator."
+  const actor = access.userId ? getSessionSummary(access.userId) : null
 
   const changeRequestId = readRouteParam(id)
   const changeRequest = getChangeRequest(changeRequestId)
@@ -159,6 +161,8 @@ export async function POST(request: Request, context: RouteContext) {
         previousStepKey: workflowRun.currentStepKey,
         terminalStepKey,
         comment: operatorNote,
+        actorUserId: access.userId,
+        actorDisplayName: actor?.displayName ?? actor?.handle ?? actor?.email ?? null,
       },
     })
   }
@@ -175,7 +179,7 @@ export async function POST(request: Request, context: RouteContext) {
         title: changeRequest.title,
         linkedChangeRequestId: changeRequest.id,
         linkedTargetEnvironmentId: changeRequest.targetEnvironmentId,
-        createdByUserId: null,
+        createdByUserId: access.userId,
         meta: { transport: "site", contextKey, kind: "prism-lab-request-ask" },
         lastMessageAt: new Date().toISOString(),
       })
@@ -192,6 +196,9 @@ export async function POST(request: Request, context: RouteContext) {
           transport: "site",
           kind: "comment",
           workflowCanceled: true,
+          actorUserId: access.userId,
+          actorDisplayName: actor?.displayName ?? actor?.handle ?? actor?.email ?? null,
+          actorHandle: actor?.handle ?? null,
         },
       })
       updateAgentSession(session.id, {

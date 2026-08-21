@@ -23,6 +23,20 @@ test("clear request cancellation commands resolve without model authority", () =
   assert.equal(resolveRequestManagementIntent("Can you explain how cancellation works?", steps), null)
 })
 
+test("clear retry commands resolve without model authority", () => {
+  for (const command of [
+    "try again",
+    "please retry",
+    "retry this step",
+    "can you rerun the current step?",
+    "run this step again now",
+  ]) {
+    assert.deepEqual(resolveRequestManagementIntent(command, steps), { kind: "retry-step" })
+  }
+  assert.equal(resolveRequestManagementIntent("Can you explain whether retrying is safe?", steps), null)
+  assert.equal(resolveRequestManagementIntent("What happened when it tried again?", steps), null)
+})
+
 test("clear step movement commands resolve only exact nonterminal workflow steps", () => {
   assert.deepEqual(resolveRequestManagementIntent("move back to work", steps), {
     kind: "move-step",

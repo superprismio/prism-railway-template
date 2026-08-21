@@ -1,3 +1,5 @@
+import { resolveRequestMessageActor } from "@/lib/prism-lab/request-message-actor"
+
 export type PrismLabReviewLimits = {
   messageLimit: number
   eventLimit: number
@@ -62,7 +64,10 @@ export function composeRemotePrismLabReview(
     && remoteSession.id === requestOrigin?.sourceSessionId
   const agentMessages = isPromotedConsoleOrigin
     ? []
-    : recordArray(payloads.agentThread.messages).slice(-limits.messageLimit)
+    : recordArray(payloads.agentThread.messages).slice(-limits.messageLimit).map((message) => {
+        const actor = resolveRequestMessageActor(message, remoteSession)
+        return actor ? { ...message, actor } : message
+      })
 
   return {
     ok: true as const,

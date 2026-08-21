@@ -9,6 +9,7 @@ import {
   findAgentSessionBySourceContext,
   findLatestAgentSessionByChangeRequest,
   getChangeRequest,
+  getSessionSummary,
   getWorkflowByKey,
   getWorkflowRunForRequest,
   listActiveAgentRunsForRequest,
@@ -83,6 +84,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (!changeRequest) {
     return NextResponse.json({ ok: false, error: "Change request not found" }, { status: 404 })
   }
+  const actor = access.userId ? getSessionSummary(access.userId) : null
   const workflow = getWorkflowByKey(changeRequest.workflowKey)
   const steps = workflowSteps(workflow)
   const targetStep = steps.find((step) => step.key === targetStepKey) ?? null
@@ -141,6 +143,7 @@ export async function POST(request: Request, context: RouteContext) {
       nextStepKey: targetStepKey,
       manual: true,
       actorUserId: access.userId,
+      actorDisplayName: actor?.displayName ?? actor?.handle ?? actor?.email ?? null,
     },
   })
   createAuditLog({
@@ -179,6 +182,9 @@ export async function POST(request: Request, context: RouteContext) {
         kind: "workflow-step-change",
         previousStepKey,
         nextStepKey: targetStepKey,
+        actorUserId: access.userId,
+        actorDisplayName: actor?.displayName ?? actor?.handle ?? actor?.email ?? null,
+        actorHandle: actor?.handle ?? null,
       },
     })
     updateAgentSession(session.id, {

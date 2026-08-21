@@ -213,6 +213,14 @@ ask questions or provide intervention context such as:
 - Retry the failed step if it is safe.
 - Show the technical timeline.
 
+Every user-authored conversation entry must preserve its actor provenance. New
+entries snapshot the authenticated user ID, display name, and handle at write
+time, and the conversation renders that identity rather than a generic
+"Operator" label. Older Site-authored entries may recover identity from the
+owning authenticated session when no per-message snapshot exists; unknown or
+legacy password-only actors remain explicitly unidentified instead of being
+attributed to a different user.
+
 Artifacts, events, raw logs, external refs, and run traces remain accessible in
 a secondary drawer or expandable technical view.
 
@@ -270,7 +278,7 @@ When Runtime exposes a cancellable job, Site persists its non-secret job
 reference and requests process cancellation in addition to making the Site run
 state authoritative.
 
-The request conversation may recognize clear move and cancel commands, but the
+The request conversation may recognize clear retry, move, and cancel commands, but the
 model remains a read-only utility. Site resolves only unambiguous commands
 against the current workflow, shows the same confirmation used by direct UI
 controls, and performs the structured capability-checked mutation itself.

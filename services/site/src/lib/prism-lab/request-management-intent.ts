@@ -6,6 +6,7 @@ export type RequestManagementStep = {
 
 export type RequestManagementIntent =
   | { kind: "cancel-request" }
+  | { kind: "retry-step" }
   | { kind: "move-step"; targetStepKey: string }
   | null
 
@@ -18,6 +19,10 @@ function normalized(value: string) {
 
 function cancelIntent(value: string) {
   return /^(?:(?:please|kindly)\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:cancel|close)(?:\s+(?:(?:this|the|current)\s+)?request)?(?:\s+(?:now|please))?[?.!]*$/i.test(value.trim())
+}
+
+function retryIntent(value: string) {
+  return /^(?:(?:please|kindly)\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:(?:try|run)\s+(?:(?:this|current|the(?:\s+current)?)\s+)?(?:step\s+)?again|re-?try(?:\s+(?:(?:this|current|the(?:\s+current)?)\s+)?(?:step|run|request))?|re-?run(?:\s+(?:(?:this|current|the(?:\s+current)?)\s+)?(?:step|run))?)(?:\s+(?:now|please))?[?.!]*$/i.test(value.trim())
 }
 
 function moveTarget(value: string) {
@@ -37,6 +42,7 @@ export function resolveRequestManagementIntent(
   steps: RequestManagementStep[],
 ): RequestManagementIntent {
   if (cancelIntent(value)) return { kind: "cancel-request" }
+  if (retryIntent(value)) return { kind: "retry-step" }
   const target = moveTarget(value)
   if (!target) return null
 

@@ -5,6 +5,7 @@ import {
   createAgentSession,
   findAgentSessionBySourceContext,
   getChangeRequest,
+  getSessionSummary,
   getWorkflowRunForRequest,
   listAgentMessages,
   listAgentRuns,
@@ -56,8 +57,15 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
+    const actor = access.userId ? getSessionSummary(access.userId) : null
     const result = await runPrismLabRequestAsk(
-      { requestId, question: parsed.question, actorUserId: access.userId },
+      {
+        requestId,
+        question: parsed.question,
+        actorUserId: access.userId,
+        actorDisplayName: actor?.displayName ?? actor?.handle ?? actor?.email ?? null,
+        actorHandle: actor?.handle ?? null,
+      },
       {
         getRequest: getChangeRequest,
         getWorkflowRun: getWorkflowRunForRequest,

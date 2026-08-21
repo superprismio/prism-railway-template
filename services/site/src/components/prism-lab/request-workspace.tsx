@@ -78,6 +78,13 @@ type ReviewMessage = {
   source: string
   content: string
   createdAt: string
+  actor?: {
+    id: string | null
+    displayName: string | null
+    handle: string | null
+    kind: "site-user" | "external" | "unknown"
+    basis: "message-snapshot" | "session-owner" | "external-message" | "unknown"
+  } | null
 }
 
 type ReviewRun = {
@@ -168,7 +175,7 @@ type RequestReview = {
 
 type WorkspaceState = "queued" | "running" | "failed" | "blocked" | "attention" | "completed" | "ready"
 type MutationKind = "ask" | "comment" | "continue" | "upload" | "stop-run" | "cancel-request" | "move-step" | null
-type InterruptionDialog = "stop-run" | "cancel-request" | "move-step" | null
+type InterruptionDialog = "stop-run" | "cancel-request" | "move-step" | "retry-step" | null
 
 const activeRunStatuses = new Set(["queued", "claimed", "running"])
 const failedRunStatuses = new Set(["failed", "canceled"])
@@ -482,6 +489,21 @@ export function RequestWorkspace({
       setInterruptionDialog("cancel-request")
       return
     }
+    if (managementIntent?.kind === "retry-step" && !terminal) {
+      if (!canInvoke) {
+        setMutationError(
+          activeRun
+            ? "The current step already has an active run. Stop it before retrying."
+            : attention
+              ? "Resolve or move past the current attention state before retrying."
+              : "The current workflow step cannot be retried.",
+        )
+        return
+      }
+      setInterruptionReason(content)
+      setInterruptionDialog("retry-step")
+      return
+    }
     if (managementIntent?.kind === "move-step" && !terminal) {
       setTargetStepKey(managementIntent.targetStepKey)
       setInterruptionReason(content)
@@ -530,6 +552,34 @@ export function RequestWorkspace({
       step?.type === "gate" ? "Gate continuation accepted." : "Current-step run accepted.",
     )
     if (succeeded && content) setDraft("")
+  }
+
+  async function retryCurrentStep() {
+    const reason = interruptionReason.trim()
+    if (!reason || !canInvoke) return
+    const succeeded = await mutate(
+      "continue",
+      async () => {
+        const commentResponse = await fetch(`/admin/change-requests/${encodeURIComponent(request.id)}/comments`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content: reason }),
+        })
+        if (!commentResponse.ok) return commentResponse
+        return fetch(`/admin/change-requests/${encodeURIComponent(request.id)}/workflow/continue`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ comment: reason }),
+        })
+      },
+      "Current-step retry accepted.",
+      { revealConversation: true },
+    )
+    if (succeeded) {
+      setInterruptionDialog(null)
+      setInterruptionReason("")
+      setDraft("")
+    }
   }
 
   async function stopCurrentRun() {
@@ -772,12 +822,27 @@ export function RequestWorkspace({
                 <ol className="space-y-3">
                   {review.agentMessages.map((message) => {
                     const fromOperator = message.role === "user"
+                    const actorLabel = message.actor?.displayName
+                      ?? message.actor?.handle
+                      ?? (message.actor?.kind === "site-user"
+                        ? "Signed-in user"
+                        : message.actor?.kind === "external"
+                          ? "External participant"
+                          : "Operator")
                     return (
                       <li key={message.id} className={cn("flex", fromOperator ? "justify-end" : "justify-start")}>
                         <article className={cn("max-w-[92%] border px-3 py-2 text-sm sm:max-w-[82%]", fromOperator ? "border-primary/30 bg-primary/8" : "border-border/60 bg-card/70")}>
                           <div className="flex items-center gap-2 text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground">
                             {fromOperator ? <UserRound aria-hidden="true" /> : <Bot aria-hidden="true" />}
-                            {fromOperator ? "Operator" : "Prism"}
+                            <span title={fromOperator && message.actor?.id ? `Actor ID: ${message.actor.id}` : undefined}>
+                              {fromOperator ? actorLabel : "Prism"}
+                              {fromOperator && message.actor?.handle && message.actor.handle !== actorLabel
+                                ? ` · @${message.actor.handle}`
+                                : ""}
+                              {fromOperator && message.actor?.basis === "session-owner"
+                                ? " · session owner"
+                                : ""}
+                            </span>
                             <span>·</span>
                             <time dateTime={message.createdAt}>{displayTime(message.createdAt)}</time>
                           </div>
@@ -951,16 +1016,20 @@ export function RequestWorkspace({
             <DialogTitle>
               {interruptionDialog === "stop-run"
                 ? "Stop current run"
-                : interruptionDialog === "move-step"
-                  ? "Move request"
-                  : "Cancel request"}
+                : interruptionDialog === "retry-step"
+                  ? "Retry current step"
+                  : interruptionDialog === "move-step"
+                    ? "Move request"
+                    : "Cancel request"}
             </DialogTitle>
             <DialogDescription>
               {interruptionDialog === "stop-run"
                 ? "This stops the active agent run but keeps the request open on its current workflow step. You can add context and retry afterward."
-                : interruptionDialog === "move-step"
-                  ? "This changes the current workflow step without running skipped steps. The change and your reason are recorded in request history."
-                  : "This stops active work, closes the workflow, and marks the request canceled. Reopening requires a separate audited action."}
+                : interruptionDialog === "retry-step"
+                  ? "This records your instruction in the request conversation and queues the current workflow step again through the audited workflow runner."
+                  : interruptionDialog === "move-step"
+                    ? "This changes the current workflow step without running skipped steps. The change and your reason are recorded in request history."
+                    : "This stops active work, closes the workflow, and marks the request canceled. Reopening requires a separate audited action."}
             </DialogDescription>
           </DialogHeader>
           {interruptionDialog === "move-step" ? (
@@ -1006,29 +1075,36 @@ export function RequestWorkspace({
             </Button>
             <Button
               type="button"
-              variant={interruptionDialog === "move-step" ? "default" : "destructive"}
+              variant={interruptionDialog === "move-step" || interruptionDialog === "retry-step" ? "default" : "destructive"}
               onClick={() => void (
                 interruptionDialog === "stop-run"
                   ? stopCurrentRun()
-                  : interruptionDialog === "move-step"
-                    ? moveRequest()
-                    : cancelRequest()
+                  : interruptionDialog === "retry-step"
+                    ? retryCurrentStep()
+                    : interruptionDialog === "move-step"
+                      ? moveRequest()
+                      : cancelRequest()
               )}
               disabled={
                 !interruptionReason.trim()
                 || mutation !== null
                 || (interruptionDialog === "move-step" && (!targetStepKey || targetStepKey === step?.key || activeRun))
+                || (interruptionDialog === "retry-step" && !canInvoke)
               }
             >
-              {mutation === "stop-run" || mutation === "cancel-request" || mutation === "move-step" ? (
+              {mutation === "stop-run" || mutation === "cancel-request" || mutation === "move-step" || mutation === "continue" ? (
                 <Loader2 className="animate-spin" aria-hidden="true" />
               ) : interruptionDialog === "move-step" ? (
                 <ArrowRightLeft aria-hidden="true" />
+              ) : interruptionDialog === "retry-step" ? (
+                <Play aria-hidden="true" />
               ) : (
                 <XCircle aria-hidden="true" />
               )}
               {interruptionDialog === "stop-run"
                 ? "Stop current run"
+                : interruptionDialog === "retry-step"
+                  ? "Retry current step"
                 : interruptionDialog === "move-step"
                   ? "Move request"
                   : "Cancel request"}

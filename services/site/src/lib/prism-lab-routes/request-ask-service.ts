@@ -205,6 +205,8 @@ export async function runPrismLabRequestAsk(input: {
   requestId: string
   question: string
   actorUserId: string | null
+  actorDisplayName?: string | null
+  actorHandle?: string | null
 }, dependencies: PrismLabRequestAskDependencies) {
   const request = dependencies.getRequest(input.requestId)
   if (!request) throw new PrismLabRequestAskError("Change request not found", 404)
@@ -250,7 +252,14 @@ export async function runPrismLabRequestAsk(input: {
     source: "site-request-ask",
     sourceMessageId: null,
     content: input.question,
-    meta: { transport: "site", kind: "request-ask", readOnlyUtility: true },
+    meta: {
+      transport: "site",
+      kind: "request-ask",
+      readOnlyUtility: true,
+      actorUserId: input.actorUserId,
+      actorDisplayName: input.actorDisplayName ?? null,
+      actorHandle: input.actorHandle ?? null,
+    },
   })
   if (!userMessage) throw new PrismLabRequestAskError("AGENT_MESSAGE_CREATE_FAILED", 500)
 

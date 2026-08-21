@@ -23,7 +23,12 @@ test("Ask Prism persists an isolated admin conversation without changing workflo
   const agentRuns = [{ id: "run-1", kind: "workflow_step", status: "succeeded", workflowStepKey: "draft" }]
   const eventsBefore = structuredClone(workflowEvents)
   const runsBefore = structuredClone(agentRuns)
-  const messages: Array<{ id: string; role: string; content: string }> = []
+  const messages: Array<{
+    id: string
+    role: string
+    content: string
+    meta?: Record<string, unknown>
+  }> = []
   let session = {
     id: "admin-session-1",
     source: "admin-console",
@@ -67,7 +72,12 @@ test("Ask Prism persists an isolated admin conversation without changing workflo
     },
     listMessages: () => [...messages],
     createMessage: (input) => {
-      const message = { id: `message-${messages.length + 1}`, role: input.role, content: input.content }
+      const message = {
+        id: `message-${messages.length + 1}`,
+        role: input.role,
+        content: input.content,
+        meta: input.meta,
+      }
       messages.push(message)
       return message
     },
@@ -94,7 +104,13 @@ test("Ask Prism persists an isolated admin conversation without changing workflo
   }
 
   const result = await runPrismLabRequestAsk(
-    { requestId: "request-1", question: "What is blocking this request?", actorUserId: "user-1" },
+    {
+      requestId: "request-1",
+      question: "What is blocking this request?",
+      actorUserId: "user-1",
+      actorDisplayName: "Ada Lovelace",
+      actorHandle: "ada",
+    },
     dependencies,
   )
 
@@ -107,6 +123,14 @@ test("Ask Prism persists an isolated admin conversation without changing workflo
     { role: "user", content: "What is blocking this request?" },
     { role: "assistant", content: "Request #43 is waiting at the review gate for human approval." },
   ])
+  assert.deepEqual(messages[0]?.meta, {
+    transport: "site",
+    kind: "request-ask",
+    readOnlyUtility: true,
+    actorUserId: "user-1",
+    actorDisplayName: "Ada Lovelace",
+    actorHandle: "ada",
+  })
   assert.equal(result.messages.length, 2)
   assert.equal(result.session.source, "admin-console")
   assert.equal(result.session.meta.runtimeContinuationId, "continuation-1")

@@ -6,6 +6,7 @@ import {
   findLatestAgentSessionByChangeRequest,
   getAgentSession,
   getAgentProfileById,
+  getSessionSummary,
   getChangeRequest,
   getTargetApp,
   getTargetEnvironment,
@@ -25,6 +26,7 @@ import {
   composeRemotePrismLabReview,
   readPrismLabReviewLimits,
 } from "@/lib/prism-lab-routes/request-review"
+import { resolveRequestMessageActor } from "@/lib/prism-lab/request-message-actor"
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -152,7 +154,12 @@ export async function GET(request: Request, context: RouteContext) {
   const agentSession = requestConversation
     ?? (originSession?.source !== "admin-console" ? originSession : null)
     ?? (latestLinkedSession?.id !== originSession?.id ? latestLinkedSession : null)
-  const agentMessages = agentSession ? listAgentMessages(agentSession.id, messageLimit) : []
+  const agentMessages = agentSession
+    ? listAgentMessages(agentSession.id, messageLimit).map((message) => {
+        const actor = resolveRequestMessageActor(message, agentSession, getSessionSummary)
+        return actor ? { ...message, actor } : message
+      })
+    : []
 
   return NextResponse.json({
     ok: true,
