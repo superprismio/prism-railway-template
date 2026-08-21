@@ -5,6 +5,7 @@ import Link from "next/link"
 import {
   AlertCircle,
   ArrowLeft,
+  ArrowRightLeft,
   Bot,
   CheckCircle2,
   ChevronDown,
@@ -37,6 +38,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { RequestTimeline } from "@/components/prism-lab/request-timeline"
 import { WorkflowExplorer } from "@/components/prism-lab/workflow-explorer"
@@ -53,6 +61,10 @@ import {
   selectRequestReviewScope,
 } from "@/lib/prism-lab/request-review-coordinator"
 import { buildWorkflowExplorer } from "@/lib/prism-lab/workflow-explorer"
+import {
+  resolveRequestManagementIntent,
+  type RequestManagementStep,
+} from "@/lib/prism-lab/request-management-intent"
 
 type ReviewCapabilities = {
   canViewRequests: boolean
@@ -155,8 +167,8 @@ type RequestReview = {
 }
 
 type WorkspaceState = "queued" | "running" | "failed" | "blocked" | "attention" | "completed" | "ready"
-type MutationKind = "ask" | "comment" | "continue" | "upload" | "stop-run" | "cancel-request" | null
-type InterruptionDialog = "stop-run" | "cancel-request" | null
+type MutationKind = "ask" | "comment" | "continue" | "upload" | "stop-run" | "cancel-request" | "move-step" | null
+type InterruptionDialog = "stop-run" | "cancel-request" | "move-step" | null
 
 const activeRunStatuses = new Set(["queued", "claimed", "running"])
 const failedRunStatuses = new Set(["failed", "canceled"])
@@ -275,6 +287,7 @@ export function RequestWorkspace({
   const [mutation, setMutation] = useState<MutationKind>(null)
   const [interruptionDialog, setInterruptionDialog] = useState<InterruptionDialog>(null)
   const [interruptionReason, setInterruptionReason] = useState("")
+  const [targetStepKey, setTargetStepKey] = useState("")
   const uploadFormRef = useRef<HTMLFormElement>(null)
   const conversationRef = useRef<HTMLDivElement>(null)
   const conversationNearBottomRef = useRef(true)
@@ -345,6 +358,7 @@ export function RequestWorkspace({
     setDraft("")
     setInterruptionDialog(null)
     setInterruptionReason("")
+    setTargetStepKey("")
     uploadFormRef.current?.reset()
     conversationNearBottomRef.current = true
     revealLatestConversationRef.current = false
@@ -394,6 +408,19 @@ export function RequestWorkspace({
     currentStepKey: review.workflowRun?.currentStepKey || review.changeRequest.currentWorkflowStepKey,
     events: review.workflowEvents,
   }) : [], [review])
+  const managementSteps = useMemo<RequestManagementStep[]>(() => {
+    const steps = review?.workflow?.definition?.steps
+    if (!Array.isArray(steps)) return []
+    return steps.flatMap((candidate): RequestManagementStep[] => {
+      const key = typeof candidate.key === "string" ? candidate.key.trim() : ""
+      if (!key) return []
+      return [{
+        key,
+        label: typeof candidate.label === "string" && candidate.label.trim() ? candidate.label.trim() : key,
+        type: typeof candidate.type === "string" ? candidate.type : "unknown",
+      }]
+    })
+  }, [review])
   const state = review ? workspaceState(review) : null
   const activeAgentRun = review?.agentRuns.find((run) => activeRunStatuses.has(run.status.toLowerCase())) ?? null
   const activeRun = Boolean(activeAgentRun)
@@ -449,6 +476,18 @@ export function RequestWorkspace({
   async function askPrism() {
     const content = draft.trim()
     if (!content || !review || !canRun) return
+    const managementIntent = resolveRequestManagementIntent(content, managementSteps)
+    if (managementIntent?.kind === "cancel-request" && !terminal) {
+      setInterruptionReason(content)
+      setInterruptionDialog("cancel-request")
+      return
+    }
+    if (managementIntent?.kind === "move-step" && !terminal) {
+      setTargetStepKey(managementIntent.targetStepKey)
+      setInterruptionReason(content)
+      setInterruptionDialog("move-step")
+      return
+    }
     const succeeded = await mutate(
       "ask",
       () => fetch(`/admin/change-requests/${encodeURIComponent(request.id)}/ask`, {
@@ -529,6 +568,28 @@ export function RequestWorkspace({
     if (succeeded) {
       setInterruptionDialog(null)
       setInterruptionReason("")
+      setDraft("")
+    }
+  }
+
+  async function moveRequest() {
+    const reason = interruptionReason.trim()
+    if (!reason || !targetStepKey || !canRun || terminal || activeRun) return
+    const succeeded = await mutate(
+      "move-step",
+      () => fetch(`/admin/change-requests/${encodeURIComponent(request.id)}/workflow/step`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ targetStepKey, reason }),
+      }),
+      `Request moved to ${managementSteps.find((candidate) => candidate.key === targetStepKey)?.label ?? targetStepKey}.`,
+      { revealConversation: true },
+    )
+    if (succeeded) {
+      setInterruptionDialog(null)
+      setInterruptionReason("")
+      setTargetStepKey("")
+      setDraft("")
     }
   }
 
@@ -559,19 +620,39 @@ export function RequestWorkspace({
         </Link>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {review && canRun && !terminal ? (
-            <Button
-              type="button"
-              variant="destructive"
-              size="sm"
-              onClick={() => {
-                setInterruptionReason("Cancel this request because it should no longer continue.")
-                setInterruptionDialog("cancel-request")
-              }}
-              disabled={mutation !== null}
-            >
-              <XCircle aria-hidden="true" />
-              Cancel request
-            </Button>
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const firstAlternative = managementSteps.find((candidate) => (
+                    candidate.type !== "terminal" && candidate.key !== step?.key
+                  ))
+                  setTargetStepKey(firstAlternative?.key ?? "")
+                  setInterruptionReason("Move this request to another workflow step for operator review.")
+                  setInterruptionDialog("move-step")
+                }}
+                disabled={mutation !== null || activeRun || !managementSteps.some((candidate) => candidate.type !== "terminal" && candidate.key !== step?.key)}
+                title={activeRun ? "Stop the active run before moving the request" : undefined}
+              >
+                <ArrowRightLeft aria-hidden="true" />
+                Move request
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={() => {
+                  setInterruptionReason("Cancel this request because it should no longer continue.")
+                  setInterruptionDialog("cancel-request")
+                }}
+                disabled={mutation !== null}
+              >
+                <XCircle aria-hidden="true" />
+                Cancel request
+              </Button>
+            </>
           ) : null}
           <Button type="button" variant="ghost" size="sm" onClick={() => void loadReview()} disabled={refreshing}>
             <RefreshCw className={cn(refreshing && "animate-spin")} aria-hidden="true" />
@@ -739,7 +820,7 @@ export function RequestWorkspace({
                 id="request-message"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                placeholder="Ask what is blocking this request, or add context for the next run…"
+                placeholder="Ask what is blocking this request, or say “move back to Work” or “cancel this request”…"
                 rows={4}
                 className="mt-2 resize-y bg-background"
                 disabled={mutation !== null}
@@ -761,6 +842,11 @@ export function RequestWorkspace({
               {!canRun || !canComment ? (
                 <p className="mt-3 text-xs text-muted-foreground">
                   Available controls reflect your live request capabilities. Disabled operations are not sent to the server.
+                </p>
+              ) : null}
+              {canRun ? (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Clear move or cancel commands open a confirmation and use audited request controls. Other questions remain read-only.
                 </p>
               ) : null}
             </div>
@@ -856,20 +942,44 @@ export function RequestWorkspace({
           if (!open && mutation === null) {
             setInterruptionDialog(null)
             setInterruptionReason("")
+            setTargetStepKey("")
           }
         }}
       >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {interruptionDialog === "stop-run" ? "Stop current run" : "Cancel request"}
+              {interruptionDialog === "stop-run"
+                ? "Stop current run"
+                : interruptionDialog === "move-step"
+                  ? "Move request"
+                  : "Cancel request"}
             </DialogTitle>
             <DialogDescription>
               {interruptionDialog === "stop-run"
                 ? "This stops the active agent run but keeps the request open on its current workflow step. You can add context and retry afterward."
-                : "This stops active work, closes the workflow, and marks the request canceled. Reopening requires a separate audited action."}
+                : interruptionDialog === "move-step"
+                  ? "This changes the current workflow step without running skipped steps. The change and your reason are recorded in request history."
+                  : "This stops active work, closes the workflow, and marks the request canceled. Reopening requires a separate audited action."}
             </DialogDescription>
           </DialogHeader>
+          {interruptionDialog === "move-step" ? (
+            <div className="space-y-2">
+              <Label htmlFor="request-target-step">Target workflow step</Label>
+              <Select value={targetStepKey} onValueChange={setTargetStepKey} disabled={mutation !== null}>
+                <SelectTrigger id="request-target-step">
+                  <SelectValue placeholder="Select a workflow step" />
+                </SelectTrigger>
+                <SelectContent>
+                  {managementSteps.filter((candidate) => candidate.type !== "terminal").map((candidate) => (
+                    <SelectItem key={candidate.key} value={candidate.key} disabled={candidate.key === step?.key}>
+                      {candidate.label} · {candidate.type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="request-interruption-reason">Reason</Label>
             <Textarea
@@ -888,6 +998,7 @@ export function RequestWorkspace({
               onClick={() => {
                 setInterruptionDialog(null)
                 setInterruptionReason("")
+                setTargetStepKey("")
               }}
               disabled={mutation !== null}
             >
@@ -895,16 +1006,32 @@ export function RequestWorkspace({
             </Button>
             <Button
               type="button"
-              variant="destructive"
-              onClick={() => void (interruptionDialog === "stop-run" ? stopCurrentRun() : cancelRequest())}
-              disabled={!interruptionReason.trim() || mutation !== null}
+              variant={interruptionDialog === "move-step" ? "default" : "destructive"}
+              onClick={() => void (
+                interruptionDialog === "stop-run"
+                  ? stopCurrentRun()
+                  : interruptionDialog === "move-step"
+                    ? moveRequest()
+                    : cancelRequest()
+              )}
+              disabled={
+                !interruptionReason.trim()
+                || mutation !== null
+                || (interruptionDialog === "move-step" && (!targetStepKey || targetStepKey === step?.key || activeRun))
+              }
             >
-              {mutation === "stop-run" || mutation === "cancel-request" ? (
+              {mutation === "stop-run" || mutation === "cancel-request" || mutation === "move-step" ? (
                 <Loader2 className="animate-spin" aria-hidden="true" />
+              ) : interruptionDialog === "move-step" ? (
+                <ArrowRightLeft aria-hidden="true" />
               ) : (
                 <XCircle aria-hidden="true" />
               )}
-              {interruptionDialog === "stop-run" ? "Stop current run" : "Cancel request"}
+              {interruptionDialog === "stop-run"
+                ? "Stop current run"
+                : interruptionDialog === "move-step"
+                  ? "Move request"
+                  : "Cancel request"}
             </Button>
           </DialogFooter>
         </DialogContent>

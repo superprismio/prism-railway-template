@@ -5,6 +5,7 @@ import {
   createAgentMessage,
   createAgentSession,
   createWorkflowEvent,
+  findAgentSessionBySourceContext,
   findLatestAgentSessionByChangeRequest,
   getChangeRequest,
   getWorkflowByKey,
@@ -164,7 +165,9 @@ export async function POST(request: Request, context: RouteContext) {
 
   let messages = null
   if (operatorNote) {
-    let session = findLatestAgentSessionByChangeRequest(changeRequest.id)
+    const contextKey = `prism-lab-request:${changeRequest.id}`
+    let session = findAgentSessionBySourceContext({ source: "admin-console", contextKey })
+      ?? findLatestAgentSessionByChangeRequest(changeRequest.id)
     if (!session) {
       session = createAgentSession({
         source: "admin-console",
@@ -173,7 +176,7 @@ export async function POST(request: Request, context: RouteContext) {
         linkedChangeRequestId: changeRequest.id,
         linkedTargetEnvironmentId: changeRequest.targetEnvironmentId,
         createdByUserId: null,
-        meta: { transport: "site" },
+        meta: { transport: "site", contextKey, kind: "prism-lab-request-ask" },
         lastMessageAt: new Date().toISOString(),
       })
     }
@@ -198,6 +201,7 @@ export async function POST(request: Request, context: RouteContext) {
         meta: {
           ...session.meta,
           transport: "site",
+          contextKey,
         },
       })
       messages = listAgentMessages(session.id, 100)

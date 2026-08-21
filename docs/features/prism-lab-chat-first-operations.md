@@ -258,11 +258,22 @@ request on its current workflow step for corrected context and retry. `Cancel
 request` is available from every nonterminal workflow state, cancels active
 runs, records an operator reason, and closes the workflow.
 
+`Move request` changes an inactive, open request to another declared
+nonterminal workflow step. It is intended for explicit operator recovery such
+as sending review findings back to work or advancing a completed checkpoint to
+review. It must not skip active work silently, target an undeclared or terminal
+step, or bypass the normal cancel and reopen operations.
+
 Both controls require `canRunAgent`, explicit confirmation, durable audit
 events, idempotent server behavior, and protection against late Runtime results.
 When Runtime exposes a cancellable job, Site persists its non-secret job
 reference and requests process cancellation in addition to making the Site run
 state authoritative.
+
+The request conversation may recognize clear move and cancel commands, but the
+model remains a read-only utility. Site resolves only unambiguous commands
+against the current workflow, shows the same confirmation used by direct UI
+controls, and performs the structured capability-checked mutation itself.
 
 ## Provenance Model
 
@@ -664,14 +675,19 @@ Deliver:
 - Stop-current-run control that preserves the current workflow step.
 - Cancel-request control from every nonterminal workflow state, including while
   an agent run is queued or running.
+- Move-request control for explicit movement between declared nonterminal steps
+  when no run is active.
+- Deterministic conversational routing of unambiguous move and cancel commands
+  into the same confirmed Site-owned controls; ordinary questions remain
+  read-only.
 - File upload or existing artifact attachment as additional context.
 - Clear running, queued, failed, blocked, and completed states.
 - Secondary technical drawer for artifacts, events, refs, and raw run detail.
 
-Higher-risk controls such as reopen, blocker override, or direct step mutation
+Higher-risk controls such as reopen or blocker override
 should remain in the legacy UI until their Lab affordances and capability
-checks are reviewed. Stop-current-run and cancel-request are required pilot
-controls.
+checks are reviewed. Stop-current-run, cancel-request, and validated
+move-request are required pilot controls.
 
 Acceptance criteria:
 
@@ -685,6 +701,10 @@ Acceptance criteria:
   late completion cannot advance it.
 - Canceling from any nonterminal step closes the request and cancels every
   active run.
+- Moving a request records previous and next steps plus an operator reason,
+  rejects active runs and terminal targets, and appears in durable history.
+- Typing a clear command such as `cancel this request` or `move back to work`
+  opens confirmation rather than returning a read-only-model refusal.
 - A failed mutation is explicit and does not leave optimistic UI state behind.
 
 ### Slice 3: Request-origin provenance and profile segmentation
@@ -940,6 +960,7 @@ GET  /agent/change-board/requests/by-number/:number/timeline
 POST /agent/change-board/requests/by-number/:number/workflow/continue
 POST /agent/change-board/requests/by-number/:number/runs/:runId/cancel
 POST /agent/change-board/requests/by-number/:number/workflow/cancel
+POST /agent/change-board/requests/by-number/:number/workflow/step
 POST /agent/responses
 
 GET  /agent/execution-profiles
