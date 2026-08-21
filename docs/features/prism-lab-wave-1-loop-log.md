@@ -211,3 +211,11 @@ Short evidence log for the Slices 0–2 implementation gauntlet.
 - Fix: surfaced the configured workspace avatar and label in the Lab header; added a versioned, allowlisted neon accent to Agent Profiles, deterministic fallbacks for existing agents, accessible theme-aware labels, and accent-aware avatars/navigation/profile headers
 - Result: fresh 41-migration database pass, focused profile validation, the 111-test Site suite, typecheck, production build, and diff check pass
 - Remaining risk: custom workspace logos still rely on the existing branding URL and upload/configuration path; this slice does not introduce another image store
+
+## Iteration 24 — Historical rolling-memory index
+
+- Component: Memory Timeline date discovery across Site and Prism Memory
+- Largest gap: Site queried the Memory inbox artifact index, which does not enumerate `memory/rolling/*.json`, so only the separately loaded latest snapshot appeared
+- Fix: added bounded authenticated `GET /memory/dates`, backed by canonical rolling files with section/entry/bucket counts; Site now consumes that index and exposes a rollout warning when an older Memory deployment lacks it
+- Result: deterministic newest-first storage/index tests, focused Site parsing tests, full Site regression/build gates, and Python compile validation pass
+- Deployment note: both Site and Prism Memory must use this branch for the historical timeline; the latest-only fallback remains honest during a staggered rollout

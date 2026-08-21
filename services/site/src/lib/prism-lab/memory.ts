@@ -178,6 +178,16 @@ export function listRollingDatesFromArtifacts(value: unknown) {
     .sort((left, right) => right.localeCompare(left))
 }
 
+export function listRollingDatesFromIndex(value: unknown) {
+  const payload = record(value)
+  const dates = Array.isArray(payload?.dates) ? payload.dates : []
+  return Array.from(new Set(dates.map((item) => {
+    if (typeof item === "string") return isValidMemoryDate(item) ? item : null
+    const date = string(record(item)?.date)
+    return date && isValidMemoryDate(date) ? date : null
+  }).filter((date): date is string => Boolean(date)))).sort((left, right) => right.localeCompare(left))
+}
+
 export function isValidMemoryDate(value: string) {
   return datePattern.test(value)
 }

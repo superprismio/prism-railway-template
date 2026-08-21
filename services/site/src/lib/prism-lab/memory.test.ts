@@ -4,6 +4,7 @@ import test from "node:test"
 import {
   agentMemoryScopeAllows,
   listRollingDatesFromArtifacts,
+  listRollingDatesFromIndex,
   normalizeMemoryReferences,
   parseRollingDay,
 } from "./memory"
@@ -15,6 +16,15 @@ test("rolling artifacts produce unique newest-first dates and ignore latest alia
     { filename: "2026-08-21.json" },
     { path: "memory/rolling/2026-08-20.json" },
   ] }), ["2026-08-21", "2026-08-20"])
+})
+
+test("rolling date index accepts canonical summaries and returns newest first", () => {
+  assert.deepEqual(listRollingDatesFromIndex({ dates: [
+    { date: "2026-08-19", section_count: 3 },
+    { date: "2026-08-21", section_count: 4 },
+    { date: "2026-08-19" },
+    { date: "latest" },
+  ] }), ["2026-08-21", "2026-08-19"])
 })
 
 test("rolling parser retains deterministic evidence and derives buckets", () => {

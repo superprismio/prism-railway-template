@@ -21,6 +21,11 @@ curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
 
 ```bash
 curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/memory/dates?limit=180"
+```
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
   "$PRISM_API_BASE/state/latest"
 ```
 

@@ -446,6 +446,7 @@ export function MemoryLabExplorer({
   const [day, setDay] = useState<LabRollingDay | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [timelineWarning, setTimelineWarning] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("all");
   const [tag, setTag] = useState("all");
@@ -475,6 +476,7 @@ export function MemoryLabExplorer({
   const loadDay = useCallback(async (date: string) => {
     setTimelineLoading(true);
     setTimelineError(null);
+    setTimelineWarning(null);
     try {
       const payload = await fetchJson<{ day: LabRollingDay }>(
         `/admin/memory/api/rolling/${encodeURIComponent(date)}`,
@@ -500,8 +502,10 @@ export function MemoryLabExplorer({
       const payload = await fetchJson<{
         dates: string[];
         latestDate: string | null;
+        warnings?: string[];
       }>("/admin/memory/api/rolling");
       setDates(payload.dates ?? []);
+      setTimelineWarning(payload.warnings?.filter(Boolean).join(" ") || null);
       const date =
         selectedDate && payload.dates.includes(selectedDate)
           ? selectedDate
@@ -717,6 +721,11 @@ export function MemoryLabExplorer({
                 <RefreshCw />
               </Button>
             </div>
+            {timelineWarning ? (
+              <p className="mt-3 border border-amber-400/40 bg-amber-400/5 p-2 text-xs text-amber-200" role="status">
+                {timelineWarning}
+              </p>
+            ) : null}
             <div className="mt-3 max-h-[65vh] space-y-4 overflow-y-auto">
               {groupedDates.map(([week, weekDates]) => (
                 <section key={week}>
