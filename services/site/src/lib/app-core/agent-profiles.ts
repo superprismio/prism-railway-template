@@ -82,6 +82,7 @@ export type AgentProfileRecord = {
   key: string;
   name: string;
   description: string | null;
+  avatarUrl: string | null;
   status: AgentProfileStatus;
   systemKey: string | null;
   owner: AgentProfileOwner;
@@ -103,6 +104,7 @@ export type UpsertAgentProfileInput = {
   key: string;
   name: string;
   description?: string | null;
+  avatarUrl?: string | null;
   status?: AgentProfileStatus;
   ownerType?: AgentProfileOwnerType;
   ownerUserId?: string | null;
@@ -115,6 +117,7 @@ export type UpsertAgentProfileInput = {
   authority?: Record<string, unknown>;
   contextPolicy?: Record<string, unknown>;
   createdByUserId?: string | null;
+  allowSystemProfileUpdate?: boolean;
 };
 
 export type AgentProfileSessionSummary = {
@@ -183,6 +186,7 @@ type AgentProfileRow = {
   key: string;
   name: string;
   description: string | null;
+  avatar_url?: string | null;
   status: AgentProfileStatus;
   system_key: string | null;
   owner_type: AgentProfileOwnerType;
@@ -202,6 +206,19 @@ type AgentProfileRow = {
 
 function text(value: unknown, maxLength = 500) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+}
+
+function normalizedAvatarUrl(value: unknown) {
+  const candidate = text(value, 2000);
+  if (!candidate) return null;
+  if (candidate.startsWith('/') && !candidate.startsWith('//')) return candidate;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol === 'https:') return parsed.toString();
+  } catch {
+    // Return the stable validation error below.
+  }
+  throw new Error('AGENT_PROFILE_AVATAR_URL_INVALID');
 }
 
 function key(value: unknown) {
@@ -352,7 +369,7 @@ function stewardRows(profileId: string, db: Database.Database): AgentProfileStew
 
 function mapRow(row: AgentProfileRow, db: Database.Database): AgentProfileRecord {
   return {
-    id: row.id, key: row.key, name: row.name, description: row.description, status: row.status,
+    id: row.id, key: row.key, name: row.name, description: row.description, avatarUrl: row.avatar_url ?? null, status: row.status,
     systemKey: row.system_key,
     owner: { type: row.owner_type, userId: row.owner_user_id, agentProfileId: row.owner_agent_profile_id },
     stewards: stewardRows(row.id, db), persona: jsonRecord(row.persona_json), runtimeProfileKey: row.runtime_profile_key,
@@ -373,7 +390,7 @@ function profileRowById(profileId: string, db: Database.Database) {
 
 function snapshot(record: AgentProfileRecord) {
   return {
-    key: record.key, name: record.name, description: record.description, status: record.status,
+    key: record.key, name: record.name, description: record.description, avatarUrl: record.avatarUrl, status: record.status,
     systemKey: record.systemKey, owner: record.owner,
     stewards: record.stewards.map(({ userId, role }) => ({ userId, role })),
     persona: record.persona, runtimeProfileKey: record.runtimeProfileKey, skills: record.skills,
@@ -426,9 +443,31 @@ export function getAgentProfileById(profileId: string, db: Database.Database = g
   return row ? mapRow(row, db) : null;
 }
 
+export function getAgentProfileVersion(profileId: string, version: number | null | undefined, db: Database.Database = getDb()) {
+  const current = getAgentProfileById(profileId, db);
+  if (!current || !version) return current;
+  const row = db.prepare('SELECT snapshot_json FROM agent_profile_versions WHERE profile_id = ? AND version = ?')
+    .get(profileId, Math.trunc(version)) as { snapshot_json: string } | undefined;
+  if (!row) return current;
+  const stored = jsonRecord(row.snapshot_json);
+  return {
+    ...current,
+    name: text(stored.name, 160) || current.name,
+    description: stored.description === null ? null : text(stored.description, 2000) || current.description,
+    avatarUrl: stored.avatarUrl === null ? null : text(stored.avatarUrl, 2000) || null,
+    persona: unknownRecord(stored.persona),
+    runtimeProfileKey: text(stored.runtimeProfileKey, 120) || null,
+    skills: stringList(stored.skills),
+    memoryScope: unknownRecord(stored.memoryScope),
+    authority: unknownRecord(stored.authority),
+    contextPolicy: unknownRecord(stored.contextPolicy),
+    version: Math.trunc(version),
+  };
+}
+
 export function upsertAgentProfile(input: UpsertAgentProfileInput, db: Database.Database = getDb()) {
   const profileKey = key(input.key);
-  if (profileKey === adminAgentProfileKey) throw new Error('ADMIN_AGENT_PROFILE_PROTECTED');
+  if (profileKey === adminAgentProfileKey && input.allowSystemProfileUpdate !== true) throw new Error('ADMIN_AGENT_PROFILE_PROTECTED');
   const name = text(input.name, 160);
   if (!name) throw new Error('AGENT_PROFILE_NAME_REQUIRED');
   const existing = profileRowByKey(profileKey, db);
@@ -439,6 +478,9 @@ export function upsertAgentProfile(input: UpsertAgentProfileInput, db: Database.
   const now = new Date().toISOString();
   const id = existing?.id ?? randomUUID();
   const nextVersion = existing ? existing.version + 1 : 1;
+  const avatarUrl = input.avatarUrl === undefined
+    ? existing?.avatar_url ?? null
+    : normalizedAvatarUrl(input.avatarUrl);
   const status = input.status ?? existing?.status ?? 'draft';
   const persona = input.persona ?? (existing ? jsonRecord(existing.persona_json) : { name, instructions: '' });
   const skills = Array.from(new Set((input.skills ?? (existing ? jsonStrings(existing.skills_json) : [])).map((item) => text(item, 160)).filter(Boolean)));
@@ -447,7 +489,9 @@ export function upsertAgentProfile(input: UpsertAgentProfileInput, db: Database.
     mode: 'policy-controlled', maximumAccessMode: 'full', consoleAccessMode: 'full',
   });
   const contextPolicy = input.contextPolicy ?? (existing ? jsonRecord(existing.context_policy_json) : { continuation: 'session', handoff: null });
-  const runtimeProfileKey = text(input.runtimeProfileKey ?? existing?.runtime_profile_key, 120) || null;
+  const runtimeProfileKey = input.runtimeProfileKey === undefined
+    ? existing?.runtime_profile_key ?? null
+    : text(input.runtimeProfileKey, 120) || null;
   if (runtimeProfileKey && !db.prepare('SELECT 1 FROM runtime_profiles WHERE key = ?').get(runtimeProfileKey)) throw new Error('RUNTIME_PROFILE_NOT_FOUND');
   const createdByUserId = text(input.createdByUserId ?? existing?.created_by_user_id, 200) || null;
   const stewardUserIds = Array.from(new Set((input.stewardUserIds ?? []).map((item) => text(item, 200)).filter(Boolean)));
@@ -455,19 +499,21 @@ export function upsertAgentProfile(input: UpsertAgentProfileInput, db: Database.
 
   db.transaction(() => {
     db.prepare(`
-      INSERT INTO agent_profiles (id, key, name, description, status, system_key, owner_type, owner_user_id,
+      INSERT INTO agent_profiles (id, key, name, description, avatar_url, status, system_key, owner_type, owner_user_id,
         owner_agent_profile_id, persona_json, runtime_profile_key, skills_json, memory_scope_json, authority_json,
         context_policy_json, version, created_by_user_id, created_at, updated_at)
-      VALUES (@id, @key, @name, @description, @status, NULL, @ownerType, @ownerUserId, @ownerAgentProfileId,
+      VALUES (@id, @key, @name, @description, @avatarUrl, @status, NULL, @ownerType, @ownerUserId, @ownerAgentProfileId,
         @persona, @runtimeProfileKey, @skills, @memoryScope, @authority, @contextPolicy, @version,
         @createdByUserId, @createdAt, @updatedAt)
-      ON CONFLICT(key) DO UPDATE SET name=excluded.name, description=excluded.description, status=excluded.status,
+      ON CONFLICT(key) DO UPDATE SET name=excluded.name, description=excluded.description, avatar_url=excluded.avatar_url, status=excluded.status,
         owner_type=excluded.owner_type, owner_user_id=excluded.owner_user_id,
         owner_agent_profile_id=excluded.owner_agent_profile_id, persona_json=excluded.persona_json,
         runtime_profile_key=excluded.runtime_profile_key, skills_json=excluded.skills_json,
         memory_scope_json=excluded.memory_scope_json, authority_json=excluded.authority_json,
         context_policy_json=excluded.context_policy_json, version=excluded.version, updated_at=excluded.updated_at
-    `).run({ id, key: profileKey, name, description: text(input.description ?? existing?.description, 2000) || null,
+    `).run({ id, key: profileKey, name, description: input.description === undefined
+      ? existing?.description ?? null
+      : text(input.description, 2000) || null, avatarUrl,
       status, ownerType, ownerUserId, ownerAgentProfileId, persona: JSON.stringify(persona), runtimeProfileKey,
       skills: JSON.stringify(skills), memoryScope: JSON.stringify(memoryScope), authority: JSON.stringify(authority),
       contextPolicy: JSON.stringify(contextPolicy), version: nextVersion, createdByUserId,

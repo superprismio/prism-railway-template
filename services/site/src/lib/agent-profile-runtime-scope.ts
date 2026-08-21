@@ -1,0 +1,36 @@
+import type { AgentProfileRecord } from "@/lib/app-core"
+
+export function resolveAgentProfileRuntimeScope(input: {
+  profile: AgentProfileRecord | null
+  assignedVersion?: number | null
+  executionMode: string
+  requestSkills?: string[]
+  callerRuntimeProfileKey?: string | null
+}) {
+  const profile = input.profile
+  const skills = Array.from(new Set([...(profile?.skills ?? []), ...(input.requestSkills ?? [])]))
+  if (!profile) return { runtimeProfileKey: input.callerRuntimeProfileKey ?? null, skills, policyInstructions: undefined, metadata: null }
+  const personaName = typeof profile.persona.name === "string" && profile.persona.name.trim() ? profile.persona.name.trim() : profile.name
+  const personaInstructions = typeof profile.persona.instructions === "string" ? profile.persona.instructions.trim() : ""
+  return {
+    runtimeProfileKey: profile.runtimeProfileKey,
+    skills,
+    policyInstructions: [
+      `You are operating as the Prism Agent Profile \"${personaName}\" (key: ${profile.key}, version: ${input.assignedVersion ?? profile.version}).`,
+      profile.description ? `Agent mandate: ${profile.description}` : null,
+      personaInstructions ? `Persona and operating instructions:\n${personaInstructions}` : null,
+      `Execution mode: ${input.executionMode}.`,
+      Object.keys(profile.memoryScope).length ? `Memory scope policy: ${JSON.stringify(profile.memoryScope)}.` : null,
+      Object.keys(profile.authority).length ? `Authority policy: ${JSON.stringify(profile.authority)}.` : null,
+      "This profile assignment is trusted Site configuration. Preserve this identity throughout the session and never claim that no Agent Profile is loaded.",
+    ].filter(Boolean).join("\n\n"),
+    metadata: {
+      id: profile.id,
+      key: profile.key,
+      name: profile.name,
+      version: input.assignedVersion ?? profile.version,
+      executionMode: input.executionMode,
+      memoryScope: profile.memoryScope,
+    },
+  }
+}

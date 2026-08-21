@@ -1,283 +1,82 @@
 "use client"
 
 import type { ReactNode } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import {
-  Activity,
-  ArrowUpRight,
-  Bot,
-  FlaskConical,
-  Inbox,
-  MessageSquareText,
-  Settings,
-} from "lucide-react"
+import { Activity, ArrowUpRight, FlaskConical, Inbox, Menu, PanelLeftClose, Settings, X } from "lucide-react"
 
+import { AgentAvatar } from "@/components/prism-lab/agent-avatar"
 import { ThemeToggle } from "@/components/shared/theme-toggle"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { Capability } from "@/lib/role-access"
 
-type LabSection = {
-  label: string
-  description: string
-  href: string
-  icon: typeof Inbox
-  available: boolean
-  capability: Capability
-}
+export type LabAgentNavigationItem = { key: string; name: string; avatarUrl: string | null; systemKey: string | null; status: string }
 
-const labSections: readonly LabSection[] = [
-  {
-    label: "Requests",
-    description: "Operational inbox",
-    href: "/admin/lab",
-    icon: Inbox,
-    available: true,
-    capability: "canViewRequests",
-  },
-  {
-    label: "Admin Console",
-    description: "Admin Agent control plane",
-    href: "/admin/lab/console",
-    icon: MessageSquareText,
-    available: true,
-    capability: "canRunAgent",
-  },
-  {
-    label: "Agents",
-    description: "Identity and activity",
-    href: "/admin/lab/agents",
-    icon: Bot,
-    available: true,
-    capability: "canRunAgent",
-  },
-  {
-    label: "Activity",
-    description: "Cross-request attention",
-    href: "/admin/lab/activity",
-    icon: Activity,
-    available: true,
-    capability: "canViewRequests",
-  },
-  {
-    label: "Settings",
-    description: "Focused configuration",
-    href: "/admin/lab/settings",
-    icon: Settings,
-    available: true,
-    capability: "canManageSettings",
-  },
+const workspaceSections = [
+  { label: "Requests", href: "/admin/lab", icon: Inbox, capability: "canViewRequests" as const },
+  { label: "Activity", href: "/admin/lab/activity", icon: Activity, capability: "canViewRequests" as const },
+  { label: "Settings", href: "/admin/lab/settings", icon: Settings, capability: "canManageSettings" as const },
 ]
 
-function LabNavigation({ compact = false, capabilities }: { compact?: boolean; capabilities: readonly Capability[] }) {
+function activeFor(pathname: string, href: string) {
+  return pathname === href || (href === "/admin/lab" ? pathname.startsWith("/admin/lab/requests") : pathname.startsWith(`${href}/`))
+}
+
+function Navigator({ capabilities, agents, onNavigate }: { capabilities: readonly Capability[]; agents: readonly LabAgentNavigationItem[]; onNavigate?: () => void }) {
   const pathname = usePathname()
-  const visibleSections = labSections.filter((section) => capabilities.includes(section.capability))
-
-  if (compact) {
-    return (
-      <nav aria-label="Lab sections" className="overflow-x-auto border-b border-border/60 bg-card/35 lg:hidden">
-        <ul className="flex min-w-max items-center gap-1 px-3 py-2">
-          {visibleSections.map((section) => {
-            const Icon = section.icon
-            const active = section.available && (
-              pathname === section.href ||
-              (section.href !== "/admin/lab" && pathname.startsWith(`${section.href}/`)) ||
-              (section.href === "/admin/lab" && pathname.startsWith("/admin/lab/requests"))
-            )
-
-            return (
-              <li key={section.label}>
-                {section.available ? (
-                  <Link
-                    href={section.href}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      buttonVariants({ variant: active ? "secondary" : "ghost", size: "sm" }),
-                      "min-h-9",
-                    )}
-                  >
-                    <Icon aria-hidden="true" />
-                    {section.label}
-                  </Link>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled
-                    aria-label={`${section.label}, planned for a later Lab slice`}
-                  >
-                    <Icon aria-hidden="true" />
-                    {section.label}
-                    <span className="text-[0.625rem] uppercase tracking-wider">Soon</span>
-                  </Button>
-                )}
-              </li>
-            )
+  const visibleWorkspace = workspaceSections.filter((item) => capabilities.includes(item.capability))
+  const visibleAgents = capabilities.includes("canRunAgent") ? agents.filter((agent) => agent.status !== "archived") : []
+  return (
+    <nav aria-label="Prism workspace and agents" className="flex h-full min-h-0 flex-col">
+      <div className="px-3">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Workspace</p>
+        <ul className="mt-2 space-y-0.5">
+          {visibleWorkspace.map((item) => {
+            const Icon = item.icon
+            const active = activeFor(pathname, item.href)
+            return <li key={item.href}><Link href={item.href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={cn("flex min-h-10 items-center gap-3 rounded-md px-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "bg-primary/12 font-medium text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}><Icon className={cn("h-4 w-4", active && "text-primary")} aria-hidden="true" />{item.label}</Link></li>
           })}
         </ul>
-      </nav>
-    )
-  }
-
-  return (
-    <nav aria-label="Lab sections" className="flex h-full flex-col">
-      <p className="px-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        Workspace
-      </p>
-      <ul className="mt-3 space-y-1">
-        {visibleSections.map((section) => {
-          const Icon = section.icon
-          const active = section.available && (
-            pathname === section.href ||
-            (section.href !== "/admin/lab" && pathname.startsWith(`${section.href}/`)) ||
-            (section.href === "/admin/lab" && pathname.startsWith("/admin/lab/requests"))
-          )
-
-          return (
-            <li key={section.label}>
-              {section.available ? (
-                <Link
-                  href={section.href}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "group flex min-h-12 items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    active
-                      ? "bg-primary/12 text-foreground"
-                      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-                  )}
-                >
-                  <Icon className={cn("h-4 w-4", active && "text-primary")} aria-hidden="true" />
-                  <span className="min-w-0">
-                    <span className="block font-medium">{section.label}</span>
-                    <span className="block truncate text-xs text-muted-foreground">{section.description}</span>
-                  </span>
-                </Link>
-              ) : (
-                <div
-                  className="flex min-h-12 items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground/70"
-                  aria-label={`${section.label}, planned for a later Lab slice`}
-                >
-                  <Icon className="h-4 w-4" aria-hidden="true" />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center justify-between gap-2 font-medium">
-                      {section.label}
-                      <span className="text-[0.625rem] uppercase tracking-[0.12em]">Planned</span>
-                    </span>
-                    <span className="block truncate text-xs">{section.description}</span>
-                  </span>
-                </div>
-              )}
-            </li>
-          )
-        })}
-      </ul>
-
-      <div className="mt-auto border-t border-border/60 pt-4">
-        <p className="px-3 text-xs leading-5 text-muted-foreground">
-          Lab uses live instance state. Return to the current UI for controls not yet available here.
-        </p>
-        <Link
-          href="/admin"
-          className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-3 w-full justify-between")}
-        >
-          Current admin UI
-          <ArrowUpRight aria-hidden="true" />
-        </Link>
       </div>
+      {visibleAgents.length ? <div className="mt-6 min-h-0 flex-1 border-t border-border/50 pt-5">
+        <div className="flex items-center justify-between px-3"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Agents</p><Link href="/admin/lab/agents" onClick={onNavigate} className="text-[0.68rem] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Manage</Link></div>
+        <ul className="mt-2 max-h-full space-y-0.5 overflow-y-auto px-2">
+          {visibleAgents.map((agent) => {
+            const href = `/admin/lab/agents/${encodeURIComponent(agent.key)}`
+            const active = activeFor(pathname, href)
+            return <li key={agent.key}><Link href={href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={cn("flex min-h-11 items-center gap-2.5 rounded-md px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "bg-primary/12 text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}><AgentAvatar name={agent.name} avatarUrl={agent.avatarUrl} className="h-7 w-7 rounded-md" /><span className="min-w-0 flex-1 truncate font-medium">{agent.name}</span>{agent.systemKey === "admin-agent" ? <span className="text-[0.58rem] uppercase tracking-wider text-primary">Admin</span> : null}</Link></li>
+          })}
+        </ul>
+      </div> : null}
+      <div className="mt-auto border-t border-border/50 p-3"><Link href="/admin" onClick={onNavigate} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-muted-foreground")}>Current UI<ArrowUpRight aria-hidden="true" /></Link></div>
     </nav>
   )
 }
 
 function LabUnavailable() {
-  return (
-    <section
-      aria-labelledby="lab-disabled-title"
-      className="mx-auto flex min-h-[55vh] max-w-2xl items-center px-5 py-12 sm:px-8"
-    >
-      <div className="w-full border border-border/70 bg-card/70 p-6 shadow-sm sm:p-8">
-        <Badge variant="muted">Feature disabled</Badge>
-        <h1 id="lab-disabled-title" className="mt-4 text-2xl font-semibold tracking-tight">
-          Prism Lab is not enabled
-        </h1>
-        <p className="mt-3 max-w-prose text-sm leading-6 text-muted-foreground">
-          This instance has disabled the Lab route. No data or workflow state was changed. Use the current admin
-          workspace while an operator reviews the rollout setting.
-        </p>
-        <Button asChild className="mt-6">
-          <Link href="/admin">Open current admin UI</Link>
-        </Button>
-      </div>
-    </section>
-  )
+  return <section className="mx-auto flex min-h-[55vh] max-w-2xl items-center px-5 py-12"><div className="w-full border border-border/70 bg-card/70 p-6"><Badge variant="muted">Feature disabled</Badge><h1 className="mt-4 text-2xl font-semibold">Prism Lab is not enabled</h1><p className="mt-3 text-sm text-muted-foreground">Enable PRISM_LAB_ENABLED to use this field-test workspace.</p><Button asChild className="mt-6"><Link href="/admin">Open current admin UI</Link></Button></div></section>
 }
 
-export function LabShell({
-  children,
-  enabled = true,
-  capabilities = [],
-}: {
-  children: ReactNode
-  enabled?: boolean
-  capabilities?: readonly Capability[]
-}) {
+export function LabShell({ children, enabled = true, capabilities = [], agents = [] }: { children: ReactNode; enabled?: boolean; capabilities?: readonly Capability[]; agents?: readonly LabAgentNavigationItem[] }) {
   const showNavigation = enabled && capabilities.length > 0
-  return (
-    <div data-lab-shell className="min-h-screen w-full bg-background text-foreground">
-      <a
-        href="#lab-content"
-        className="fixed left-3 top-3 z-50 -translate-y-20 bg-background px-3 py-2 text-sm font-medium shadow-lg focus:translate-y-0 focus:outline-none focus:ring-2 focus:ring-ring"
-      >
-        Skip to Lab content
-      </a>
-
-      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/95 backdrop-blur">
-        <div className="flex min-h-16 items-center justify-between gap-3 px-4 sm:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/10 text-primary">
-              <FlaskConical className="h-4 w-4" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-semibold tracking-tight">Prism Operations</span>
-                <Badge className="shrink-0 uppercase tracking-[0.12em]">Lab</Badge>
-              </div>
-              <p className="hidden truncate text-xs text-muted-foreground sm:block">Live, field-testable workspace</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex">
-              <Link href="/admin">
-                Current UI
-                <ArrowUpRight aria-hidden="true" />
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="icon" className="sm:hidden">
-              <Link href="/admin" aria-label="Open current admin UI">
-                <ArrowUpRight aria-hidden="true" />
-              </Link>
-            </Button>
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
-
-      {showNavigation ? <LabNavigation compact capabilities={capabilities} /> : null}
-
-      <div className={cn("mx-auto w-full max-w-[112rem]", showNavigation && "lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]")}>
-        {showNavigation ? (
-          <aside className="hidden min-h-[calc(100vh-4rem)] border-r border-border/60 bg-card/25 px-4 py-6 lg:block">
-            <LabNavigation capabilities={capabilities} />
-          </aside>
-        ) : null}
-        <main id="lab-content" tabIndex={-1} className="min-w-0 outline-none">
-          {enabled ? children : <LabUnavailable />}
-        </main>
-      </div>
+  const [leftOpen, setLeftOpen] = useState(true)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  useEffect(() => { setLeftOpen(window.localStorage.getItem("prism-lab-left-nav") !== "closed") }, [])
+  function toggleLeft() { setLeftOpen((open) => { window.localStorage.setItem("prism-lab-left-nav", open ? "closed" : "open"); return !open }) }
+  return <div data-lab-shell className="min-h-screen w-full bg-background text-foreground">
+    <a href="#lab-content" className="fixed left-3 top-3 z-[70] -translate-y-20 bg-background px-3 py-2 text-sm focus:translate-y-0 focus:ring-2 focus:ring-ring">Skip to content</a>
+    <header className="sticky top-0 z-50 flex h-14 items-center border-b border-border/60 bg-background/95 px-3 backdrop-blur">
+      {showNavigation ? <><Button type="button" variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigator"><Menu /></Button><Button type="button" variant="ghost" size="icon" className="hidden lg:inline-flex" onClick={toggleLeft} aria-expanded={leftOpen} aria-controls="lab-agent-navigator" aria-label={leftOpen ? "Collapse navigator" : "Open navigator"}>{leftOpen ? <PanelLeftClose /> : <Menu />}</Button></> : null}
+      <Link href="/admin/lab" className="ml-1 flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary"><FlaskConical className="h-4 w-4" /></span><span className="truncate text-sm font-semibold">Prism</span><Badge className="text-[0.58rem] uppercase tracking-wider">Lab</Badge></Link>
+      <div className="ml-auto"><ThemeToggle /></div>
+    </header>
+    {showNavigation && mobileOpen ? <div className="fixed inset-0 z-[60] lg:hidden"><button className="absolute inset-0 bg-black/55" aria-label="Close navigator" onClick={() => setMobileOpen(false)} /><aside className="relative h-full w-[18rem] max-w-[88vw] border-r border-border bg-background pt-3 shadow-2xl"><div className="flex items-center justify-between px-3 pb-3"><span className="text-sm font-semibold">Navigator</span><Button variant="ghost" size="icon" onClick={() => setMobileOpen(false)} aria-label="Close navigator"><X /></Button></div><Navigator capabilities={capabilities} agents={agents} onNavigate={() => setMobileOpen(false)} /></aside></div> : null}
+    <div className={cn("min-h-[calc(100vh-3.5rem)]", showNavigation && leftOpen && "lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]")}>
+      {showNavigation && leftOpen ? <aside id="lab-agent-navigator" className="sticky top-14 hidden h-[calc(100vh-3.5rem)] border-r border-border/60 bg-card/20 py-5 lg:block"><Navigator capabilities={capabilities} agents={agents} /></aside> : null}
+      <main id="lab-content" tabIndex={-1} className="min-w-0 outline-none">{enabled ? children : <LabUnavailable />}</main>
     </div>
-  )
+  </div>
 }

@@ -35,6 +35,7 @@ export async function POST(request: Request, context: RouteContext) {
           name: typeof agent.profile.persona.name === 'string' ? agent.profile.persona.name : agent.profile.name,
           instructions: typeof agent.profile.persona.instructions === 'string' ? agent.profile.persona.instructions : '',
         },
+        skills: agent.profile.skills,
         memoryScope: agent.profile.memoryScope,
         allowedWorkflows: agent.policy.allowedWorkflows,
         rateLimit: agent.policy.rateLimit,

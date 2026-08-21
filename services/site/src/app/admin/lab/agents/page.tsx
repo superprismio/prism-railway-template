@@ -1,7 +1,8 @@
 import Link from "next/link"
-import { Activity, Bot, Cable, ShieldCheck, UserRound } from "lucide-react"
+import { Activity, Cable, ShieldCheck, UserRound } from "lucide-react"
 
 import { AgentProfileCreate } from "@/components/prism-lab/agent-profile-create"
+import { AgentAvatar } from "@/components/prism-lab/agent-avatar"
 import { LegacyAgentProfileMigration } from "@/components/prism-lab/legacy-agent-profile-migration"
 import { RequestInboxUnavailable } from "@/components/prism-lab/request-inbox"
 import { Badge } from "@/components/ui/badge"
@@ -15,8 +16,7 @@ function ProfileCard({ profile }: { profile: ReturnType<typeof listAgentProfiles
   return (
     <Link href={`/admin/lab/agents/${encodeURIComponent(profile.key)}`} className="block border border-border/60 bg-card/35 p-4 transition-colors hover:border-primary/50 hover:bg-card/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">{profile.name}</h2><Badge variant={profile.status === "active" ? "outline" : "muted"}>{profile.status}</Badge></div><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{profile.description || "No mandate recorded"}</p></div>
-        <Bot className={profile.systemKey === "admin-agent" ? "text-primary" : "text-muted-foreground"} aria-hidden="true" />
+        <div className="flex min-w-0 gap-3"><AgentAvatar name={profile.name} avatarUrl={profile.avatarUrl} /><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold">{profile.name}</h2><Badge variant={profile.status === "active" ? "outline" : "muted"}>{profile.status}</Badge></div><p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{profile.description || "No mandate recorded"}</p></div></div>
       </div>
       <dl className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
         <div className="flex items-center gap-2"><UserRound className="h-3.5 w-3.5" aria-hidden="true" /><dt className="sr-only">Stewards</dt><dd>{profile.stewards.map((item) => item.displayName || item.userId).join(", ") || "Workspace administrators"}</dd></div>

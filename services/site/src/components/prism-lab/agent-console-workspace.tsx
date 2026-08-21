@@ -1,0 +1,89 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { Activity, AudioLines, Cable, Loader2, MessageSquareText, PanelRight, Save, Settings2, X } from "lucide-react"
+
+import { CaptureWorkspace } from "@/components/admin/capture-workspace"
+import { CodexConsole } from "@/components/admin/codex-console"
+import { AgentAvatar } from "@/components/prism-lab/agent-avatar"
+import { AgentBindingForm } from "@/components/prism-lab/agent-binding-form"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import type { AgentProfileActivityItem, AgentProfileRecord, AgentProfileSessionSummary } from "@/lib/app-core"
+
+type Mode = "console" | "capture"
+
+function formatDate(value: string | null) {
+  if (!value) return "Never"
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+export function AgentConsoleWorkspace({ profile: initialProfile, activity, sessions, canManageSettings }: { profile: AgentProfileRecord; activity: AgentProfileActivityItem[]; sessions: AgentProfileSessionSummary[]; canManageSettings: boolean }) {
+  const router = useRouter()
+  const [profile, setProfile] = useState(initialProfile)
+  const [mode, setMode] = useState<Mode>("console")
+  const [inspectorOpen, setInspectorOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => { setProfile(initialProfile) }, [initialProfile])
+
+  useEffect(() => {
+    if (!inspectorOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setInspectorOpen(false) }
+    document.addEventListener("keydown", closeOnEscape)
+    return () => document.removeEventListener("keydown", closeOnEscape)
+  }, [inspectorOpen])
+
+  async function saveProfile(formData: FormData) {
+    setSaving(true)
+    setNotice(null)
+    try {
+      const response = await fetch(`/admin/agent-profiles/${encodeURIComponent(profile.key)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: String(formData.get("name") ?? ""),
+          description: String(formData.get("description") ?? ""),
+          avatarUrl: String(formData.get("avatarUrl") ?? ""),
+          personaInstructions: String(formData.get("personaInstructions") ?? ""),
+          runtimeProfileKey: String(formData.get("runtimeProfileKey") ?? ""),
+          skills: String(formData.get("skills") ?? ""),
+        }),
+      })
+      const payload = await response.json().catch(() => null) as { profile?: AgentProfileRecord; error?: string } | null
+      if (!response.ok || !payload?.profile) throw new Error(payload?.error || "Could not update Agent Profile")
+      setProfile(payload.profile)
+      setNotice(`Saved as profile version ${payload.profile.version}. Existing sessions retain their recorded version.`)
+      router.refresh()
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not update Agent Profile")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <div className="relative min-h-[calc(100vh-3.5rem)]">
+    <header className="flex min-h-16 flex-wrap items-center gap-3 border-b border-border/60 px-4 py-3 sm:px-6">
+      <AgentAvatar name={profile.name} avatarUrl={profile.avatarUrl} className="h-10 w-10" />
+      <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h1 className="truncate text-base font-semibold sm:text-lg">{profile.name}</h1>{profile.systemKey === "admin-agent" ? <Badge>Admin</Badge> : null}<Badge variant="outline">v{profile.version}</Badge></div><p className="truncate text-xs text-muted-foreground">{profile.description || "No agent mandate recorded"}</p></div>
+      <div className="flex items-center gap-1" role="group" aria-label="Agent workspace mode"><Button type="button" size="sm" variant={mode === "console" ? "secondary" : "ghost"} onClick={() => setMode("console")}><MessageSquareText />Console</Button><Button type="button" size="sm" variant={mode === "capture" ? "secondary" : "ghost"} onClick={() => setMode("capture")}><AudioLines />Capture</Button></div>
+      <Button type="button" variant="outline" size="icon" onClick={() => setInspectorOpen(true)} aria-expanded={inspectorOpen} aria-controls="agent-inspector" aria-label="Open agent inspector"><PanelRight /></Button>
+    </header>
+
+    {mode === "console" ? <section aria-label={`${profile.name} console`} className="min-h-[calc(100vh-7.5rem)]"><CodexConsole key={profile.key} isActive agentProfileKey={profile.key} executionMode={profile.systemKey === "admin-agent" ? "orchestrator" : "worker"} configuredRuntimeKey={profile.runtimeProfileKey} configuredProfileVersion={profile.version} consoleFirstLayout /></section> : <section aria-label={`${profile.name} capture workspace`} className="p-4 sm:p-6"><div className="mb-4"><h2 className="font-semibold">Capture context for {profile.name}</h2><p className="mt-1 text-xs text-muted-foreground">Record and transcribe workspace context, then bring the durable result into this agent’s console.</p></div><CaptureWorkspace /></section>}
+
+    {inspectorOpen ? <div className="fixed inset-0 z-[60]"><button type="button" className="absolute inset-0 bg-black/45" onClick={() => setInspectorOpen(false)} aria-label="Close agent inspector" /><aside id="agent-inspector" aria-label={`${profile.name} inspector`} className="absolute inset-y-0 right-0 flex w-[30rem] max-w-[94vw] flex-col border-l border-border bg-background shadow-2xl"><div className="flex h-14 items-center justify-between border-b border-border/60 px-4"><div className="flex items-center gap-2"><Settings2 className="h-4 w-4 text-primary" /><h2 className="font-semibold">Agent inspector</h2></div><Button type="button" variant="ghost" size="icon" onClick={() => setInspectorOpen(false)} aria-label="Close agent inspector"><X /></Button></div><div className="flex-1 space-y-6 overflow-y-auto p-4">
+      <section><div className="flex items-center gap-2"><AgentAvatar name={profile.name} avatarUrl={profile.avatarUrl} /><div><div className="font-medium">{profile.name}</div><div className="text-xs text-muted-foreground">{profile.key} · version {profile.version}</div></div></div><div className="mt-3 grid grid-cols-2 gap-2 text-xs"><div className="border border-border/60 p-2"><span className="text-muted-foreground">Sessions</span><div className="mt-1 text-sm font-medium">{sessions.length}</div></div><div className="border border-border/60 p-2"><span className="text-muted-foreground">Activity</span><div className="mt-1 text-sm font-medium">{activity.length}</div></div></div></section>
+      <section><div className="flex items-center gap-2"><Settings2 className="h-4 w-4" /><h3 className="text-sm font-semibold">Profile and persona</h3></div>{canManageSettings ? <form action={saveProfile} className="mt-3 space-y-3"><div><Label htmlFor="agent-name">Name</Label><Input id="agent-name" name="name" defaultValue={profile.name} required maxLength={160} /></div><div><Label htmlFor="agent-avatar">Avatar URL</Label><Input id="agent-avatar" name="avatarUrl" defaultValue={profile.avatarUrl ?? ""} placeholder="https://… or /assets/agent.png" /></div><div><Label htmlFor="agent-description">Mandate</Label><Textarea id="agent-description" name="description" defaultValue={profile.description ?? ""} rows={3} maxLength={2000} /></div><div><Label htmlFor="agent-persona">Persona instructions</Label><Textarea id="agent-persona" name="personaInstructions" defaultValue={typeof profile.persona.instructions === "string" ? profile.persona.instructions : ""} rows={7} maxLength={20000} /></div><div><Label htmlFor="agent-runtime">Runtime profile key</Label><Input id="agent-runtime" name="runtimeProfileKey" defaultValue={profile.runtimeProfileKey ?? ""} placeholder="Default runtime" /></div><div><Label htmlFor="agent-skills">Skills</Label><Input id="agent-skills" name="skills" defaultValue={profile.skills.join(", ")} placeholder="skill-one, skill-two" /></div>{notice ? <p className="text-xs text-muted-foreground" role="status">{notice}</p> : null}<Button type="submit" size="sm" disabled={saving}>{saving ? <Loader2 className="animate-spin" /> : <Save />}{saving ? "Saving" : "Save profile"}</Button></form> : <p className="mt-2 text-xs text-muted-foreground">You can inspect this profile but need settings permission to edit it.</p>}</section>
+      <section id="bindings"><div className="flex items-center gap-2"><Cable className="h-4 w-4" /><h3 className="text-sm font-semibold">Surfaces</h3></div><div className="mt-2 divide-y divide-border/60 border border-border/60"><div className="p-3 text-xs"><div className="flex justify-between"><span className="font-medium">Prism Console</span><Badge>full</Badge></div></div>{profile.bindings.map((binding) => <div key={binding.id} className="p-3 text-xs"><div className="flex items-center justify-between gap-2"><span className="truncate font-medium">{binding.label || binding.surfaceKey}</span><Badge variant="outline">{binding.surfaceType}</Badge></div><div className="mt-1 truncate font-mono text-muted-foreground">{binding.surfaceKey}</div></div>)}</div>{canManageSettings && !profile.systemKey ? <div className="mt-3"><AgentBindingForm profileKey={profile.key} /></div> : null}</section>
+      <section><div className="flex items-center gap-2"><Activity className="h-4 w-4" /><h3 className="text-sm font-semibold">Recent activity</h3></div><div className="mt-2 divide-y divide-border/60 border border-border/60">{activity.slice(0, 12).map((item) => <div key={item.id} className="p-3 text-xs"><div className="flex justify-between gap-2"><span className="font-medium">{item.title}</span><Badge variant="outline">{item.status}</Badge></div><div className="mt-1 text-muted-foreground">{item.description} · {formatDate(item.occurredAt)}</div>{item.sessionId ? <Link className="mt-1 inline-block underline" href={`/admin/lab/agents/${encodeURIComponent(profile.key)}/sessions/${encodeURIComponent(item.sessionId)}`}>Open transcript</Link> : null}</div>)}{activity.length === 0 ? <p className="p-3 text-xs text-muted-foreground">No attributed activity yet.</p> : null}</div></section>
+    </div></aside></div> : null}
+  </div>
+}

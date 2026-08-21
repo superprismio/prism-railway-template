@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed direction for the next Prism Lab implementation slices. This addendum
+Implemented foundation with an active console-first navigation iteration. This addendum
 supersedes the profile, ownership, and post-Slice-5 navigation model in
 `prism-lab-chat-first-operations.md` where the documents conflict. Slices 0–5
 remain implemented and valid foundations.
@@ -58,14 +58,17 @@ Other Agent Profiles
 
 ## Information Architecture
 
-The Lab shell should converge on these global destinations:
+The Lab shell uses a collapsible Agent Navigator:
 
 ```text
-Admin Console
-Requests
+Workspace
+  Requests
+  Activity
+  Settings
+
 Agents
-Activity
-Settings
+  Admin Agent
+  All defined agents
 ```
 
 The Agents destination separates the protected built-in Admin Agent from other
@@ -83,15 +86,26 @@ Agents
 Every Agent Profile has a Prism Console. External communication bindings are
 optional. A console-only agent is operational, not "unbound" or private.
 
-Selecting an agent opens an identity-scoped workspace:
+Selecting an agent opens an identity-scoped, console-first workspace. The
+console occupies the primary canvas, Capture is a peer mode, and an on-demand
+right inspector contains profile configuration and observability:
 
-- Overview
 - Console
+- Capture
 - Activity
 - Sessions
-- Automations
 - Channels
 - Configuration
+
+The left navigator can be collapsed without changing the selected agent. The
+right inspector is closed by default so conversation remains the visual focus.
+
+Agent Console execution resolves its scope from the Site-owned session/profile
+assignment, not browser-supplied metadata. The resolved immutable profile
+version provides persona instructions, runtime profile, skills, memory scope,
+authority context, and continuation policy. A profile edit creates a new
+version; existing sessions retain their recorded version and a new session is
+required to adopt the edit.
 
 Requests remain a top-level global inbox. Agent pages may show requests in
 which the agent participated, but must not create competing agent-owned request

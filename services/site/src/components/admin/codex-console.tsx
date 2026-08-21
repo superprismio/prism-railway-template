@@ -104,6 +104,9 @@ export function CodexConsole({
   initialDraft = "",
   agentProfileKey,
   executionMode,
+  configuredRuntimeKey,
+  configuredProfileVersion,
+  consoleFirstLayout = false,
   onSessionSnapshot,
 }: {
   isActive?: boolean;
@@ -111,6 +114,9 @@ export function CodexConsole({
   initialDraft?: string;
   agentProfileKey?: string;
   executionMode?: "worker" | "orchestrator" | "verifier" | "reviewer" | "judge" | "repair";
+  configuredRuntimeKey?: string | null;
+  configuredProfileVersion?: number;
+  consoleFirstLayout?: boolean;
   onSessionSnapshot?: (snapshot: ConsoleSessionSnapshot) => void;
 }) {
   const storageScope = agentProfileKey?.trim() || "legacy";
@@ -125,6 +131,7 @@ export function CodexConsole({
   const [activeJobTrace, setActiveJobTrace] = useState<ConsoleTraceEntry[]>([]);
   const [runtimeProfiles, setRuntimeProfiles] = useState<RuntimeProfile[]>([]);
   const [sessionRuntimeKey, setSessionRuntimeKey] = useState<string | null>(null);
+  const [sessionAgentProfileVersion, setSessionAgentProfileVersion] = useState<number | null>(null);
   const [pollNotice, setPollNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [usesTouchFirstInput, setUsesTouchFirstInput] = useState(false);
@@ -171,6 +178,7 @@ export function CodexConsole({
     const payload = (await response.json()) as {
       ok?: boolean;
       session?: ConsoleSession;
+      agentProfileAssignment?: { profileVersion?: number | null } | null;
       messages?: StoredConsoleMessage[];
       error?: string;
     };
@@ -191,6 +199,7 @@ export function CodexConsole({
       : [];
     setSessionId(targetSessionId);
     setSessionRuntimeKey(payload.session?.meta?.runtimeKey ?? null);
+    setSessionAgentProfileVersion(payload.agentProfileAssignment?.profileVersion ?? null);
     setMessages(restoredMessages);
   }, []);
 
@@ -456,6 +465,7 @@ export function CodexConsole({
     setSessionId(null);
     setMessages([]);
     setSessionRuntimeKey(null);
+    setSessionAgentProfileVersion(null);
     setError(null);
     setActiveJobId(null);
     setActiveJobTrace([]);
@@ -468,10 +478,11 @@ export function CodexConsole({
     .filter((entry) => entry.message?.trim())
     .slice(-5);
   const defaultRuntime = runtimeProfiles.find((profile) => profile.isDefault) ?? null;
-  const activeRuntime = sessionRuntimeKey
-    ? runtimeProfiles.find((profile) => profile.key === sessionRuntimeKey) ?? null
+  const effectiveRuntimeKey = sessionRuntimeKey ?? configuredRuntimeKey ?? null;
+  const activeRuntime = effectiveRuntimeKey
+    ? runtimeProfiles.find((profile) => profile.key === effectiveRuntimeKey) ?? null
     : defaultRuntime;
-  const activeRuntimeLabel = activeRuntime?.name ?? sessionRuntimeKey ?? null;
+  const activeRuntimeLabel = activeRuntime?.name ?? effectiveRuntimeKey ?? null;
 
   const sessionControls = (
     <div className="flex flex-wrap items-center justify-start gap-3 sm:justify-end">
@@ -482,13 +493,13 @@ export function CodexConsole({
             <Cpu className="h-4 w-4" />
             <span>{activeRuntimeLabel}</span>
             <Badge variant="outline" className="font-normal">
-              {sessionRuntimeKey ? "Session" : "Default"}
+              {sessionRuntimeKey ? "Session" : configuredRuntimeKey ? "Profile" : "Default"}
             </Badge>
           </span>
         ) : null}
         <span className="flex items-center gap-2 text-xs">
           <Bot className="h-4 w-4" />
-          <span>{sessionId ? "Session live" : "New session"}</span>
+          <span>{sessionId ? `Session live${sessionAgentProfileVersion ? ` · profile v${sessionAgentProfileVersion}` : ""}` : configuredProfileVersion ? `New session · profile v${configuredProfileVersion}` : "New session"}</span>
         </span>
       </div>
       {sessionId ? (
@@ -506,7 +517,7 @@ export function CodexConsole({
   );
 
   return (
-    <div className="flex h-[calc(100vh-248px)] min-h-0 flex-col">
+    <div className={`flex min-h-0 flex-col ${consoleFirstLayout ? "h-[calc(100vh-7.5rem)]" : "h-[calc(100vh-248px)]"}`}>
       {sessionControlsTarget
         ? createPortal(sessionControls, sessionControlsTarget)
         : null}
@@ -546,8 +557,8 @@ export function CodexConsole({
             ))
           ) : (
             <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              Start a session from the admin board. Session history is stored in
-              the API and restored in this browser.
+              Send a message to start this Agent Profile session. Session history
+              is durable and visible to authorized workspace operators.
             </div>
           )}
         </div>

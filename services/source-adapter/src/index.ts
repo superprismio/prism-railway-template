@@ -702,6 +702,9 @@ async function resolveAgentProfileSurface(input: {
       name: typeof persona.name === "string" && persona.name.trim() ? persona.name.trim() : null,
       instructions: typeof persona.instructions === "string" ? persona.instructions.trim() : "",
     },
+    skills: Array.isArray(rawProfile.skills)
+      ? rawProfile.skills.filter((value): value is string => typeof value === "string")
+      : [],
     memoryScope: {
       knowledgeSourceIds: Array.isArray(memoryScope.knowledgeSourceIds) ? memoryScope.knowledgeSourceIds.filter((value): value is string => typeof value === "string") : [],
       buckets: Array.isArray(memoryScope.buckets) ? memoryScope.buckets.filter((value): value is string => typeof value === "string") : [],
@@ -1277,6 +1280,9 @@ async function runtimeRequest(input: {
   runtimeProfileKey?: string | null;
 }): Promise<{ responseText: string; continuationId: string | null; provider: string | null; runtimeKey: string | null }> {
   const timeoutMs = adapterConfig().codexRuntimeRequestTimeoutSeconds * 1000;
+  const requestedSkills = Array.isArray(input.metadata.requestedSkills)
+    ? input.metadata.requestedSkills.filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+    : [];
   const result = await requestSiteRuntime({
     prompt: input.prompt,
     sessionId: input.sessionId,
@@ -1285,6 +1291,7 @@ async function runtimeRequest(input: {
     credentials: input.credentials ?? [],
     context: input.gatewayContext ?? {},
     metadata: input.metadata,
+    skills: requestedSkills,
     runtimeProfileKey: input.runtimeProfileKey ?? null,
     timeoutMs,
   });
@@ -1309,6 +1316,7 @@ type ExternalInteractionAuthorization = {
     mode: DiscordAccessMode;
     runtimeProfileKey: string | null;
     persona: { name: string | null; instructions: string };
+    skills: string[];
     memoryScope?: AdvisoryMemoryScope;
     allowedWorkflows: string[];
     rateLimit: DiscordRateLimitConfig;
@@ -1450,6 +1458,9 @@ async function loadInteractionProfile(
       name: typeof persona.name === "string" && persona.name.trim() ? persona.name.trim() : null,
       instructions: typeof persona.instructions === "string" ? persona.instructions.trim() : "",
     },
+    skills: Array.isArray(raw.skills)
+      ? raw.skills.filter((value): value is string => typeof value === "string")
+      : [],
     memoryScope: {
       knowledgeSourceIds: Array.isArray(memoryScope.knowledgeSourceIds)
         ? memoryScope.knowledgeSourceIds.filter((value): value is string => typeof value === "string")
@@ -1778,6 +1789,7 @@ async function runBuzzPrompt(input: {
         buzzSourceEventId: input.event.id,
         interactionProfileKey: input.profile.key,
         interactionProfileVersion: input.profile.version,
+        requestedSkills: input.profile.skills,
         externalAccessMode: input.profile.mode,
         allowedWorkflows: input.profile.allowedWorkflows,
         memoryScope: externalInteractionMemoryScope(authorization),
@@ -1937,7 +1949,8 @@ async function runBuzzInteractionPoll(): Promise<JsonObject> {
 
     let profile: ExternalInteractionAuthorization["profile"];
     try {
-      const loaded = await loadInteractionProfile(accessPolicy.interactionProfileKey, accessPolicy.mode);
+      const loaded = await referencedInteractionProfile(accessPolicy);
+      if (!loaded) throw new Error("Buzz Agent Profile is unavailable");
       profile = { ...loaded, rateLimit: accessPolicy.rateLimit };
     } catch (error) {
       console.error("[buzz-adapter] Buzz interaction profile resolution failed", {
@@ -2675,6 +2688,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
         telegramAccessPolicy: accessPolicy,
         interactionProfileKey: interactionProfile?.key ?? null,
         interactionProfileVersion: interactionProfile?.version ?? null,
+        requestedSkills: interactionProfile?.skills ?? [],
         allowedWorkflows: interactionProfile?.allowedWorkflows ?? [],
         memoryScope: interactionProfile?.memoryScope ?? null,
         requestOrigin: { sourceSessionId: String(session.id), sourceMessageId: transport.userSourceMessageId },
@@ -2715,6 +2729,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
           chatTitle: transport.chatTitle,
           interactionProfileKey: interactionProfile?.key ?? null,
           interactionProfileVersion: interactionProfile?.version ?? null,
+          requestedSkills: interactionProfile?.skills ?? [],
           runtimeContinuationId,
           runtimeKey: result.runtimeKey,
           runtimeProvider: result.provider,
@@ -3790,6 +3805,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
           discordAccessPolicy: accessPolicy,
           interactionProfileKey: interactionProfile?.key ?? null,
           interactionProfileVersion: interactionProfile?.version ?? null,
+          requestedSkills: interactionProfile?.skills ?? [],
           allowedWorkflows: interactionProfile?.allowedWorkflows ?? [],
           memoryScope: interactionProfile?.memoryScope ?? null,
           requestOrigin: { sourceSessionId: String(session.id), sourceMessageId: transport.userSourceMessageId },
@@ -4889,6 +4905,7 @@ async function main(): Promise<void> {
           externalSubject: subject,
           interactionProfileKey: authorization.profile.key,
           interactionProfileVersion: authorization.profile.version,
+          requestedSkills: authorization.profile.skills,
           runtimeKey: authorization.profile.runtimeProfileKey,
           accessMode: authorization.profile.mode,
           memoryScope: externalInteractionMemoryScope(authorization),
@@ -4981,6 +4998,7 @@ async function main(): Promise<void> {
           externalSubject: safeExternalHeader(request.header("x-prism-external-subject"), 300) || null,
           interactionProfileKey: authorization.profile.key,
           interactionProfileVersion: authorization.profile.version,
+          requestedSkills: authorization.profile.skills,
         },
         createdAt: now,
       });

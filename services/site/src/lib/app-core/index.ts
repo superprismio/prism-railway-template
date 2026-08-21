@@ -8,6 +8,7 @@ export {
   ensureAdminAgentStewards,
   getAgentProfile,
   getAgentProfileById,
+  getAgentProfileVersion,
   getAgentProfileSessionDetail,
   getAgentSessionProfileAssignment,
   listAgentProfiles,

@@ -13,6 +13,8 @@ import {
   ensureWorkflowRunForRequest,
   findActiveAgentRunByIdempotencyKey,
   getAgentSession,
+  getAgentSessionProfileAssignment,
+  getAgentProfileVersion,
   getAgentRun,
   getChangeRequest,
   getTargetApp,
@@ -33,6 +35,7 @@ import {
   type RuntimeResponse,
   type RuntimeTraceEntry,
 } from "@/lib/app-core"
+import { resolveAgentProfileRuntimeScope } from "@/lib/agent-profile-runtime-scope"
 
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
@@ -78,6 +81,7 @@ export async function handleResponseGet(request: Request, requireAccess: RouteAc
   return NextResponse.json({
     ok: true,
     session,
+    agentProfileAssignment: getAgentSessionProfileAssignment(session.id),
     messages: listAgentMessages(session.id, 100),
   })
 }
@@ -840,7 +844,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     parseNullableString(body.linked_change_request_id ?? body.linkedChangeRequestId) ?? null
   const linkedTargetEnvironmentId =
     parseNullableString(body.linked_target_environment_id ?? body.linkedTargetEnvironmentId) ?? null
-  const requestedRuntimeProfileKey =
+  const callerRequestedRuntimeProfileKey =
     parseNullableString(body.runtime_profile_key ?? body.runtimeProfileKey ?? body.runtime_key ?? body.runtimeKey) ?? null
   const inputMessages = parseResponseInputMessages(body.input)
   const latestUserMessage = [...inputMessages].reverse().find((entry) => entry.role === "user") ?? null
@@ -875,6 +879,12 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   if (!session) {
     return NextResponse.json({ ok: false, error: "AGENT_SESSION_CREATE_FAILED" }, { status: 500 })
   }
+
+  const profileAssignment = getAgentSessionProfileAssignment(session.id)
+  const assignedAgentProfile = profileAssignment?.profileId
+    ? getAgentProfileVersion(profileAssignment.profileId, profileAssignment.profileVersion)
+    : null
+  const requestedExecutionMode = parseNullableString(body.execution_mode ?? body.executionMode) ?? "worker"
 
   const storedMessages = listAgentMessages(session.id, 100)
   const recentHistory = storedMessages.length
@@ -1018,12 +1028,21 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   const workflowEntrypoint = typeof linkedWorkflow?.definition?.entrypoint === "string"
     ? linkedWorkflow.definition.entrypoint
     : null
-  const requestedSkills = initialWorkflowRunSkills({
+  const requestScopedSkills = initialWorkflowRunSkills({
     requestedSkills: requestedSkillsInput,
     agentConfig: workflowAgentConfig,
     linkedWorkflow: Boolean(linkedWorkflow),
     isEntrypoint: runnableStepKey === workflowEntrypoint,
   })
+  const agentRuntimeScope = resolveAgentProfileRuntimeScope({
+    profile: assignedAgentProfile,
+    assignedVersion: profileAssignment?.profileVersion,
+    executionMode: requestedExecutionMode,
+    requestSkills: requestScopedSkills,
+    callerRuntimeProfileKey: callerRequestedRuntimeProfileKey,
+  })
+  const requestedSkills = agentRuntimeScope.skills
+  const requestedRuntimeProfileKey = agentRuntimeScope.runtimeProfileKey
   const includeTrustedRuntimeCredentials = actorType === "admin" || Boolean(linkedWorkflow)
   const activeCredentials = includeTrustedRuntimeCredentials
     ? await listEnabledGatewayCredentialsOrEmpty()
@@ -1208,7 +1227,12 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   }
 
   try {
-    const currentContinuationPolicy = workflowContinuationPolicy(workflowAgentConfig)
+    const profileContinuation = assignedAgentProfile && typeof assignedAgentProfile.contextPolicy.continuation === "string"
+      ? assignedAgentProfile.contextPolicy.continuation
+      : null
+    const currentContinuationPolicy = linkedWorkflow
+      ? workflowContinuationPolicy(workflowAgentConfig)
+      : profileContinuation === "step" ? "step" : "session"
     const runtimeResponse = await requestPrismRuntimeResponse({
       prompt: latestUserMessage.content,
       sessionId: session.id,
@@ -1230,6 +1254,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       },
       metadata: {
         transport: "site",
+        policyInstructions: agentRuntimeScope.policyInstructions,
+        agentProfile: agentRuntimeScope.metadata,
         runtimeProfileKey: requestedRuntimeProfileKey,
         sessionRuntimeKey: typeof session.meta?.runtimeKey === "string" ? session.meta.runtimeKey : null,
         requestedSkills,
@@ -1433,7 +1459,10 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           ...(isRecord(linkedWorkflow?.definition?.agentConfig) ? linkedWorkflow.definition.agentConfig : {}),
           ...(isRecord(continuationStep?.agentConfig) ? continuationStep.agentConfig : {}),
         }
-        const continuationRequestedSkills = continuationWorkflowRunSkills(continuationAgentConfig)
+        const continuationRequestedSkills = Array.from(new Set([
+          ...(assignedAgentProfile?.skills ?? []),
+          ...continuationWorkflowRunSkills(continuationAgentConfig),
+        ]))
         const continuationPolicy = workflowContinuationPolicy(continuationAgentConfig)
         const continuationCredentials = Array.from(new Set([
           ...activeCredentials.map((credential) => credential.key),
@@ -1462,6 +1491,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             },
             metadata: {
               transport: "site",
+              policyInstructions: agentRuntimeScope.policyInstructions,
+              agentProfile: agentRuntimeScope.metadata,
               runtimeProfileKey: requestedRuntimeProfileKey,
               sessionRuntimeKey: continuationRuntimeKey,
               requestedSkills: continuationRequestedSkills,

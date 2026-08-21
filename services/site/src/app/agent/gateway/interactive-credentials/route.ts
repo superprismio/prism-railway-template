@@ -3,6 +3,7 @@ import {
   isSourceAdapterPlatform,
   loadConfig,
   readSourceAdapterPolicy,
+  resolveAgentProfileInteraction,
   resolveSourceAdapterPolicy,
 } from "@/lib/app-core";
 import { credentialsForSourceMode } from "@/lib/gateway-credential-assignment";
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "SOURCE_PLATFORM_UNSUPPORTED" }, { status: 400 });
   }
 
-  const resolved = resolveSourceAdapterPolicy(readSourceAdapterPolicy(loadConfig()), {
+  const identity = {
     platform,
     targetId,
     threadId: stringField(body?.threadId) || null,
@@ -37,12 +38,22 @@ export async function POST(request: Request) {
       ? body.groupIds.map(stringField).filter(Boolean).slice(0, 100)
       : [],
     userId,
+  };
+  const boundAgent = resolveAgentProfileInteraction({
+    surfaceType: platform as "buzz" | "discord" | "telegram",
+    surfaceKey: targetId,
+    threadId: identity.threadId,
+    groupIds: identity.groupIds,
+    userId,
   });
-  const credentials = resolved.mode === "full" ? await listEnabledGatewayCredentialsOrEmpty() : [];
+  const legacyPolicy = boundAgent ? null : resolveSourceAdapterPolicy(readSourceAdapterPolicy(loadConfig()), identity);
+  const mode = boundAgent?.policy.accessMode ?? legacyPolicy?.mode ?? "off";
+  const credentials = mode === "full" ? await listEnabledGatewayCredentialsOrEmpty() : [];
   return NextResponse.json({
     ok: true,
-    profile: resolved.mode === "full" ? "admin" : resolved.mode === "off" ? "off" : "read",
-    accessPolicy: resolved,
-    credentials: credentialsForSourceMode(resolved.mode, credentials),
+    profile: mode === "full" ? "admin" : mode === "off" ? "off" : "read",
+    accessPolicy: boundAgent?.policy ?? legacyPolicy,
+    agentProfile: boundAgent ? { key: boundAgent.profile.key, version: boundAgent.profile.version } : null,
+    credentials: credentialsForSourceMode(mode, credentials),
   });
 }

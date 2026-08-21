@@ -37,6 +37,7 @@ import { restoreRecordingSystemDefaultMigration } from './037_restore_recording_
 import { hookAuthConfigMigration } from './038_hook_auth_config';
 import { requestOriginsMigration } from './039_request_origins';
 import { agentProfilesMigration } from './040_agent_profiles';
+import { agentProfileAvatarMigration } from './041_agent_profile_avatar';
 
 export interface Migration {
   name: string;
@@ -83,4 +84,5 @@ export const migrations: Migration[] = [
   hookAuthConfigMigration,
   requestOriginsMigration,
   agentProfilesMigration,
+  agentProfileAvatarMigration,
 ];

@@ -3,10 +3,12 @@ import test from 'node:test';
 import Database from 'better-sqlite3';
 
 import { agentProfilesMigration } from './migrations/040_agent_profiles';
+import { agentProfileAvatarMigration } from './migrations/041_agent_profile_avatar';
 import {
   adminAgentProfileId,
   assignAgentProfileToSession,
   getAgentProfile,
+  getAgentProfileVersion,
   getAgentSessionProfileAssignment,
   listAgentProfiles,
   resolveAgentProfileBinding,
@@ -45,6 +47,7 @@ function testDb() {
     INSERT INTO user_roles VALUES ('admin-user', 1);
   `);
   db.exec(agentProfilesMigration.sql);
+  db.exec(agentProfileAvatarMigration.sql);
   return db;
 }
 
@@ -55,6 +58,9 @@ test('seeds the protected Admin Agent with workspace stewardship', () => {
   assert.equal(profiles[0]?.systemKey, 'admin-agent');
   assert.deepEqual(profiles[0]?.stewards.map((steward) => steward.displayName), ['Ada Admin']);
   assert.throws(() => upsertAgentProfile({ key: 'admin-agent', name: 'Replacement' }, db), /ADMIN_AGENT_PROFILE_PROTECTED/);
+  const editedAdmin = upsertAgentProfile({ key: 'admin-agent', name: 'Admin Agent', avatarUrl: '/avatars/admin.png', allowSystemProfileUpdate: true }, db);
+  assert.equal(editedAdmin.avatarUrl, '/avatars/admin.png');
+  assert.equal(getAgentProfileVersion(adminAgentProfileId, 1, db)?.avatarUrl, null);
   db.close();
 });
 
@@ -62,11 +68,13 @@ test('creates owned agents, prevents cycles, and assigns a surface to one primar
   const db = testDb();
   const owned = upsertAgentProfile({
     key: 'veydrift-agent', name: 'Veydrift Agent', status: 'active', ownerType: 'user',
-    ownerUserId: 'owner-user', stewardUserIds: ['admin-user'], skills: ['veydrift', 'veydrift'],
+    ownerUserId: 'owner-user', stewardUserIds: ['admin-user'], skills: ['veydrift', 'veydrift'], avatarUrl: 'https://example.com/agent.png',
   }, db);
   assert.equal(owned.owner.userId, 'owner-user');
   assert.deepEqual(owned.stewards.map((steward) => steward.userId).sort(), ['admin-user', 'owner-user']);
   assert.deepEqual(owned.skills, ['veydrift']);
+  assert.equal(owned.avatarUrl, 'https://example.com/agent.png');
+  assert.throws(() => upsertAgentProfile({ key: owned.key, name: owned.name, avatarUrl: 'javascript:alert(1)' }, db), /AGENT_PROFILE_AVATAR_URL_INVALID/);
   const child = upsertAgentProfile({
     key: 'channel-agent', name: 'Channel Agent', status: 'active', ownerType: 'agent',
     ownerAgentProfileId: owned.id, stewardUserIds: ['owner-user'],
