@@ -477,6 +477,7 @@ function adapterConfig() {
     buzzRelayUrl: (process.env.BUZZ_RELAY_URL ?? "").trim().replace(/\/+$/, ""),
     buzzPublicKey: (process.env.BUZZ_PUBLIC_KEY ?? "").trim().toLowerCase(),
     buzzChannelAllowlist: parseBuzzChannelAllowlist(process.env.BUZZ_CHANNEL_ALLOWLIST),
+    buzzHistoryChannelAllowlist: parseBuzzChannelAllowlist(process.env.BUZZ_HISTORY_CHANNEL_ALLOWLIST),
     buzzWindowHours: parseIntEnv("BUZZ_SYNC_WINDOW_HOURS", 24, 1, 24 * 30),
     buzzMaxMessagesPerChannel: parseIntEnv("BUZZ_MAX_MESSAGES_PER_CHANNEL", 500, 1, 5000),
     buzzIgnoreOwnMessages: parseBoolEnv("BUZZ_IGNORE_OWN_MESSAGES", true),
@@ -820,6 +821,19 @@ async function resolveBuzzAccessPolicy(input: {
   resolved = mergePolicyRule(resolved, config.targets[input.channelId], `target:${input.channelId}`);
   resolved = mergePolicyRule(resolved, config.users[input.authorPubkey], `user:${input.authorPubkey}`);
   return resolved;
+}
+
+async function listInteractiveBuzzChannels(client: BuzzCliClient) {
+  const config = adapterConfig();
+  const ceiling = new Set(config.buzzChannelAllowlist);
+  const visible = (await client.listVisibleChannels()).filter((channel) => (
+    ceiling.size === 0 || ceiling.has(channel.channelId)
+  ));
+  const resolved = await Promise.all(visible.map(async (channel) => ({
+    channel,
+    policy: await resolveBuzzAccessPolicy({ channelId: channel.channelId, authorPubkey: "" }),
+  })));
+  return resolved.filter(({ policy }) => policy.mode !== "off").map(({ channel }) => channel);
 }
 
 function checkDiscordRateLimit(key: string, limit: DiscordRateLimitConfig): { ok: true } | { ok: false; retryAfterSeconds: number } {
@@ -1598,7 +1612,7 @@ async function telegramApiRequest<T extends JsonValue>(
   return (payload?.result ?? payload) as T;
 }
 
-function buzzClient(): BuzzCliClient {
+function buzzClient(channelAllowlist?: string[]): BuzzCliClient {
   const config = adapterConfig();
   if (!config.buzzEnabled) {
     throw new Error("Buzz adapter is disabled");
@@ -1607,7 +1621,7 @@ function buzzClient(): BuzzCliClient {
     relayUrl: config.buzzRelayUrl,
     privateKey: (process.env.BUZZ_PRIVATE_KEY ?? "").trim(),
     publicKey: config.buzzPublicKey,
-    channelAllowlist: config.buzzChannelAllowlist,
+    channelAllowlist: channelAllowlist ?? config.buzzChannelAllowlist,
     maxMessagesPerChannel: config.buzzMaxMessagesPerChannel,
     ignoreOwnMessages: config.buzzIgnoreOwnMessages,
     command: (process.env.BUZZ_CLI_PATH ?? "buzz").trim() || "buzz",
@@ -1921,7 +1935,7 @@ async function runBuzzInteractionPoll(): Promise<JsonObject> {
   const processed = new Set(state.processedEventIds);
   const initialSince = Math.floor(Date.now() / 1000) - config.buzzInteractionLookbackSeconds;
   const sinceTimestamp = Math.max(0, (state.cursorTimestamp || initialSince) - 10);
-  const channels = await client.listChannels();
+  const channels = await listInteractiveBuzzChannels(client);
   const collected: Array<{ channel: BuzzChannel; event: BuzzEvent }> = [];
   for (const channel of channels) {
     const events = await client.getMessages(channel.channelId, new Date(sinceTimestamp * 1000));
@@ -2129,7 +2143,8 @@ async function listTelegramDestinations(): Promise<AdapterDestination[]> {
 async function listBuzzDestinations(): Promise<AdapterDestination[]> {
   const config = adapterConfig();
   if (!config.buzzEnabled) return [];
-  return (await buzzClient().listChannels()).map((channel) => ({
+  const client = buzzClient();
+  return (await listInteractiveBuzzChannels(client)).map((channel) => ({
     adapter: "buzz",
     platform: "buzz",
     id: `buzz:${channel.channelId}`,
@@ -2379,6 +2394,10 @@ async function sendAdapterMessage(adapter: string, destinationId: string, conten
     return sendTelegramMessage(destinationId, content);
   }
   if (adapter === "buzz") {
+    const accessPolicy = await resolveBuzzAccessPolicy({ channelId: destinationId.trim(), authorPubkey: "" });
+    if (accessPolicy.mode === "off") {
+      throw new Error(`Buzz channel is not assigned to an enabled Agent Profile: ${destinationId.trim() || "(empty)"}`);
+    }
     const result = await buzzClient().sendMessage(destinationId, content);
     return {
       adapter: "buzz",
@@ -3229,7 +3248,10 @@ async function collectBuzzBatch(resetCheckpoint = false): Promise<{
   checkpointState: JsonObject;
 }> {
   const config = adapterConfig();
-  const client = buzzClient();
+  const historyAllowlist = config.buzzHistoryChannelAllowlist.length > 0
+    ? config.buzzHistoryChannelAllowlist
+    : config.buzzChannelAllowlist;
+  const client = buzzClient(historyAllowlist);
   const { since, until, checkpoint } = await computeSyncWindow(config, resetCheckpoint, config.buzzWindowHours);
   const migratedLegacyCheckpoint = Boolean(
     checkpoint
@@ -3287,7 +3309,7 @@ async function collectBuzzBatch(resetCheckpoint = false): Promise<{
       window: { since: since.toISOString(), until: until.toISOString() },
       checkpoint: { used: Boolean(checkpoint), value: checkpoint, path: checkpointPath() },
       channelCount: channels.length,
-      allowlistedChannelIds: config.buzzChannelAllowlist,
+      allowlistedChannelIds: historyAllowlist,
       messageCount: normalizedMessages.length,
       duplicateEventCount: selected.duplicateCount,
       migratedLegacyCheckpoint,

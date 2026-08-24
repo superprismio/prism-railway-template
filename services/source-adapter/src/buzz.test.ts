@@ -54,9 +54,17 @@ test("listChannels returns only allowlisted visible channels", async () => {
   }]);
 });
 
-test("listChannels fails closed when an allowlisted channel is not visible", async () => {
+test("stale ceiling entries do not hide other visible channels or abort discovery", async () => {
   const client = clientWithRunner(async () => "[]");
-  await assert.rejects(() => client.listChannels(), /not visible/);
+  assert.deepEqual(await client.listChannels(), []);
+});
+
+test("an empty infrastructure ceiling discovers every visible channel", async () => {
+  const client = clientWithRunner(async () => JSON.stringify([
+    { channel_id: channelId, name: "prism-lab" },
+    { channel_id: "open-channel", name: "general" },
+  ]), { channelAllowlist: [] });
+  assert.deepEqual((await client.listChannels()).map((channel) => channel.channelId), ["open-channel", channelId]);
 });
 
 test("getMessages supplies the lower-bound cursor and ignores the adapter identity", async () => {
@@ -82,6 +90,16 @@ test("sendMessage rejects a destination outside the allowlist before invoking Bu
   });
   await assert.rejects(() => client.sendMessage("general", "hello"), /not allowlisted/);
   assert.equal(called, false);
+});
+
+test("an empty infrastructure ceiling permits policy-authorized destinations", async () => {
+  let called = false;
+  const client = clientWithRunner(async () => {
+    called = true;
+    return JSON.stringify({ event_id: "reply" });
+  }, { channelAllowlist: [] });
+  await client.sendMessage("policy-bound-channel", "hello");
+  assert.equal(called, true);
 });
 
 test("sendMessage creates a threaded reply when replyTo is provided", async () => {

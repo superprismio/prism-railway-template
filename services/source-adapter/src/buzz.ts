@@ -254,9 +254,6 @@ export function parseBuzzChannelAllowlist(value: string | undefined): string[] {
 export function assertBuzzConfig(config: BuzzCliConfig): void {
   if (!config.relayUrl) throw new Error("BUZZ_RELAY_URL is required when Buzz is enabled");
   if (!config.privateKey) throw new Error("BUZZ_PRIVATE_KEY is required when Buzz is enabled");
-  if (config.channelAllowlist.length === 0) {
-    throw new Error("BUZZ_CHANNEL_ALLOWLIST must contain at least one channel UUID");
-  }
 }
 
 export class BuzzCliClient {
@@ -285,32 +282,32 @@ export class BuzzCliClient {
 
   ensureAllowedChannel(channelId: string): string {
     const normalized = channelId.trim().toLowerCase();
-    if (!normalized || !this.config.channelAllowlist.includes(normalized)) {
+    if (!normalized || (this.config.channelAllowlist.length > 0 && !this.config.channelAllowlist.includes(normalized))) {
       throw new Error(`Buzz channel is not allowlisted: ${channelId || "(empty)"}`);
     }
     return normalized;
   }
 
-  async listChannels(): Promise<BuzzChannel[]> {
+  async listVisibleChannels(): Promise<BuzzChannel[]> {
     const payload = parseJsonArray(await this.run(["channels", "list"]), "channels list");
-    const allowlist = new Set(this.config.channelAllowlist);
-    const channels = payload.flatMap((candidate): BuzzChannel[] => {
+    return payload.flatMap((candidate): BuzzChannel[] => {
       const channel = record(candidate);
       const channelId = stringValue(channel.channel_id ?? channel.channelId ?? channel.id).toLowerCase();
-      if (!channelId || !allowlist.has(channelId)) return [];
+      if (!channelId) return [];
       return [{
         channelId,
         name: stringValue(channel.name) || channelId,
         description: stringValue(channel.description) || null,
         createdAt: numberValue(channel.created_at ?? channel.createdAt),
       }];
-    });
-    const visible = new Set(channels.map((channel) => channel.channelId));
-    const missing = this.config.channelAllowlist.filter((channelId) => !visible.has(channelId));
-    if (missing.length > 0) {
-      throw new Error(`Allowlisted Buzz channel(s) are not visible to this identity: ${missing.join(", ")}`);
-    }
-    return channels.sort((left, right) => left.name.localeCompare(right.name));
+    }).sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  async listChannels(): Promise<BuzzChannel[]> {
+    const channels = await this.listVisibleChannels();
+    if (this.config.channelAllowlist.length === 0) return channels;
+    const allowlist = new Set(this.config.channelAllowlist);
+    return channels.filter((channel) => allowlist.has(channel.channelId));
   }
 
   async getMessages(channelId: string, since: Date): Promise<BuzzEvent[]> {

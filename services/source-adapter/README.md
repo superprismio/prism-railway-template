@@ -116,7 +116,8 @@ Buzz-specific envs (deploy as a separate `buzz-adapter` service):
 - `BUZZ_RELAY_URL=https://your-buzz-relay.example`
 - `BUZZ_PRIVATE_KEY=<dedicated service identity; Railway secret>`
 - `BUZZ_PUBLIC_KEY=<64-character public key>`
-- `BUZZ_CHANNEL_ALLOWLIST=<required comma-separated channel UUIDs>`
+- `BUZZ_CHANNEL_ALLOWLIST=<optional comma-separated emergency ceiling for interactive/output channels>`
+- `BUZZ_HISTORY_CHANNEL_ALLOWLIST=<comma-separated channels intentionally collected into Prism Memory>`
 - `BUZZ_SYNC_WINDOW_HOURS=24`
 - `BUZZ_MAX_MESSAGES_PER_CHANNEL=500`
 - `BUZZ_IGNORE_OWN_MESSAGES=true`
@@ -129,19 +130,20 @@ Buzz-specific envs (deploy as a separate `buzz-adapter` service):
 - `BUZZ_INTERACTION_LOOKBACK_SECONDS=3600`
 
 Buzz collection and delivery use the checksum-pinned official Buzz `0.5.0`
-CLI installed by this service's Dockerfile. Collection fails closed when the
-allowlist is empty or an allowlisted channel is not visible to the service
-identity. `GET /destinations` exposes only allowlisted Buzz channels, and
-`POST /messages` accepts `buzz:<channel-uuid>` destinations only from that same
-allowlist. Sync uses the shared checkpoint file under
+CLI installed by this service's Dockerfile. Enabled Agent Profile bindings are
+the source of truth for interactive channels and output destinations.
+`BUZZ_CHANNEL_ALLOWLIST` is optional and acts only as an emergency ceiling;
+stale or invisible entries do not abort the listener. History ingestion uses
+`BUZZ_HISTORY_CHANNEL_ALLOWLIST`, falling back to the legacy ceiling only for
+compatibility. Sync uses the shared checkpoint file under
 `SOURCE_ADAPTER_DATA_ROOT`, retains recent Nostr event IDs to make overlap and
 retry idempotent, and posts normalized `buzz` batches to Prism Memory.
 
-When interaction polling is enabled, the adapter responds only to events in an
-allowlisted channel that contain a Nostr `p` tag for `BUZZ_PUBLIC_KEY`. Site's
-source-adapter policy maps each Buzz channel (and optionally an author pubkey)
-to an access mode and `interactionProfileKey`. The profile must exist and its
-mode must match the resolved policy or the request fails closed. Unmapped Buzz
+When interaction polling is enabled, the adapter responds only to events in a
+channel with an enabled Agent Profile binding that contain a Nostr `p` tag for
+`BUZZ_PUBLIC_KEY`. The resolved binding supplies agent identity, access mode,
+and policy; legacy source-adapter policy remains a compatibility fallback.
+Unmapped Buzz
 channels default to `off`. `readonly` receives no Gateway credentials,
 `run-approved` receives no Gateway credentials and carries the profile workflow
 allowlist, and `full` receives credentials selected by the shared source policy.
