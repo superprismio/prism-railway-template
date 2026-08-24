@@ -45,6 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { RequestTimeline } from "@/components/prism-lab/request-timeline"
 import { WorkflowExplorer } from "@/components/prism-lab/workflow-explorer"
@@ -295,6 +296,7 @@ export function RequestWorkspace({
   const [interruptionDialog, setInterruptionDialog] = useState<InterruptionDialog>(null)
   const [interruptionReason, setInterruptionReason] = useState("")
   const [targetStepKey, setTargetStepKey] = useState("")
+  const [runAfterMove, setRunAfterMove] = useState(false)
   const uploadFormRef = useRef<HTMLFormElement>(null)
   const conversationRef = useRef<HTMLDivElement>(null)
   const conversationNearBottomRef = useRef(true)
@@ -366,6 +368,7 @@ export function RequestWorkspace({
     setInterruptionDialog(null)
     setInterruptionReason("")
     setTargetStepKey("")
+    setRunAfterMove(false)
     uploadFormRef.current?.reset()
     conversationNearBottomRef.current = true
     revealLatestConversationRef.current = false
@@ -506,6 +509,7 @@ export function RequestWorkspace({
     }
     if (managementIntent?.kind === "move-step" && !terminal) {
       setTargetStepKey(managementIntent.targetStepKey)
+      setRunAfterMove(managementIntent.runAfterMove)
       setInterruptionReason(content)
       setInterruptionDialog("move-step")
       return
@@ -625,20 +629,39 @@ export function RequestWorkspace({
   async function moveRequest() {
     const reason = interruptionReason.trim()
     if (!reason || !targetStepKey || !canRun || terminal || activeRun) return
+    const targetLabel = managementSteps.find((candidate) => candidate.key === targetStepKey)?.label ?? targetStepKey
+    const shouldRun = runAfterMove
     const succeeded = await mutate(
       "move-step",
-      () => fetch(`/admin/change-requests/${encodeURIComponent(request.id)}/workflow/step`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ targetStepKey, reason }),
-      }),
-      `Request moved to ${managementSteps.find((candidate) => candidate.key === targetStepKey)?.label ?? targetStepKey}.`,
+      async () => {
+        const moveResponse = await fetch(`/admin/change-requests/${encodeURIComponent(request.id)}/workflow/step`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ targetStepKey, reason }),
+        })
+        if (!moveResponse.ok || !shouldRun) return moveResponse
+        const runResponse = await fetch(`/admin/change-requests/${encodeURIComponent(request.id)}/workflow/continue`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ comment: reason }),
+        })
+        if (runResponse.ok) return runResponse
+        const payload = await runResponse.json().catch(() => null)
+        return new Response(JSON.stringify({
+          error: `Request moved to ${targetLabel}, but the run could not be started: ${readableError(payload, `HTTP ${runResponse.status}`)}`,
+        }), {
+          status: runResponse.status,
+          headers: { "content-type": "application/json" },
+        })
+      },
+      shouldRun ? `Request moved to ${targetLabel} and its step run was accepted.` : `Request moved to ${targetLabel}.`,
       { revealConversation: true },
     )
     if (succeeded) {
       setInterruptionDialog(null)
       setInterruptionReason("")
       setTargetStepKey("")
+      setRunAfterMove(false)
       setDraft("")
     }
   }
@@ -680,6 +703,7 @@ export function RequestWorkspace({
                     candidate.type !== "terminal" && candidate.key !== step?.key
                   ))
                   setTargetStepKey(firstAlternative?.key ?? "")
+                  setRunAfterMove(false)
                   setInterruptionReason("Move this request to another workflow step for operator review.")
                   setInterruptionDialog("move-step")
                 }}
@@ -798,7 +822,22 @@ export function RequestWorkspace({
             ) : null}
           </section>
 
-          <section aria-labelledby="conversation-heading" className="mt-5">
+          <div className="mt-4 min-h-6" aria-live="polite">
+            {mutationError ? <p className="flex items-center gap-2 text-sm text-destructive" role="alert"><AlertCircle aria-hidden="true" />{mutationError}</p> : null}
+            {notice ? <p className="flex items-center gap-2 text-sm text-primary"><CheckCircle2 aria-hidden="true" />{notice}</p> : null}
+            {loadError && review ? <p className="text-xs text-muted-foreground">Background refresh failed: {loadError}</p> : null}
+          </div>
+
+          <Tabs defaultValue="conversation" className="mt-3">
+            <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-none border-b border-border/60 bg-transparent p-0">
+              <TabsTrigger value="conversation" className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent">Conversation</TabsTrigger>
+              <TabsTrigger value="workflow" className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent">Workflow</TabsTrigger>
+              <TabsTrigger value="activity" className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent">Activity</TabsTrigger>
+              <TabsTrigger value="evidence" className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent">Evidence</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="conversation" className="mt-0 pt-5">
+          <section aria-labelledby="conversation-heading">
             <div className="flex items-end justify-between gap-3">
               <div>
                 <h3 id="conversation-heading" className="text-lg font-semibold">Request conversation</h3>
@@ -939,26 +978,26 @@ export function RequestWorkspace({
               </div>
             </div>
           </section>
+            </TabsContent>
 
-          <div className="mt-4 min-h-6" aria-live="polite">
-            {mutationError ? <p className="flex items-center gap-2 text-sm text-destructive" role="alert"><AlertCircle aria-hidden="true" />{mutationError}</p> : null}
-            {notice ? <p className="flex items-center gap-2 text-sm text-primary"><CheckCircle2 aria-hidden="true" />{notice}</p> : null}
-            {loadError && review ? <p className="text-xs text-muted-foreground">Background refresh failed: {loadError}</p> : null}
-          </div>
-
+            <TabsContent value="workflow" className="mt-0 pt-5">
           <WorkflowExplorer
             workflowName={review.workflow?.name || review.workflow?.key || request.workflowKey}
             workflowStatus={review.workflowRun?.status ?? null}
             steps={workflowExplorer}
           />
+            </TabsContent>
 
+            <TabsContent value="activity" className="mt-0 pt-5">
           <RequestTimeline
             requestId={request.id}
             items={timeline}
             canViewArtifacts={canViewRequests}
           />
+            </TabsContent>
 
-          <section aria-labelledby="technical-heading" className="mt-5 border border-border/60 bg-card/30">
+            <TabsContent value="evidence" className="mt-0 pt-5">
+          <section aria-labelledby="technical-heading" className="border border-border/60 bg-card/30">
             <div className="flex items-center justify-between gap-3 px-4 py-3">
               <div>
                 <h3 id="technical-heading" className="font-semibold">Technical evidence</h3>
@@ -998,6 +1037,8 @@ export function RequestWorkspace({
               ))}</ol> : <p className="text-sm text-muted-foreground">No agent runs recorded.</p>}
             </TechnicalSection>
           </section>
+            </TabsContent>
+          </Tabs>
         </>
       ) : null}
 
@@ -1008,6 +1049,7 @@ export function RequestWorkspace({
             setInterruptionDialog(null)
             setInterruptionReason("")
             setTargetStepKey("")
+            setRunAfterMove(false)
           }
         }}
       >
@@ -1019,7 +1061,7 @@ export function RequestWorkspace({
                 : interruptionDialog === "retry-step"
                   ? "Retry current step"
                   : interruptionDialog === "move-step"
-                    ? "Move request"
+                    ? runAfterMove ? "Move and run request" : "Move request"
                     : "Cancel request"}
             </DialogTitle>
             <DialogDescription>
@@ -1028,7 +1070,9 @@ export function RequestWorkspace({
                 : interruptionDialog === "retry-step"
                   ? "This records your instruction in the request conversation and queues the current workflow step again through the audited workflow runner."
                   : interruptionDialog === "move-step"
-                    ? "This changes the current workflow step without running skipped steps. The change and your reason are recorded in request history."
+                    ? runAfterMove
+                      ? "This moves the request to the selected step, records your reason, and starts that step through the audited workflow runner. Skipped steps are not run."
+                      : "This changes the current workflow step without running skipped steps. The change and your reason are recorded in request history."
                     : "This stops active work, closes the workflow, and marks the request canceled. Reopening requires a separate audited action."}
             </DialogDescription>
           </DialogHeader>
@@ -1068,6 +1112,7 @@ export function RequestWorkspace({
                 setInterruptionDialog(null)
                 setInterruptionReason("")
                 setTargetStepKey("")
+                setRunAfterMove(false)
               }}
               disabled={mutation !== null}
             >
@@ -1106,7 +1151,7 @@ export function RequestWorkspace({
                 : interruptionDialog === "retry-step"
                   ? "Retry current step"
                 : interruptionDialog === "move-step"
-                  ? "Move request"
+                  ? runAfterMove ? "Move and run" : "Move request"
                   : "Cancel request"}
             </Button>
           </DialogFooter>

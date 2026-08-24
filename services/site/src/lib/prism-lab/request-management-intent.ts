@@ -7,7 +7,7 @@ export type RequestManagementStep = {
 export type RequestManagementIntent =
   | { kind: "cancel-request" }
   | { kind: "retry-step" }
-  | { kind: "move-step"; targetStepKey: string }
+  | { kind: "move-step"; targetStepKey: string; runAfterMove: boolean }
   | null
 
 function normalized(value: string) {
@@ -26,15 +26,22 @@ function retryIntent(value: string) {
 }
 
 function moveTarget(value: string) {
-  const match = value.trim().match(
+  const compoundFromMatch = value.trim().match(
+    /^(?:(?:please|kindly)\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:move|send|change|set|go)\b[\s\S]*?\bback\s+and\s+(?:run|re-?run|retry)\s+from\s+(.+?)[?.!]*$/i,
+  )
+  const compoundAfterMatch = value.trim().match(
+    /^(?:(?:please|kindly)\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:move|send|change|set|go)\b[\s\S]*?\b(?:back\s+to|forward\s+to|to)\s+(.+?)\s+and\s+(?:run|re-?run|retry)(?:\s+(?:it|that|the\s+step))?[?.!]*$/i,
+  )
+  const match = compoundFromMatch ?? compoundAfterMatch ?? value.trim().match(
     /^(?:(?:please|kindly)\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:move|send|change|set)\b[\s\S]*?\b(?:back\s+to|forward\s+to|to)\s+(.+?)[?.!]*$/i,
   )
   if (!match?.[1]) return null
-  return normalized(match[1])
+  const target = normalized(match[1])
     .replace(/^the\s+/, "")
     .replace(/\s+(?:step|phase)(?:\s+(?:now|please))?$/, "")
     .replace(/\s+(?:now|please)$/, "")
     .trim()
+  return { target, runAfterMove: Boolean(compoundFromMatch || compoundAfterMatch) }
 }
 
 export function resolveRequestManagementIntent(
@@ -43,8 +50,8 @@ export function resolveRequestManagementIntent(
 ): RequestManagementIntent {
   if (cancelIntent(value)) return { kind: "cancel-request" }
   if (retryIntent(value)) return { kind: "retry-step" }
-  const target = moveTarget(value)
-  if (!target) return null
+  const move = moveTarget(value)
+  if (!move) return null
 
   const candidates = steps
     .filter((step) => step.type !== "terminal")
@@ -52,9 +59,13 @@ export function resolveRequestManagementIntent(
       step,
       names: Array.from(new Set([normalized(step.key), normalized(step.label)])),
     }))
-    .filter(({ names }) => names.some((name) => name === target))
+    .filter(({ names }) => names.some((name) => name === move.target))
 
   return candidates.length === 1
-    ? { kind: "move-step", targetStepKey: candidates[0]!.step.key }
+    ? {
+        kind: "move-step",
+        targetStepKey: candidates[0]!.step.key,
+        runAfterMove: move.runAfterMove,
+      }
     : null
 }

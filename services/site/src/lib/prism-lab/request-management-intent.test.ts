@@ -5,6 +5,7 @@ import { resolveRequestManagementIntent } from "./request-management-intent"
 
 const steps = [
   { key: "work", label: "Work", type: "agent" },
+  { key: "remotion-prep", label: "Remotion prep", type: "agent" },
   { key: "approve-for-work", label: "Approve", type: "gate" },
   { key: "pr-review", label: "PR Review", type: "checkpoint" },
   { key: "closed", label: "Closed", type: "terminal" },
@@ -41,10 +42,27 @@ test("clear step movement commands resolve only exact nonterminal workflow steps
   assert.deepEqual(resolveRequestManagementIntent("move back to work", steps), {
     kind: "move-step",
     targetStepKey: "work",
+    runAfterMove: false,
   })
   assert.deepEqual(resolveRequestManagementIntent("Can you move this request forward to PR Review?", steps), {
     kind: "move-step",
     targetStepKey: "pr-review",
+    runAfterMove: false,
+  })
+  assert.deepEqual(resolveRequestManagementIntent("move back and run from work", steps), {
+    kind: "move-step",
+    targetStepKey: "work",
+    runAfterMove: true,
+  })
+  assert.deepEqual(resolveRequestManagementIntent("move back and run from remotion prep", steps), {
+    kind: "move-step",
+    targetStepKey: "remotion-prep",
+    runAfterMove: true,
+  })
+  assert.deepEqual(resolveRequestManagementIntent("move to PR Review and retry", steps), {
+    kind: "move-step",
+    targetStepKey: "pr-review",
+    runAfterMove: true,
   })
   assert.equal(resolveRequestManagementIntent("move to review", steps), null)
   assert.equal(resolveRequestManagementIntent("move to closed", steps), null)
