@@ -118,6 +118,7 @@ export async function POST(request: Request, context: RouteContext) {
       requestNumber,
       requestTitle,
       comment: parsedPayload.value.comment,
+      retryCurrentStep: parsedPayload.value.retryCurrentStep,
     })
     const upstreamResult = await fetchRemoteJson("responses", "/api/v1/responses", {
       method: "POST",
@@ -157,9 +158,10 @@ export async function POST(request: Request, context: RouteContext) {
       requestNumber: changeRequest.requestNumber,
       requestTitle: changeRequest.title,
       comment: parsedPayload.value.comment,
+      retryCurrentStep: parsedPayload.value.retryCurrentStep,
     }),
     workflowAction: null,
-    advanceAttentionStep: true,
+    advanceAttentionStep: !parsedPayload.value.retryCurrentStep,
     requestedSkills: [],
     baseUrl: request.url,
   })

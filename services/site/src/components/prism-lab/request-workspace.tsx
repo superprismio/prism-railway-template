@@ -450,6 +450,7 @@ export function RequestWorkspace({
   const canViewRequests = review?.capabilities.canViewRequests === true
   const canRun = review?.capabilities.canRunAgent === true
   const canInvoke = canRun && !activeRun && !terminal && !attention && Boolean(step && ["gate", "agent", "checkpoint", "loop"].includes(step.type))
+  const canRetry = canRun && !activeRun && !terminal && Boolean(step && ["agent", "checkpoint", "loop"].includes(step.type))
   const invokeLabel = step?.type === "gate" ? "Continue gate" : "Run current step"
 
   async function mutate(
@@ -486,6 +487,8 @@ export function RequestWorkspace({
   async function askPrism() {
     const content = draft.trim()
     if (!content || !review || !canRun) return
+    setMutationError(null)
+    setNotice(null)
     const managementIntent = resolveRequestManagementIntent(content, managementSteps)
     if (managementIntent?.kind === "cancel-request" && !terminal) {
       setInterruptionReason(content)
@@ -493,13 +496,11 @@ export function RequestWorkspace({
       return
     }
     if (managementIntent?.kind === "retry-step" && !terminal) {
-      if (!canInvoke) {
+      if (!canRetry) {
         setMutationError(
           activeRun
             ? "The current step already has an active run. Stop it before retrying."
-            : attention
-              ? "Resolve or move past the current attention state before retrying."
-              : "The current workflow step cannot be retried.",
+            : "The current workflow step cannot be retried.",
         )
         return
       }
@@ -560,7 +561,7 @@ export function RequestWorkspace({
 
   async function retryCurrentStep() {
     const reason = interruptionReason.trim()
-    if (!reason || !canInvoke) return
+    if (!reason || !canRetry) return
     const succeeded = await mutate(
       "continue",
       async () => {
@@ -573,7 +574,7 @@ export function RequestWorkspace({
         return fetch(`/admin/change-requests/${encodeURIComponent(request.id)}/workflow/continue`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ comment: reason }),
+          body: JSON.stringify({ comment: reason, retryCurrentStep: true }),
         })
       },
       "Current-step retry accepted.",
@@ -1134,7 +1135,7 @@ export function RequestWorkspace({
                 !interruptionReason.trim()
                 || mutation !== null
                 || (interruptionDialog === "move-step" && (!targetStepKey || targetStepKey === step?.key || activeRun))
-                || (interruptionDialog === "retry-step" && !canInvoke)
+                || (interruptionDialog === "retry-step" && !canRetry)
               }
             >
               {mutation === "stop-run" || mutation === "cancel-request" || mutation === "move-step" || mutation === "continue" ? (
