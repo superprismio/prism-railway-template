@@ -12,6 +12,7 @@ import {
   createWorkflowEvent,
   ensureWorkflowRunForRequest,
   findActiveAgentRunByIdempotencyKey,
+  findAgentSessionBySourceContext,
   getAgentSession,
   getAgentSessionProfileAssignment,
   getAgentProfileVersion,
@@ -36,6 +37,7 @@ import {
   type RuntimeTraceEntry,
 } from "@/lib/app-core"
 import { resolveAgentProfileRuntimeScope } from "@/lib/agent-profile-runtime-scope"
+import { publishCheckpointReceipt } from "@/lib/prism-lab/checkpoint-receipt"
 
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
@@ -599,6 +601,26 @@ function completeWorkflowAgentStep(input: {
     return false
   }
 
+  const echoCheckpointReceipt = (status: "succeeded" | "blocked" | "needs_attention") => {
+    if (!shouldStayOnStep || !agentRunId) return
+    const request = getChangeRequest(input.requestId)
+    if (!request) return
+    publishCheckpointReceipt({
+      request,
+      stepKey: input.stepKey,
+      stepLabel: typeof currentStep?.label === "string" ? currentStep.label : input.stepKey,
+      agentRunId,
+      responseText: input.responseText,
+      status,
+    }, {
+      findSession: findAgentSessionBySourceContext,
+      createSession: createAgentSession,
+      listMessages: listAgentMessages,
+      createMessage: createAgentMessage,
+      updateSession: updateAgentSession,
+    })
+  }
+
   if (shouldStopForOutcome && workflowOutcome) {
     createWorkflowEvent({
       workflowRunId: input.workflowRunId,
@@ -622,6 +644,7 @@ function completeWorkflowAgentStep(input: {
       status: "active",
       completedAt: null,
     })
+    echoCheckpointReceipt(workflowOutcome.status === "blocked" ? "blocked" : "needs_attention")
     return input.stepKey
   }
 
@@ -639,6 +662,7 @@ function completeWorkflowAgentStep(input: {
       nextStepKey: input.nextStep ? stepKey(input.nextStep) : null,
     },
   })
+  echoCheckpointReceipt("succeeded")
 
   const nextStep = input.nextStep
   const nextStepKey = !shouldStayOnStep && nextStep ? stepKey(nextStep) ?? input.stepKey : input.stepKey

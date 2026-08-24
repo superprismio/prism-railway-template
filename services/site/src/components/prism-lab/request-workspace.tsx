@@ -174,7 +174,7 @@ type RequestReview = {
   externalRefs: ReviewExternalRef[]
 }
 
-type WorkspaceState = "queued" | "running" | "failed" | "blocked" | "attention" | "completed" | "ready"
+type WorkspaceState = "queued" | "running" | "failed" | "blocked" | "attention" | "checkpoint-passed" | "completed" | "ready"
 type MutationKind = "ask" | "comment" | "continue" | "upload" | "stop-run" | "cancel-request" | "move-step" | null
 type InterruptionDialog = "stop-run" | "cancel-request" | "move-step" | "retry-step" | "check-status" | null
 type RequestActionProposal =
@@ -262,6 +262,10 @@ function workspaceState(review: RequestReview): WorkspaceState {
   if (attention) return "attention"
   const latest = review.agentRuns[0]
   const runStatus = latest?.status.toLowerCase()
+  const step = currentStep(review)
+  if (step.type === "checkpoint" && runStatus === "succeeded" && latest?.workflowStepKey === step.key) {
+    return "checkpoint-passed"
+  }
   if (runStatus && failedRunStatuses.has(runStatus)) return "failed"
   return "ready"
 }
@@ -272,6 +276,7 @@ const statePresentation: Record<WorkspaceState, { label: string; description: st
   failed: { label: "Failed", description: "The latest run failed. Review its error and evidence before retrying." },
   blocked: { label: "Blocked", description: "The workflow reported a blocker that needs attention." },
   attention: { label: "Needs attention", description: "The workflow is waiting for operator review or additional context." },
+  "checkpoint-passed": { label: "Checkpoint passed", description: "The latest checkpoint completed successfully. Review its receipt before continuing." },
   completed: { label: "Completed", description: "The workflow is in a terminal or closed state." },
   ready: { label: "Ready", description: "No active run or blocker is currently reported." },
 }
@@ -282,7 +287,7 @@ function StateIcon({ state }: { state: WorkspaceState }) {
   if (state === "failed") return <XCircle aria-hidden="true" />
   if (state === "blocked") return <ShieldAlert aria-hidden="true" />
   if (state === "attention") return <AlertCircle aria-hidden="true" />
-  if (state === "completed") return <CheckCircle2 aria-hidden="true" />
+  if (state === "checkpoint-passed" || state === "completed") return <CheckCircle2 aria-hidden="true" />
   return <Bot aria-hidden="true" />
 }
 
