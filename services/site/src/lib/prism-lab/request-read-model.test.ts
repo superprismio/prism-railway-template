@@ -139,7 +139,7 @@ test("human gate actions require canRunAgent and a clear, inactive gate", () => 
   assert.match(member.allowedActions.continueHumanGate.reason ?? "", /canRunAgent/);
 });
 
-test("attention and terminal state take precedence over active/open state", () => {
+test("active recovery runs take precedence over prior attention while terminal remains final", () => {
   const blocked = request({
     workflowRunStatus: "running",
     workflowAttention: {
@@ -159,8 +159,10 @@ test("attention and terminal state take precedence over active/open state", () =
     currentWorkflowStepKey: "closed",
     workflowRunStatus: "completed",
   });
-  const [blockedItem, closedItem] = buildLabRequestListItems(board([blocked, closed]), ["canViewRequests"]);
-  assert.equal(blockedItem.lifecycle, "attention");
+  const data = board([blocked, closed]);
+  data.activeRequestAgentRuns = [activeRun({ status: "running" })];
+  const [blockedItem, closedItem] = buildLabRequestListItems(data, ["canViewRequests"]);
+  assert.equal(blockedItem.lifecycle, "running");
   assert.equal(blockedItem.attention.blockerCount, 1);
   assert.equal(closedItem.lifecycle, "completed");
 });

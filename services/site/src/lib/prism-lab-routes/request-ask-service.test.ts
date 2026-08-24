@@ -2,10 +2,37 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+  extractRequestActionProposal,
   parsePrismLabRequestAskPayload,
   runPrismLabRequestAsk,
   type PrismLabRequestAskDependencies,
 } from "./request-ask-service"
+
+const workflow = {
+  definition: {
+    steps: [
+      { key: "work", label: "Work", type: "agent" },
+      { key: "status-check", label: "Status check", type: "checkpoint" },
+      { key: "closed", label: "Closed", type: "terminal" },
+    ],
+  },
+}
+
+test("agent action proposals are bounded to configured workflow controls", () => {
+  assert.deepEqual(extractRequestActionProposal(
+    'I can check the external job after approval.\n```prism-action\n{"kind":"check-status","reason":"Poll the job now.","summary":"Check job status"}\n```',
+    workflow,
+    "status-check",
+  ), {
+    answer: "I can check the external job after approval.",
+    proposedAction: { kind: "check-status", reason: "Poll the job now.", summary: "Check job status" },
+  })
+  assert.equal(extractRequestActionProposal(
+    '```prism-action\n{"kind":"move-step","targetStepKey":"closed","runAfterMove":true,"reason":"Skip review.","summary":"Close it"}\n```',
+    workflow,
+    "work",
+  ).proposedAction, null)
+})
 
 test("Ask Prism accepts only a bounded question without workflow authority fields", () => {
   assert.deepEqual(parsePrismLabRequestAskPayload({ question: "  What is blocking this?  " }), {
@@ -55,6 +82,7 @@ test("Ask Prism persists an isolated admin conversation without changing workflo
       priority: "high",
     }),
     getWorkflowRun: () => ({ id: "workflow-run-1", status: "active", currentStepKey: "review" }),
+    getWorkflow: () => ({ definition: { steps: [{ key: "review", type: "gate" }] } }),
     listAgentRuns: () => agentRuns,
     listWorkflowEvents: () => workflowEvents,
     listArtifacts: () => [{ id: "artifact-1", name: "verification.md", kind: "report" }],
@@ -91,7 +119,8 @@ test("Ask Prism persists an isolated admin conversation without changing workflo
       assert.deepEqual(input.skills, [])
       assert.deepEqual(input.credentials, [])
       assert.equal(input.metadata.readOnlyUtility, true)
-      assert.match(input.prompt, /Do not continue, reroute, retry, cancel/)
+      assert.match(input.prompt, /does not execute workflow mutations/)
+      assert.match(input.prompt, /authenticated, audited confirmation controls/)
       assert.match(input.prompt, /Human review required/)
       assert.match(input.prompt, /Operator question JSON: "What is blocking this request\?"/)
       return {

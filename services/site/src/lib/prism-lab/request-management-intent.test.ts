@@ -38,6 +38,21 @@ test("clear retry commands resolve without model authority", () => {
   assert.equal(resolveRequestManagementIntent("What happened when it tried again?", steps), null)
 })
 
+test("clear status-check commands resolve without model authority", () => {
+  for (const command of [
+    "check now",
+    "check status",
+    "check the current status",
+    "poll render status",
+    "can you refresh the job progress now?",
+    "run the status check",
+    "please run the current checkpoint now",
+  ]) {
+    assert.deepEqual(resolveRequestManagementIntent(command, steps), { kind: "check-status" })
+  }
+  assert.equal(resolveRequestManagementIntent("What did the last status check say?", steps), null)
+})
+
 test("clear step movement commands resolve only exact nonterminal workflow steps", () => {
   assert.deepEqual(resolveRequestManagementIntent("move back to work", steps), {
     kind: "move-step",

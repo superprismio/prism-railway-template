@@ -2009,13 +2009,22 @@ function workflowAttentionBlockerKeys(attention: WorkflowAttentionRecord) {
     .filter((key): key is string => Boolean(key));
 }
 
-function workflowAttentionResolved(attention: WorkflowAttentionRecord, events: WorkflowEventRecord[]) {
+export function workflowAttentionResolved(attention: WorkflowAttentionRecord, events: WorkflowEventRecord[]) {
   const blockerKeys = new Set(workflowAttentionBlockerKeys(attention));
   return events.some((event) => {
-    if (event.eventType !== 'operator.blocker_overridden' && event.eventType !== 'operator.attention_resolved') {
+    if (event.createdAt < attention.createdAt) {
       return false;
     }
-    if (event.createdAt < attention.createdAt) {
+    if (event.eventType === 'workflow.step_changed') {
+      const previousStepKey = normalizeText(event.payload.previousStepKey);
+      const nextStepKey = normalizeText(event.payload.nextStepKey) || event.stepKey;
+      return Boolean(
+        attention.workflowStepKey &&
+        previousStepKey === attention.workflowStepKey &&
+        nextStepKey !== attention.workflowStepKey
+      );
+    }
+    if (event.eventType !== 'operator.blocker_overridden' && event.eventType !== 'operator.attention_resolved') {
       return false;
     }
     const agentRunId = normalizeText(event.payload.agentRunId);

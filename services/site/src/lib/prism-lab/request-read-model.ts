@@ -210,10 +210,10 @@ export function buildLabRequestListItems(
     const attention = attentionIndicator(request);
     const lifecycle = completed
       ? "completed"
-      : attention.required
-        ? "attention"
-        : active
-          ? "running"
+      : active
+        ? "running"
+        : attention.required
+          ? "attention"
           : "open";
     const origin = request.origin ?? null;
     const source = labRequestSource(origin?.platform ?? request.source);

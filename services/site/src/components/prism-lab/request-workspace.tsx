@@ -176,7 +176,12 @@ type RequestReview = {
 
 type WorkspaceState = "queued" | "running" | "failed" | "blocked" | "attention" | "completed" | "ready"
 type MutationKind = "ask" | "comment" | "continue" | "upload" | "stop-run" | "cancel-request" | "move-step" | null
-type InterruptionDialog = "stop-run" | "cancel-request" | "move-step" | "retry-step" | null
+type InterruptionDialog = "stop-run" | "cancel-request" | "move-step" | "retry-step" | "check-status" | null
+type RequestActionProposal =
+  | { kind: "cancel-request"; reason: string; summary: string }
+  | { kind: "retry-step"; reason: string; summary: string }
+  | { kind: "check-status"; reason: string; summary: string }
+  | { kind: "move-step"; targetStepKey: string; runAfterMove: boolean; reason: string; summary: string }
 
 const activeRunStatuses = new Set(["queued", "claimed", "running"])
 const failedRunStatuses = new Set(["failed", "canceled"])
@@ -196,6 +201,23 @@ function readableError(value: unknown, fallback: string) {
   if (!isRecord(value)) return fallback
   if (typeof value.error === "string" && value.error.trim()) return value.error
   return fallback
+}
+
+function requestActionProposal(value: unknown): RequestActionProposal | null {
+  if (!isRecord(value) || typeof value.kind !== "string" || typeof value.reason !== "string" || typeof value.summary !== "string") return null
+  if (value.kind === "cancel-request" || value.kind === "retry-step" || value.kind === "check-status") {
+    return { kind: value.kind, reason: value.reason, summary: value.summary }
+  }
+  if (value.kind === "move-step" && typeof value.targetStepKey === "string" && typeof value.runAfterMove === "boolean") {
+    return {
+      kind: value.kind,
+      targetStepKey: value.targetStepKey,
+      runAfterMove: value.runAfterMove,
+      reason: value.reason,
+      summary: value.summary,
+    }
+  }
+  return null
 }
 
 function displayTime(value: string | null | undefined) {
@@ -229,15 +251,17 @@ function currentStep(review: RequestReview) {
 }
 
 function workspaceState(review: RequestReview): WorkspaceState {
+  const workflowStatus = review.workflowRun?.status.toLowerCase()
+  if (workflowStatus === "completed" || workflowStatus === "canceled" || review.changeRequest.closedAt) return "completed"
+  const active = review.agentRuns.find((run) => activeRunStatuses.has(run.status.toLowerCase()))
+  const activeStatus = active?.status.toLowerCase()
+  if (activeStatus === "queued" || activeStatus === "claimed") return "queued"
+  if (activeStatus === "running") return "running"
   const attention = review.changeRequest.workflowAttention
   if (attention?.status === "blocked") return "blocked"
   if (attention) return "attention"
-  const workflowStatus = review.workflowRun?.status.toLowerCase()
-  if (workflowStatus === "completed" || workflowStatus === "canceled" || review.changeRequest.closedAt) return "completed"
   const latest = review.agentRuns[0]
   const runStatus = latest?.status.toLowerCase()
-  if (runStatus === "queued" || runStatus === "claimed") return "queued"
-  if (runStatus === "running") return "running"
   if (runStatus && failedRunStatuses.has(runStatus)) return "failed"
   return "ready"
 }
@@ -451,13 +475,18 @@ export function RequestWorkspace({
   const canRun = review?.capabilities.canRunAgent === true
   const canInvoke = canRun && !activeRun && !terminal && !attention && Boolean(step && ["gate", "agent", "checkpoint", "loop"].includes(step.type))
   const canRetry = canRun && !activeRun && !terminal && Boolean(step && ["agent", "checkpoint", "loop"].includes(step.type))
-  const invokeLabel = step?.type === "gate" ? "Continue gate" : "Run current step"
+  const canCheckStatus = canRun && !activeRun && !terminal && step?.type === "checkpoint"
+  const invokeLabel = step?.type === "gate"
+    ? "Continue gate"
+    : step?.type === "checkpoint"
+      ? "Check status"
+      : "Run current step"
 
   async function mutate(
     kind: Exclude<MutationKind, null>,
     action: () => Promise<Response>,
     successMessage: string,
-    options: { revealConversation?: boolean } = {},
+    options: { revealConversation?: boolean; onSuccess?: (payload: unknown) => void } = {},
   ) {
     const mutationScope = captureRequestReviewScope(reviewScopeRef.current)
     const isCurrent = () => mountedRef.current && isCurrentRequestReviewScope(reviewScopeRef.current, mutationScope)
@@ -470,6 +499,7 @@ export function RequestWorkspace({
       if (!isCurrent()) return false
       if (!response.ok) throw new Error(readableError(payload, `Operation failed with HTTP ${response.status}`))
       setNotice(successMessage)
+      options.onSuccess?.(payload)
       if (options.revealConversation) revealLatestConversationRef.current = true
       await loadReview({ quiet: true })
       return true
@@ -508,6 +538,15 @@ export function RequestWorkspace({
       setInterruptionDialog("retry-step")
       return
     }
+    if (managementIntent?.kind === "check-status" && step?.type === "checkpoint" && !terminal) {
+      if (!canCheckStatus) {
+        setMutationError(activeRun ? "A status check is already running." : "The current checkpoint cannot be checked.")
+        return
+      }
+      setInterruptionReason(content)
+      setInterruptionDialog("check-status")
+      return
+    }
     if (managementIntent?.kind === "move-step" && !terminal) {
       setTargetStepKey(managementIntent.targetStepKey)
       setRunAfterMove(managementIntent.runAfterMove)
@@ -515,6 +554,7 @@ export function RequestWorkspace({
       setInterruptionDialog("move-step")
       return
     }
+    const proposalResult: { value: RequestActionProposal | null } = { value: null }
     const succeeded = await mutate(
       "ask",
       () => fetch(`/admin/change-requests/${encodeURIComponent(request.id)}/ask`, {
@@ -523,9 +563,33 @@ export function RequestWorkspace({
         body: JSON.stringify({ question: content }),
       }),
       "Prism answered in the durable request conversation.",
-      { revealConversation: true },
+      {
+        revealConversation: true,
+        onSuccess: (payload) => {
+          proposalResult.value = isRecord(payload) ? requestActionProposal(payload.proposedAction) : null
+        },
+      },
     )
-    if (succeeded) setDraft("")
+    if (succeeded) {
+      setDraft("")
+      const proposedAction = proposalResult.value
+      if (!proposedAction) return
+      setInterruptionReason(proposedAction.reason)
+      if (proposedAction.kind === "cancel-request" && !terminal) {
+        setInterruptionDialog("cancel-request")
+      } else if (proposedAction.kind === "retry-step" && canRetry) {
+        setInterruptionDialog("retry-step")
+      } else if (proposedAction.kind === "check-status" && canCheckStatus) {
+        setInterruptionDialog("check-status")
+      } else if (proposedAction.kind === "move-step" && !terminal && !activeRun) {
+        const validTarget = managementSteps.some((candidate) => candidate.key === proposedAction.targetStepKey && candidate.type !== "terminal")
+        if (validTarget) {
+          setTargetStepKey(proposedAction.targetStepKey)
+          setRunAfterMove(proposedAction.runAfterMove)
+          setInterruptionDialog("move-step")
+        }
+      }
+    }
   }
 
   async function addContext() {
@@ -577,7 +641,7 @@ export function RequestWorkspace({
           body: JSON.stringify({ comment: reason, retryCurrentStep: true }),
         })
       },
-      "Current-step retry accepted.",
+      interruptionDialog === "check-status" ? "Checkpoint status check accepted." : "Current-step retry accepted.",
       { revealConversation: true },
     )
     if (succeeded) {
@@ -812,8 +876,11 @@ export function RequestWorkspace({
             </div>
             {attention ? (
               <div className="mt-4 border-l-2 border-destructive pl-4">
-                <p className="text-sm font-semibold">{attention.summary || "Workflow needs attention"}</p>
-                {attention.suggestedFix ? <p className="mt-1 text-sm text-muted-foreground">Suggested fix: {attention.suggestedFix}</p> : null}
+                <p className="text-sm font-semibold">
+                  {activeRun ? "Previous blocker is being retried" : attention.summary || "Workflow needs attention"}
+                </p>
+                {activeRun && attention.summary ? <p className="mt-1 text-sm text-muted-foreground">Previous blocker: {attention.summary}</p> : null}
+                {attention.suggestedFix ? <p className="mt-1 text-sm text-muted-foreground">{activeRun ? "Applied recovery guidance" : "Suggested fix"}: {attention.suggestedFix}</p> : null}
                 {attention.blockers.length ? (
                   <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
                     {attention.blockers.map((blocker, index) => <li key={blocker.key || index}>{blocker.summary || blocker.key || "Unspecified blocker"}</li>)}
@@ -925,7 +992,9 @@ export function RequestWorkspace({
                 id="request-message"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                placeholder="Ask what is blocking this request, or say “move back to Work” or “cancel this request”…"
+                placeholder={step.type === "checkpoint"
+                  ? "Ask about this request, or say “check status” to run this checkpoint…"
+                  : "Ask what is blocking this request, or say “move back to Work” or “cancel this request”…"}
                 rows={4}
                 className="mt-2 resize-y bg-background"
                 disabled={mutation !== null}
@@ -951,7 +1020,7 @@ export function RequestWorkspace({
               ) : null}
               {canRun ? (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  Clear move or cancel commands open a confirmation and use audited request controls. Other questions remain read-only.
+                  Move, cancel, retry, and checkpoint commands use confirmed, audited request controls. Other messages ask Prism for analysis.
                 </p>
               ) : null}
             </div>
@@ -1059,6 +1128,8 @@ export function RequestWorkspace({
             <DialogTitle>
               {interruptionDialog === "stop-run"
                 ? "Stop current run"
+                : interruptionDialog === "check-status"
+                  ? "Check current status"
                 : interruptionDialog === "retry-step"
                   ? "Retry current step"
                   : interruptionDialog === "move-step"
@@ -1068,6 +1139,8 @@ export function RequestWorkspace({
             <DialogDescription>
               {interruptionDialog === "stop-run"
                 ? "This stops the active agent run but keeps the request open on its current workflow step. You can add context and retry afterward."
+                : interruptionDialog === "check-status"
+                  ? "This records your request and runs the current checkpoint through the audited workflow runner without advancing first."
                 : interruptionDialog === "retry-step"
                   ? "This records your instruction in the request conversation and queues the current workflow step again through the audited workflow runner."
                   : interruptionDialog === "move-step"
@@ -1125,7 +1198,7 @@ export function RequestWorkspace({
               onClick={() => void (
                 interruptionDialog === "stop-run"
                   ? stopCurrentRun()
-                  : interruptionDialog === "retry-step"
+                  : interruptionDialog === "retry-step" || interruptionDialog === "check-status"
                     ? retryCurrentStep()
                     : interruptionDialog === "move-step"
                       ? moveRequest()
@@ -1136,19 +1209,22 @@ export function RequestWorkspace({
                 || mutation !== null
                 || (interruptionDialog === "move-step" && (!targetStepKey || targetStepKey === step?.key || activeRun))
                 || (interruptionDialog === "retry-step" && !canRetry)
+                || (interruptionDialog === "check-status" && !canCheckStatus)
               }
             >
               {mutation === "stop-run" || mutation === "cancel-request" || mutation === "move-step" || mutation === "continue" ? (
                 <Loader2 className="animate-spin" aria-hidden="true" />
               ) : interruptionDialog === "move-step" ? (
                 <ArrowRightLeft aria-hidden="true" />
-              ) : interruptionDialog === "retry-step" ? (
+              ) : interruptionDialog === "retry-step" || interruptionDialog === "check-status" ? (
                 <Play aria-hidden="true" />
               ) : (
                 <XCircle aria-hidden="true" />
               )}
               {interruptionDialog === "stop-run"
                 ? "Stop current run"
+                : interruptionDialog === "check-status"
+                  ? "Check status"
                 : interruptionDialog === "retry-step"
                   ? "Retry current step"
                 : interruptionDialog === "move-step"

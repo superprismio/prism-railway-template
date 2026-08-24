@@ -6,6 +6,7 @@ import {
   findAgentSessionBySourceContext,
   getChangeRequest,
   getSessionSummary,
+  getWorkflowByKey,
   getWorkflowRunForRequest,
   listAgentMessages,
   listAgentRuns,
@@ -69,6 +70,7 @@ export async function POST(request: Request, context: RouteContext) {
       {
         getRequest: getChangeRequest,
         getWorkflowRun: getWorkflowRunForRequest,
+        getWorkflow: getWorkflowByKey,
         listAgentRuns,
         listWorkflowEvents: listWorkflowEventsForRequest,
         listArtifacts: listRequestArtifacts,

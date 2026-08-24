@@ -7,6 +7,7 @@ export type RequestManagementStep = {
 export type RequestManagementIntent =
   | { kind: "cancel-request" }
   | { kind: "retry-step" }
+  | { kind: "check-status" }
   | { kind: "move-step"; targetStepKey: string; runAfterMove: boolean }
   | null
 
@@ -23,6 +24,10 @@ function cancelIntent(value: string) {
 
 function retryIntent(value: string) {
   return /^(?:(?:please|kindly)\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:(?:try|run)\s+(?:(?:this|current|the(?:\s+current)?)\s+)?(?:step\s+)?again|re-?try(?:\s+(?:(?:this|current|the(?:\s+current)?)\s+)?(?:step|run|request))?|re-?run(?:\s+(?:(?:this|current|the(?:\s+current)?)\s+)?(?:step|run))?)(?:\s+(?:now|please))?[?.!]*$/i.test(value.trim())
+}
+
+function checkStatusIntent(value: string) {
+  return /^(?:(?:please|kindly)\s+)?(?:(?:can|could|would|will)\s+you\s+)?(?:(?:check|poll|refresh)(?:\s+(?:the|current|job|render))*\s+(?:status|state|progress)|(?:check|poll)\s+(?:it\s+)?(?:now|again)|run\s+(?:(?:the\s+)?current\s+|the\s+)?(?:status\s+check|checkpoint))(?:\s+(?:now|again|please))?[?.!]*$/i.test(value.trim())
 }
 
 function moveTarget(value: string) {
@@ -50,6 +55,7 @@ export function resolveRequestManagementIntent(
 ): RequestManagementIntent {
   if (cancelIntent(value)) return { kind: "cancel-request" }
   if (retryIntent(value)) return { kind: "retry-step" }
+  if (checkStatusIntent(value)) return { kind: "check-status" }
   const move = moveTarget(value)
   if (!move) return null
 
