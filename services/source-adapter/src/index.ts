@@ -5306,6 +5306,24 @@ async function main(): Promise<void> {
     }
   });
 
+  app.post("/buzz/commands", async (request: Request, response: Response) => {
+    try {
+      requireAdapterToken(request);
+      const body = request.body && typeof request.body === "object" ? request.body as JsonObject : {};
+      const args = Array.isArray(body.args) ? body.args : [];
+      const result = await buzzClient([]).executeCommand(args);
+      console.log("[buzz-adapter] authenticated command executed", {
+        command: typeof args[0] === "string" ? args[0] : null,
+        operation: typeof args[1] === "string" ? args[1] : null,
+      });
+      response.json({ ok: true, result });
+    } catch (error) {
+      const message = describeError(error);
+      const status = message === "Unauthorized" ? 401 : message.startsWith("Buzz command args") || message.startsWith("Unsupported Buzz command") || message.includes("managed by the adapter") ? 400 : 502;
+      response.status(status).json({ ok: false, error: message });
+    }
+  });
+
   app.get("/recordings/:sessionId/:fileName", async (request: Request, response: Response) => {
     try {
       requireAdapterToken(request);

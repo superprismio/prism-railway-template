@@ -71,6 +71,34 @@ export type BuzzCliConfig = {
 
 export type BuzzCommandRunner = (args: string[], env: NodeJS.ProcessEnv) => Promise<string>;
 
+const BUZZ_REMOTE_COMMANDS = new Set([
+  "agents", "messages", "channels", "canvas", "reactions", "emoji", "dms", "users",
+  "workflows", "feed", "social", "notes", "repos", "patches", "issues", "pr", "media",
+  "upload", "mem", "moderation",
+]);
+
+export function normalizeBuzzCommandArgs(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 64) {
+    throw new Error("Buzz command args must contain between 1 and 64 entries");
+  }
+  const args = value.map((entry) => {
+    if (typeof entry !== "string" || !entry.trim() || entry.length > 8_000 || entry.includes("\0")) {
+      throw new Error("Buzz command args must be non-empty bounded strings");
+    }
+    return entry;
+  });
+  if (!BUZZ_REMOTE_COMMANDS.has(args[0])) {
+    throw new Error(`Unsupported Buzz command: ${args[0]}`);
+  }
+  if (args.some((entry) => ["--private-key", "--relay", "--auth-tag"].includes(entry)
+    || entry.startsWith("--private-key=")
+    || entry.startsWith("--relay=")
+    || entry.startsWith("--auth-tag="))) {
+    throw new Error("Buzz connection and signing arguments are managed by the adapter");
+  }
+  return args;
+}
+
 function hexToBytes(value: string): Uint8Array {
   return Uint8Array.from(value.match(/.{2}/g) ?? [], (byte) => Number.parseInt(byte, 16));
 }
@@ -278,6 +306,16 @@ export class BuzzCliClient {
       BUZZ_RELAY_URL: this.config.relayUrl,
       BUZZ_PRIVATE_KEY: this.config.privateKey,
     });
+  }
+
+  async executeCommand(value: unknown): Promise<unknown> {
+    const args = normalizeBuzzCommandArgs(value);
+    const output = await this.run(args);
+    try {
+      return JSON.parse(output);
+    } catch {
+      return output.trim();
+    }
   }
 
   ensureAllowedChannel(channelId: string): string {

@@ -77,6 +77,8 @@ Send service auth as:
 - `PATCH /agent/site-content/branding`
 - `GET /agent/source-adapter-policy`
 - `PATCH /agent/source-adapter-policy`
+- `GET /agent/buzz/channels/:channelId/messages`
+- `POST /agent/buzz/commands`
 - `GET /agent/interaction-profiles`
 - `POST /agent/interaction-profiles`
 - `GET /agent/interaction-profiles/:key`
@@ -92,6 +94,14 @@ Send service auth as:
 - `POST /agent/gateway/integrations`
 
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
+
+For authenticated Buzz operations, use `POST /agent/buzz/commands` with a
+JSON body such as `{"args":["channels","list"]}`. The route exposes the
+remote Buzz command groups while keeping relay and signing credentials inside
+the Buzz adapter. Do not pass `--private-key`, `--relay`, or `--auth-tag`.
+Prefer `GET /agent/buzz/channels/:channelId/messages` for ordinary channel
+history reads. Inspect current state before consequential writes, obtain any
+required operator approval, and verify the result afterward.
 
 For runtime adapter registration, default selection, or routing metadata, use
 `/agent/runtime-profiles`. Runtime profiles contain adapter URLs and features,

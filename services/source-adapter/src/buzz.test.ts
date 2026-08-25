@@ -9,6 +9,7 @@ import {
   buzzThreadHasReplyFrom,
   buzzWebSocketUrl,
   normalizeBuzzMessage,
+  normalizeBuzzCommandArgs,
   parseBuzzPrivateKey,
   parseBuzzChannelAllowlist,
   selectUnseenBuzzEvents,
@@ -38,6 +39,19 @@ test("parseBuzzChannelAllowlist normalizes and deduplicates values", () => {
     parseBuzzChannelAllowlist(` ${channelId.toUpperCase()},${channelId}\nother `),
     [channelId, "other"],
   );
+});
+
+test("full Buzz command proxy accepts remote commands but owns connection credentials", () => {
+  assert.deepEqual(normalizeBuzzCommandArgs(["messages", "get", "--channel", channelId]), [
+    "messages", "get", "--channel", channelId,
+  ]);
+  assert.throws(() => normalizeBuzzCommandArgs(["pack", "inspect"]), /Unsupported Buzz command/);
+  assert.throws(() => normalizeBuzzCommandArgs(["messages", "get", "--private-key=secret"]), /managed by the adapter/);
+});
+
+test("full Buzz command proxy returns structured CLI output", async () => {
+  const client = clientWithRunner(async (args) => JSON.stringify({ args }));
+  assert.deepEqual(await client.executeCommand(["channels", "list"]), { args: ["channels", "list"] });
 });
 
 test("listChannels returns only allowlisted visible channels", async () => {
