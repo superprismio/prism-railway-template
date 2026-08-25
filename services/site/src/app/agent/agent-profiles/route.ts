@@ -22,6 +22,29 @@ function stringList(value: unknown) {
     : text(value, 4000).split(',').map((item) => item.trim()).filter(Boolean);
 }
 
+function optionalMemoryScope(body: Record<string, unknown>) {
+  const hasMemoryScope = Object.prototype.hasOwnProperty.call(body, 'memoryScope')
+    || Object.prototype.hasOwnProperty.call(body, 'memory_scope');
+  if (!hasMemoryScope) return null;
+  const value = body.memoryScope ?? body.memory_scope;
+  const scope = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  const scopeName = text(scope.scope, 80);
+  return {
+    ...(scopeName ? { scope: scopeName } : {}),
+    buckets: stringList(scope.buckets),
+    knowledgeSourceIds: stringList(scope.knowledgeSourceIds ?? scope.knowledge_source_ids),
+    kinds: stringList(scope.kinds),
+    tags: stringList(scope.tags),
+    entities: stringList(scope.entities),
+    audiences: stringList(scope.audiences),
+    stabilities: stringList(scope.stabilities),
+    instructions: text(scope.instructions, 10_000),
+    enforcement: 'instructions-only' as const,
+  };
+}
+
 export async function GET() {
   const access = await requireServiceAccess();
   if (!access.ok) return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
@@ -36,6 +59,7 @@ export async function POST(request: Request) {
   const name = text(body.name, 160);
   if (!key || !name) return NextResponse.json({ ok: false, error: 'key and name are required' }, { status: 400 });
   const owner = body.owner === 'workspace' ? 'workspace' : 'admin-agent';
+  const memoryScope = optionalMemoryScope(body);
   const preview = {
     key,
     name,
@@ -44,6 +68,7 @@ export async function POST(request: Request) {
     owner,
     persona: { name, instructions: text(body.personaInstructions ?? body.persona_instructions, 12000) },
     skills: stringList(body.skills),
+    ...(memoryScope ? { memoryScope } : {}),
     authority: { mode: 'policy-controlled', maximumAccessMode: 'full', consoleAccessMode: 'full' },
     contextPolicy: { continuation: 'session', handoff: null },
   };
