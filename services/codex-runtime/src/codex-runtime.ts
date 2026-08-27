@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
-import { loadRelevantPrismSkills } from './prism-skills.js';
+import { createNativePrismSkillHome, loadRelevantPrismSkills } from './prism-skills.js';
 import { gatewayClient } from './runtime-gateway.js';
 import { processInvocationSizeMetrics } from './process-size.js';
 
@@ -677,15 +677,6 @@ export function buildPrompt(
     .slice(-20)
     .map((entry) => `${entry.role === 'assistant' ? 'Assistant' : 'User'}: ${entry.content}`)
     .join('\n');
-  const selectedSkillNames = new Set(prismSkills.selectedSkills.map((skill) => skill.name));
-  const availableSkillsSummary = prismSkills.availableSkills.length
-    ? prismSkills.availableSkills
-      .filter((skill) => !selectedSkillNames.has(skill.name))
-      .slice(0, 100)
-      .map((skill) => `${skill.name}: ${skill.description}`)
-      .join('\n')
-      .slice(0, 16_000)
-    : null;
   const policyInstructions = typeof input.metadata?.policyInstructions === 'string'
     ? input.metadata.policyInstructions.trim().slice(0, 40_000)
     : '';
@@ -707,7 +698,7 @@ export function buildPrompt(
       : [
           'If Prism memory is useful, query it from the shell with curl against $PRISM_API_BASE and send X-Prism-Api-Key using $PRISM_API_READ_KEY or $PRISM_API_KEY.',
         ]),
-    'Prism skills are authoritative when they apply. Use the loaded Prism skill instructions before probing ad hoc local paths or browser admin routes.',
+    'Prism skills are authoritative when they apply. Select relevant Site-hosted skills through Codex native skill discovery before probing ad hoc local paths or browser admin routes.',
     ...(isReadOnlyUtility
       ? []
       : ['Do not treat missing local files under /data/codex/skills, /data/workflows, or /app as a blocker for Prism-managed content. Skills, workflows, tasks, hooks, artifacts, and settings are owned by the site service and should be managed through /agent/* routes with service-token auth.']),
@@ -724,10 +715,6 @@ export function buildPrompt(
 
   if (Object.keys(sessionMetadata).length) {
     sections.push(`Session metadata: ${JSON.stringify(sessionMetadata)}`);
-  }
-
-  if (availableSkillsSummary) {
-    sections.push('', 'Available Prism skills:', availableSkillsSummary);
   }
 
   if (prismSkills.selectedSkills.length) {
@@ -750,7 +737,7 @@ export function buildPrompt(
       sectionBytes: {
         fixed: bytes(fixedSections.join('\n')),
         metadata: bytes(JSON.stringify(sessionMetadata)) + bytes(policyInstructions),
-        skillCatalog: bytes(availableSkillsSummary),
+        skillCatalog: 0,
         selectedSkills: prismSkills.selectedSkills.reduce((total, skill) => total + bytes(skill.content), 0),
         history: bytes(history),
         latestMessage: bytes(input.prompt),
@@ -848,6 +835,7 @@ export function buildCodexChildEnvironment(
   inherited: NodeJS.ProcessEnv,
   leasedEnv: Record<string, string>,
   githubToken: string | null,
+  runtimeHome?: string,
 ) {
   if (authorityMode === 'read_only_utility') {
     const env: NodeJS.ProcessEnv = {};
@@ -861,6 +849,7 @@ export function buildCodexChildEnvironment(
   const env: NodeJS.ProcessEnv = {
     ...inherited,
     ...leasedEnv,
+    ...(runtimeHome ? { HOME: runtimeHome } : {}),
     GIT_AUTHOR_NAME: config.gitAuthorName,
     GIT_AUTHOR_EMAIL: config.gitAuthorEmail,
     GIT_COMMITTER_NAME: config.gitCommitterName,
@@ -974,12 +963,6 @@ async function runCodexProcess(input: CodexRuntimeInput) {
 
   args.push('-');
 
-  const env = buildCodexChildEnvironment(authorityMode, process.env, leasedEnv, githubToken);
-  const invocationMetrics = processInvocationSizeMetrics(env, args);
-  console.log(
-    `[codex-runtime] spawn resume=${isResume ? 'yes' : 'no'} session=${input.sessionId} workspace=${executionWorkspaceRoot}`,
-  );
-
   appendTrace(trace, 'prompt.composed', JSON.stringify(composedPrompt.metrics), input.onTrace);
   if (config.codexRuntimePromptWarnBytes && composedPrompt.metrics.totalBytes > config.codexRuntimePromptWarnBytes) {
     appendTrace(
@@ -993,6 +976,31 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     const error = new Error(`RUNTIME_PROMPT_TOO_LARGE:${JSON.stringify(composedPrompt.metrics)}`) as CodexRuntimeError;
     error.trace = trace;
     throw error;
+  }
+
+  const nativeSkillHome = authorityMode === 'read_only_utility'
+    ? null
+    : await createNativePrismSkillHome(process.env.HOME || os.homedir(), prismSkills, input.metadata);
+  const env = buildCodexChildEnvironment(authorityMode, process.env, leasedEnv, githubToken, nativeSkillHome?.path);
+  const invocationMetrics = processInvocationSizeMetrics(env, args);
+  console.log(
+    `[codex-runtime] spawn resume=${isResume ? 'yes' : 'no'} session=${input.sessionId} workspace=${executionWorkspaceRoot}`,
+  );
+  if (nativeSkillHome) {
+    appendTrace(
+      trace,
+      'skills.native_ready',
+      `Exposed ${nativeSkillHome.skillCount} Site-hosted skills through Codex native discovery`,
+      input.onTrace,
+    );
+    if (nativeSkillHome.failedSkillNames.length) {
+      appendTrace(
+        trace,
+        'skills.native_partial',
+        `Skipped ${nativeSkillHome.failedSkillNames.length} unavailable hosted skill bundles`,
+        input.onTrace,
+      );
+    }
   }
 
   try {
@@ -1186,6 +1194,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     });
     });
   } finally {
+    await nativeSkillHome?.cleanup();
     // The leased child environment is discarded when the process exits.
   }
 }
