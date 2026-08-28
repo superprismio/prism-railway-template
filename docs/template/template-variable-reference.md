@@ -132,6 +132,9 @@ following Buzz-specific configuration.
 | `BUZZ_INTERACTION_DISPLAY_NAME` | `Prism` | Leading `@name` removed from the runtime prompt. | Yes |
 | `BUZZ_INTERACTION_POLL_SECONDS` | `5` | Delay between non-overlapping interaction polls. | Yes |
 | `BUZZ_INTERACTION_LOOKBACK_SECONDS` | `3600` | First-start lookback; durable checkpoints are used afterward. | Yes |
+| `BUZZ_HISTORY_CHANNEL_ALLOWLIST` | channel UUIDs | Channels readable through the internal service-authenticated direct-history route. Empty disables the route. | Yes |
+| `BUZZ_HISTORY_MAX_LOOKBACK_SECONDS` | `7200` | Maximum direct-history lookback accepted by the adapter. | Yes |
+| `BUZZ_HISTORY_MAX_MESSAGES` | `100` | Maximum messages returned by one direct-history request. | Yes |
 
 ## Codex Runtime
 

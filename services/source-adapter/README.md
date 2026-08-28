@@ -21,6 +21,7 @@ Current behavior:
 - `GET /health` for service health and config visibility
 - `POST /sync` runs a Discord REST sync and posts a normalized batch to `prism-memory`
 - `GET /capabilities`, `GET /destinations`, `POST /messages`, `POST /attachments/resolve`, and `POST /attachments/fetch` expose the adapter output interface for agent-authored delivery and attachment handoff
+- `POST /history/discord/search` and `POST /history/discord/context` expose protected, read-only Discord native history operations for the Site service
 - `POST /interactions/:key/sessions` and `POST /interactions/:key/sessions/:sessionId/messages` expose operator-configured server-to-server chat interfaces
 - `GET /guild/channels` exposes a protected guild channel inventory for instance setup and Prism Memory bucket mapping
 - optional live Discord mention/thread chat forwarding to `codex-runtime`
@@ -29,6 +30,7 @@ Current behavior:
 - sync checkpoints are persisted under `SOURCE_ADAPTER_DATA_ROOT`
 - `POST /sync?dry_run=true` collects and summarizes without posting or advancing checkpoints
 - `POST /sync?reset_checkpoint=true` ignores the saved cursor and re-runs the full configured window
+- Discord history search reuses `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and `SOURCE_ADAPTER_TOKEN`; it introduces no search-specific environment variables
 - `GET /destinations` lists Discord text channels and known Telegram chats as output destinations
 - `POST /messages` sends text to a resolved Discord channel id or Telegram chat id; requires `X-Adapter-Token` when `SOURCE_ADAPTER_TOKEN` is configured
 - `POST /attachments/resolve` lists attachments on a Discord message by channel id and message id; requires `X-Adapter-Token` when `SOURCE_ADAPTER_TOKEN` is configured
@@ -102,6 +104,22 @@ Set `DISCORD_RECORDING_SUMMARY_ENABLED=false` or
 needs to opt out. Older `DISCORD_LEGACY_RECORDING_*` flags are ignored.
 - `N8N_WEBHOOK_URL=https://your-n8n.example/webhook/transcribe` only if the legacy webhook handoff is still needed
 
+Discord historical search calls Discord's native guild message search rather
+than replaying `/sync` or backfilling the guild into Prism Memory. The bot needs
+`VIEW_CHANNEL` and `READ_MESSAGE_HISTORY` for returned channels, and the Discord
+application needs the privileged `MESSAGE_CONTENT` intent. Search and context
+routes use `X-Adapter-Token`, do not advance collection checkpoints, and do not
+write to Prism Memory.
+
+Agents should use the Site-owned source-neutral routes instead of calling these
+adapter routes directly:
+
+```text
+GET  /agent/source-history/capabilities
+POST /agent/source-history/search
+POST /agent/source-history/context
+```
+
 Telegram-specific envs:
 
 - `TELEGRAM_BOT_TOKEN=<optional Telegram bot token>`
@@ -128,6 +146,11 @@ Buzz-specific envs (deploy as a separate `buzz-adapter` service):
 - `BUZZ_INTERACTION_DISPLAY_NAME=Prism`
 - `BUZZ_INTERACTION_POLL_SECONDS=5`
 - `BUZZ_INTERACTION_LOOKBACK_SECONDS=3600`
+- `BUZZ_HISTORY_CHANNEL_ALLOWLIST=<comma-separated channel UUIDs>`
+- `BUZZ_HISTORY_MAX_LOOKBACK_SECONDS=7200`
+- `BUZZ_HISTORY_MAX_MESSAGES=100`
+- `BUZZ_CHANNEL_ADMIN_TOKEN=<separate Gateway-leased channel-management secret>`
+- `BUZZ_CHANNEL_ADMIN_PROFILE_KEY=admin-agent`
 
 Buzz collection and delivery use the checksum-pinned official Buzz `0.5.0`
 CLI installed by this service's Dockerfile. Enabled Agent Profile bindings are
@@ -143,15 +166,40 @@ When interaction polling is enabled, the adapter responds only to events in a
 channel with an enabled Agent Profile binding that contain a Nostr `p` tag for
 `BUZZ_PUBLIC_KEY`. The resolved binding supplies agent identity, access mode,
 and policy; legacy source-adapter policy remains a compatibility fallback.
-Unmapped Buzz
-channels default to `off`. `readonly` receives no Gateway credentials,
+Authorized human replies in that Buzz reply chain continue the same
+conversation without mentioning Prism again. Unmapped Buzz channels default to
+`off`. `readonly` receives no Gateway credentials,
 `run-approved` receives no Gateway credentials and carries the profile workflow
 allowlist, and `full` receives credentials selected by the shared source policy.
-Sessions are isolated by profile, channel, and author public key.
-Replies are threaded to the source event, processed event IDs are persisted on
-the adapter volume, and the thread is checked before delivery to prevent a
-duplicate reply after a crash. Operators can trigger a protected diagnostic
-poll with `POST /buzz/interactions/poll` using `X-Adapter-Token`.
+Sessions are isolated by profile, channel, and the root Buzz event.
+
+Replies and typing indicators are attached to the conversation's original
+channel event. This keeps Buzz conversations to one visible reply level even
+when a person directly replies to Prism or continues from another reply. The
+full linear thread is still supplied as runtime context, and a durable
+event-to-root index on the adapter volume preserves Prism session continuity
+across restarts. Before delivery, the adapter checks whether Prism already
+replied directly to a root event to prevent duplicates after a crash. Operators
+can trigger a protected diagnostic poll with `POST /buzz/interactions/poll`
+using `X-Adapter-Token`.
+
+Trusted service callers can read current Buzz history without advancing the
+collection checkpoint through `GET
+/agent/buzz/channels/:channelId/messages?since=<ISO-or-Unix-seconds>&limit=50`.
+The route requires `x-service-token`, only permits channels in
+`BUZZ_HISTORY_CHANNEL_ALLOWLIST`, defaults to the configured maximum lookback,
+and excludes Prism-authored messages unless `includeOwn=true` is supplied.
+The adapter expands the relevant Buzz threads and returns explicit `threadId`,
+`metadata.threadRootEventId`, and `metadata.replyToEventId` correlation. This is
+a read-through relay query; it does not post to Prism Memory or mutate the
+normal `/sync` checkpoint.
+
+When `BUZZ_CHANNEL_ADMIN_TOKEN` is configured, `/capabilities` advertises
+`manage-buzz-channels`. The protected `/buzz/channels` routes create and update
+channels, archive/unarchive them, and manage members. They require
+`X-Buzz-Admin-Token`; the ordinary adapter token is not accepted. Permanent
+deletion is intentionally not exposed. Agent Profile bindings remain the
+canonical way to make a channel interactive and visible to Prism operations.
 
 While Prism processes an accepted interaction, the adapter publishes the same
 thread-scoped, ephemeral kind `20002` typing indicator used by built-in Buzz
@@ -435,7 +483,8 @@ closed:
         },
         "<ops-channel-uuid>": {
           "mode": "full",
-          "interactionProfileKey": "buzz-prism-ops"
+          "interactionProfileKey": "buzz-prism-ops",
+          "skills": ["veydrift-commander", "prism-api-reader"]
         }
       },
       "groups": {},
@@ -444,6 +493,13 @@ closed:
   }
 }
 ```
+
+Target-scoped `skills` are passed through Site's runtime invocation contract and
+loaded on every new or resumed interaction from that target. For Buzz, the
+adapter also supplies up to two hours of recent channel activity (including
+Prism-authored receipts) together with the current thread, bounded to the 20
+most recent distinct messages. This context is read directly from Buzz and does
+not wait for the Prism Memory collector.
 
 `DISCORD_ACCESS_POLICY_JSON` remains as an emergency/bootstrap fallback:
 

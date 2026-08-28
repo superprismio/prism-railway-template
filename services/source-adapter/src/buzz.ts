@@ -25,6 +25,23 @@ export type BuzzChannel = {
   createdAt: number | null;
 };
 
+export type BuzzChannelCreateInput = {
+  name: string;
+  channelType: "stream" | "forum";
+  visibility: "open" | "private";
+  description?: string | null;
+  ttlSeconds?: number | null;
+};
+
+export type BuzzChannelUpdateInput = {
+  name?: string | null;
+  description?: string | null;
+  ttlSeconds?: number | null;
+  clearTtl?: boolean;
+};
+
+export type BuzzChannelMemberRole = "owner" | "admin" | "member" | "guest" | "bot";
+
 export type BuzzEvent = {
   id: string;
   pubkey: string;
@@ -42,6 +59,11 @@ export type BuzzProfile = {
 
 export type BuzzMessageSendOptions = {
   replyTo?: string | null;
+};
+
+export type BuzzMessageReadOptions = {
+  limit?: number;
+  includeOwnMessages?: boolean;
 };
 
 export type BuzzTypingHandle = {
@@ -272,6 +294,49 @@ function parseJsonArray(output: string, commandLabel: string): unknown[] {
   return parsed;
 }
 
+function parseJsonObject(output: string, commandLabel: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch (error) {
+    throw new Error(`Buzz CLI returned invalid JSON for ${commandLabel}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`Buzz CLI returned a non-object response for ${commandLabel}`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function normalizedChannelId(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(normalized)) {
+    throw new Error("channelId must be a UUID");
+  }
+  return normalized;
+}
+
+function normalizedPubkey(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(normalized)) {
+    throw new Error("pubkey must be a 64-character hex value");
+  }
+  return normalized;
+}
+
+function parseBuzzChannels(payload: unknown[]): BuzzChannel[] {
+  return payload.flatMap((candidate): BuzzChannel[] => {
+    const channel = record(candidate);
+    const channelId = stringValue(channel.channel_id ?? channel.channelId ?? channel.id).toLowerCase();
+    if (!channelId) return [];
+    return [{
+      channelId,
+      name: stringValue(channel.name) || channelId,
+      description: stringValue(channel.description) || null,
+      createdAt: numberValue(channel.created_at ?? channel.createdAt),
+    }];
+  });
+}
+
 export function parseBuzzChannelAllowlist(value: string | undefined): string[] {
   return [...new Set((value ?? "")
     .split(/[\s,]+/)
@@ -328,17 +393,7 @@ export class BuzzCliClient {
 
   async listVisibleChannels(): Promise<BuzzChannel[]> {
     const payload = parseJsonArray(await this.run(["channels", "list"]), "channels list");
-    return payload.flatMap((candidate): BuzzChannel[] => {
-      const channel = record(candidate);
-      const channelId = stringValue(channel.channel_id ?? channel.channelId ?? channel.id).toLowerCase();
-      if (!channelId) return [];
-      return [{
-        channelId,
-        name: stringValue(channel.name) || channelId,
-        description: stringValue(channel.description) || null,
-        createdAt: numberValue(channel.created_at ?? channel.createdAt),
-      }];
-    }).sort((left, right) => left.name.localeCompare(right.name));
+    return parseBuzzChannels(payload).sort((left, right) => left.name.localeCompare(right.name));
   }
 
   async listChannels(): Promise<BuzzChannel[]> {
@@ -348,12 +403,111 @@ export class BuzzCliClient {
     return channels.filter((channel) => allowlist.has(channel.channelId));
   }
 
-  async getMessages(channelId: string, since: Date): Promise<BuzzEvent[]> {
+  async createChannel(input: BuzzChannelCreateInput): Promise<Record<string, unknown>> {
+    const name = input.name.trim();
+    if (!name) throw new Error("name is required");
+    const args = [
+      "channels", "create",
+      "--name", name,
+      "--type", input.channelType,
+      "--visibility", input.visibility,
+    ];
+    const description = input.description?.trim() ?? "";
+    if (description) args.push("--description", description);
+    if (input.ttlSeconds !== undefined && input.ttlSeconds !== null) {
+      if (!Number.isSafeInteger(input.ttlSeconds) || input.ttlSeconds <= 0) {
+        throw new Error("ttlSeconds must be a positive integer");
+      }
+      args.push("--ttl", String(input.ttlSeconds));
+    }
+    return parseJsonObject(await this.run(args), "channels create");
+  }
+
+  async updateChannel(channelId: string, input: BuzzChannelUpdateInput): Promise<Record<string, unknown>> {
+    const args = ["channels", "update", "--channel", normalizedChannelId(channelId)];
+    if (input.name !== undefined && input.name !== null) {
+      const name = input.name.trim();
+      if (!name) throw new Error("name cannot be empty");
+      args.push("--name", name);
+    }
+    if (input.description !== undefined && input.description !== null) {
+      args.push("--description", input.description.trim());
+    }
+    if (input.ttlSeconds !== undefined && input.ttlSeconds !== null) {
+      if (!Number.isSafeInteger(input.ttlSeconds) || input.ttlSeconds <= 0) {
+        throw new Error("ttlSeconds must be a positive integer");
+      }
+      args.push("--ttl", String(input.ttlSeconds));
+    }
+    if (input.clearTtl) args.push("--no-ttl");
+    if (args.length === 4) throw new Error("at least one channel field is required");
+    return parseJsonObject(await this.run(args), "channels update");
+  }
+
+  async setChannelTopic(channelId: string, topic: string): Promise<Record<string, unknown>> {
+    return parseJsonObject(await this.run([
+      "channels", "topic", "--channel", normalizedChannelId(channelId), "--topic", topic.trim(),
+    ]), "channels topic");
+  }
+
+  async setChannelPurpose(channelId: string, purpose: string): Promise<Record<string, unknown>> {
+    return parseJsonObject(await this.run([
+      "channels", "purpose", "--channel", normalizedChannelId(channelId), "--purpose", purpose.trim(),
+    ]), "channels purpose");
+  }
+
+  async setChannelArchived(channelId: string, archived: boolean): Promise<Record<string, unknown>> {
+    const command = archived ? "archive" : "unarchive";
+    return parseJsonObject(await this.run([
+      "channels", command, "--channel", normalizedChannelId(channelId),
+    ]), `channels ${command}`);
+  }
+
+  async listChannelMembers(channelId: string): Promise<string[]> {
+    const payload = parseJsonArray(await this.run([
+      "channels", "members", "--channel", normalizedChannelId(channelId),
+    ]), "channels members");
+    return payload.flatMap((value): string[] => {
+      const pubkey = typeof value === "string" ? value.trim().toLowerCase() : "";
+      return /^[0-9a-f]{64}$/.test(pubkey) ? [pubkey] : [];
+    });
+  }
+
+  async addChannelMember(channelId: string, pubkey: string, role?: BuzzChannelMemberRole | null): Promise<Record<string, unknown>> {
+    const args = [
+      "channels", "add-member",
+      "--channel", normalizedChannelId(channelId),
+      "--pubkey", normalizedPubkey(pubkey),
+    ];
+    if (role) args.push("--role", role);
+    return parseJsonObject(await this.run(args), "channels add-member");
+  }
+
+  async removeChannelMember(channelId: string, pubkey: string): Promise<Record<string, unknown>> {
+    return parseJsonObject(await this.run([
+      "channels", "remove-member",
+      "--channel", normalizedChannelId(channelId),
+      "--pubkey", normalizedPubkey(pubkey),
+    ]), "channels remove-member");
+  }
+
+  async getMessages(
+    channelId: string,
+    since: Date,
+    options: BuzzMessageReadOptions = {},
+  ): Promise<BuzzEvent[]> {
     const allowedChannelId = this.ensureAllowedChannel(channelId);
+    const limit = Math.max(
+      1,
+      Math.min(this.config.maxMessagesPerChannel, Math.trunc(options.limit ?? this.config.maxMessagesPerChannel)),
+    );
+    const ignoreOwnMessages = options.includeOwnMessages === undefined
+      ? this.config.ignoreOwnMessages
+      : !options.includeOwnMessages;
     const args = [
       "messages", "get",
       "--channel", allowedChannelId,
-      "--limit", String(this.config.maxMessagesPerChannel),
+      "--limit", String(limit),
       "--since", String(Math.max(0, Math.floor(since.getTime() / 1000))),
     ];
     const payload = parseJsonArray(await this.run(args), "messages get");
@@ -363,7 +517,7 @@ export class BuzzCliClient {
       const pubkey = stringValue(event.pubkey).toLowerCase();
       const createdAt = numberValue(event.created_at ?? event.createdAt);
       if (!id || !pubkey || createdAt === null) return [];
-      if (this.config.ignoreOwnMessages && this.config.publicKey && pubkey === this.config.publicKey.toLowerCase()) {
+      if (ignoreOwnMessages && this.config.publicKey && pubkey === this.config.publicKey.toLowerCase()) {
         return [];
       }
       return [{
@@ -511,6 +665,57 @@ export function buzzEventMentionsPubkey(event: BuzzEvent, publicKey: string): bo
   );
 }
 
+export function buzzEventReplyIds(event: BuzzEvent): string[] {
+  const references = event.tags.flatMap((tag): Array<{ id: string; marker: string }> => {
+    if (tag.length < 2 || tag[0] !== "e" || typeof tag[1] !== "string") return [];
+    const id = tag[1].trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(id)) return [];
+    return [{ id, marker: typeof tag[3] === "string" ? tag[3].trim().toLowerCase() : "" }];
+  });
+  return [...new Set([
+    ...references.filter((reference) => reference.marker === "reply").map((reference) => reference.id),
+    ...references.filter((reference) => reference.marker === "root").map((reference) => reference.id),
+    ...references.map((reference) => reference.id),
+  ])];
+}
+
+export function buzzEventRootIds(event: BuzzEvent): string[] {
+  return [...new Set(event.tags.flatMap((tag): string[] => {
+    if (tag.length < 4 || tag[0] !== "e" || tag[3] !== "root" || typeof tag[1] !== "string") return [];
+    const id = tag[1].trim().toLowerCase();
+    return /^[0-9a-f]{64}$/.test(id) ? [id] : [];
+  }))];
+}
+
+export function buzzEventDirectReplyId(event: BuzzEvent): string | null {
+  const markedReply = event.tags.find((tag) =>
+    tag.length >= 4
+    && tag[0] === "e"
+    && tag[3] === "reply"
+    && typeof tag[1] === "string"
+    && /^[0-9a-f]{64}$/.test(tag[1].trim().toLowerCase())
+  );
+  if (markedReply && typeof markedReply[1] === "string") return markedReply[1].trim().toLowerCase();
+  return buzzEventReplyIds(event)[0] ?? null;
+}
+
+export function buzzThreadRootId(event: BuzzEvent, events: BuzzEvent[]): string {
+  const explicitRoot = buzzEventRootIds(event)[0];
+  if (explicitRoot) return explicitRoot;
+  const byId = new Map(events.map((candidate) => [candidate.id.toLowerCase(), candidate]));
+  let current = event;
+  const visited = new Set<string>();
+  while (!visited.has(current.id.toLowerCase())) {
+    visited.add(current.id.toLowerCase());
+    const parentId = buzzEventDirectReplyId(current);
+    if (!parentId) return current.id.toLowerCase();
+    const parent = byId.get(parentId);
+    if (!parent) return parentId;
+    current = parent;
+  }
+  return event.id.toLowerCase();
+}
+
 export function buzzMentionPrompt(content: string, displayName: string): string {
   const normalized = content.trim();
   const name = displayName.trim();
@@ -532,6 +737,42 @@ export function buzzThreadHasReplyFrom(
     event.id.toLowerCase() !== normalizedRootId
     && event.pubkey.toLowerCase() === normalizedPublicKey
   );
+}
+
+export function buzzThreadHasDirectReplyFrom(
+  events: BuzzEvent[],
+  publicKey: string,
+  targetEventId: string,
+): boolean {
+  const normalizedPublicKey = publicKey.trim().toLowerCase();
+  const normalizedTargetId = targetEventId.trim().toLowerCase();
+  return events.some((event) =>
+    event.pubkey.toLowerCase() === normalizedPublicKey
+    && buzzEventReplyIds(event).includes(normalizedTargetId)
+  );
+}
+
+export function buzzConversationRootFromThread(
+  events: BuzzEvent[],
+  event: BuzzEvent,
+  publicKey: string,
+): string | null {
+  const normalizedPublicKey = publicKey.trim().toLowerCase();
+  const completeThread = events.some((candidate) => candidate.id.toLowerCase() === event.id.toLowerCase())
+    ? events
+    : [...events, event];
+  const prismParticipated = completeThread.some((candidate) =>
+    candidate.pubkey.toLowerCase() === normalizedPublicKey
+    || buzzEventMentionsPubkey(candidate, normalizedPublicKey)
+  );
+  if (!prismParticipated) return null;
+
+  const explicitRoot = completeThread.flatMap(buzzEventRootIds)[0];
+  if (explicitRoot) return explicitRoot;
+  const root = [...completeThread]
+    .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id))
+    .find((candidate) => buzzEventReplyIds(candidate).length === 0);
+  return root?.id.toLowerCase() ?? buzzThreadRootId(event, completeThread);
 }
 
 export function normalizeBuzzMessage(input: {
@@ -592,4 +833,13 @@ export function selectUnseenBuzzEvents(
     duplicateCount,
     recentEventIds: [...seen].slice(-Math.max(1, retainedEventLimit)),
   };
+}
+
+export function buzzInteractionCursorTimestamp(
+  pollStartedTimestamp: number,
+  deferredTimestamps: number[],
+): number {
+  const normalizedPollStart = Math.max(0, Math.trunc(pollStartedTimestamp));
+  if (deferredTimestamps.length === 0) return normalizedPollStart;
+  return Math.max(0, Math.min(...deferredTimestamps.map((timestamp) => Math.trunc(timestamp))));
 }

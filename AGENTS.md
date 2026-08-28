@@ -64,6 +64,7 @@ Send service auth as:
 - `POST /agent/responses`
 - `GET /agent/workflow-events`
 - `GET /agent/target-apps`
+- `POST /agent/target-apps`
 - `GET /agent/change-board/requests/:id`
 - `POST /agent/change-board/requests`
 - `GET /agent/change-board/requests/next`
@@ -79,6 +80,9 @@ Send service auth as:
 - `PATCH /agent/source-adapter-policy`
 - `GET /agent/buzz/channels/:channelId/messages`
 - `POST /agent/buzz/commands`
+- `GET /agent/source-history/capabilities`
+- `POST /agent/source-history/search`
+- `POST /agent/source-history/context`
 - `GET /agent/interaction-profiles`
 - `POST /agent/interaction-profiles`
 - `GET /agent/interaction-profiles/:key`
@@ -127,6 +131,10 @@ group/user/thread overrides in the binding `policy`. A binding may narrow but
 never widen its parent Agent Profile. `GET /agent/source-adapter-policy` exists
 only for migration and rollback compatibility; its write route is retired.
 Telegram DMs remain disabled by adapter config unless explicitly enabled.
+
+For older Discord evidence, use the built-in `prism-source-history-reader`
+skill and `/agent/source-history/*`. Site enforces channel scope and calls the
+communication adapter; never call Discord directly or expose the adapter token.
 
 For named external HTTP chat paths, create the non-secret interface record,
 bind its key to an Agent Profile with `surfaceType: "external"`, keep the

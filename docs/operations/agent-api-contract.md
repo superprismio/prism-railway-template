@@ -95,6 +95,7 @@ Site service token in task parameters or scripts.
 Requests and artifacts:
 
 - `GET /agent/target-apps`
+- `POST /agent/target-apps`
 - `POST /agent/change-board/requests`
 - `GET /agent/change-board/requests/:id`
 - `PATCH /agent/change-board/requests/:id`
@@ -108,6 +109,12 @@ Requests and artifacts:
 - `POST /agent/source-attachments/resolve-and-ingest`
 - `GET /agent/change-board/requests/:id/external-refs`
 - `POST /agent/change-board/requests/:id/external-refs`
+
+`POST /agent/target-apps` registers an HTTPS GitHub repository and creates its
+standard writable development environment. `name`, `slug`, and
+`defaultBranch` are optional and derive from the repository URL with `main` as
+the branch default. Repeating the same repository request returns the existing
+target instead of creating a duplicate.
 
 `workflow/reconcile` is a maintenance operation for completed or closed
 requests whose terminal workflow run (completed or canceled) still projects a
@@ -204,11 +211,46 @@ Source adapter access policy:
 
 - `GET /agent/source-adapter-policy`
 - `PATCH /agent/source-adapter-policy`
+- `GET /agent/source-history/capabilities`
+- `POST /agent/source-history/search`
+- `POST /agent/source-history/context`
 
 Use source adapter policy routes for public chat/input access controls. Policies
 are platform-scoped. For Discord, `platforms.discord.targets` are channel or
 thread IDs, `platforms.discord.groups` are role IDs, and
 `platforms.discord.users` are Discord user IDs. The default mode is `readonly`.
+For Buzz, targets are channel UUIDs and users are Nostr hex public keys. Buzz
+defaults to `off`; every enabled rule should include an
+`interactionProfileKey` whose profile mode matches the rule mode. A target rule
+may also include a validated `skills` list; those Site-hosted skills are loaded
+for every runtime interaction from that target.
+
+The Buzz adapter exposes direct, non-collecting history to trusted service
+callers at `GET /agent/buzz/channels/:channelId/messages`. It requires the
+shared `x-service-token`, is additionally restricted by the adapter's
+`BUZZ_HISTORY_CHANNEL_ALLOWLIST`, and accepts `since`, `limit`, and
+`includeOwn` query parameters. Relevant reply threads are expanded and each
+message includes root and direct-parent correlation. Reading this route does
+not advance `/sync` checkpoints or write to Prism Memory.
+
+Source-history routes expose read-only provider evidence through one Site-owned
+contract. The first search implementation uses Discord's native guild message
+search. It returns canonical message URLs and supports bounded context reads
+without advancing source collection checkpoints or writing to Prism Memory.
+Use the built-in `prism-source-history-reader` skill for retrieval order,
+coverage handling, retry behavior, and citation guidance.
+
+Discord search reuses the existing communication-adapter configuration and
+requires no search-specific environment variables. Target rules may include
+`historyScopes` containing Discord channel or thread IDs. When a trusted runtime
+supplies `sourceContext`, Site defaults history access to the originating target
+and permits broader targets only when listed in `historyScopes`. Age-restricted
+search is disabled in the first slice.
+
+Capabilities distinguish provider behavior instead of promising uniform
+history: Discord may report `native-search`, Buzz may report bounded
+read-through, and Telegram remains unavailable until bot-seen updates are
+durably retained in a local index.
 
 External interaction configuration:
 

@@ -20,6 +20,7 @@ Do not use browser admin routes such as `/admin/board` from Codex Runtime. Runti
 Core endpoints:
 
 - `GET /agent/target-apps`
+- `POST /agent/target-apps`
 - `POST /agent/change-board/requests`
 - `GET /agent/change-board/requests/next`
 - `GET /agent/change-board/requests/current`
@@ -189,6 +190,21 @@ List target apps:
 curl -fsSL \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
   "$PRISM_AGENT_API_BASE_URL/agent/target-apps"
+```
+
+When the user explicitly asks to register a GitHub repository as a target app,
+create it through the same Agent API. The route derives `name`, `slug`, and the
+`main` default branch when omitted, creates the standard writable development
+environment, and safely returns the existing target on an exact repository
+retry:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/target-apps" \
+  -d '{"repoUrl":"https://github.com/owner/repository","defaultBranch":"main"}'
 ```
 
 Create tracked change request:

@@ -3,11 +3,15 @@ import {
   createAuditLog,
   createTargetApp,
   createTargetEnvironment,
+  getDefaultTargetEnvironmentForApp,
   listTargetApps,
   listTargetEnvironments,
+  updateTargetEnvironment,
+  type TargetAppRecord,
 } from "@/lib/app-core"
 
 import { requireServiceAccess } from "@/lib/internal-service"
+import { normalizeGitHubRepoUrl, parseAgentTargetAppInput } from "@/lib/target-app-input"
 
 export async function GET() {
   const access = await requireServiceAccess()
@@ -18,18 +22,40 @@ export async function GET() {
   return NextResponse.json({ ok: true, targetApps: listTargetApps() })
 }
 
-function text(value: unknown, maxLength: number) {
-  return typeof value === "string" ? value.trim().slice(0, maxLength) : ""
-}
+function ensureDefaultEnvironment(targetApp: TargetAppRecord) {
+  const currentDefault = getDefaultTargetEnvironmentForApp(targetApp.id)
+  if (currentDefault) return { environment: currentDefault, created: false }
 
-function record(value: unknown) {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
-}
+  const environmentSlug = `${targetApp.slug}-default`
+  const existing = listTargetEnvironments(targetApp.id).find((environment) => environment.slug === environmentSlug)
+  if (existing) {
+    return {
+      environment: updateTargetEnvironment(existing.id, {
+        branch: targetApp.defaultBranch,
+        agentWritable: true,
+        isDefaultForAgent: true,
+      }),
+      created: false,
+    }
+  }
 
-function slug(value: unknown) {
-  return text(value, 120).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+  return {
+    environment: createTargetEnvironment({
+      targetAppId: targetApp.id,
+      slug: environmentSlug,
+      name: "Default",
+      kind: "development",
+      branch: targetApp.defaultBranch,
+      baseUrl: null,
+      deployBackend: "local",
+      deployConfig: { path: "/data/workspaces" },
+      agentWritable: true,
+      autoDeployEnabled: false,
+      humanReviewRequired: true,
+      isDefaultForAgent: true,
+    }),
+    created: true,
+  }
 }
 
 export async function POST(request: Request) {
@@ -37,72 +63,73 @@ export async function POST(request: Request) {
   if (!access.ok) {
     return NextResponse.json({ ok: false, error: access.error }, { status: access.status })
   }
-  const body = record(await request.json().catch(() => null))
-  const targetSlug = slug(body.slug)
-  const name = text(body.name, 160)
-  const repoUrl = text(body.repoUrl ?? body.repo_url, 2_000)
-  const defaultBranch = text(body.defaultBranch ?? body.default_branch, 160) || "main"
-  if (!targetSlug || !name || !repoUrl) {
-    return NextResponse.json({ ok: false, error: "slug, name, and repoUrl are required" }, { status: 400 })
+
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+  const parsed = parseAgentTargetAppInput(body)
+  if (!parsed.ok) {
+    return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 })
   }
-  let parsedRepoUrl: URL
+
+  const input = parsed.input
+  const targetApps = listTargetApps()
+  const existingByRepo = targetApps.find((targetApp) => (
+    targetApp.repoUrl
+    && normalizeGitHubRepoUrl(targetApp.repoUrl)?.toLowerCase() === input.repoUrl.toLowerCase()
+  ))
+  const existingBySlug = targetApps.find((targetApp) => targetApp.slug === input.slug)
+
+  if (existingBySlug && existingBySlug.id !== existingByRepo?.id) {
+    return NextResponse.json(
+      { ok: false, error: `A target app with slug '${input.slug}' already exists` },
+      { status: 409 },
+    )
+  }
+
   try {
-    parsedRepoUrl = new URL(repoUrl)
-  } catch {
-    return NextResponse.json({ ok: false, error: "repoUrl must be an absolute HTTPS URL" }, { status: 400 })
-  }
-  if (parsedRepoUrl.protocol !== "https:") {
-    return NextResponse.json({ ok: false, error: "repoUrl must be an absolute HTTPS URL" }, { status: 400 })
-  }
-  const existing = listTargetApps().find((target) => target.slug === targetSlug)
-  if (existing) {
-    if (existing.repoUrl !== repoUrl) {
-      return NextResponse.json({ ok: false, error: "TARGET_APP_SLUG_IN_USE" }, { status: 409 })
+    const created = !existingByRepo
+    const targetApp = existingByRepo ?? createTargetApp({
+      slug: input.slug,
+      name: input.name,
+      description: input.description,
+      repoUrl: input.repoUrl,
+      repoProvider: "github",
+      defaultBranch: input.defaultBranch,
+      framework: null,
+      deployBackend: "github",
+      deployConfig: { workspace: "external" },
+      agentEnabled: true,
+    })
+
+    if (!targetApp) throw new Error("Could not create target app")
+    const defaultEnvironment = ensureDefaultEnvironment(targetApp)
+    if (!defaultEnvironment.environment) throw new Error("Could not create default target environment")
+
+    if (created) {
+      createAuditLog({
+        actorUserId: null,
+        actionType: "agent.target_app.create",
+        targetType: "target_app",
+        targetId: targetApp.id,
+        meta: { slug: targetApp.slug, repoUrl: targetApp.repoUrl },
+      })
     }
-    return NextResponse.json({
-      ok: true,
-      created: false,
-      targetApp: existing,
-      targetEnvironments: listTargetEnvironments(existing.id),
-    })
-  }
-  try {
-    const targetApp = createTargetApp({
-      slug: targetSlug,
-      name,
-      description: text(body.description, 2_000) || null,
-      repoUrl,
-      repoProvider: text(body.repoProvider ?? body.repo_provider, 120) || "github",
-      defaultBranch,
-      framework: text(body.framework, 120) || null,
-      deployBackend: text(body.deployBackend ?? body.deploy_backend, 120) || "github",
-      deployConfig: record(body.deployConfig ?? body.deploy_config),
-      agentEnabled: body.agentEnabled !== false && body.agent_enabled !== false,
-    })
-    if (!targetApp) throw new Error("TARGET_APP_CREATE_FAILED")
-    const targetEnvironment = createTargetEnvironment({
-      targetAppId: targetApp.id,
-      slug: `${targetSlug}-development`,
-      name: "Development",
-      kind: "development",
-      branch: defaultBranch,
-      baseUrl: null,
-      deployBackend: "local",
-      deployConfig: { path: `/data/workspaces/${targetSlug}` },
-      agentWritable: true,
-      autoDeployEnabled: false,
-      humanReviewRequired: true,
-      isDefaultForAgent: true,
-    })
-    createAuditLog({
-      actorUserId: null,
-      actionType: "agent.target_app.create",
-      targetType: "target_app",
-      targetId: targetApp.id,
-      meta: { slug: targetSlug, repoUrl, defaultBranch },
-    })
-    return NextResponse.json({ ok: true, created: true, targetApp, targetEnvironments: [targetEnvironment] }, { status: 201 })
+    if (defaultEnvironment.created) {
+      createAuditLog({
+        actorUserId: null,
+        actionType: "agent.target_environment.create",
+        targetType: "target_environment",
+        targetId: defaultEnvironment.environment.id,
+        meta: { targetAppId: targetApp.id, slug: defaultEnvironment.environment.slug },
+      })
+    }
+
+    return NextResponse.json(
+      { ok: true, created, targetApp, targetEnvironment: defaultEnvironment.environment },
+      { status: created ? 201 : 200 },
+    )
   } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "TARGET_APP_CREATE_FAILED" }, { status: 400 })
+    const message = error instanceof Error ? error.message : "Could not create target app"
+    const status = /UNIQUE constraint failed/.test(message) ? 409 : 400
+    return NextResponse.json({ ok: false, error: message }, { status })
   }
 }
