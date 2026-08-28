@@ -3,6 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { workflowContinuationPolicy } from "@/lib/workflow-context-policy"
 import { continuationWorkflowRunSkills, initialWorkflowRunSkills } from "@/lib/workflow-skill-scope"
+import { interactiveContinuationPolicy } from "@/lib/interactive-continuation-policy"
 import { NextResponse } from "next/server"
 import {
   buildTargetEnvironmentDeployPlan,
@@ -1310,12 +1311,10 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   }
 
   try {
-    const profileContinuation = runtimeAgentProfile && typeof runtimeAgentProfile.contextPolicy.continuation === "string"
-      ? runtimeAgentProfile.contextPolicy.continuation
-      : null
-    const currentContinuationPolicy = linkedWorkflow
-      ? workflowContinuationPolicy(workflowAgentConfig)
-      : profileContinuation === "step" ? "step" : "session"
+    const currentContinuationPolicy = interactiveContinuationPolicy({
+      linkedWorkflow: Boolean(linkedWorkflow),
+      workflowAgentConfig,
+    })
     const runtimeResponse = await requestPrismRuntimeResponse({
       prompt: latestUserMessage.content,
       sessionId: session.id,
