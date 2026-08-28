@@ -6,6 +6,7 @@ import { agentProfilesMigration } from './migrations/040_agent_profiles';
 import { agentProfileAvatarMigration } from './migrations/041_agent_profile_avatar';
 import { agentProfileAccentColorMigration } from './migrations/042_agent_profile_accent_color';
 import { activeAgentExecutorFallbackMigration } from './migrations/043_active_agent_executor_fallback';
+import { codeReviewAgentMigration } from './migrations/044_code_review_agent';
 import { taskAgentExecutor, workflowAgentExecutor } from './agent-executors';
 import {
   adminAgentProfileId,
@@ -72,6 +73,38 @@ test('seeds the protected Admin Agent with workspace stewardship', () => {
   const editedAdmin = upsertAgentProfile({ key: 'admin-agent', name: 'Admin Agent', avatarUrl: '/avatars/admin.png', allowSystemProfileUpdate: true }, db);
   assert.equal(editedAdmin.avatarUrl, '/avatars/admin.png');
   assert.equal(getAgentProfileVersion(adminAgentProfileId, 1, db)?.avatarUrl, null);
+  db.close();
+});
+
+test('seeds a protected Code Review Agent and assigns it to the review workflow steps', () => {
+  const db = testDb();
+  db.exec(`
+    CREATE TABLE workflows (
+      key TEXT PRIMARY KEY, version INTEGER NOT NULL, definition_json TEXT NOT NULL,
+      system_default INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL
+    );
+    INSERT INTO workflows (key, version, definition_json, system_default, updated_at)
+    VALUES ('change-request-default', 5, '{}', 0, '2026-01-01');
+  `);
+  db.exec(codeReviewAgentMigration.sql);
+
+  const reviewer = getAgentProfile('code-review-agent', db);
+  assert.equal(reviewer?.systemKey, 'code-review-agent');
+  assert.equal(reviewer?.owner.agentProfileId, adminAgentProfileId);
+  assert.deepEqual(reviewer?.skills, ['prism-code-review']);
+  assert.deepEqual(reviewer?.authority.gatewayCredentials, ['github']);
+  assert.deepEqual(reviewer?.contextPolicy, { continuation: 'step', handoff: 'artifacts' });
+  assert.throws(
+    () => upsertAgentProfile({ key: 'code-review-agent', name: 'Replacement' }, db),
+    /SYSTEM_AGENT_PROFILE_PROTECTED/,
+  );
+
+  const workflowRow = db.prepare('SELECT version, definition_json FROM workflows WHERE key = ?')
+    .get('change-request-default') as { version: number; definition_json: string };
+  const definition = JSON.parse(workflowRow.definition_json) as { steps: Array<Record<string, unknown>> };
+  assert.equal(workflowRow.version, 6);
+  assert.equal(definition.steps.find((step) => step.key === 'local-code-review')?.executorAgent, 'code-review-agent');
+  assert.equal(definition.steps.find((step) => step.key === 'pr-review')?.executionMode, 'reviewer');
   db.close();
 });
 

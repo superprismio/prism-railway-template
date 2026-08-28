@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { resolveAgentProfileRuntimeScope } from "./agent-profile-runtime-scope"
+import {
+  filterGatewayCredentialKeysForProfile,
+  resolveAgentProfileRuntimeScope,
+} from "./agent-profile-runtime-scope"
 
 test("assigned Agent Profile controls runtime identity, runtime, and skills", () => {
   const scope = resolveAgentProfileRuntimeScope({
@@ -23,4 +26,17 @@ test("assigned Agent Profile controls runtime identity, runtime, and skills", ()
   assert.match(scope.policyInstructions ?? "", /Cite sources/)
   assert.match(scope.policyInstructions ?? "", /Research Agent.*research.*version 3/)
   assert.equal(scope.metadata?.version, 3)
+})
+
+test("profile Gateway credential allowlists cap workflow credentials", () => {
+  const profile = {
+    id: "reviewer", key: "code-review-agent", name: "Code Review Agent", description: null, avatarUrl: null,
+    accentColor: "#36E7FF", status: "active" as const, systemKey: "code-review-agent",
+    owner: { type: "workspace" as const, userId: null, agentProfileId: null }, stewards: [], persona: {},
+    runtimeProfileKey: null, skills: [], memoryScope: {},
+    authority: { credentialPolicy: "allowlist", gatewayCredentials: ["github"] }, contextPolicy: {}, version: 1,
+    createdByUserId: null, bindings: [], createdAt: "", updatedAt: "",
+  }
+  assert.deepEqual(filterGatewayCredentialKeysForProfile(profile, ["portal", "github", "github"]), ["github"])
+  assert.deepEqual(filterGatewayCredentialKeysForProfile(null, ["portal", "github"]), ["portal", "github"])
 })

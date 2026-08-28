@@ -1,16 +1,16 @@
-# PR Review Checkpoint
+# External PR Review Checkpoint
 
-Check the linked pull request and linked issue state without starting new implementation work by default.
+Refresh the linked pull request's external review and check state without starting implementation work.
 
-Use the request details, latest comments, agent-run history, artifacts, and external refs. If a GitHub pull request ref exists, inspect the PR state, review comments, requested changes, failing checks, and merge readiness. If no pull request ref exists but a branch was pushed, create the PR into the target repository base branch when remote access is configured, then attach the PR external ref.
+Use the `prism-code-review` skill and read the latest `code-review.md` and `code-review.json` first. Inspect GitHub review comments, requested changes, checks, and merge readiness, including CodeRabbit, Copilot, or human review state when present. If no pull request ref exists, report the missing handoff instead of creating a PR from this checkpoint.
 
 Expected behavior:
 
-- read `triage-fix-notes.md` and any implementation artifacts before judging readiness
+- preserve the local review's immutable head SHA and report when the PR head has changed since that review
 - fetch and summarize linked PR reviews, review comments, check status, and mergeability
 - if reviewers requested changes, summarize the required fixes and say the request should return to `implement`
 - if review feedback has been addressed and the PR is ready for human decision, say the request should move to `review`
-- if a linked GitHub issue exists, leave a concise issue comment when there is meaningful new state such as PR opened, review changes requested, checks passing, or ready for final review
+- update the existing marker-based Prism PR comment only when there is meaningful new state
 - do not merge the PR from this checkpoint
 - do not fabricate review results when the GitHub API or repository access is unavailable
 

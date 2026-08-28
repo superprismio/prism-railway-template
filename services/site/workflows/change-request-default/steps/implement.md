@@ -8,6 +8,7 @@ Expected behavior:
 
 - prepare or reuse the request branch
 - read `triage-fix-notes.md` when it exists and use it as primary implementation guidance
+- when returning from review, read `code-review.json` and address its open findings without discarding finding history
 - make the code/content/config changes
 - run relevant checks when practical
 - commit the result

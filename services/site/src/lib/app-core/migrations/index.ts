@@ -40,6 +40,7 @@ import { agentProfilesMigration } from './040_agent_profiles';
 import { agentProfileAvatarMigration } from './041_agent_profile_avatar';
 import { agentProfileAccentColorMigration } from './042_agent_profile_accent_color';
 import { activeAgentExecutorFallbackMigration } from './043_active_agent_executor_fallback';
+import { codeReviewAgentMigration } from './044_code_review_agent';
 
 export interface Migration {
   name: string;
@@ -89,4 +90,5 @@ export const migrations: Migration[] = [
   agentProfileAvatarMigration,
   agentProfileAccentColorMigration,
   activeAgentExecutorFallbackMigration,
+  codeReviewAgentMigration,
 ];

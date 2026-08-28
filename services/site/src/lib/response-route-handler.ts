@@ -33,10 +33,14 @@ import {
   updateAgentResponseJob,
   updateChangeRequest,
   updateWorkflowRun,
+  workflowAgentExecutor,
   type RuntimeResponse,
   type RuntimeTraceEntry,
 } from "@/lib/app-core"
-import { resolveAgentProfileRuntimeScope } from "@/lib/agent-profile-runtime-scope"
+import {
+  filterGatewayCredentialKeysForProfile,
+  resolveAgentProfileRuntimeScope,
+} from "@/lib/agent-profile-runtime-scope"
 import { publishCheckpointReceipt } from "@/lib/prism-lab/checkpoint-receipt"
 
 import { adminFetch } from "@/lib/admin"
@@ -768,9 +772,22 @@ function startWorkflowAgentStep(input: {
   agentRunId?: string | null
   action?: string | null
   autoContinued?: boolean
+  agentProfileId: string
+  agentProfileVersion: number
+  executionMode: string
 }) {
   const existingAgentRun = input.agentRunId ? getAgentRun(input.agentRunId) : null
   if (input.agentRunId && !existingAgentRun) {
+    return null
+  }
+  if (
+    existingAgentRun &&
+    (
+      existingAgentRun.agentProfileId !== input.agentProfileId ||
+      existingAgentRun.agentProfileVersion !== input.agentProfileVersion ||
+      existingAgentRun.executionMode !== input.executionMode
+    )
+  ) {
     return null
   }
   const startedAt = new Date().toISOString()
@@ -818,6 +835,9 @@ function startWorkflowAgentStep(input: {
         workflowRunId: input.workflowRunId,
         workflowStepKey: input.stepKey,
         sessionId: input.sessionId,
+        agentProfileId: input.agentProfileId,
+        agentProfileVersion: input.agentProfileVersion,
+        executionMode: input.executionMode,
         source: "site",
         input: {
           workflowKey: input.workflowKey,
@@ -1079,10 +1099,26 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     linkedWorkflow: Boolean(linkedWorkflow),
     isEntrypoint: runnableStepKey === workflowEntrypoint,
   })
+  let runnableStepExecutor = null
+  if (linkedWorkflow && runnableWorkflowStep) {
+    try {
+      runnableStepExecutor = workflowAgentExecutor(linkedWorkflow.definition, runnableWorkflowStep)
+    } catch (error) {
+      return NextResponse.json(
+        { ok: false, error: error instanceof Error ? error.message : "AGENT_EXECUTOR_RESOLUTION_FAILED" },
+        { status: 409 },
+      )
+    }
+  }
+  const runtimeAgentProfile = runnableStepExecutor
+    ? getAgentProfileVersion(runnableStepExecutor.profileId, runnableStepExecutor.profileVersion)
+    : assignedAgentProfile
+  const runtimeAgentProfileVersion = runnableStepExecutor?.profileVersion ?? profileAssignment?.profileVersion
+  const runtimeExecutionMode = runnableStepExecutor?.executionMode ?? requestedExecutionMode
   const agentRuntimeScope = resolveAgentProfileRuntimeScope({
-    profile: assignedAgentProfile,
-    assignedVersion: profileAssignment?.profileVersion,
-    executionMode: requestedExecutionMode,
+    profile: runtimeAgentProfile,
+    assignedVersion: runtimeAgentProfileVersion,
+    executionMode: runtimeExecutionMode,
     requestSkills: requestScopedSkills,
     callerRuntimeProfileKey: callerRequestedRuntimeProfileKey,
   })
@@ -1092,10 +1128,10 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   const activeCredentials = includeTrustedRuntimeCredentials
     ? await listEnabledGatewayCredentialsOrEmpty()
     : []
-  const requestedCredentials = Array.from(new Set([
+  const requestedCredentials = filterGatewayCredentialKeysForProfile(runtimeAgentProfile, [
     ...activeCredentials.map((credential) => credential.key),
     ...requestedCredentialsFromAgentConfig(workflowAgentConfig),
-  ]))
+  ])
 
   createAgentMessage({
     sessionId: session.id,
@@ -1261,6 +1297,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       idempotencyKey,
       agentRunId: providedAgentRunId,
       action: workflowAction,
+      agentProfileId: runnableStepExecutor?.profileId ?? runtimeAgentProfile?.id ?? "agent-profile-admin",
+      agentProfileVersion: runnableStepExecutor?.profileVersion ?? runtimeAgentProfile?.version ?? 1,
+      executionMode: runtimeExecutionMode,
     })
     if (!activeAgentRunId) {
       return NextResponse.json(
@@ -1271,8 +1310,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   }
 
   try {
-    const profileContinuation = assignedAgentProfile && typeof assignedAgentProfile.contextPolicy.continuation === "string"
-      ? assignedAgentProfile.contextPolicy.continuation
+    const profileContinuation = runtimeAgentProfile && typeof runtimeAgentProfile.contextPolicy.continuation === "string"
+      ? runtimeAgentProfile.contextPolicy.continuation
       : null
     const currentContinuationPolicy = linkedWorkflow
       ? workflowContinuationPolicy(workflowAgentConfig)
@@ -1489,6 +1528,17 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           break
         }
 
+        let continuationExecutor
+        try {
+          continuationExecutor = workflowAgentExecutor(linkedWorkflow!.definition, continuationStep)
+        } catch {
+          break
+        }
+        const continuationProfile = getAgentProfileVersion(
+          continuationExecutor.profileId,
+          continuationExecutor.profileVersion,
+        )
+
         const continuationAgentRunId = startWorkflowAgentStep({
           requestId: activeLinkedChangeRequestId,
           workflowRunId: latestRun.id,
@@ -1497,6 +1547,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           sessionId: session.id,
           idempotencyKey: continuationIdempotencyKey,
           autoContinued: true,
+          agentProfileId: continuationExecutor.profileId,
+          agentProfileVersion: continuationExecutor.profileVersion,
+          executionMode: continuationExecutor.executionMode,
         })
 
         const continuationInstruction = readInstructionFile(continuationStep.instructionPath)
@@ -1504,15 +1557,24 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           ...(isRecord(linkedWorkflow?.definition?.agentConfig) ? linkedWorkflow.definition.agentConfig : {}),
           ...(isRecord(continuationStep?.agentConfig) ? continuationStep.agentConfig : {}),
         }
-        const continuationRequestedSkills = Array.from(new Set([
-          ...(assignedAgentProfile?.skills ?? []),
-          ...continuationWorkflowRunSkills(continuationAgentConfig),
-        ]))
-        const continuationPolicy = workflowContinuationPolicy(continuationAgentConfig)
-        const continuationCredentials = Array.from(new Set([
+        const continuationScope = resolveAgentProfileRuntimeScope({
+          profile: continuationProfile,
+          assignedVersion: continuationExecutor.profileVersion,
+          executionMode: continuationExecutor.executionMode,
+          requestSkills: continuationWorkflowRunSkills(continuationAgentConfig),
+          callerRuntimeProfileKey: null,
+        })
+        const profileContinuation = continuationProfile && typeof continuationProfile.contextPolicy.continuation === "string"
+          ? continuationProfile.contextPolicy.continuation
+          : null
+        const configuredContinuationPolicy = workflowContinuationPolicy(continuationAgentConfig)
+        const continuationPolicy = configuredContinuationPolicy === "step" || profileContinuation === "step"
+          ? "step"
+          : "session"
+        const continuationCredentials = filterGatewayCredentialKeysForProfile(continuationProfile, [
           ...activeCredentials.map((credential) => credential.key),
           ...requestedCredentialsFromAgentConfig(continuationAgentConfig),
-        ]))
+        ])
         const continuationPrompt = [
           `Automatically continue workflow step ${continuationStepKey} for request #${latestRequest.requestNumber}: ${latestRequest.title}.`,
           `Step label: ${typeof continuationStep.label === "string" ? continuationStep.label : continuationStepKey}.`,
@@ -1536,11 +1598,11 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             },
             metadata: {
               transport: "site",
-              policyInstructions: agentRuntimeScope.policyInstructions,
-              agentProfile: agentRuntimeScope.metadata,
-              runtimeProfileKey: requestedRuntimeProfileKey,
+              policyInstructions: continuationScope.policyInstructions,
+              agentProfile: continuationScope.metadata,
+              runtimeProfileKey: continuationScope.runtimeProfileKey,
               sessionRuntimeKey: continuationRuntimeKey,
-              requestedSkills: continuationRequestedSkills,
+              requestedSkills: continuationScope.skills,
               skillSelectionMode: "exact",
               workflow: linkedWorkflow
                 ? {

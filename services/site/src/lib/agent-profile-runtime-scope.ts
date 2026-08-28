@@ -1,5 +1,22 @@
 import type { AgentProfileRecord } from "@/lib/app-core"
 
+function stringList(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : []
+}
+
+export function filterGatewayCredentialKeysForProfile(
+  profile: AgentProfileRecord | null,
+  credentialKeys: string[],
+) {
+  if (profile?.authority.credentialPolicy !== "allowlist") {
+    return Array.from(new Set(credentialKeys))
+  }
+  const allowed = new Set(stringList(profile.authority.gatewayCredentials))
+  return Array.from(new Set(credentialKeys)).filter((credentialKey) => allowed.has(credentialKey))
+}
+
 export function resolveAgentProfileRuntimeScope(input: {
   profile: AgentProfileRecord | null
   assignedVersion?: number | null

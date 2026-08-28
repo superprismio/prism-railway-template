@@ -481,10 +481,13 @@ export function getAgentProfileVersion(profileId: string, version: number | null
 
 export function upsertAgentProfile(input: UpsertAgentProfileInput, db: Database.Database = getDb()) {
   const profileKey = key(input.key);
-  if (profileKey === adminAgentProfileKey && input.allowSystemProfileUpdate !== true) throw new Error('ADMIN_AGENT_PROFILE_PROTECTED');
+  const existing = profileRowByKey(profileKey, db);
+  if (existing?.system_key && input.allowSystemProfileUpdate !== true) {
+    if (profileKey === adminAgentProfileKey) throw new Error('ADMIN_AGENT_PROFILE_PROTECTED');
+    throw new Error('SYSTEM_AGENT_PROFILE_PROTECTED');
+  }
   const name = text(input.name, 160);
   if (!name) throw new Error('AGENT_PROFILE_NAME_REQUIRED');
-  const existing = profileRowByKey(profileKey, db);
   const ownerType = input.ownerType ?? existing?.owner_type ?? 'user';
   const ownerUserId = ownerType === 'user' ? text(input.ownerUserId ?? existing?.owner_user_id, 200) || null : null;
   const ownerAgentProfileId = ownerType === 'agent' ? text(input.ownerAgentProfileId ?? existing?.owner_agent_profile_id, 200) || null : null;
