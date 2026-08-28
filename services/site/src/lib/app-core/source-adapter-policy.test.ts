@@ -48,6 +48,7 @@ test("source policy fails closed for an unknown platform", () => {
   assert.equal(resolved.mode, "off");
   assert.equal(resolved.interactionProfileKey, null);
   assert.deepEqual(resolved.capabilities, []);
+  assert.deepEqual(resolved.skills, []);
   assert.deepEqual(resolved.matchedRules, ["default"]);
 });
 
@@ -58,7 +59,11 @@ test("Buzz channel and user rules resolve interaction profiles with fail-closed 
         defaultMode: "off",
         targets: {
           lab: { mode: "readonly", interactionProfileKey: "buzz-prism-readonly" },
-          ops: { mode: "full", interaction_profile_key: "buzz-prism-ops" },
+          ops: {
+            mode: "full",
+            interaction_profile_key: "buzz-prism-ops",
+            skills: ["veydrift-commander", "prism-api-reader", "bad skill"],
+          },
         },
         users: {
           limited: { mode: "readonly", interactionProfileKey: "buzz-prism-readonly" },
@@ -75,6 +80,7 @@ test("Buzz channel and user rules resolve interaction profiles with fail-closed 
   });
   assert.equal(ops.mode, "full");
   assert.equal(ops.interactionProfileKey, "buzz-prism-ops");
+  assert.deepEqual(ops.skills, ["veydrift-commander", "prism-api-reader"]);
 
   const limited = resolveSourceAdapterPolicy(policy, {
     platform: "buzz",
@@ -83,6 +89,7 @@ test("Buzz channel and user rules resolve interaction profiles with fail-closed 
   });
   assert.equal(limited.mode, "readonly");
   assert.equal(limited.interactionProfileKey, "buzz-prism-readonly");
+  assert.deepEqual(limited.skills, ["veydrift-commander", "prism-api-reader"]);
 
   const incomplete = resolveSourceAdapterPolicy(policy, {
     platform: "buzz",

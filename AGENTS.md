@@ -60,6 +60,7 @@ Send service auth as:
 - `POST /agent/responses`
 - `GET /agent/workflow-events`
 - `GET /agent/target-apps`
+- `POST /agent/target-apps`
 - `GET /agent/change-board/requests/:id`
 - `POST /agent/change-board/requests`
 - `GET /agent/change-board/requests/next`
@@ -73,6 +74,7 @@ Send service auth as:
 - `PATCH /agent/site-content/branding`
 - `GET /agent/source-adapter-policy`
 - `PATCH /agent/source-adapter-policy`
+- `GET /agent/buzz/channels/:channelId/messages`
 - `GET /agent/interaction-profiles`
 - `POST /agent/interaction-profiles`
 - `GET /agent/interaction-profiles/:key`
@@ -105,7 +107,7 @@ result reads are limited to artifacts listed in
 `authConfig.resultArtifactNames` and to requests created by that interface and
 hook.
 
-For source adapter access rules, use `/agent/source-adapter-policy`. Policies are platform-scoped. Use `platforms.discord.targets` for Discord channels or threads, `platforms.discord.groups` for Discord role IDs, and `platforms.discord.users` for Discord user IDs. Use `platforms.telegram.targets` for Telegram chat/group/channel IDs and `platforms.telegram.users` for Telegram user IDs. Telegram DMs are disabled by default unless explicitly enabled in adapter env/config.
+For source adapter access rules, use `/agent/source-adapter-policy`. Policies are platform-scoped. Use `platforms.discord.targets` for Discord channels or threads, `platforms.discord.groups` for Discord role IDs, and `platforms.discord.users` for Discord user IDs. Use `platforms.telegram.targets` for Telegram chat/group/channel IDs and `platforms.telegram.users` for Telegram user IDs. A target rule may include `skills` to load verified Site-hosted skills for every runtime interaction from that target. Telegram DMs are disabled by default unless explicitly enabled in adapter env/config.
 
 For named external HTTP chat paths, use the built-in
 `prism-interaction-author` skill and the interaction profile/external interface
