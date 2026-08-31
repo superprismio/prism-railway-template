@@ -28,3 +28,36 @@ test("workflow explorer marks current, observed, completed, branches, and loops"
   ])
   assert.equal(steps[2]?.terminal, true)
 })
+
+test("workflow explorer exposes deterministic review-loop routes", () => {
+  const steps = buildWorkflowExplorer({
+    definition: {
+      steps: [
+        { key: "implement", type: "agent", next: "review" },
+        { key: "review", type: "agent", next: "decision" },
+        {
+          key: "decision",
+          type: "loop",
+          next: "human-review",
+          loop: {
+            target: "implement",
+            onMaxIterations: "attention",
+            onError: "attention",
+          },
+        },
+        { key: "human-review", type: "gate", next: "closed" },
+        { key: "attention", type: "gate", next: "human-review" },
+        { key: "closed", type: "terminal" },
+      ],
+    },
+    currentStepKey: "decision",
+    events: [],
+  })
+
+  assert.deepEqual(steps[2]?.routes, [
+    { action: "next", target: "human-review", loop: false },
+    { action: "changes requested", target: "implement", loop: true },
+    { action: "max iterations", target: "attention", loop: false },
+    { action: "evaluation error", target: "attention", loop: false },
+  ])
+})

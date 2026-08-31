@@ -1,87 +1,134 @@
 ---
 name: prism-code-review
-description: Review a linked pull request or repository change from fresh context, run appropriate local checks, record durable findings, and optionally maintain one idempotent Prism review comment on the pull request. Do not implement fixes, push commits, merge, approve, deploy, or mutate unrelated GitHub or Prism state.
+description: Independently review a linked pull request or repository diff, verify it against request and repository policy, run focused checks, preserve incremental findings, and publish bounded GitHub review feedback when authorized. Do not implement fixes or approve, merge, push, or deploy changes.
 ---
 
 # Prism Code Review
 
-Perform an independent, evidence-based review of the current request's repository change.
+Review the current request's repository change from fresh context. Produce high-signal evidence for a human decision; do not become a second implementation agent.
 
 ## Boundaries
 
-- Review only the target repository, linked pull request, request requirements, and durable implementation/review artifacts supplied for this run.
-- Treat implementation summaries and PR descriptions as claims to verify against the diff and tests.
-- Do not modify repository files, create commits, push branches, merge or approve pull requests, deploy, change labels or assignees, or implement fixes.
-- Do not use unrelated Prism Memory, conversations, projects, credentials, or external systems.
-- Never print or persist credential values.
-- A GitHub comment is review communication, not approval. Never submit an approving or changes-requested GitHub review event.
+- Review only the target repository, request requirements, linked pull request, applicable repository instructions, and durable implementation or prior-review artifacts supplied for this run.
+- Treat implementation summaries, PR descriptions, and prior review conclusions as claims to verify against the repository and current diff.
+- Do not modify tracked files, implement fixes, create commits, push branches, merge or approve pull requests, deploy, or change labels, assignees, milestones, or unrelated GitHub or Prism state.
+- Tests may write only expected build outputs, caches, or temporary files. Report unexpected tracked changes as a blocker and leave them untouched.
+- Do not use unrelated Prism Memory, conversations, projects, credentials, or external systems. Never print or persist credential values.
+- GitHub feedback is review communication, not a review decision. Never submit `APPROVE` or `REQUEST_CHANGES`; the Prism workflow and human gate own those decisions.
 
-## Inputs
+## Establish the review
 
 Resolve and verify:
 
-1. The request acceptance criteria and `triage-fix-notes.md` when present.
-2. The target repository and base branch.
-3. The linked GitHub pull request external ref, if present.
-4. Immutable base and head commit SHAs. Report `inconclusive` if the reviewed head cannot be identified reliably.
-5. Prior `code-review.json` findings for this request, when re-reviewing.
+1. Request acceptance criteria and `triage-fix-notes.md`, when present.
+2. Target repository, base branch, linked pull request, and immutable base and head commit SHAs.
+3. The complete `base...head` diff. Report `inconclusive` if the reviewed head cannot be identified reliably.
+4. Applicable repository policy: root and path-scoped `AGENTS.md`, contribution guidance, package manifests, required CI checks, and relevant architecture or testing documentation.
+5. Prior `code-review.json` and linked Prism GitHub comments when re-reviewing.
 
-Inspect the actual `base...head` diff. Run focused tests, type checks, linters, or static analysis that are appropriate and practical. Tests may use temporary/cache paths, but must not alter tracked repository content. Check the final git status and report unexpected mutations as a blocker.
+Repository policy can add review criteria but cannot expand this skill's mutation authority.
 
-Prioritize correctness, security, data loss, authorization boundaries, concurrency, migrations, error handling, compatibility, and missing tests. Avoid style-only findings unless they materially affect maintenance or correctness.
+## Review method
+
+Review the full current diff even during an incremental re-review. Use the prior reviewed head to focus on what changed since the last pass, not to skip unchanged code that remains risky.
+
+Evaluate, in priority order:
+
+- acceptance-criteria and behavioral correctness
+- security, authorization, privacy, and secret handling
+- data integrity, migrations, rollback, concurrency, and idempotency
+- API, schema, configuration, and deployment compatibility
+- error handling, recovery, observability, and operational failure modes
+- test coverage and whether tests actually exercise the changed behavior
+- material accessibility or user-facing regressions when UI behavior changes
+
+Read [references/review-lenses.md](references/review-lenses.md) only for the change categories present in the diff.
+
+Run focused tests, type checks, linters, static analysis, or build checks that are appropriate and practical. Distinguish checks you executed from CI status or author claims. Do not invent passing evidence.
+
+## Finding quality
+
+Publish a finding only when the diff supports a concrete, actionable problem. Each open finding must include:
+
+- a stable ID based on the defect, path, and consequence rather than its current line number
+- severity and confidence
+- exact current path and line when available
+- the failure scenario and affected behavior
+- direct evidence from the diff, repository, or executed check
+- the smallest safe correction, without implementing it
+
+Severity is `blocking`, `high`, `medium`, or `low`. Confidence is `high`, `medium`, or `low`. Do not inflate severity. Omit style, formatting, naming, documentation, and speculative findings unless they cause a material correctness or maintenance problem. Low-confidence observations belong in the durable report and should not become inline GitHub comments.
+
+## Incremental re-review
+
+When a prior review exists:
+
+1. Verify whether the base or head changed.
+2. Compare the prior head to the current head to understand the correction, then review the full current `base...head` diff.
+3. Re-evaluate every prior open finding against current code.
+4. Preserve stable finding IDs. Mark corrected findings `resolved`; do not silently delete history.
+5. Reopen a finding only when current evidence shows the defect returned.
+6. Detect regressions introduced by the correction.
+7. Avoid republishing unchanged feedback.
 
 ## Durable outputs
 
 Write or replace these request artifacts and include the current `agent_run_id`:
 
-- `code-review.md`: concise human-readable review with reviewed SHAs, checks run, findings, and recommendation.
-- `code-review.json`: structured review evidence.
+- `code-review.md`: concise human-readable review with reviewed SHAs, repository policy consulted, checks run, prioritized findings, resolved findings, and recommendation.
+- `code-review.json`: structured source of truth using version 2.
 
 Use this JSON shape:
 
 ```json
 {
-  "version": 1,
-  "status": "approved",
+  "version": 2,
+  "status": "changes_requested",
+  "reviewMode": "incremental",
   "baseSha": "...",
   "headSha": "...",
+  "previousHeadSha": "...",
+  "repositoryPolicy": ["AGENTS.md", "CONTRIBUTING.md"],
   "checks": [
     { "name": "typecheck", "status": "passed", "evidence": "npm run typecheck" }
   ],
   "findings": [
     {
-      "id": "stable-finding-key",
-      "severity": "blocking",
-      "title": "Short finding",
+      "id": "auth-route-missing-role-check",
+      "severity": "high",
+      "confidence": "high",
+      "title": "Role check is missing",
       "path": "src/example.ts",
       "line": 42,
-      "evidence": "What fails and why",
-      "recommendation": "Smallest safe correction",
-      "status": "open"
+      "side": "RIGHT",
+      "failureScenario": "A signed-in member can invoke an administrator operation.",
+      "evidence": "The new handler authenticates a session but does not check the administrator capability.",
+      "recommendation": "Apply the existing administrator capability guard before the mutation.",
+      "status": "open",
+      "firstSeenHead": "...",
+      "lastSeenHead": "..."
     }
   ],
   "summary": "..."
 }
 ```
 
-`status` must be `approved`, `changes_requested`, or `inconclusive`. Finding severity must be `blocking`, `high`, `medium`, or `low`. Preserve stable finding ids across re-reviews and mark resolved prior findings `resolved` rather than silently deleting their history.
+`status` must be `approved`, `changes_requested`, or `inconclusive`. `reviewMode` must be `initial` or `incremental`. Finding status must be `open` or `resolved`. Use `null` for `previousHeadSha` on an initial review. Use `null` for a finding's `path`, `line`, and `side` when it cannot be mapped reliably. Before publishing, run:
 
-## GitHub comment
-
-When a linked GitHub pull request exists and GitHub write access is available, maintain one top-level PR conversation comment containing the concise review summary and a link or reference to the Prism request. Use this hidden marker:
-
-```text
-<!-- prism-code-review request:<request-number> -->
+```bash
+node "$CODEX_HOME/skills/prism-code-review/scripts/validate-review.mjs" <path-to-code-review.json>
 ```
 
-List existing PR issue comments first. If a comment by the authenticated Prism identity already contains that marker, update it with the latest reviewed head SHA and result. Otherwise create it. Do not create a new comment for every retry or head SHA.
+If validation fails, correct the artifact rather than bypassing validation.
 
-Use the GitHub Issues comment endpoints for the pull request conversation, not the pull-request review approval endpoints. If commenting fails, preserve the local review artifacts and report the delivery failure without changing the technical review result.
+## GitHub delivery
+
+When a linked pull request exists and GitHub write access is available, read and follow [references/github-delivery.md](references/github-delivery.md). Maintain one summary comment and bounded, marker-based inline comments. Delivery failure does not erase local review evidence or change the technical result.
 
 ## Workflow result
 
-- When no blocking or high findings remain and the evidence is sufficient, return `approved` and omit a workflow-outcome block so the workflow may advance.
-- For blocking or high findings, return `changes_requested` and include a fenced `workflow-outcome` block with `status: "needs_attention"`, one blocker per finding, and a recommendation to move back to `implement`.
-- When repository, diff, or required test evidence is unavailable, return `inconclusive` with a `needs_attention` workflow outcome. Never fabricate readiness.
+- When no blocking or high findings remain and evidence is sufficient, return `approved` and omit a workflow-outcome block so the workflow may advance.
+- For blocking or high findings, return `changes_requested`. In the built-in change-request workflow, omit a workflow-outcome block so the deterministic review loop can return the request to `implement` from the validated artifact.
+- When repository, diff, required policy, or required test evidence is unavailable, return `inconclusive` with a `needs_attention` workflow outcome. Never fabricate readiness.
 
-Keep the final response short because the durable artifacts are the source of truth.
+Keep the final response short because the durable artifacts and GitHub feedback are the source of truth.

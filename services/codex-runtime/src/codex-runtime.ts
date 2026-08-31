@@ -80,6 +80,30 @@ export type CodexRuntimeResult = {
   }>;
 };
 
+type WorkflowDelegationPolicy = {
+  allowed: boolean;
+  maxAgents: number;
+};
+
+type CodexJsonEvent = {
+  type?: string;
+  thread_id?: string;
+  message?: string;
+  item?: {
+    id?: string;
+    type?: string;
+    text?: string;
+    role?: string;
+    status?: string;
+    tool?: string;
+    sender_thread_id?: string;
+    receiver_thread_ids?: string[];
+    prompt?: string | null;
+    agents_states?: Record<string, { status?: string; message?: string | null }>;
+  };
+  error?: { message?: string } | string;
+};
+
 type CodexRuntimeError = Error & {
   codexThreadId?: string | null;
   trace?: Array<{
@@ -596,6 +620,21 @@ async function gitHasChanges(cwd: string) {
   return Boolean(status.trim());
 }
 
+async function gitHasTrackedChanges(cwd: string) {
+  const status = await runCommandCapture(['git', 'status', '--porcelain', '--untracked-files=no'], { cwd }).catch(() => '');
+  return Boolean(status.trim());
+}
+
+export function isReviewerExecution(input: Pick<CodexRuntimeInput, 'metadata'>) {
+  const profile = input.metadata?.agentProfile;
+  return Boolean(
+    profile
+    && typeof profile === 'object'
+    && !Array.isArray(profile)
+    && (profile as Record<string, unknown>).executionMode === 'reviewer',
+  );
+}
+
 async function remoteBranchExists(repoUrl: string, branchName: string, cwd: string, githubToken: string | null) {
   const output = await runGitHubReadCapture(
     repoUrl,
@@ -619,6 +658,16 @@ async function finalizeGitWorkspace(
   trace: CodexRuntimeResult['trace'],
   githubToken: string | null,
 ) {
+  const workspacePath = preparedWorkspace.workspacePath;
+  if (isReviewerExecution(input)) {
+    if (await gitHasTrackedChanges(workspacePath)) {
+      appendTrace(trace, 'git.review_modified', 'Reviewer modified tracked repository files; refusing to commit or push');
+      throw new Error('REVIEWER_TRACKED_WORKSPACE_MODIFIED');
+    }
+    appendTrace(trace, 'git.review_readonly', 'Reviewer left tracked files unchanged; skipped commit and push');
+    return await captureGitState(workspacePath, preparedWorkspace.baseBranch || 'main').catch(() => preparedWorkspace);
+  }
+
   if (!preparedWorkspace.repoUrl || preparedWorkspace.workspacePath === config.codexWorkspaceRoot) {
     return await captureGitState(
       preparedWorkspace.workspacePath,
@@ -626,7 +675,6 @@ async function finalizeGitWorkspace(
     ).catch(() => preparedWorkspace);
   }
 
-  const workspacePath = preparedWorkspace.workspacePath;
   const currentBranch = await runCommandCapture(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], { cwd: workspacePath })
     .catch(() => preparedWorkspace.branchName || '');
 
@@ -667,12 +715,36 @@ async function finalizeGitWorkspace(
 
 type LoadedPrismSkills = Awaited<ReturnType<typeof loadRelevantPrismSkills>>;
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+export function workflowDelegationPolicy(
+  input: Pick<CodexRuntimeInput, 'metadata'>,
+): WorkflowDelegationPolicy | null {
+  const workflow = recordValue(input.metadata?.workflow);
+  if (!workflow) return null;
+  const agentConfig = recordValue(workflow.agentConfig);
+  const delegation = recordValue(agentConfig?.delegation);
+  if (delegation?.allowed !== true) return { allowed: false, maxAgents: 0 };
+
+  const requestedMax = typeof delegation.maxAgents === 'number' && Number.isInteger(delegation.maxAgents)
+    ? delegation.maxAgents
+    : 1;
+  if (requestedMax < 1) return { allowed: false, maxAgents: 0 };
+  return { allowed: true, maxAgents: Math.min(requestedMax, 8) };
+}
+
 export function buildPrompt(
   input: CodexRuntimeInput,
   isResume: boolean,
   prismSkills: LoadedPrismSkills,
 ) {
   const isReadOnlyUtility = input.authorityMode === 'read_only_utility';
+  const isReviewer = isReviewerExecution(input);
+  const delegation = workflowDelegationPolicy(input);
   const history = input.recentHistory
     .slice(-20)
     .map((entry) => `${entry.role === 'assistant' ? 'Assistant' : 'User'}: ${entry.content}`)
@@ -698,6 +770,19 @@ export function buildPrompt(
       : [
           'If Prism memory is useful, query it from the shell with curl against $PRISM_API_BASE and send X-Prism-Api-Key using $PRISM_API_READ_KEY or $PRISM_API_KEY.',
         ]),
+    ...(isReviewer
+      ? [
+          'This is a reviewer execution. Do not modify tracked repository files.',
+          'The runtime will never auto-commit or push this review, and it will fail the run if tracked files are changed.',
+        ]
+      : []),
+    ...(delegation?.allowed
+      ? [
+          `This workflow step permits at most ${delegation.maxAgents} concurrently open subagent threads. Delegate only independent, bounded work and keep integration, final validation, and external mutations in the parent run.`,
+        ]
+      : delegation
+        ? ['Subagent delegation is disabled for this workflow step. Complete the work in the parent run.']
+        : []),
     'Prism skills are authoritative when they apply. Select relevant Site-hosted skills through Codex native skill discovery before probing ad hoc local paths or browser admin routes.',
     ...(isReadOnlyUtility
       ? []
@@ -751,20 +836,101 @@ export function buildPrompt(
 
 function parseJsonEvent(rawLine: string) {
   try {
-    return JSON.parse(rawLine) as {
-      type?: string;
-      thread_id?: string;
-      message?: string;
-      item?: {
-        type?: string;
-        text?: string;
-        role?: string;
-        status?: string;
-      };
-      error?: { message?: string } | string;
-    };
+    return JSON.parse(rawLine) as CodexJsonEvent;
   } catch {
     return null;
+  }
+}
+
+export function codexSubagentTraceEvent(event: CodexJsonEvent) {
+  const item = event.item;
+  if (!item || item.type !== 'collab_tool_call' || typeof item.tool !== 'string') return null;
+  if (!['item.started', 'item.updated', 'item.completed'].includes(event.type ?? '')) return null;
+
+  const phase = event.type === 'item.started' ? 'started' : event.type === 'item.updated' ? 'updated' : 'completed';
+  const tool = item.tool.trim().toLowerCase();
+  const receivers = Array.from(new Set([
+    ...(Array.isArray(item.receiver_thread_ids) ? item.receiver_thread_ids : []),
+    ...Object.keys(item.agents_states ?? {}),
+  ].filter(Boolean)));
+  const details = [
+    item.id ? `item=${item.id}` : null,
+    item.sender_thread_id ? `parent=${item.sender_thread_id}` : null,
+    receivers.length ? `children=${receivers.join(',')}` : null,
+    item.status ? `status=${item.status}` : null,
+  ].filter(Boolean).join('; ');
+  const label = tool === 'spawn_agent' ? 'spawn' : tool === 'send_input' ? 'message' : tool;
+  return {
+    kind: `subagent.${label}_${phase}`,
+    message: `${tool} ${phase}${details ? `; ${details}` : ''}`,
+  };
+}
+
+export function codexRolloutSubagentTraceEvents(rawJsonl: string) {
+  const events: Array<{ kind: string; message: string }> = [];
+  const seen = new Set<string>();
+  for (const line of rawJsonl.split('\n')) {
+    if (!line.trim()) continue;
+    let record: Record<string, unknown>;
+    try {
+      record = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const payload = recordValue(record.payload);
+    const item = recordValue(payload?.item);
+    if (record.type !== 'event_msg' || payload?.type !== 'item_completed' || item?.type !== 'SubAgentActivity') {
+      continue;
+    }
+    const activity = typeof item.kind === 'string' ? item.kind.trim().toLowerCase() : '';
+    if (activity !== 'started' && activity !== 'completed') continue;
+    const child = typeof item.agent_thread_id === 'string' ? item.agent_thread_id.trim() : '';
+    const agentPath = typeof item.agent_path === 'string' ? item.agent_path.trim() : '';
+    const key = `${activity}:${child}:${agentPath}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const details = [child ? `child=${child}` : null, agentPath ? `agent=${agentPath}` : null]
+      .filter(Boolean)
+      .join('; ');
+    events.push({
+      kind: `subagent.activity_${activity}`,
+      message: `subagent ${activity}${details ? `; ${details}` : ''}`,
+    });
+  }
+  return events;
+}
+
+async function findCodexRolloutFile(directory: string, threadId: string, depth = 0): Promise<string | null> {
+  if (depth > 5) return null;
+  const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.includes(threadId) && entry.name.endsWith('.jsonl')) {
+      return path.join(directory, entry.name);
+    }
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const found = await findCodexRolloutFile(path.join(directory, entry.name), threadId, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function recordRolloutSubagentProvenance(
+  threadId: string,
+  env: NodeJS.ProcessEnv,
+  trace: CodexRuntimeResult['trace'],
+  onTrace?: (trace: CodexRuntimeResult['trace']) => void,
+) {
+  const codexHome = env.CODEX_HOME?.trim() || path.join(env.HOME || os.homedir(), '.codex');
+  const rolloutFile = await findCodexRolloutFile(path.join(codexHome, 'sessions'), threadId);
+  if (!rolloutFile) return;
+  const stats = await fs.stat(rolloutFile).catch(() => null);
+  if (!stats || stats.size > 25 * 1024 * 1024) return;
+  const rawJsonl = await fs.readFile(rolloutFile, 'utf8').catch(() => '');
+  for (const event of codexRolloutSubagentTraceEvents(rawJsonl)) {
+    const duplicate = trace.some((entry) => entry.kind === event.kind && entry.message === event.message);
+    if (!duplicate) appendTrace(trace, event.kind, event.message, onTrace);
   }
 }
 
@@ -809,8 +975,9 @@ function appendTrace(
     message: message.slice(0, 500),
   });
 
-  if (trace.length > 40) {
-    trace.splice(0, trace.length - 40);
+  while (trace.length > 80) {
+    const removableIndex = trace.findIndex((entry) => !entry.kind.startsWith('subagent.'));
+    trace.splice(removableIndex >= 0 ? removableIndex : 0, 1);
   }
   onTrace?.([...trace]);
 }
@@ -870,11 +1037,17 @@ export function buildCodexChildEnvironment(
 }
 
 export function buildCodexArgs(
-  input: Pick<CodexRuntimeInput, 'codexThreadId' | 'authorityMode'>,
+  input: Pick<CodexRuntimeInput, 'codexThreadId' | 'authorityMode' | 'metadata'>,
   outputFile: string,
   executionWorkspaceRoot: string,
 ) {
   const isResume = Boolean(input.codexThreadId);
+  const delegation = workflowDelegationPolicy(input);
+  const delegationArgs = delegation?.allowed
+    ? ['-c', 'agents.enabled=true', '-c', `agents.max_concurrent_threads_per_session=${delegation.maxAgents}`]
+    : delegation
+      ? ['-c', 'agents.enabled=false']
+      : [];
   if (input.authorityMode === 'read_only_utility') {
     // This mode is intentionally text-in/text-out: the evidence required to
     // answer must be supplied in the prompt. Disabling every model-facing
@@ -892,13 +1065,14 @@ export function buildCodexArgs(
       'exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only',
       '--ephemeral', '--ignore-user-config', '--ignore-rules',
       '-c', 'mcp_servers={}',
+      '-c', 'agents.enabled=false',
       ...disabledFeatures,
       '-o', outputFile, '-C', executionWorkspaceRoot,
     ];
   }
   return isResume
-    ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
-    : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile, '-C', executionWorkspaceRoot];
+    ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', ...delegationArgs, '-o', outputFile]
+    : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', ...delegationArgs, '-o', outputFile, '-C', executionWorkspaceRoot];
 }
 
 function emptyResponseFallback(input: CodexRuntimeInput) {
@@ -1081,6 +1255,10 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       for (const line of lines) {
         const event = parseJsonEvent(line.trim());
         if (!event) continue;
+        const subagentTrace = codexSubagentTraceEvent(event);
+        if (subagentTrace) {
+          recordTrace(subagentTrace.kind, subagentTrace.message);
+        }
         if (event.type === 'thread.started' && event.thread_id) {
           threadId = event.thread_id;
           recordTrace('thread.started', `Thread ${event.thread_id} started`);
@@ -1089,10 +1267,15 @@ async function runCodexProcess(input: CodexRuntimeInput) {
           lastAgentText = event.item.text.trim();
           recordTrace('agent_message.completed', 'Assistant message completed');
         }
-        if (event.type === 'item.started' && event.item?.type) {
+        if (event.type === 'item.started' && event.item?.type && event.item.type !== 'collab_tool_call') {
           recordTrace('item.started', `${event.item.type} started`);
         }
-        if (event.type === 'item.completed' && event.item?.type && event.item.type !== 'agent_message') {
+        if (
+          event.type === 'item.completed'
+          && event.item?.type
+          && event.item.type !== 'agent_message'
+          && event.item.type !== 'collab_tool_call'
+        ) {
           recordTrace('item.completed', `${event.item.type} completed`);
         }
         const eventErrorMessage = codexEventErrorMessage(event);
@@ -1146,6 +1329,10 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         const outputText = await fs.readFile(outputFile, 'utf8').catch(() => '');
         await fs.unlink(outputFile).catch(() => undefined);
         const responseText = outputText.trim() || lastAgentText.trim();
+
+        if (threadId && workflowDelegationPolicy(input)?.allowed) {
+          await recordRolloutSubagentProvenance(threadId, env, trace, input.onTrace).catch(() => undefined);
+        }
 
         if (code !== 0) {
           recordTrace('run.failed', `Codex exited with code ${code}`);

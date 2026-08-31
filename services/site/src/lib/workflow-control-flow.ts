@@ -2,8 +2,8 @@ import fs from "node:fs"
 
 import {
   createWorkflowEvent,
+  getRequestArtifactByName,
   getWorkflowRunForRequest,
-  listRequestArtifacts,
   resolveRequestArtifactStoragePath,
   updateChangeRequest,
   updateWorkflowRun,
@@ -118,8 +118,63 @@ function checklistCounts(payload: unknown) {
   return { counts, error: null }
 }
 
+export function evaluateLoopCondition(condition: string | null, payload: unknown) {
+  if (condition === "all_items_complete") {
+    const result = checklistCounts(payload)
+    return {
+      ...result,
+      complete: Boolean(
+        result.counts
+        && result.counts.pending === 0
+        && result.counts.in_progress === 0
+        && result.counts.blocked === 0,
+      ),
+    }
+  }
+
+  if (condition !== "review_approved") {
+    return { counts: null, complete: false, error: "LOOP_CONDITION_UNSUPPORTED" }
+  }
+  if (!isRecord(payload) || payload.version !== 2 || !Array.isArray(payload.findings)) {
+    return { counts: null, complete: false, error: "LOOP_REVIEW_INVALID" }
+  }
+
+  const status = typeof payload.status === "string" ? payload.status.trim() : ""
+  const findings = payload.findings.filter(isRecord)
+  if (findings.length !== payload.findings.length) {
+    return { counts: null, complete: false, error: "LOOP_REVIEW_INVALID" }
+  }
+  const openDecisionFindings = findings.filter((finding) => (
+    finding.status === "open"
+    && (finding.severity === "blocking" || finding.severity === "high")
+  ))
+  const counts = {
+    pending: 0,
+    in_progress: 0,
+    complete: findings.filter((finding) => finding.status === "resolved").length,
+    blocked: openDecisionFindings.length,
+    skipped: 0,
+    total: findings.length,
+  }
+
+  if (status === "inconclusive") {
+    return { counts, complete: false, error: "LOOP_REVIEW_INCONCLUSIVE" }
+  }
+  if (status === "approved") {
+    return openDecisionFindings.length
+      ? { counts, complete: false, error: "LOOP_REVIEW_VERDICT_MISMATCH" }
+      : { counts, complete: true, error: null }
+  }
+  if (status === "changes_requested") {
+    return openDecisionFindings.length
+      ? { counts, complete: false, error: null }
+      : { counts, complete: false, error: "LOOP_REVIEW_VERDICT_MISMATCH" }
+  }
+  return { counts, complete: false, error: "LOOP_REVIEW_INVALID" }
+}
+
 function readLoopChecklistArtifact(input: { requestId: string; artifactName: string }) {
-  const artifact = listRequestArtifacts(input.requestId, 500).find((candidate) => candidate.name === input.artifactName)
+  const artifact = getRequestArtifactByName(input.requestId, input.artifactName)
   if (!artifact) {
     return { artifact: null, payload: null, error: "LOOP_ARTIFACT_NOT_FOUND" }
   }
@@ -168,6 +223,55 @@ function failLoopEvaluation(input: {
   })
 }
 
+function routeLoopEvaluationFailure(input: {
+  requestId: string
+  workflowRunId: string
+  loopStepKey: string
+  targetStep: Record<string, unknown>
+  artifactName: string | null
+  error: string
+  autoContinued?: boolean
+}) {
+  const targetStepKey = stepKey(input.targetStep)
+  updateChangeRequest(input.requestId, { workflowStepKey: targetStepKey })
+  updateWorkflowRun({
+    requestId: input.requestId,
+    currentStepKey: targetStepKey,
+    status: isTerminalWorkflowStep(input.targetStep) ? "completed" : "active",
+    completedAt: isTerminalWorkflowStep(input.targetStep) ? new Date().toISOString() : null,
+  })
+  createWorkflowEvent({
+    workflowRunId: input.workflowRunId,
+    requestId: input.requestId,
+    stepKey: input.loopStepKey,
+    eventType: "loop.evaluation_failed",
+    actorType: "system",
+    note: input.error,
+    payload: {
+      loopStepKey: input.loopStepKey,
+      artifactName: input.artifactName,
+      error: input.error,
+      fromStepKey: input.loopStepKey,
+      toStepKey: targetStepKey,
+      autoContinued: input.autoContinued === true,
+    },
+  })
+  createWorkflowEvent({
+    workflowRunId: input.workflowRunId,
+    requestId: input.requestId,
+    stepKey: targetStepKey,
+    eventType: "workflow.step_changed",
+    actorType: "system",
+    payload: {
+      previousStepKey: input.loopStepKey,
+      nextStepKey: targetStepKey,
+      loopStepKey: input.loopStepKey,
+      loopDecision: "evaluation_failed",
+      autoContinued: input.autoContinued === true,
+    },
+  })
+}
+
 function resolveLoopStep(input: {
   requestId: string
   workflowRunId: string
@@ -182,8 +286,9 @@ function resolveLoopStep(input: {
   const maxIterations = loopPositiveInteger(input.loopStep, "maxIterations")
   const exitStepKey = typeof input.loopStep.next === "string" && input.loopStep.next.trim() ? input.loopStep.next.trim() : null
   const onMaxIterationsStepKey = loopString(input.loopStep, "onMaxIterations")
+  const onErrorStepKey = loopString(input.loopStep, "onError")
 
-  if (!artifactName || condition !== "all_items_complete" || !targetStepKey || !maxIterations || !exitStepKey) {
+  if (!artifactName || !condition || !targetStepKey || !maxIterations || !exitStepKey) {
     failLoopEvaluation({
       requestId: input.requestId,
       workflowRunId: input.workflowRunId,
@@ -198,7 +303,8 @@ function resolveLoopStep(input: {
   const targetStep = findStepByKey(input.steps, targetStepKey)
   const exitStep = findStepByKey(input.steps, exitStepKey)
   const onMaxIterationsStep = onMaxIterationsStepKey ? findStepByKey(input.steps, onMaxIterationsStepKey) : null
-  if (!targetStep || !exitStep || (onMaxIterationsStepKey && !onMaxIterationsStep)) {
+  const onErrorStep = onErrorStepKey ? findStepByKey(input.steps, onErrorStepKey) : null
+  if (!targetStep || !exitStep || (onMaxIterationsStepKey && !onMaxIterationsStep) || (onErrorStepKey && !onErrorStep)) {
     failLoopEvaluation({
       requestId: input.requestId,
       workflowRunId: input.workflowRunId,
@@ -211,23 +317,37 @@ function resolveLoopStep(input: {
   }
 
   const { artifact, payload, error } = readLoopChecklistArtifact({ requestId: input.requestId, artifactName })
-  const checklist = error ? { counts: null, error } : checklistCounts(payload)
-  if (checklist.error || !checklist.counts) {
+  const evaluation = error
+    ? { counts: null, complete: false, error }
+    : evaluateLoopCondition(condition, payload)
+  if (evaluation.error || !evaluation.counts) {
+    if (onErrorStep) {
+      routeLoopEvaluationFailure({
+        requestId: input.requestId,
+        workflowRunId: input.workflowRunId,
+        loopStepKey,
+        targetStep: onErrorStep,
+        artifactName,
+        error: evaluation.error ?? "LOOP_CONDITION_INVALID",
+        autoContinued: input.autoContinued,
+      })
+      return { step: onErrorStep, stopped: false, error: evaluation.error ?? "LOOP_CONDITION_INVALID" }
+    }
     failLoopEvaluation({
       requestId: input.requestId,
       workflowRunId: input.workflowRunId,
       loopStepKey,
       artifactName,
-      error: checklist.error ?? "LOOP_CHECKLIST_INVALID",
+      error: evaluation.error ?? "LOOP_CONDITION_INVALID",
       autoContinued: input.autoContinued,
     })
-    return { step: input.loopStep, stopped: true, error: checklist.error ?? "LOOP_CHECKLIST_INVALID" }
+    return { step: input.loopStep, stopped: true, error: evaluation.error ?? "LOOP_CONDITION_INVALID" }
   }
 
   const workflowRun = getWorkflowRunForRequest(input.requestId)
   const currentIteration = workflowRunLoopIterations(workflowRun?.meta ?? {}, loopStepKey)
-  const counts = checklist.counts
-  const complete = counts.pending === 0 && counts.in_progress === 0 && counts.blocked === 0
+  const counts = evaluation.counts
+  const complete = evaluation.complete
   const maxReached = !complete && currentIteration >= maxIterations
   const decision = complete ? "exit" : maxReached ? "max_iterations" : "continue"
   const nextStep = complete ? exitStep : maxReached ? onMaxIterationsStep ?? input.loopStep : targetStep

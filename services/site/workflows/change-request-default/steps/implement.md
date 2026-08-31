@@ -2,6 +2,8 @@
 
 Implement the approved request in the target repository.
 
+Use the `prism-codegen` skill for orchestration and delegation boundaries.
+
 Use the triage summary, suggested changes, request description, linked thread history, and target environment context. Keep the work scoped to the request.
 
 Expected behavior:
@@ -32,3 +34,4 @@ Delegation rules:
 - assign clear file or module ownership for code changes
 - avoid overlapping write scopes between subagents
 - use at most three subagents for this step
+- keep commits, pushes, pull-request or issue updates, deployments, and other external mutations in the parent run

@@ -7,6 +7,8 @@ import { agentProfileAvatarMigration } from './migrations/041_agent_profile_avat
 import { agentProfileAccentColorMigration } from './migrations/042_agent_profile_accent_color';
 import { activeAgentExecutorFallbackMigration } from './migrations/043_active_agent_executor_fallback';
 import { codeReviewAgentMigration } from './migrations/044_code_review_agent';
+import { codeReviewAgentV2Migration } from './migrations/045_code_review_agent_v2';
+import { codegenAgentMigration } from './migrations/046_codegen_agent';
 import { taskAgentExecutor, workflowAgentExecutor } from './agent-executors';
 import {
   adminAgentProfileId,
@@ -105,6 +107,85 @@ test('seeds a protected Code Review Agent and assigns it to the review workflow 
   assert.equal(workflowRow.version, 6);
   assert.equal(definition.steps.find((step) => step.key === 'local-code-review')?.executorAgent, 'code-review-agent');
   assert.equal(definition.steps.find((step) => step.key === 'pr-review')?.executionMode, 'reviewer');
+
+  db.prepare(`UPDATE agent_profiles SET name = ?, avatar_url = ? WHERE id = ?`)
+    .run('Instance Review Agent', '/avatars/reviewer.png', 'agent-profile-code-review');
+  db.exec(codeReviewAgentV2Migration.sql);
+
+  const upgradedReviewer = getAgentProfile('code-review-agent', db);
+  assert.equal(upgradedReviewer?.version, 2);
+  assert.equal(upgradedReviewer?.name, 'Instance Review Agent');
+  assert.equal(upgradedReviewer?.avatarUrl, '/avatars/reviewer.png');
+  assert.deepEqual(upgradedReviewer?.authority.allowedMutations, [
+    'github.pr_comment',
+    'github.pr_review_comment',
+    'prism.request_artifact',
+  ]);
+  assert.equal((upgradedReviewer?.authority.forbiddenMutations as string[]).includes('github.review_decision'), true);
+  assert.equal(getAgentProfileVersion('agent-profile-code-review', 1, db)?.authority.allowedMutations instanceof Array, true);
+  assert.equal(
+    (getAgentProfileVersion('agent-profile-code-review', 1, db)?.authority.allowedMutations as string[]).includes('github.pr_review_comment'),
+    false,
+  );
+  assert.equal(
+    (getAgentProfileVersion('agent-profile-code-review', 2, db)?.authority.allowedMutations as string[]).includes('github.pr_review_comment'),
+    true,
+  );
+
+  const upgradedWorkflowRow = db.prepare('SELECT version, definition_json FROM workflows WHERE key = ?')
+    .get('change-request-default') as { version: number; definition_json: string };
+  const upgradedDefinition = JSON.parse(upgradedWorkflowRow.definition_json) as {
+    version: number;
+    description: string;
+    steps: Array<Record<string, unknown>>;
+  };
+  assert.equal(upgradedWorkflowRow.version, 7);
+  assert.equal(upgradedDefinition.version, 7);
+  assert.match(upgradedDefinition.description, /bounded autonomous/);
+  assert.equal(upgradedDefinition.steps.some((step) => step.type === 'checkpoint'), false);
+  const reviewLoop = upgradedDefinition.steps.find((step) => step.key === 'review-cycle');
+  assert.equal(reviewLoop?.type, 'loop');
+  assert.deepEqual(reviewLoop?.loop, {
+    artifactName: 'code-review.json',
+    condition: 'review_approved',
+    target: 'implement',
+    maxIterations: 3,
+    onMaxIterations: 'review-loop-attention',
+    onError: 'review-loop-attention',
+  });
+  assert.equal(reviewLoop?.next, 'review');
+  assert.equal(upgradedDefinition.steps.find((step) => step.key === 'review-loop-attention')?.type, 'gate');
+
+  db.exec(codegenAgentMigration.sql);
+  const codegen = getAgentProfile('codegen-agent', db);
+  assert.equal(codegen?.systemKey, 'codegen-agent');
+  assert.equal(codegen?.owner.agentProfileId, adminAgentProfileId);
+  assert.deepEqual(codegen?.skills, ['prism-codegen']);
+  assert.deepEqual(codegen?.contextPolicy, { continuation: 'step', handoff: 'artifacts' });
+  assert.equal(codegen?.authority.credentialPolicy, 'job-scoped');
+  assert.equal((codegen?.authority.forbiddenMutations as string[]).includes('github.merge'), true);
+  assert.equal(getAgentProfileVersion('agent-profile-codegen', 1, db)?.name, 'Codegen Agent');
+  assert.throws(
+    () => upsertAgentProfile({ key: 'codegen-agent', name: 'Replacement' }, db),
+    /SYSTEM_AGENT_PROFILE_PROTECTED/,
+  );
+
+  const codegenWorkflowRow = db.prepare('SELECT version, definition_json FROM workflows WHERE key = ?')
+    .get('change-request-default') as { version: number; definition_json: string };
+  const codegenDefinition = JSON.parse(codegenWorkflowRow.definition_json) as {
+    version: number;
+    steps: Array<Record<string, unknown>>;
+  };
+  const implementation = codegenDefinition.steps.find((step) => step.key === 'implement');
+  assert.equal(codegenWorkflowRow.version, 8);
+  assert.equal(codegenDefinition.version, 8);
+  assert.equal(implementation?.executorAgent, 'codegen-agent');
+  assert.equal(implementation?.executionMode, 'orchestrator');
+  assert.deepEqual(implementation?.agentConfig, {
+    skills: ['prism-codegen', 'change-request-ops', 'target-deploy-ops'],
+    delegation: { allowed: true, maxAgents: 3 },
+  });
+  assert.equal(codegenDefinition.steps.find((step) => step.key === 'local-code-review')?.executorAgent, 'code-review-agent');
   db.close();
 });
 

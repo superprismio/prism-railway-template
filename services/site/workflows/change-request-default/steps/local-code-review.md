@@ -7,10 +7,12 @@ Use the `prism-code-review` skill. Start from fresh step context and verify the 
 Required outcomes:
 
 - identify immutable base and head SHAs
+- load applicable repository review policy, including path-scoped `AGENTS.md`
 - inspect the complete relevant diff
 - run focused local checks when practical
+- on re-review, compare the prior and current heads, re-evaluate every prior finding, and preserve resolved finding history
 - write or replace `code-review.md` and `code-review.json` with the current agent run id
-- maintain the single idempotent Prism review comment on the linked GitHub pull request when GitHub comment access is available
+- maintain the single idempotent Prism summary comment and bounded marker-based inline findings on the linked GitHub pull request when GitHub comment access is available
 - do not modify code, commit, push, merge, approve, deploy, or mutate unrelated request/GitHub state
 
-If blocking or high findings remain, return `needs_attention` using the workflow-outcome contract so this step stays active until an operator sends the request back to `implement` or explicitly overrides it. If the review is clean and sufficiently evidenced, complete the step so the workflow advances to the external PR review checkpoint.
+For a conclusive review, complete this step whether the verdict is `approved` or `changes_requested`; the following deterministic review loop reads the validated artifact and routes the request. Use `needs_attention` only when the result is `inconclusive` or the required repository, policy, diff, or verification evidence is unavailable.

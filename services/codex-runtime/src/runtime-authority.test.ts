@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildCodexArgs, buildCodexChildEnvironment, buildPrompt } from './codex-runtime.js';
+import {
+  buildCodexArgs,
+  buildCodexChildEnvironment,
+  buildPrompt,
+  codexRolloutSubagentTraceEvents,
+  codexSubagentTraceEvent,
+  isReviewerExecution,
+  workflowDelegationPolicy,
+} from './codex-runtime.js';
 
 test('read-only utility invocation uses a read-only sandbox without bypass flags', () => {
   const args = buildCodexArgs(
@@ -96,4 +104,151 @@ test('full authority preserves legacy bypass and credential behavior', () => {
   assert.equal(env.CRM_WRITE_TOKEN, 'leased-secret');
   assert.equal(env.TARGET_REPO_GITHUB_TOKEN, 'repo-secret');
   assert.equal(env.GITHUB_TOKEN, 'github-secret');
+});
+
+test('workflow delegation is fail-closed and bounded by trusted step metadata', () => {
+  assert.deepEqual(workflowDelegationPolicy({ metadata: {} }), null);
+  assert.deepEqual(workflowDelegationPolicy({
+    metadata: { workflow: { agentConfig: { delegation: { allowed: false, maxAgents: 7 } } } },
+  }), { allowed: false, maxAgents: 0 });
+  assert.deepEqual(workflowDelegationPolicy({
+    metadata: { workflow: { agentConfig: { delegation: { allowed: true, maxAgents: 3 } } } },
+  }), { allowed: true, maxAgents: 3 });
+  assert.deepEqual(workflowDelegationPolicy({
+    metadata: { workflow: { agentConfig: { delegation: { allowed: true, maxAgents: 99 } } } },
+  }), { allowed: true, maxAgents: 8 });
+  assert.deepEqual(workflowDelegationPolicy({
+    metadata: { workflow: { agentConfig: { delegation: { allowed: true, maxAgents: 0 } } } },
+  }), { allowed: false, maxAgents: 0 });
+});
+
+test('workflow delegation metadata controls native Codex agent configuration', () => {
+  const enabled = buildCodexArgs({
+    authorityMode: 'full',
+    codexThreadId: null,
+    metadata: { workflow: { agentConfig: { delegation: { allowed: true, maxAgents: 3 } } } },
+  }, '/tmp/answer.txt', '/workspace');
+  assert.ok(enabled.includes('agents.enabled=true'));
+  assert.ok(enabled.includes('agents.max_concurrent_threads_per_session=3'));
+
+  const disabled = buildCodexArgs({
+    authorityMode: 'full',
+    codexThreadId: null,
+    metadata: { workflow: { agentConfig: { delegation: { allowed: false, maxAgents: 0 } } } },
+  }, '/tmp/answer.txt', '/workspace');
+  assert.ok(disabled.includes('agents.enabled=false'));
+
+  const interactive = buildCodexArgs(
+    { authorityMode: 'full', codexThreadId: null, metadata: {} },
+    '/tmp/answer.txt',
+    '/workspace',
+  );
+  assert.equal(interactive.some((arg) => arg.startsWith('agents.enabled=')), false);
+});
+
+test('workflow prompt explains the enforced delegation boundary', () => {
+  const enabled = buildPrompt({
+    prompt: 'Implement the approved request.',
+    recentHistory: [],
+    sessionId: 'implementation-session',
+    metadata: { workflow: { agentConfig: { delegation: { allowed: true, maxAgents: 3 } } } },
+  }, false, { availableSkills: [], selectedSkills: [] });
+  assert.match(enabled.prompt, /at most 3 concurrently open subagent threads/);
+  assert.match(enabled.prompt, /integration, final validation, and external mutations in the parent run/);
+
+  const disabled = buildPrompt({
+    prompt: 'Triage the request.',
+    recentHistory: [],
+    sessionId: 'triage-session',
+    metadata: { workflow: { agentConfig: { delegation: { allowed: false, maxAgents: 0 } } } },
+  }, false, { availableSkills: [], selectedSkills: [] });
+  assert.match(disabled.prompt, /Subagent delegation is disabled/);
+});
+
+test('collaboration events become durable subagent provenance without copying prompts', () => {
+  const trace = codexSubagentTraceEvent({
+    type: 'item.completed',
+    item: {
+      id: 'item-7',
+      type: 'collab_tool_call',
+      tool: 'spawn_agent',
+      sender_thread_id: 'parent-thread',
+      receiver_thread_ids: ['child-thread'],
+      prompt: 'sensitive delegated task text',
+      status: 'completed',
+    },
+  });
+  assert.deepEqual(trace, {
+    kind: 'subagent.spawn_completed',
+    message: 'spawn_agent completed; item=item-7; parent=parent-thread; children=child-thread; status=completed',
+  });
+  assert.doesNotMatch(trace?.message ?? '', /sensitive/);
+});
+
+test('canonical rollout activity fills the exec JSON subagent provenance gap', () => {
+  const events = codexRolloutSubagentTraceEvents([
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'item_completed',
+        item: {
+          type: 'SubAgentActivity',
+          id: 'spawn-call',
+          kind: 'started',
+          agent_thread_id: 'child-thread',
+          agent_path: '/root/explorer',
+        },
+      },
+    }),
+    JSON.stringify({ type: 'response_item', payload: { type: 'message', content: 'private prompt' } }),
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'item_completed',
+        item: {
+          type: 'SubAgentActivity',
+          id: 'complete-call',
+          kind: 'completed',
+          agent_thread_id: 'child-thread',
+          agent_path: '/root/explorer',
+        },
+      },
+    }),
+  ].join('\n'));
+
+  assert.deepEqual(events, [
+    {
+      kind: 'subagent.activity_started',
+      message: 'subagent started; child=child-thread; agent=/root/explorer',
+    },
+    {
+      kind: 'subagent.activity_completed',
+      message: 'subagent completed; child=child-thread; agent=/root/explorer',
+    },
+  ]);
+  assert.doesNotMatch(JSON.stringify(events), /private prompt/);
+});
+
+test('reviewer execution is derived from trusted Agent Profile metadata', () => {
+  assert.equal(isReviewerExecution({
+    metadata: { agentProfile: { key: 'code-review-agent', executionMode: 'reviewer' } },
+  }), true);
+  assert.equal(isReviewerExecution({
+    metadata: { agentProfile: { key: 'code-review-agent', executionMode: 'worker' } },
+  }), false);
+  assert.equal(isReviewerExecution({ metadata: {} }), false);
+});
+
+test('reviewer prompt explains the tracked-file runtime guard', () => {
+  const composed = buildPrompt({
+    prompt: 'Review this pull request.',
+    recentHistory: [],
+    sessionId: 'review-session',
+    authorityMode: 'full',
+    metadata: { agentProfile: { key: 'code-review-agent', executionMode: 'reviewer' } },
+  }, false, { availableSkills: [], selectedSkills: [] });
+
+  assert.match(composed.prompt, /reviewer execution/);
+  assert.match(composed.prompt, /never auto-commit or push/);
+  assert.match(composed.prompt, /fail the run if tracked files are changed/);
 });

@@ -6,12 +6,13 @@ The workflow keeps human gates explicit:
 
 - Triage turns an inbox request into a reviewed plan, linked GitHub issue when appropriate, and durable fix-note artifact.
 - Approval starts implementation.
-- Implementation creates or updates a request branch and opens a pull request into the target repository base branch when remote access is configured.
-- Local Code Review assigns a fresh-context Code Review Agent to inspect the diff, run focused checks, save durable findings, and maintain one idempotent GitHub PR comment.
-- External PR Review Checkpoint lets an operator ask the Code Review Agent to refresh GitHub checks and reviews from CodeRabbit, Copilot, or human reviewers.
+- Implementation assigns the protected Codegen Agent, which may split independent work across at most three native Codex subagents, integrates the result, and creates or updates the request branch and pull request.
+- Local Code Review assigns a fresh-context Code Review Agent to inspect the diff against repository policy, run focused checks, preserve incremental findings, and maintain idempotent GitHub summary and inline comments.
+- Review Decision reads the validated review artifact. An approved review advances to the human gate; requested changes return automatically to implementation for at most three correction cycles.
+- An inconclusive review or exhausted correction loop stops for operator attention instead of advancing on weak evidence.
 - Review pauses for final human approval before the workflow closes.
 
-Agent steps use fresh context and durable artifact handoffs. If review needs more work, use the explicit change-step/send-back control to return to implementation with the findings as primary feedback.
+Agent steps use fresh context and durable artifact handoffs. Delegation is runtime-disabled outside implementation. The review loop routes only from validated durable evidence, not free-form model prose.
 
 ## Current Behavior
 

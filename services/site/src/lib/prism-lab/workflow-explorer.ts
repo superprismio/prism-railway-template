@@ -53,7 +53,17 @@ export function buildWorkflowExplorer(input: {
         ? [{ action, target: target.trim() }]
         : [])
       : []
-    return [{ key, label, type, next, routes }]
+    const loop = isRecord(value.loop) ? value.loop : null
+    const loopRoutes = loop
+      ? [
+          ["changes requested", loop.target],
+          ["max iterations", loop.onMaxIterations],
+          ["evaluation error", loop.onError],
+        ].flatMap(([action, target]) => typeof action === "string" && typeof target === "string" && target.trim()
+          ? [{ action, target: target.trim() }]
+          : [])
+      : []
+    return [{ key, label, type, next, routes: [...routes, ...loopRoutes] }]
   })
   const indexByKey = new Map(parsed.map((step, index) => [step.key, index]))
   const observed = new Set(input.events.flatMap((event) => event.stepKey ? [event.stepKey] : []))
