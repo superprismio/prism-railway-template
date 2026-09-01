@@ -189,9 +189,12 @@ curl -fsSL \
 
 The route records the continue event and uses the normal workflow runner so agent runs and auto-continue behavior stay in sync. Prefer simple `next` flow; do not send `workflowAction` for normal continues.
 
-For a request that is already completed or closed but whose terminal workflow
-run (completed or canceled) still projects a non-terminal current step, use the
-reconciliation route.
+Use the reconciliation route when a terminal workflow run projects stale
+request or step state. It supports both completed/closed requests whose
+completed or canceled run still projects a non-terminal step, and requests
+that remain open even though their workflow run already completed. In the
+latter case, reconciliation closes the request timeline as well as moving the
+run projection to the verified terminal step.
 It does not execute workflow steps or repeat side effects. Dry-run first, then
 apply the exact repair:
 
@@ -212,8 +215,9 @@ curl -fsSL \
 ```
 
 If the workflow has more than one terminal step, the dry-run returns candidates
-and the apply request must include `terminalStepKey`. Do not use this route for
-active requests or as a substitute for continue, cancel, or rerun.
+and the apply request must include `terminalStepKey`. Do not use this route
+while the workflow run or an agent run is active, or as a substitute for
+continue, cancel, or rerun.
 
 For Prism Memory Discord bucket repair after `discord.category_to_bucket` changes, use Prism Memory ops auth and start with a dry-run:
 

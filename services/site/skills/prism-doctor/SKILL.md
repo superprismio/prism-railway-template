@@ -67,11 +67,11 @@ When summarizing a report:
 6. Mention that Doctor did not mutate content.
 7. Separate definition ownership findings from executor provenance findings.
 
-When Doctor or a repair workflow finds a completed/closed request whose
-terminal workflow run (completed or canceled) projects a non-terminal current
-step, use the documented by-number workflow reconciliation route. Dry-run it
-first. The route only corrects terminal projection drift; it does not execute
-steps, rerun work, or repair active requests.
+When Doctor or a repair workflow finds a terminal workflow run with stale
+request or step projection, use the documented by-number workflow
+reconciliation route. This includes a request left open after its workflow run
+completed. Dry-run first. The route only corrects terminal projection drift;
+it does not execute steps, rerun work, or repair active workflow/agent runs.
 
 Useful commands:
 

@@ -125,13 +125,6 @@ export function reconcileTerminalWorkflowProjection(
       code: "WORKFLOW_RUN_NOT_FOUND",
     })
   }
-  if (!row.request_completed_at && !row.request_closed_at) {
-    return result({
-      ...baseResult({ requestNumber: input.requestNumber, row, dryRun }),
-      outcome: "blocked",
-      code: "CHANGE_REQUEST_NOT_TERMINAL",
-    })
-  }
   if (row.run_workflow_key !== row.request_workflow_key) {
     return result({
       ...baseResult({ requestNumber: input.requestNumber, row, dryRun }),
@@ -144,6 +137,14 @@ export function reconcileTerminalWorkflowProjection(
       ...baseResult({ requestNumber: input.requestNumber, row, dryRun }),
       outcome: "blocked",
       code: "WORKFLOW_RUN_NOT_TERMINAL",
+    })
+  }
+  const requestIsTerminal = Boolean(row.request_completed_at || row.request_closed_at)
+  if (!requestIsTerminal && row.run_status !== "completed") {
+    return result({
+      ...baseResult({ requestNumber: input.requestNumber, row, dryRun }),
+      outcome: "blocked",
+      code: "CHANGE_REQUEST_NOT_TERMINAL",
     })
   }
 
@@ -181,7 +182,7 @@ export function reconcileTerminalWorkflowProjection(
   }
 
   const currentStep = steps.find((step) => step.key === row.current_step_key)
-  if (currentStep?.type === "terminal") {
+  if (currentStep?.type === "terminal" && requestIsTerminal) {
     return result({
       ...baseResult({ requestNumber: input.requestNumber, row, dryRun, terminalStepCandidates }),
       outcome: "noop",
@@ -191,11 +192,15 @@ export function reconcileTerminalWorkflowProjection(
   }
 
   const requestedTerminalStepKey = input.terminalStepKey?.trim() || null
-  const terminalStep = requestedTerminalStepKey
-    ? terminalSteps.find((step) => step.key === requestedTerminalStepKey) ?? null
-    : terminalSteps.length === 1
-      ? terminalSteps[0]
-      : null
+  const terminalStep = currentStep?.type === "terminal"
+    ? requestedTerminalStepKey && requestedTerminalStepKey !== currentStep.key
+      ? null
+      : currentStep
+    : requestedTerminalStepKey
+      ? terminalSteps.find((step) => step.key === requestedTerminalStepKey) ?? null
+      : terminalSteps.length === 1
+        ? terminalSteps[0]
+        : null
   if (requestedTerminalStepKey && !terminalStep) {
     return result({
       ...baseResult({ requestNumber: input.requestNumber, row, dryRun, terminalStepCandidates }),
@@ -216,12 +221,15 @@ export function reconcileTerminalWorkflowProjection(
     return result({
       ...baseResult({ requestNumber: input.requestNumber, row, dryRun, terminalStepCandidates }),
       outcome: "would_repair",
-      code: "TERMINAL_WORKFLOW_PROJECTION_DRIFT",
+      code: requestIsTerminal
+        ? "TERMINAL_WORKFLOW_PROJECTION_DRIFT"
+        : "TERMINAL_WORKFLOW_AND_REQUEST_PROJECTION_DRIFT",
       terminalStepKey: terminalStep.key,
     })
   }
 
   const now = new Date().toISOString()
+  const terminalAt = row.run_completed_at ?? row.request_completed_at ?? row.request_closed_at ?? now
   db.transaction(() => {
     db.prepare(
       `UPDATE workflow_runs
@@ -229,7 +237,17 @@ export function reconcileTerminalWorkflowProjection(
            updated_at = ?,
            completed_at = COALESCE(completed_at, ?)
        WHERE id = ?`,
-    ).run(terminalStep.key, now, row.run_completed_at ?? row.request_completed_at ?? row.request_closed_at ?? now, row.workflow_run_id)
+    ).run(terminalStep.key, now, terminalAt, row.workflow_run_id)
+
+    if (!requestIsTerminal && row.run_status === "completed") {
+      db.prepare(
+        `UPDATE change_requests
+         SET completed_at = COALESCE(completed_at, ?),
+             closed_at = COALESCE(closed_at, ?),
+             updated_at = ?
+         WHERE id = ?`,
+      ).run(terminalAt, terminalAt, now, row.request_id)
+    }
 
     db.prepare(
       `INSERT INTO workflow_events (
@@ -250,6 +268,11 @@ export function reconcileTerminalWorkflowProjection(
         workflowRunStatus: row.run_status,
         requestCompletedAt: row.request_completed_at,
         requestClosedAt: row.request_closed_at,
+        ...(!requestIsTerminal ? {
+          requestProjectionRepaired: true,
+          requestCompletedAtAfter: terminalAt,
+          requestClosedAtAfter: terminalAt,
+        } : {}),
       }),
       now,
     )
@@ -258,7 +281,9 @@ export function reconcileTerminalWorkflowProjection(
   return result({
     ...baseResult({ requestNumber: input.requestNumber, row, dryRun, terminalStepCandidates }),
     outcome: "repaired",
-    code: "TERMINAL_WORKFLOW_PROJECTION_RECONCILED",
+    code: requestIsTerminal
+      ? "TERMINAL_WORKFLOW_PROJECTION_RECONCILED"
+      : "TERMINAL_WORKFLOW_AND_REQUEST_PROJECTION_RECONCILED",
     terminalStepKey: terminalStep.key,
   })
 }
