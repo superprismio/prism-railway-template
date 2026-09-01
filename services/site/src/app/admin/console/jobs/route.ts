@@ -87,6 +87,12 @@ async function runConsoleJob(jobId: string, agentRunId: string, requestUrl: stri
     const sessionId = typeof payload.session_id === "string" ? payload.session_id : job.sessionId
     const trace = traceFromPayload(payload)
 
+    // A console cancellation is terminal even when the runtime races back with
+    // a late response. The cancel route owns the response-job terminal state.
+    if (getAgentRun(agentRunId)?.status === "canceled") {
+      return
+    }
+
     updateAgentResponseJob(jobId, {
       sessionId,
       status: response.ok ? "succeeded" : "failed",

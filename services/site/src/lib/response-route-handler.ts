@@ -1403,6 +1403,13 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     if (!responseText) {
       return NextResponse.json({ ok: false, error: "CODEX_RUNTIME_EMPTY_RESPONSE" }, { status: 502 })
     }
+    if (activeAgentRunId && isStoppedAgentRunStatus(getAgentRun(activeAgentRunId)?.status)) {
+      return NextResponse.json({
+        ok: true,
+        output_text: "The stopped agent run returned after cancellation and was ignored.",
+        session_id: session.id,
+      })
+    }
     const workflowOutcome = parseWorkflowOutcomeFromResponseText(responseText)
 
     const updatedSession = updateAgentSession(session.id, {

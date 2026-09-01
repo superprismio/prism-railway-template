@@ -9,6 +9,7 @@ import {
   ExternalLink,
   LoaderCircle,
   Plus,
+  Square,
   X,
 } from "lucide-react";
 
@@ -180,6 +181,7 @@ export function CodexConsole({
   >(null);
   const [pollNotice, setPollNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCanceling, setIsCanceling] = useState(false);
   const [usesTouchFirstInput, setUsesTouchFirstInput] = useState(false);
   const [attachedArtifacts, setAttachedArtifacts] = useState<
     UploadedMemoryArtifact[]
@@ -401,12 +403,24 @@ export function CodexConsole({
           }
           return;
         }
-        if (job.status === "failed" || job.status === "canceled") {
+        if (job.status === "canceled") {
+          window.localStorage.removeItem(consoleActiveJobStorageKey);
+          setActiveJobId(null);
+          setActiveJobTrace([]);
+          setPollNotice("Run stopped. You can continue in this session.");
+          setError(null);
+          const nextSessionId = job.sessionId ?? sessionId;
+          if (nextSessionId) {
+            await loadConsoleHistory(nextSessionId).catch(() => null);
+          }
+          return;
+        }
+        if (job.status === "failed") {
           window.localStorage.removeItem(consoleActiveJobStorageKey);
           setActiveJobId(null);
           setActiveJobTrace([]);
           setPollNotice(null);
-          setError(job.errorMessage || `Console job ${job.status}`);
+          setError(job.errorMessage || "Console job failed");
           return;
         }
       } catch (pollError) {
@@ -551,6 +565,36 @@ export function CodexConsole({
     }
   }
 
+  async function stopActiveRun() {
+    if (!activeJobId || isCanceling) return;
+    setIsCanceling(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/admin/console/jobs/${encodeURIComponent(activeJobId)}`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ reason: "Stopped by an operator from the Agent chat." }),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(await readApiError(response, "Could not stop Agent run"));
+      }
+      window.localStorage.removeItem(consoleActiveJobStorageKey);
+      setActiveJobId(null);
+      setActiveJobTrace([]);
+      setPollNotice("Run stopped. You can continue in this session.");
+      if (sessionId) {
+        await loadConsoleHistory(sessionId);
+      }
+    } catch (cancelError) {
+      setError(describeFetchError(cancelError, "Could not stop Agent run"));
+    } finally {
+      setIsCanceling(false);
+    }
+  }
+
   function startNewSession() {
     window.localStorage.removeItem(consoleSessionStorageKey);
     setSessionId(null);
@@ -611,6 +655,7 @@ export function CodexConsole({
           variant="outline"
           size="sm"
           onClick={startNewSession}
+          disabled={isPending}
         >
           <Plus className="h-4 w-4" />
           New session
@@ -772,9 +817,25 @@ export function CodexConsole({
           />
           {activeJobId ? (
             <div className="border border-border/70 bg-muted/20 p-3 text-sm">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-                <span>Prism is working in the background.</span>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                  <span>Prism is working in the background.</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => void stopActiveRun()}
+                  disabled={isCanceling}
+                >
+                  {isCanceling ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Square className="h-3.5 w-3.5 fill-current" />
+                  )}
+                  {isCanceling ? "Stopping" : "Stop run"}
+                </Button>
               </div>
               {visibleTrace.length ? (
                 <div className="mt-3 space-y-1 text-xs text-muted-foreground">
