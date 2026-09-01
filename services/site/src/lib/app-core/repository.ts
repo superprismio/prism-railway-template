@@ -3,7 +3,7 @@ import { loadConfig } from './config';
 import { getDb } from './db';
 import { getDefaultHomeModules, getHomeModuleDefinition, normalizeHomeModuleConfig } from './home-modules';
 import { normalizeSiteContent, writeSiteContent } from './site-content';
-import { taskAgentExecutor, workflowAgentExecutor } from './agent-executors';
+import { taskAgentExecutor, taskUsesAgentExecutor, workflowAgentExecutor } from './agent-executors';
 import { buildAccountabilitySnapshot } from './accountability-domains';
 import {
   getRequestOrigin,
@@ -6777,24 +6777,26 @@ export function createTaskRun(input: CreateTaskRunInput): TaskRunRecord {
   const resultSummary = normalizeText(input.resultSummary) || null;
   const errorMessage = normalizeText(input.errorMessage) || null;
   const finishedAt = status === 'running' || status === 'queued' ? null : now;
-  const executor = taskAgentExecutor(task.agentConfig);
+  const usesAgentExecutor = taskUsesAgentExecutor(task.taskType, task.agentConfig);
+  const executor = usesAgentExecutor ? taskAgentExecutor(task.agentConfig) : null;
+  const executorResolution = executor?.resolution ?? 'not-applicable';
   const agentRun = createAgentRun({
     kind: 'task',
     status,
     idempotencyKey: `task:${id}`,
     taskKey: task.key,
-    agentProfileId: executor.profileId,
-    agentProfileVersion: executor.profileVersion,
-    executionMode: executor.executionMode,
-    executorResolution: executor.resolution,
+    agentProfileId: executor?.profileId ?? null,
+    agentProfileVersion: executor?.profileVersion ?? null,
+    executionMode: executor?.executionMode ?? null,
+    executorResolution,
     accountabilitySnapshot: buildAccountabilitySnapshot({
       definitionType: 'task',
       definitionId: task.id,
       definitionKey: task.key,
-      executorProfileId: executor.profileId,
-      executorProfileKey: executor.profileKey,
-      executorProfileVersion: executor.profileVersion,
-      resolution: executor.resolution,
+      executorProfileId: executor?.profileId ?? null,
+      executorProfileKey: executor?.profileKey ?? null,
+      executorProfileVersion: executor?.profileVersion ?? null,
+      resolution: executorResolution,
     }),
     source: triggerSource,
     input: {

@@ -55,6 +55,32 @@ test('createAgentRun persists an explicit immutable executor snapshot', async ()
     const audit = core.buildAccountabilityAuditReport();
     assert.equal(audit.execution.workflows.find((item) => item.workflowKey === workflow.key)?.resolution, 'admin-fallback');
     assert.ok(audit.execution.adminFallbacks.some((item) => item.definitionType === 'workflow' && item.workflowKey === workflow.key));
+
+    const deterministicTask = core.upsertTask({
+      key: 'deterministic-sync',
+      name: 'Deterministic Sync',
+      taskType: 'http-post',
+      enabled: true,
+    });
+    const taskRun = core.createTaskRun({
+      taskKey: deterministicTask.key,
+      status: 'succeeded',
+      triggerSource: 'manual',
+    });
+    const deterministicAgentRun = taskRun.agentRunId ? core.getAgentRun(taskRun.agentRunId) : null;
+    assert.equal(deterministicAgentRun?.executorResolution, 'not-applicable');
+    assert.equal(deterministicAgentRun?.agentProfileId, null);
+    const taskAudit = core.buildAccountabilityAuditReport();
+    assert.equal(
+      taskAudit.execution.tasks.find((item) => item.taskKey === deterministicTask.key)?.resolution,
+      'not-applicable',
+    );
+    assert.equal(
+      taskAudit.execution.adminFallbacks.some(
+        (item) => item.definitionType === 'task' && item.taskKey === deterministicTask.key,
+      ),
+      false,
+    );
   } finally {
     core.closeDb();
     rmSync(dataRoot, { recursive: true, force: true });

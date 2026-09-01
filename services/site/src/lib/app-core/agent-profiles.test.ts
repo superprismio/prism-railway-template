@@ -10,7 +10,7 @@ import { codeReviewAgentMigration } from './migrations/044_code_review_agent';
 import { codeReviewAgentV2Migration } from './migrations/045_code_review_agent_v2';
 import { codegenAgentMigration } from './migrations/046_codegen_agent';
 import { verificationAgentMigration } from './migrations/047_verification_agent';
-import { taskAgentExecutor, workflowAgentExecutor } from './agent-executors';
+import { taskAgentExecutor, taskUsesAgentExecutor, workflowAgentExecutor } from './agent-executors';
 import {
   adminAgentProfileId,
   assignAgentProfileToSession,
@@ -379,6 +379,12 @@ test('resolves workflow and task executors with an Admin Agent legacy fallback',
   assert.equal(taskAgentExecutor({}, db).resolution, 'admin-fallback');
   assert.equal(taskAgentExecutor({ executorAgent: 'veydrift-agent', executionMode: 'repair' }, db).executionMode, 'repair');
   assert.equal(taskAgentExecutor({ executorAgent: 'veydrift-agent' }, db).resolution, 'task-explicit');
+  assert.equal(taskUsesAgentExecutor('codex-prompt', {}), true);
+  assert.equal(taskUsesAgentExecutor('workflow-runner', {}), true);
+  assert.equal(taskUsesAgentExecutor('script-runner', { handoff: { enabled: true } }), true);
+  assert.equal(taskUsesAgentExecutor('script-runner', { handoff: { enabled: false } }), false);
+  assert.equal(taskUsesAgentExecutor('builtin', {}), false);
+  assert.equal(taskUsesAgentExecutor('http-post', {}), false);
   assert.throws(
     () => workflowAgentExecutor({ defaultAgent: 'missing-agent' }, {}, db),
     /AGENT_EXECUTOR_NOT_FOUND:missing-agent/,

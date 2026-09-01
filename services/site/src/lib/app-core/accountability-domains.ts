@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 
-import { workflowAgentExecutor, taskAgentExecutor, type AgentExecutorResolution } from './agent-executors';
+import {
+  workflowAgentExecutor,
+  taskAgentExecutor,
+  taskUsesAgentExecutor,
+  type AgentExecutorResolution,
+} from './agent-executors';
 import { getDb } from './db';
 
 export const accountabilityTargetTypes = ['agent_profile', 'workflow', 'task'] as const;
@@ -322,13 +327,24 @@ export function buildAccountabilityAuditReport(db: Database.Database = getDb()) 
       }
     }
   }
-  const taskRows = db.prepare('SELECT id, key, name, agent_config_json FROM tasks ORDER BY key').all() as Array<{
-    id: string; key: string; name: string; agent_config_json: string;
+  const taskRows = db.prepare('SELECT id, key, name, task_type, agent_config_json FROM tasks ORDER BY key').all() as Array<{
+    id: string; key: string; name: string; task_type: string; agent_config_json: string;
   }>;
   const taskExecution = taskRows.map((task) => {
+    const agentConfig = parseRecord(task.agent_config_json);
+    const taskDomain = tasks.find((item) => item.id === task.id)?.domain_key ?? null;
+    if (!taskUsesAgentExecutor(task.task_type, agentConfig)) {
+      return {
+        taskKey: task.key,
+        taskDomain,
+        executorProfileKey: null,
+        executorDomain: null,
+        resolution: 'not-applicable' as const,
+        crossDomain: false,
+      };
+    }
     try {
-      const executor = taskAgentExecutor(parseRecord(task.agent_config_json), db);
-      const taskDomain = tasks.find((item) => item.id === task.id)?.domain_key ?? null;
+      const executor = taskAgentExecutor(agentConfig, db);
       const executorDomain = profileDomain.get(executor.profileId) ?? null;
       const item = {
         taskKey: task.key, taskDomain, executorProfileKey: executor.profileKey, executorDomain,

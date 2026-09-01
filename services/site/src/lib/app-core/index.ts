@@ -41,6 +41,7 @@ export {
   agentExecutorResolutions,
   resolveAgentExecutor,
   taskAgentExecutor,
+  taskUsesAgentExecutor,
   workflowAgentExecutor,
   type AgentExecutorSnapshot,
   type AgentExecutorResolution,

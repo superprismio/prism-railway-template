@@ -141,3 +141,12 @@ export function taskAgentExecutor(agentConfigValue: unknown, db: Database.Databa
     resolution: profileKey ? 'task-explicit' : 'admin-fallback',
   }, db);
 }
+
+export function taskUsesAgentExecutor(taskTypeValue: unknown, agentConfigValue: unknown) {
+  const taskType = optionalText(taskTypeValue)?.toLowerCase();
+  if (taskType === 'codex-prompt' || taskType === 'workflow-runner') return true;
+  if (taskType !== 'script-runner') return false;
+  const agentConfig = record(agentConfigValue);
+  const handoff = record(agentConfig.handoff ?? agentConfig.agentHandoff ?? agentConfig.agent_handoff);
+  return handoff.enabled === true;
+}

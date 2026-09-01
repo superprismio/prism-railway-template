@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed feature specification.
+First slice implemented. Instance adoption is in progress.
 
 Priority: ownership and audit.
 

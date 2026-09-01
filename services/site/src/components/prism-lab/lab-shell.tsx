@@ -14,7 +14,20 @@ import { cn } from "@/lib/utils"
 import type { Capability } from "@/lib/role-access"
 
 type LabAgentQueue = { queued: number; claimed: number; running: number }
-export type LabAgentNavigationItem = { key: string; name: string; avatarUrl: string | null; accentColor: string; systemKey: string | null; status: string; queue: LabAgentQueue }
+export type LabAgentNavigationItem = {
+  key: string
+  name: string
+  avatarUrl: string | null
+  accentColor: string
+  systemKey: string | null
+  status: string
+  domainKey: string | null
+  domainName: string | null
+  categoryLabel: string | null
+  categoryOrder: number
+  domainStewards: string[]
+  queue: LabAgentQueue
+}
 
 const workspaceSections = [
   { label: "Requests", href: "/admin/lab", icon: Inbox, capability: "canViewRequests" as const },
@@ -40,7 +53,7 @@ function AgentNavigationList({ agents, pathname, listLabel, onNavigate }: { agen
       const href = `/admin/lab/agents/${encodeURIComponent(agent.key)}`
       const active = activeFor(pathname, href)
       const labelColor = `color-mix(in oklab, ${agent.accentColor} 72%, var(--foreground))`
-      const systemLabel = agent.systemKey === "admin-agent" ? "Admin" : agent.systemKey ? "Built-in" : null
+      const systemLabel = agent.systemKey === "admin-agent" ? "Admin" : agent.systemKey ? "Built-in" : "Custom"
       return <li key={agent.key}><Link href={href} onClick={onNavigate} aria-current={active ? "page" : undefined} className={cn("flex min-h-11 items-center gap-2.5 rounded-md border-l-2 px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "bg-primary/12 text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")} style={{ borderLeftColor: active ? agent.accentColor : "transparent" }}><AgentAvatar name={agent.name} avatarUrl={agent.avatarUrl} accentColor={agent.accentColor} className="h-7 w-7 rounded-md" /><span className="min-w-0 flex-1 truncate font-medium" style={{ color: labelColor }}>{agent.name}</span>{systemLabel ? <span className="text-[0.58rem] uppercase tracking-wider" style={{ color: labelColor }}>{systemLabel}</span> : null}<AgentQueueIndicator queue={agent.queue} accentColor={agent.accentColor} /></Link></li>
     })}
   </ul>
@@ -50,8 +63,30 @@ function Navigator({ capabilities, agents, memoryConfigured, onNavigate }: { cap
   const pathname = usePathname()
   const visibleWorkspace = workspaceSections.filter((item) => capabilities.includes(item.capability) && (!("requiresMemory" in item) || !item.requiresMemory || memoryConfigured))
   const visibleAgents = capabilities.includes("canChatAgents") ? agents.filter((agent) => agent.status !== "archived") : []
-  const prismAgents = visibleAgents.filter((agent) => Boolean(agent.systemKey))
-  const workspaceAgents = visibleAgents.filter((agent) => !agent.systemKey)
+  const controlPlaneAgents = visibleAgents.filter((agent) => agent.systemKey === "admin-agent")
+  const categoryGroups = Array.from(
+    visibleAgents
+      .filter((agent) => agent.systemKey !== "admin-agent")
+      .reduce((groups, agent) => {
+        const label = agent.categoryLabel ?? agent.domainName ?? "Unassigned"
+        const key = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "unassigned"
+        const current = groups.get(key) ?? {
+          key,
+          label,
+          domainNames: [] as string[],
+          order: agent.categoryOrder,
+          stewards: agent.domainStewards,
+          agents: [] as LabAgentNavigationItem[],
+        }
+        if (agent.domainName && !current.domainNames.includes(agent.domainName)) current.domainNames.push(agent.domainName)
+        current.order = Math.min(current.order, agent.categoryOrder)
+        current.stewards = Array.from(new Set([...current.stewards, ...agent.domainStewards]))
+        current.agents.push(agent)
+        groups.set(key, current)
+        return groups
+      }, new Map<string, { key: string; label: string; domainNames: string[]; order: number; stewards: string[]; agents: LabAgentNavigationItem[] }>())
+      .values(),
+  ).sort((a, b) => a.order - b.order || a.label.localeCompare(b.label))
   return (
     <nav aria-label="Prism workspace and agents" className="flex h-full min-h-0 flex-col">
       <div className="px-3">
@@ -67,8 +102,14 @@ function Navigator({ capabilities, agents, memoryConfigured, onNavigate }: { cap
       {visibleAgents.length ? <div className="mt-6 flex min-h-0 flex-1 flex-col border-t border-border/50 pt-5">
         <div className="flex items-center justify-between px-3"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Agents</p><Link href="/admin/lab/agents" onClick={onNavigate} className="text-[0.68rem] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">Manage</Link></div>
         <div className="mt-3 min-h-0 flex-1 space-y-5 overflow-y-auto px-2 pb-2">
-          {prismAgents.length ? <section aria-label="Prism Agents"><p className="px-2 text-[0.62rem] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">Prism Agents</p><AgentNavigationList agents={prismAgents} pathname={pathname} listLabel="Prism Agents" onNavigate={onNavigate} /></section> : null}
-          {workspaceAgents.length ? <section aria-label="Workspace Agents"><p className="px-2 text-[0.62rem] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">Workspace Agents</p><AgentNavigationList agents={workspaceAgents} pathname={pathname} listLabel="Workspace Agents" onNavigate={onNavigate} /></section> : null}
+          {controlPlaneAgents.length ? <section aria-label="Control Plane"><p className="px-2 text-[0.62rem] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">Control Plane</p><AgentNavigationList agents={controlPlaneAgents} pathname={pathname} listLabel="Control Plane" onNavigate={onNavigate} /></section> : null}
+          {categoryGroups.map((group) => <section key={group.key} aria-label={group.label}>
+            <div className="px-2" title={group.stewards.length ? `Stewarded by ${group.stewards.join(", ")}` : undefined}>
+              <p className="text-[0.62rem] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">{group.label}</p>
+              {group.domainNames.some((name) => name !== group.label) ? <p className="mt-0.5 truncate text-[0.58rem] text-muted-foreground/60">{group.domainNames.join(" · ")}</p> : null}
+            </div>
+            <AgentNavigationList agents={group.agents} pathname={pathname} listLabel={group.label} onNavigate={onNavigate} />
+          </section>)}
         </div>
       </div> : null}
       <div className="mt-auto border-t border-border/50 p-3"><Link href="/admin" onClick={onNavigate} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-muted-foreground")}>Current UI<ArrowUpRight aria-hidden="true" /></Link></div>

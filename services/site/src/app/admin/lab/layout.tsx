@@ -4,7 +4,12 @@ import { LoginCard } from "@/components/admin/login-card"
 import { LabShell } from "@/components/prism-lab/lab-shell"
 import { requireAdminSession } from "@/lib/admin-auth"
 import { isPrismLabEnabled } from "@/lib/prism-lab/feature-flag"
-import { listAgentProfileQueueStates, listAgentProfiles } from "@/lib/app-core"
+import {
+  getAccountabilityAssignment,
+  getAccountabilityDomain,
+  listAgentProfileQueueStates,
+  listAgentProfiles,
+} from "@/lib/app-core"
 import { isPrismMemoryConfigured } from "@/lib/prism-memory"
 import { currentSiteBranding } from "@/lib/site-branding"
 
@@ -22,7 +27,30 @@ export default async function LabLayout({ children }: { children: React.ReactNod
     ? new Map(listAgentProfileQueueStates().map((queue) => [queue.profileId, queue]))
     : new Map()
   const agents = access?.ok && access.capabilities.includes("canChatAgents")
-    ? listAgentProfiles().filter((profile) => access.capabilities.includes("canRunAgent") || profile.systemKey !== "admin-agent").map(({ id, key, name, avatarUrl, accentColor, systemKey, status }) => ({ key, name, avatarUrl, accentColor, systemKey, status, queue: queueByProfile.get(id) ?? { profileId: id, queued: 0, claimed: 0, running: 0 } }))
+    ? listAgentProfiles().filter((profile) => access.capabilities.includes("canRunAgent") || profile.systemKey !== "admin-agent").map(({ id, key, name, avatarUrl, accentColor, systemKey, status }) => {
+        const assignment = getAccountabilityAssignment("agent_profile", id)
+        const domain = assignment ? getAccountabilityDomain(assignment.domainKey) : null
+        const categoryLabel = typeof domain?.governanceRef.stewardMandate === "string"
+          ? domain.governanceRef.stewardMandate
+          : domain?.name ?? null
+        const categoryOrder = typeof domain?.governanceRef.displayOrder === "number"
+          ? domain.governanceRef.displayOrder
+          : 999
+        return {
+          key,
+          name,
+          avatarUrl,
+          accentColor,
+          systemKey,
+          status,
+          domainKey: domain?.key ?? null,
+          domainName: domain?.name ?? null,
+          categoryLabel,
+          categoryOrder,
+          domainStewards: domain?.stewards.map((steward) => steward.displayName || steward.userId) ?? [],
+          queue: queueByProfile.get(id) ?? { profileId: id, queued: 0, claimed: 0, running: 0 },
+        }
+      })
     : []
 
   return (
