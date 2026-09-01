@@ -222,6 +222,10 @@ function appApiServiceToken(): string {
   return (process.env.APP_API_SERVICE_TOKEN ?? process.env.INTERNAL_SERVICE_TOKEN ?? "").trim();
 }
 
+function taskRunnerControlToken(): string {
+  return (process.env.TASK_RUNNER_TOKEN ?? process.env.INTERNAL_SERVICE_TOKEN ?? "").trim();
+}
+
 function codexRuntimeBaseUrl(): string {
   return trimBaseUrl(process.env.CODEX_RUNTIME_BASE_URL);
 }
@@ -403,6 +407,10 @@ async function appApiRequest(path: string, init: RequestInit): Promise<Record<st
   headers.set("Content-Type", "application/json");
   if (token) {
     headers.set("X-Service-Token", token);
+  }
+  const controlToken = taskRunnerControlToken();
+  if (controlToken) {
+    headers.set("X-Task-Runner-Token", controlToken);
   }
 
   const url = `${baseUrl}${path}`;

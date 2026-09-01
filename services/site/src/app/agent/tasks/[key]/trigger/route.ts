@@ -4,7 +4,7 @@ import { requireServiceAccess } from "@/lib/internal-service"
 import { triggerTaskRunnerTask } from "@/lib/task-runner-trigger"
 
 function taskRunnerBaseUrl() {
-  return (process.env.TASK_RUNNER_BASE_URL ?? "").trim()
+  return (process.env.TASK_RUNNER_BASE_URL ?? "").trim().replace(/\/+$/, "")
 }
 
 function taskRunnerToken() {
