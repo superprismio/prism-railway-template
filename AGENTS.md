@@ -32,6 +32,7 @@ Send service auth as:
 
 - `GET /agent/tasks`
 - `POST /agent/tasks`
+- `POST /agent/tasks/:key/trigger`
 - `GET /agent/tasks/runs`
 - `POST /agent/tasks/runs`
 - `GET /agent/task-scripts`
@@ -102,6 +103,12 @@ Send service auth as:
 - `GET /agent/gateway`
 - `POST /agent/gateway/connections`
 - `POST /agent/gateway/integrations`
+
+To run an existing scheduled task immediately, use
+`POST /agent/tasks/:key/trigger`. This dispatches through task-runner and returns
+its accepted, conflict, or error response. Do not use `POST /agent/tasks/runs`
+to start work; that route creates the durable bookkeeping record used by
+task-runner after execution has been dispatched.
 
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
 
