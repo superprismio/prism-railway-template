@@ -40,15 +40,22 @@ Tasks:
 - `GET /agent/tasks`
 - `POST /agent/tasks`
 - `DELETE /agent/tasks/:key`
+- `POST /agent/tasks/:key/trigger`
 - `GET /agent/tasks/runs`
-- `POST /agent/tasks/runs`
-- `PATCH /agent/tasks/runs/:id`
 - `GET /agent/task-scripts`
 - `POST /agent/task-scripts`
 - `GET /agent/task-scripts/:key`
 - `PATCH /agent/task-scripts/:key`
 - `DELETE /agent/task-scripts/:key`
 - `GET /agent/task-scripts/:key/content`
+
+Use `POST /agent/tasks/:key/trigger` to run an existing task immediately. The
+Site proxies this request to task-runner so normal preflight, runtime handoff,
+delivery, and run finalization all occur. `POST /agent/tasks/runs` is a durable
+bookkeeping endpoint for task-runner; creating a run row does not dispatch the
+task. `POST /agent/tasks/runs` and `PATCH /agent/tasks/runs/:id` require both
+service authentication and task-runner control authentication. Ordinary agents
+may list runs but cannot create or finalize them.
 
 Skills:
 
