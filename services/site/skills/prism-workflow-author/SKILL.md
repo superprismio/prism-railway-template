@@ -5,6 +5,11 @@ description: Use this skill when Codex is asked to create, update, or reason abo
 
 Use this skill to author Prism workflows in the style expected by the site service.
 
+Every workflow should have exactly one accountable domain. Include
+`accountabilityDomainKey` alongside `key`, `manifest`, and `files` when posting a
+new custom workflow. The domain owns maintenance and audit follow-through; it
+does not constrain which profiles individual steps may execute.
+
 When this skill is loaded in a deployed Prism instance, do not fall back to browser admin routes or local filesystem probing before using the site service workflow API. Missing local files under `/data/codex/skills`, `/data/workflows`, or `/app` do not mean the workflow is inaccessible. Runtime agents usually cannot write the site service volume directly.
 
 Prism workflows are markdown-first and DB-indexed:
@@ -196,6 +201,14 @@ Use it for:
 - shared `agentConfig`
 - deterministic delegation policy in `agentConfig.delegation`
 - context isolation policy in `agentConfig.contextPolicy`
+- an explicit `executorAgent` on a step when it differs from the workflow default
+
+Use `defaultAgent` only when it is a deliberate workflow-wide executor choice.
+Omitting both the step executor and workflow default invokes the visible Admin
+fallback and should be treated as authoring debt, not an implicit design. Review
+the executor-resolution matrix in `GET /agent/accountability/audit` before
+enabling a workflow. Cross-domain execution is allowed when intentional and
+should remain visible in that audit.
 
 When a step uses a skill, put the skill name in `agentConfig.skills`. Generic
 skills remain Gateway-agnostic. Trusted workflow runs inherit active
@@ -438,3 +451,8 @@ When creating or changing a workflow:
    handoffs and `contextPolicy.continuation: "step"` unless session continuity
    is intentionally required.
 10. Return a concise summary of changed files and expected UI/status behavior.
+11. Assign one `accountabilityDomainKey` and verify that it is active.
+12. Verify every agent step resolves through `step-explicit` or
+    `workflow-default`; disclose any temporary `admin-fallback`.
+13. Review intentional cross-domain executors rather than copying their domain
+    onto the workflow.

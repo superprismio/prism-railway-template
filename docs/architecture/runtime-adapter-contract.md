@@ -198,9 +198,19 @@ shell
 site-hosted-skills
 continuations
 image-input
+browser-automation
+workspace-assignment
 gateway-credentials
 idempotent-job-creation
 ```
+
+Workflow agent steps may declare `agentConfig.requiredRuntimeFeatures`. When a
+runtime profile is not explicitly pinned, Site selects the first enabled
+profile, preferring the configured default, that advertises every required
+feature. An explicit profile pin fails closed when it lacks a requirement.
+Capabilities describe the contract, not the implementation: for example,
+`browser-automation` may be backed by Playwright, Chrome DevTools Protocol, or
+another harness, and `workspace-assignment` does not imply Git worktrees.
 
 The runtime request lists the Gateway credential keys assigned to that job.
 Site resolves those assignments from Console context, source-adapter policy,

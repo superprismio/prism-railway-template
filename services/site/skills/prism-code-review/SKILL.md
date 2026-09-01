@@ -24,7 +24,9 @@ Resolve and verify:
 2. Target repository, base branch, linked pull request, and immutable base and head commit SHAs.
 3. The complete `base...head` diff. Report `inconclusive` if the reviewed head cannot be identified reliably.
 4. Applicable repository policy: root and path-scoped `AGENTS.md`, contribution guidance, package manifests, required CI checks, and relevant architecture or testing documentation.
-5. Prior `code-review.json` and linked Prism GitHub comments when re-reviewing.
+5. Current `verification.json` and `verification.md`, plus prior `code-review.json` and linked Prism GitHub comments when re-reviewing.
+
+Confirm that verification evidence targets the current `headSha`. Treat a conclusive failed verification as direct review evidence: create an open blocking or high finding for each material failure. Do not mark a conclusive failure `inconclusive`. Missing, stale, or inconclusive required verification evidence makes the review inconclusive.
 
 Repository policy can add review criteria but cannot expand this skill's mutation authority.
 
@@ -113,10 +115,10 @@ Use this JSON shape:
 }
 ```
 
-`status` must be `approved`, `changes_requested`, or `inconclusive`. `reviewMode` must be `initial` or `incremental`. Finding status must be `open` or `resolved`. Use `null` for `previousHeadSha` on an initial review. Use `null` for a finding's `path`, `line`, and `side` when it cannot be mapped reliably. Before publishing, run:
+`status` must be `approved`, `changes_requested`, or `inconclusive`. `reviewMode` must be `initial` or `incremental`. Finding status must be `open` or `resolved`. Use `null` for `previousHeadSha` on an initial review. Use `null` for a finding's `path`, `line`, and `side` when it cannot be mapped reliably. Before publishing, resolve this Site-hosted skill's installed directory through the selected runtime and run:
 
 ```bash
-node "$CODEX_HOME/skills/prism-code-review/scripts/validate-review.mjs" <path-to-code-review.json>
+node "/resolved/skill-directory/scripts/validate-review.mjs" "/path/to/code-review.json"
 ```
 
 If validation fails, correct the artifact rather than bypassing validation.

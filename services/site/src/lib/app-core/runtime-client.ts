@@ -144,6 +144,21 @@ function profileKeyFromMetadata(metadata: Record<string, unknown> | undefined) {
   return typeof sessionRuntimeKey === 'string' && sessionRuntimeKey.trim() ? sessionRuntimeKey.trim() : null;
 }
 
+function requiredRuntimeFeaturesFromMetadata(metadata: Record<string, unknown> | undefined) {
+  const workflow = metadata?.workflow && typeof metadata.workflow === 'object' && !Array.isArray(metadata.workflow)
+    ? metadata.workflow as Record<string, unknown>
+    : null;
+  const agentConfig = workflow?.agentConfig && typeof workflow.agentConfig === 'object' && !Array.isArray(workflow.agentConfig)
+    ? workflow.agentConfig as Record<string, unknown>
+    : null;
+  const value = agentConfig?.requiredRuntimeFeatures ?? metadata?.requiredRuntimeFeatures;
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter(Boolean)));
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -438,7 +453,11 @@ async function requestLegacy(profile: RuntimeProfileRecord, input: RuntimeReques
 }
 
 export async function requestRuntimeResponse(input: RuntimeRequestInput) {
-  const profile = resolveRuntimeProfile(input.runtimeKey || profileKeyFromMetadata(input.metadata));
+  const profile = resolveRuntimeProfile(
+    input.runtimeKey || profileKeyFromMetadata(input.metadata),
+    undefined,
+    requiredRuntimeFeaturesFromMetadata(input.metadata),
+  );
   const sessionRuntimeKey = typeof input.metadata?.sessionRuntimeKey === 'string'
     ? input.metadata.sessionRuntimeKey.trim()
     : '';

@@ -84,3 +84,35 @@ test('runtime profiles reject embedded credentials and disabled explicit routes'
   assert.throws(() => resolveRuntimeProfile('disabled-runtime', db), /RUNTIME_PROFILE_DISABLED/);
   db.close();
 });
+
+test('runtime profiles route unpinned work by required features and fail pinned mismatches', () => {
+  const db = testDb();
+  upsertRuntimeProfile({
+    key: 'grok-default',
+    adapter: 'grok-build',
+    baseUrl: 'http://127.0.0.1:3031',
+    enabled: true,
+    isDefault: true,
+    features: ['repository', 'shell'],
+  }, db);
+  upsertRuntimeProfile({
+    key: 'browser-runtime',
+    adapter: 'codex-cli',
+    baseUrl: 'http://127.0.0.1:3030',
+    enabled: true,
+    isDefault: false,
+    features: ['repository', 'shell', 'browser-automation'],
+  }, db);
+
+  assert.equal(resolveRuntimeProfile(null, db, ['repository', 'shell']).key, 'grok-default');
+  assert.equal(resolveRuntimeProfile(null, db, ['browser-automation']).key, 'browser-runtime');
+  assert.throws(
+    () => resolveRuntimeProfile('grok-default', db, ['browser-automation']),
+    /RUNTIME_PROFILE_FEATURES_MISSING:browser-automation/,
+  );
+  assert.throws(
+    () => resolveRuntimeProfile(null, db, ['mobile-simulator']),
+    /RUNTIME_PROFILE_CAPABILITIES_UNAVAILABLE:mobile-simulator/,
+  );
+  db.close();
+});

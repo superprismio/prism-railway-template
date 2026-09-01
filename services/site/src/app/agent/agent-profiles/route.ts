@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 
 import {
   adminAgentProfileId,
+  assignAccountabilityDomain,
   createAuditLog,
+  getAccountabilityAssignment,
   listAgentProfiles,
   upsertAgentProfile,
 } from '@/lib/app-core';
@@ -48,7 +50,13 @@ function optionalMemoryScope(body: Record<string, unknown>) {
 export async function GET() {
   const access = await requireServiceAccess();
   if (!access.ok) return NextResponse.json({ ok: false, error: access.error }, { status: access.status });
-  return NextResponse.json({ ok: true, profiles: listAgentProfiles() });
+  return NextResponse.json({
+    ok: true,
+    profiles: listAgentProfiles().map((profile) => ({
+      ...profile,
+      accountabilityDomain: getAccountabilityAssignment('agent_profile', profile.id),
+    })),
+  });
 }
 
 export async function POST(request: Request) {
@@ -71,6 +79,7 @@ export async function POST(request: Request) {
     ...(memoryScope ? { memoryScope } : {}),
     authority: { mode: 'policy-controlled', maximumAccessMode: 'full', consoleAccessMode: 'full' },
     contextPolicy: { continuation: 'session', handoff: null },
+    accountabilityDomainKey: text(body.accountabilityDomainKey ?? body.accountability_domain_key, 80) || null,
   };
   if (body.confirm !== true) return NextResponse.json({ ok: true, confirmed: false, preview });
   try {
@@ -80,14 +89,17 @@ export async function POST(request: Request) {
       ownerAgentProfileId: owner === 'admin-agent' ? adminAgentProfileId : null,
       stewardUserIds: stringList(body.stewardUserIds ?? body.steward_user_ids),
     });
+    const assignment = preview.accountabilityDomainKey
+      ? assignAccountabilityDomain({ targetType: 'agent_profile', targetKey: profile.key, domainKey: preview.accountabilityDomainKey })
+      : null;
     createAuditLog({
       actorUserId: null,
       actionType: 'agent.agent_profile.create',
       targetType: 'agent_profile',
       targetId: profile.id,
-      meta: { key: profile.key, ownerType: profile.owner.type, ownerAgentProfileId: profile.owner.agentProfileId },
+      meta: { key: profile.key, ownerType: profile.owner.type, ownerAgentProfileId: profile.owner.agentProfileId, accountabilityDomainKey: assignment?.domainKey ?? null },
     });
-    return NextResponse.json({ ok: true, confirmed: true, profile }, { status: 201 });
+    return NextResponse.json({ ok: true, confirmed: true, profile, accountabilityAssignment: assignment }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : 'AGENT_PROFILE_CREATE_FAILED' }, { status: 400 });
   }

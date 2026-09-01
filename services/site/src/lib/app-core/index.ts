@@ -38,11 +38,27 @@ export {
 } from './agent-profiles';
 export { getAdminBoardSnapshot, getAdminSetupStatus } from './admin-read';
 export {
+  agentExecutorResolutions,
   resolveAgentExecutor,
   taskAgentExecutor,
   workflowAgentExecutor,
   type AgentExecutorSnapshot,
+  type AgentExecutorResolution,
 } from './agent-executors';
+export {
+  accountabilityTargetTypes,
+  assignAccountabilityDomain,
+  buildAccountabilityAuditReport,
+  buildAccountabilitySnapshot,
+  getAccountabilityAssignment,
+  getAccountabilityDomain,
+  listAccountabilityDomains,
+  upsertAccountabilityDomain,
+  type AccountabilityDomainAssignment,
+  type AccountabilityDomainRecord,
+  type AccountabilityDomainStatus,
+  type AccountabilityTargetType,
+} from './accountability-domains';
 export {
   getRequestOrigin,
   insertRequestOrigin,

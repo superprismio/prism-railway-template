@@ -1,6 +1,6 @@
 ---
 name: prism-codegen
-description: Implement an approved Prism change request in its target repository, using bounded native Codex subagents when the work divides into independent ownership areas.
+description: Implement an approved Prism change request in its target repository, using bounded runtime-native delegation when the work divides into independent ownership areas.
 ---
 
 # Prism Codegen
@@ -9,11 +9,11 @@ Own the implementation outcome in the parent run. Read the approved plan and dur
 
 ## Delegate selectively
 
-When delegation is runtime-enabled, delegate when there are at least two independent, coherent workstreams that can proceed without resolving the same immediate blocker. Otherwise, keep the work in the parent run.
+When delegation is runtime-enabled, delegate when there are at least two independent, coherent workstreams that can proceed without resolving the same immediate blocker. Otherwise, keep the work in the parent run. Delegation is optional: a runtime that does not support it must complete the work in the parent run.
 
-- Prefer `explorer` for read-heavy codebase mapping, policy discovery, or focused investigation.
-- Prefer `worker` for a bounded implementation or verification task with a disjoint file or module scope.
-- Give each subagent a concrete goal, owned paths or modules, constraints, acceptance check, and expected summary.
+- Prefer read-only delegates for codebase mapping, policy discovery, or focused investigation when the runtime exposes that distinction.
+- Prefer implementation delegates for bounded changes with disjoint file or module scopes.
+- Give each delegate a concrete goal, owned paths or modules, constraints, acceptance check, and expected summary.
 - Do not create overlapping write scopes or nested delegation. Keep coupled changes in the parent run.
 - Wait for the delegated work, review its actual result, and resolve conflicts or incomplete work yourself.
 
@@ -21,7 +21,7 @@ The runtime-enforced workflow limit is authoritative. Do not try to exceed it or
 
 ## Parent-run responsibilities
 
-The parent run retains the approved plan, integration decisions, repository-wide validation, durable artifacts, and final response. It alone performs commits, pushes, pull-request or issue updates, deployments, and other external mutations.
+The parent run retains the approved plan, integration decisions, repository-wide validation, durable artifacts, and final response. It alone performs commits, pushes, pull-request or issue updates, deployments, and other external mutations. Workspace checkout and isolation are runtime responsibilities; request isolated work, but never assume the runtime implements it with Git worktrees.
 
 Before handing off:
 
@@ -30,4 +30,4 @@ Before handing off:
 - confirm the result remains within the approved request and repository instructions
 - report the branch, commit, pull request, tests, preview, and unresolved risks when available
 
-If the work returns from code review, treat the open findings in `code-review.json` as implementation inputs while preserving finding history.
+If the work returns from verification or code review, treat `verification.json` and the open findings in `code-review.json` as implementation inputs while preserving finding history.

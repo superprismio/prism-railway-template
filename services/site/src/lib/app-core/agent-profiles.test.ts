@@ -9,6 +9,7 @@ import { activeAgentExecutorFallbackMigration } from './migrations/043_active_ag
 import { codeReviewAgentMigration } from './migrations/044_code_review_agent';
 import { codeReviewAgentV2Migration } from './migrations/045_code_review_agent_v2';
 import { codegenAgentMigration } from './migrations/046_codegen_agent';
+import { verificationAgentMigration } from './migrations/047_verification_agent';
 import { taskAgentExecutor, workflowAgentExecutor } from './agent-executors';
 import {
   adminAgentProfileId,
@@ -186,6 +187,62 @@ test('seeds a protected Code Review Agent and assigns it to the review workflow 
     delegation: { allowed: true, maxAgents: 3 },
   });
   assert.equal(codegenDefinition.steps.find((step) => step.key === 'local-code-review')?.executorAgent, 'code-review-agent');
+
+  db.prepare(`UPDATE agent_profiles SET name = ?, avatar_url = ? WHERE id = ?`)
+    .run('Instance Codegen', '/avatars/codegen.png', 'agent-profile-codegen');
+  db.exec(verificationAgentMigration.sql);
+
+  const upgradedCodegen = getAgentProfile('codegen-agent', db);
+  assert.equal(upgradedCodegen?.version, 2);
+  assert.equal(upgradedCodegen?.name, 'Instance Codegen');
+  assert.equal(upgradedCodegen?.avatarUrl, '/avatars/codegen.png');
+  assert.match(upgradedCodegen?.description ?? '', /runtime-native/);
+  assert.doesNotMatch(String(upgradedCodegen?.persona.instructions), /Codex/i);
+  assert.match(String(upgradedCodegen?.persona.instructions), /runtime choose the checkout mechanism/);
+
+  const verification = getAgentProfile('verification-agent', db);
+  assert.equal(verification?.systemKey, 'verification-agent');
+  assert.equal(verification?.owner.agentProfileId, adminAgentProfileId);
+  assert.equal(verification?.runtimeProfileKey, null);
+  assert.deepEqual(verification?.skills, ['prism-code-verification']);
+  assert.equal(verification?.authority.credentialPolicy, 'none');
+  assert.deepEqual(verification?.authority.allowedMutations, ['prism.request_artifact']);
+  assert.throws(
+    () => upsertAgentProfile({ key: 'verification-agent', name: 'Replacement' }, db),
+    /SYSTEM_AGENT_PROFILE_PROTECTED/,
+  );
+
+  const verificationWorkflowRow = db.prepare('SELECT version, definition_json FROM workflows WHERE key = ?')
+    .get('change-request-default') as { version: number; definition_json: string };
+  const verificationDefinition = JSON.parse(verificationWorkflowRow.definition_json) as {
+    version: number;
+    steps: Array<Record<string, unknown>>;
+  };
+  assert.equal(verificationWorkflowRow.version, 9);
+  assert.equal(verificationDefinition.version, 9);
+  assert.deepEqual(verificationDefinition.steps.map((step) => step.key), [
+    'triage',
+    'approve-for-work',
+    'implement',
+    'verify',
+    'local-code-review',
+    'review-cycle',
+    'review',
+    'closed',
+    'review-loop-attention',
+  ]);
+  const upgradedImplementation = verificationDefinition.steps[2];
+  assert.equal(upgradedImplementation?.next, 'verify');
+  assert.deepEqual((upgradedImplementation?.agentConfig as Record<string, unknown>)?.requiredRuntimeFeatures, ['repository', 'shell']);
+  const verify = verificationDefinition.steps[3];
+  assert.equal(verify?.executorAgent, 'verification-agent');
+  assert.equal(verify?.next, 'local-code-review');
+  assert.deepEqual((verify?.agentConfig as Record<string, unknown>)?.requiredRuntimeFeatures, [
+    'repository',
+    'shell',
+    'browser-automation',
+  ]);
+  assert.equal(verificationDefinition.steps[5]?.key, 'review-cycle');
   db.close();
 });
 
@@ -306,6 +363,7 @@ test('resolves workflow and task executors with an Admin Agent legacy fallback',
   const inherited = workflowAgentExecutor({ defaultAgent: 'veydrift-agent' }, { key: 'operate' }, db);
   assert.deepEqual(inherited, {
     profileId: veydrift.id, profileKey: veydrift.key, profileVersion: 1, executionMode: 'worker',
+    resolution: 'workflow-default',
   });
   const verifier = workflowAgentExecutor(
     { defaultAgent: 'veydrift-agent' },
@@ -314,9 +372,13 @@ test('resolves workflow and task executors with an Admin Agent legacy fallback',
   );
   assert.equal(verifier.profileId, adminAgentProfileId);
   assert.equal(verifier.executionMode, 'verifier');
+  assert.equal(verifier.resolution, 'step-explicit');
   assert.equal(workflowAgentExecutor({}, {}, db).profileId, adminAgentProfileId);
+  assert.equal(workflowAgentExecutor({}, {}, db).resolution, 'admin-fallback');
   assert.equal(taskAgentExecutor({}, db).profileId, adminAgentProfileId);
+  assert.equal(taskAgentExecutor({}, db).resolution, 'admin-fallback');
   assert.equal(taskAgentExecutor({ executorAgent: 'veydrift-agent', executionMode: 'repair' }, db).executionMode, 'repair');
+  assert.equal(taskAgentExecutor({ executorAgent: 'veydrift-agent' }, db).resolution, 'task-explicit');
   assert.throws(
     () => workflowAgentExecutor({ defaultAgent: 'missing-agent' }, {}, db),
     /AGENT_EXECUTOR_NOT_FOUND:missing-agent/,

@@ -16,7 +16,19 @@ export type AgentExecutorSnapshot = {
   profileKey: string;
   profileVersion: number;
   executionMode: AgentExecutionMode;
+  resolution: AgentExecutorResolution;
 };
+
+export const agentExecutorResolutions = [
+  'step-explicit',
+  'workflow-default',
+  'task-explicit',
+  'hook-workflow-default',
+  'admin-fallback',
+  'historical-unknown',
+  'not-applicable',
+] as const;
+export type AgentExecutorResolution = (typeof agentExecutorResolutions)[number];
 
 function record(value: unknown): JsonRecord {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
@@ -36,24 +48,35 @@ function executionMode(...values: unknown[]): AgentExecutionMode {
     : 'worker';
 }
 
-function snapshot(profile: AgentProfileRecord, mode: AgentExecutionMode): AgentExecutorSnapshot {
+function snapshot(
+  profile: AgentProfileRecord,
+  mode: AgentExecutionMode,
+  resolution: AgentExecutorResolution,
+): AgentExecutorSnapshot {
   return {
     profileId: profile.id,
     profileKey: profile.key,
     profileVersion: profile.version,
     executionMode: mode,
+    resolution,
   };
 }
 
 export function resolveAgentExecutor(input: {
   profileKey?: string | null;
   executionMode?: string | null;
+  resolution?: AgentExecutorResolution;
 }, db: Database.Database = getDb()): AgentExecutorSnapshot {
-  const requestedKey = optionalText(input.profileKey) ?? adminAgentProfileKey;
+  const explicitProfile = optionalText(input.profileKey);
+  const requestedKey = explicitProfile ?? adminAgentProfileKey;
   const profile = getAgentProfile(requestedKey, db);
   if (!profile) throw new Error(`AGENT_EXECUTOR_NOT_FOUND:${requestedKey}`);
   if (profile.status !== 'active') throw new Error(`AGENT_EXECUTOR_NOT_ACTIVE:${requestedKey}`);
-  return snapshot(profile, executionMode(input.executionMode));
+  return snapshot(
+    profile,
+    executionMode(input.executionMode),
+    input.resolution ?? (explicitProfile ? 'step-explicit' : 'admin-fallback'),
+  );
 }
 
 export function workflowAgentExecutor(
@@ -65,13 +88,15 @@ export function workflowAgentExecutor(
   const definitionAgentConfig = record(definition.agentConfig ?? definition.agent_config);
   const step = record(stepValue);
   const stepAgentConfig = record(step.agentConfig ?? step.agent_config);
-  const profileKey = optionalText(
+  const stepProfileKey = optionalText(
     step.executorAgent,
     step.executor_agent,
     stepAgentConfig.executorAgent,
     stepAgentConfig.executor_agent,
     stepAgentConfig.agentProfileKey,
     stepAgentConfig.agent_profile_key,
+  );
+  const workflowProfileKey = optionalText(
     definition.defaultAgent,
     definition.default_agent,
     definitionAgentConfig.defaultAgent,
@@ -93,20 +118,26 @@ export function workflowAgentExecutor(
     definitionAgentConfig.executionMode,
     definitionAgentConfig.execution_mode,
   );
-  return resolveAgentExecutor({ profileKey, executionMode: mode }, db);
+  return resolveAgentExecutor({
+    profileKey: stepProfileKey ?? workflowProfileKey,
+    executionMode: mode,
+    resolution: stepProfileKey ? 'step-explicit' : workflowProfileKey ? 'workflow-default' : 'admin-fallback',
+  }, db);
 }
 
 export function taskAgentExecutor(agentConfigValue: unknown, db: Database.Database = getDb()) {
   const agentConfig = record(agentConfigValue);
+  const profileKey = optionalText(
+    agentConfig.executorAgent,
+    agentConfig.executor_agent,
+    agentConfig.agentProfileKey,
+    agentConfig.agent_profile_key,
+    agentConfig.defaultAgent,
+    agentConfig.default_agent,
+  );
   return resolveAgentExecutor({
-    profileKey: optionalText(
-      agentConfig.executorAgent,
-      agentConfig.executor_agent,
-      agentConfig.agentProfileKey,
-      agentConfig.agent_profile_key,
-      agentConfig.defaultAgent,
-      agentConfig.default_agent,
-    ),
+    profileKey,
     executionMode: optionalText(agentConfig.executionMode, agentConfig.execution_mode),
+    resolution: profileKey ? 'task-explicit' : 'admin-fallback',
   }, db);
 }

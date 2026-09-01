@@ -5,6 +5,9 @@ description: Use this skill when Codex is asked to design or create a scheduled 
 
 Use this skill to turn a user's task idea into a durable Prism task definition.
 
+Every new task should include one active `accountabilityDomainKey`. The domain
+owns maintenance and audit follow-through; it does not grant runtime authority.
+
 Task authoring rules:
 
 1. Prefer `taskType="codex-prompt"` for user-authored scheduled prompt tasks.
@@ -29,6 +32,11 @@ Task authoring rules:
 18. Before removing a legacy integration secret, run Prism Doctor and test every
     enabled task that requests the migrated skill or starts an affected
     workflow.
+19. Set `agentConfig.executorAgent` deliberately for agent-backed tasks. Omitting
+    it invokes the visible Admin fallback and should be disclosed as temporary
+    authoring debt.
+20. After creation, inspect `GET /agent/accountability/audit` for the task's
+    assignment, executor resolution, cross-domain execution, and fallback state.
 
 Workflow-runner request types must use one of: `bug`, `feature`, `issue`, `content`, `design`, `config`, or `ops`. Use `issue` for imported GitHub issues or issue-like support intake when the source item itself is the request.
 
@@ -44,6 +52,7 @@ Recommended task row shape:
   "scheduleCron": "0 9 * * *",
   "timezone": "UTC",
   "taskType": "codex-prompt",
+  "accountabilityDomainKey": "community-operations",
   "inputConfig": {
     "mode": "scheduled"
   },
@@ -233,3 +242,4 @@ Return a concise review summary with:
 - required env/config
 - resolved output destinations, if any
 - what the scheduled prompt, workflow, or script will do
+- accountable domain and resolved executor profile

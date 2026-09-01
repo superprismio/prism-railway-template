@@ -43,6 +43,8 @@ import { activeAgentExecutorFallbackMigration } from './043_active_agent_executo
 import { codeReviewAgentMigration } from './044_code_review_agent';
 import { codeReviewAgentV2Migration } from './045_code_review_agent_v2';
 import { codegenAgentMigration } from './046_codegen_agent';
+import { verificationAgentMigration } from './047_verification_agent';
+import { accountabilityDomainsMigration } from './048_accountability_domains';
 
 export interface Migration {
   name: string;
@@ -95,4 +97,6 @@ export const migrations: Migration[] = [
   codeReviewAgentMigration,
   codeReviewAgentV2Migration,
   codegenAgentMigration,
+  verificationAgentMigration,
+  accountabilityDomainsMigration,
 ];

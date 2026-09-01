@@ -4,6 +4,7 @@ import { getDb } from './db';
 import { getDefaultHomeModules, getHomeModuleDefinition, normalizeHomeModuleConfig } from './home-modules';
 import { normalizeSiteContent, writeSiteContent } from './site-content';
 import { taskAgentExecutor, workflowAgentExecutor } from './agent-executors';
+import { buildAccountabilitySnapshot } from './accountability-domains';
 import {
   getRequestOrigin,
   insertRequestOrigin,
@@ -538,6 +539,8 @@ export interface AgentRunRecord {
   agentProfileId: string | null;
   agentProfileVersion: number | null;
   executionMode: string | null;
+  executorResolution: string | null;
+  accountabilitySnapshot: Record<string, unknown>;
   source: string;
   input: Record<string, unknown>;
   result: Record<string, unknown>;
@@ -585,6 +588,8 @@ export interface CreateAgentRunInput {
   agentProfileId?: string | null;
   agentProfileVersion?: number | null;
   executionMode?: string | null;
+  executorResolution?: string | null;
+  accountabilitySnapshot?: Record<string, unknown>;
   source?: string;
   input?: Record<string, unknown>;
   result?: Record<string, unknown>;
@@ -1193,6 +1198,8 @@ interface AgentRunRow {
   agent_profile_id?: string | null;
   agent_profile_version?: number | null;
   execution_mode?: string | null;
+  executor_resolution?: string | null;
+  accountability_snapshot_json?: string | null;
   source: string;
   input_json: string;
   result_json: string;
@@ -1935,6 +1942,8 @@ function mapAgentRunRow(row: AgentRunRow, input: { queuePosition?: number | null
     agentProfileId: row.agent_profile_id ?? null,
     agentProfileVersion: row.agent_profile_version ?? null,
     executionMode: row.execution_mode ?? null,
+    executorResolution: row.executor_resolution ?? null,
+    accountabilitySnapshot: parseJsonValue<Record<string, unknown>>(row.accountability_snapshot_json ?? '{}', {}),
     source: row.source,
     input: parseJsonValue<Record<string, unknown>>(row.input_json, {}),
     result: parseJsonValue<Record<string, unknown>>(row.result_json, {}),
@@ -4968,10 +4977,11 @@ export function createAgentRun(input: CreateAgentRunInput) {
       `INSERT INTO agent_runs (
          id, kind, status, lane, priority, idempotency_key, request_id, workflow_run_id, workflow_step_key,
          task_key, hook_key, session_id, agent_profile_id, agent_profile_version, execution_mode,
+         executor_resolution, accountability_snapshot_json,
          source, input_json, result_json, trace_json,
          error_message, queued_at, claimed_at, lease_expires_at, queue_reason,
          started_at, finished_at, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -4989,6 +4999,8 @@ export function createAgentRun(input: CreateAgentRunInput) {
       normalizeText(input.agentProfileId) || null,
       input.agentProfileVersion == null ? null : Math.max(1, Math.trunc(input.agentProfileVersion)),
       normalizeText(input.executionMode) || null,
+      normalizeText(input.executorResolution) || (input.agentProfileId ? 'not-applicable' : null),
+      JSON.stringify(input.accountabilitySnapshot ?? {}),
       source,
       JSON.stringify(input.input ?? {}),
       JSON.stringify(input.result ?? {}),
@@ -6572,6 +6584,9 @@ export function createHookRun(input: CreateHookRunInput): HookRunRecord {
   const workflowKey = normalizeText(input.workflowKey) || null;
   const workflow = workflowKey ? getWorkflowByKey(workflowKey) : null;
   const executor = workflowAgentExecutor(workflow?.definition, null);
+  const executorResolution = executor.resolution === 'workflow-default'
+    ? 'hook-workflow-default'
+    : executor.resolution;
   const agentRun = createAgentRun({
     kind: 'hook',
     status: 'running',
@@ -6580,6 +6595,17 @@ export function createHookRun(input: CreateHookRunInput): HookRunRecord {
     agentProfileId: executor.profileId,
     agentProfileVersion: executor.profileVersion,
     executionMode: executor.executionMode,
+    executorResolution,
+    accountabilitySnapshot: buildAccountabilitySnapshot({
+      definitionType: workflow ? 'workflow' : null,
+      definitionId: workflow?.id ?? null,
+      definitionKey: workflow?.key ?? workflowKey,
+      definitionVersion: workflow?.version ?? null,
+      executorProfileId: executor.profileId,
+      executorProfileKey: executor.profileKey,
+      executorProfileVersion: executor.profileVersion,
+      resolution: executorResolution,
+    }),
     source,
     input: {
       hookRunId: id,
@@ -6760,6 +6786,16 @@ export function createTaskRun(input: CreateTaskRunInput): TaskRunRecord {
     agentProfileId: executor.profileId,
     agentProfileVersion: executor.profileVersion,
     executionMode: executor.executionMode,
+    executorResolution: executor.resolution,
+    accountabilitySnapshot: buildAccountabilitySnapshot({
+      definitionType: 'task',
+      definitionId: task.id,
+      definitionKey: task.key,
+      executorProfileId: executor.profileId,
+      executorProfileKey: executor.profileKey,
+      executorProfileVersion: executor.profileVersion,
+      resolution: executor.resolution,
+    }),
     source: triggerSource,
     input: {
       taskRunId: id,

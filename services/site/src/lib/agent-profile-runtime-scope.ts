@@ -10,6 +10,7 @@ export function filterGatewayCredentialKeysForProfile(
   profile: AgentProfileRecord | null,
   credentialKeys: string[],
 ) {
+  if (profile?.authority.credentialPolicy === "none") return []
   if (profile?.authority.credentialPolicy !== "allowlist") {
     return Array.from(new Set(credentialKeys))
   }

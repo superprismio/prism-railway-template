@@ -420,6 +420,7 @@ app.get('/v1/runtime/manifest', (_req, res) => {
       traceEvents: true,
       gatewayCredentials: true,
       workspaceAssignment: true,
+      browserAutomation: true,
       authorityModes: ['full', 'read_only_utility'],
     },
   });
@@ -431,6 +432,7 @@ app.get('/v1/runtime/capabilities', (_req, res) => {
     runtimeKey,
     adapter: 'codex-cli',
     features: [
+      'browser-automation',
       'repository',
       'shell',
       'site-hosted-skills',

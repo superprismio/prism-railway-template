@@ -40,9 +40,10 @@ Prism Lab has two first-class global collections:
    human accountability.
 
 The built-in **Admin Agent** is the required control-plane agent. Other agents
-are flat peers rather than members of a required Ops hierarchy. The Admin Agent
-may own a sub-agent, but that is an ownership relationship, not automatic
-authority inheritance.
+are flat peers rather than members of a required Ops hierarchy. Built-in and
+custom describe profile origin, not accountability. An accountability domain
+groups the profiles, workflows, and tasks for which one operational area is
+answerable; it does not create an agent hierarchy or grant authority.
 
 ```text
 Workspace administrators
@@ -69,8 +70,9 @@ Workspace
   Settings
 
 Agents
-  Admin Agent
-  All defined agents
+  Built-ins
+  Custom
+  Accountability domains
 ```
 
 The Agents destination separates the protected built-in Admin Agent from other
@@ -126,6 +128,7 @@ runtime configuration. Its resolved non-secret configuration includes:
 - stable key, display identity, avatar, and constrained visual accent;
 - mandate and persona;
 - status and profile version;
+- accountability domain and definition origin;
 - owner principal: user, workspace, or another Agent Profile;
 - one or more human stewards;
 - runtime/model selection;
@@ -181,17 +184,21 @@ credential. Gateway credentials remain job-scoped leases. The Admin Agent's
 effective authority is the intersection of workspace policy, the selected
 mode, the requested operation, and any required human approval.
 
-Verifier, reviewer, and judge initially remain bounded modes of the Admin Agent
-rather than separate required agents. They may later become independent Agent
-Profiles if operational separation justifies it.
+Verifier and reviewer have become protected built-in Agent Profiles because
+fresh context, independent evidence, and distinct mutation boundaries justify
+operational separation. Codegen is also a protected built-in profile. Judge and
+repair may remain bounded modes until a durable mandate requires another
+profile.
 
 ```text
 Admin Agent
   diagnose/repair mode
   orchestrator mode
-  verifier mode
-  reviewer mode
   judge mode
+
+Codegen Agent
+Verification Agent
+Code Review Agent
 ```
 
 Automated Admin Agent operation must use bounded iterations rather than one
@@ -215,6 +222,8 @@ distinguish:
   caused the work;
 - **created/configured by**: the user or agent that created an automation,
   binding, workflow, or task;
+- **accountable domain**: the operational area answerable for an Agent Profile,
+  workflow, or task definition;
 - **owned by**: the principal accountable for an Agent Profile;
 - **stewarded by**: the real user or users ultimately accountable for an agent;
 - **executed by**: the exact Agent Profile version and mode that performed a
@@ -295,8 +304,9 @@ when assigned, and attention—not a forced single agent owner.
 Request #1468
   initiated by: Daniel via Buzz
   workflow: Recording Post-Publish
-  current executor: Admin Agent · verifier mode
-  participating agents: Recording Agent, Admin Agent
+  accountable domain: Recording Operations
+  current executor: Verification Agent · verifier mode · Quality
+  participating agents: Recording Agent, Verification Agent
   steward: Daniel
 ```
 
@@ -327,6 +337,11 @@ has no chat session. Executor selection is canonical and ordered:
 1. `steps[].executorAgent` (or the equivalent step `agentConfig` field);
 2. workflow `defaultAgent`;
 3. the required Admin Agent for legacy definitions with no explicit executor.
+
+Every new run also records whether resolution was `step-explicit`,
+`workflow-default`, `task-explicit`, `hook-workflow-default`, or
+`admin-fallback`. An explicit Admin Agent assignment is not the same as an
+implicit fallback and must remain distinguishable in audit.
 
 Direct tasks use `agentConfig.executorAgent`; hook activity inherits its
 workflow default. Every new run snapshots the resolved profile id, version, and
@@ -422,9 +437,11 @@ requiring them all in the first deployment.
 - Existing interaction profiles remain valid source access-policy records until
   bindings are migrated; they are not displayed as agent owners.
 - Existing `agentConfig.identity` remains a legacy execution label.
-- Existing workflows and tasks without Agent Profile assignments continue with
-  their current legacy identity and behavior. They are labeled legacy or
-  unknown and are never silently reassigned to the Admin Agent.
+- New runs from existing workflows and tasks without Agent Profile assignments
+  use the deterministic Admin Agent compatibility fallback and record
+  `admin-fallback` as the executor-resolution source. Completed historical runs
+  remain unknown unless durable evidence proves their executor; history is
+  never rewritten merely to make attribution look complete.
 - Existing request-origin snapshots remain immutable. Correct only prospective
   capture unless a conservative deterministic backfill is possible.
 - Existing request numbers, histories, sessions, and run records are unchanged.
@@ -456,7 +473,11 @@ requiring them all in the first deployment.
 ## Deferred Decisions
 
 - Whether agent templates are instance-owned, source-backed, or both.
-- Whether domains are useful as optional grouping metadata.
+- Accountability Domains are adopted for ownership and audit metadata as
+  specified in
+  [Accountability Domains And Execution Audit](./accountability-domains-and-execution-audit.md).
+  Domain RBAC, configuration inheritance, and cascading authority remain
+  deferred.
 - When verifier, reviewer, or judge warrants an independent Agent Profile
   instead of an Admin Agent mode.
 - Which low-risk Admin Agent repairs may run without human confirmation.

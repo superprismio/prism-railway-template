@@ -36,6 +36,24 @@ Current workflow checks:
 - inline and file-backed workflow instructions do not require legacy admin
   toolset keys or `PRISM_RUNTIME_TOOLSET_*` variables.
 
+Current accountability checks come from `GET /agent/accountability/audit`:
+
+- every Agent Profile, workflow, and task has exactly one active domain;
+- each domain identifies its stewards;
+- every workflow agent step resolves to an active profile;
+- resolution source is recorded as step explicit, workflow default, task
+  explicit, hook workflow default, Admin fallback, historical unknown, or not
+  applicable;
+- Admin fallback is reported separately from an explicit Admin assignment;
+- intentional cross-domain execution is visible;
+- recent run snapshots include definition version/domain and executor
+  profile-version/domain when applicable.
+
+Do not treat cross-domain execution as a failure by itself. Fail a check when the
+executor cannot resolve, a definition is unassigned, a referenced domain is
+archived, or a prospective run omits required provenance. Report Admin fallback
+as debt with an exact definition and step/task key.
+
 Doctor does not infer downstream RBAC or duplicate provider policy.
 
 When summarizing a report:
@@ -47,6 +65,7 @@ When summarizing a report:
 5. Treat a missing credential as a blocker to removing the corresponding legacy
    runtime credential.
 6. Mention that Doctor did not mutate content.
+7. Separate definition ownership findings from executor provenance findings.
 
 When Doctor or a repair workflow finds a completed/closed request whose
 terminal workflow run (completed or canceled) projects a non-terminal current
@@ -60,6 +79,10 @@ Useful commands:
 curl -fsSL \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
   "$PRISM_AGENT_API_BASE_URL/agent/tasks"
+
+curl -fsSL \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/accountability/audit"
 ```
 
 Manual runs are started from the Task Runner UI or the task-runner service

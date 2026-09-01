@@ -2,7 +2,7 @@
 
 The human reviewer checks the branch, latest agent-run output, and any preview or compare links.
 
-Use the latest `code-review.md`, `code-review.json`, and External PR Review Checkpoint output. If a linked pull request exists, final approval should consider local findings, PR review state, requested changes, checks, and the reviewed head SHA. Final merge should still happen through GitHub or the target repository's normal review process unless the operator explicitly directs otherwise.
+Use the latest `verification.md`, `verification.json`, `code-review.md`, and `code-review.json`. If a linked pull request exists, final approval should consider verification evidence, local findings, PR review state, requested changes, checks, and the reviewed head SHA. Final merge should still happen through GitHub or the target repository's normal review process unless the operator explicitly directs otherwise.
 
 Review outcome:
 

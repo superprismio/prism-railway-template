@@ -40,3 +40,14 @@ test("profile Gateway credential allowlists cap workflow credentials", () => {
   assert.deepEqual(filterGatewayCredentialKeysForProfile(profile, ["portal", "github", "github"]), ["github"])
   assert.deepEqual(filterGatewayCredentialKeysForProfile(null, ["portal", "github"]), ["portal", "github"])
 })
+
+test("credential-free profiles receive no Gateway credentials", () => {
+  const profile = {
+    id: "verifier", key: "verification-agent", name: "Verification Agent", description: null, avatarUrl: null,
+    accentColor: "#36E7FF", status: "active" as const, systemKey: "verification-agent",
+    owner: { type: "agent" as const, userId: null, agentProfileId: "agent-profile-admin" }, stewards: [], persona: {},
+    runtimeProfileKey: null, skills: [], memoryScope: {}, authority: { credentialPolicy: "none" },
+    contextPolicy: {}, version: 1, createdByUserId: null, bindings: [], createdAt: "", updatedAt: "",
+  }
+  assert.deepEqual(filterGatewayCredentialKeysForProfile(profile, ["github", "portal"]), [])
+})

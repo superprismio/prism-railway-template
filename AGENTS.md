@@ -56,6 +56,12 @@ Send service auth as:
 - `POST /agent/agent-profiles`
 - `GET /agent/agent-profiles/resolve`
 - `POST /agent/agent-profiles/:key/bindings`
+- `GET /agent/accountability-domains`
+- `POST /agent/accountability-domains`
+- `GET /agent/accountability-domains/:key`
+- `PATCH /agent/accountability-domains/:key`
+- `POST /agent/accountability-domains/:key/assignments`
+- `GET /agent/accountability/audit`
 - `GET /agent/hooks/:key`
 - `PATCH /agent/hooks/:key`
 - `DELETE /agent/hooks/:key`

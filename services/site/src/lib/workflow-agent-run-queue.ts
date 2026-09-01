@@ -16,6 +16,7 @@ import {
   updateWorkflowRun,
   assignAgentProfileToSession,
   workflowAgentExecutor,
+  buildAccountabilitySnapshot,
   type AgentRunRecord,
 } from "@/lib/app-core"
 import { handleResponsePost } from "@/lib/response-route-handler"
@@ -447,6 +448,17 @@ export function enqueueWorkflowAgentRun(input: EnqueueWorkflowAgentRunInput): En
     agentProfileId: executor.profileId,
     agentProfileVersion: executor.profileVersion,
     executionMode: executor.executionMode,
+    executorResolution: executor.resolution,
+    accountabilitySnapshot: buildAccountabilitySnapshot({
+      definitionType: workflow ? "workflow" : null,
+      definitionId: workflow?.id ?? null,
+      definitionKey: workflow?.key ?? workflowRun.workflowKey,
+      definitionVersion: workflow?.version ?? null,
+      executorProfileId: executor.profileId,
+      executorProfileKey: executor.profileKey,
+      executorProfileVersion: executor.profileVersion,
+      resolution: executor.resolution,
+    }),
     source: "site",
     input: {
       prompt: buildWorkflowAgentRunPrompt({

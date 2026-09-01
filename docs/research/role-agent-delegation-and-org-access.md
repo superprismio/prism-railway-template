@@ -877,6 +877,83 @@ Allow independently hosted organization services to exchange signed agent and
 delegation attestations. This offers the strongest autonomy and broadest reach,
 but should follow proven single-service semantics.
 
+## Deferred RaidGuild Steward Adoption Note
+
+Recorded: 2026-09-01
+
+Status: direction refined into
+[Accountability Domains And Execution Audit](../features/accountability-domains-and-execution-audit.md).
+Implementation remains deferred until the current built-in profiles and their
+workflow/task execution boundaries are stable.
+
+RaidGuild already has delegated operational roles in its Hats tree. Prism should
+prefer those existing mandates over inventing a parallel ownership hierarchy in
+which the admin agent owns every specialized profile.
+
+The intended accountability chain is:
+
+```text
+RaidGuild / workspace
+  -> delegated steward role
+  -> Prism accountability domain
+  -> bounded Agent Profiles, workflows, and tasks
+```
+
+The steward role is the accountable principal. Its Prism accountability domain
+collects the durable definitions for which that role is answerable. Agent
+Profiles are bounded executors and a workflow may use profiles from several
+domains without transferring ownership. Queen Raida remains the cross-agent
+control-plane, compatibility fallback, and emergency-repair profile—not the
+ordinary accountable owner of specialized work.
+
+Initial domain mapping to revisit:
+
+| RaidGuild role | Candidate accountability domain and responsibility |
+| --- | --- |
+| Infrastructure Maestro | Platform Operations, System Automation, deployments, Prism Doctor, and workflow repair |
+| Ganggang / quality assurance delegates | Code Review Agent, RIP quality/release checks, and high-risk approval gates |
+| Brand Steward | Brand Agent, editorial workflows, public content, and social voice |
+| Handbook Steward | Handbook Assistant, handbook issue intake, wiki generation, and handbook knowledge maintenance |
+| Sync Steward | Sync Steward Agent, meetings, agendas, recordings, transcripts, recaps, and follow-ups |
+| Participation Steward | Participation snapshots, activity accounting, and share-distribution preparation |
+| Angry Dwarf | Accounting Agent, treasury reporting, and accounting synchronization |
+
+Reference: [RaidGuild DAO Roles empowered with Hats](https://handbook.raidguild.org/docs/dao-operations/dao-roles).
+
+Profiles without a durable delegated role, including BizDev, Veydrift, and
+seasonal project agents, can remain workspace-owned with named human stewards
+until RaidGuild deliberately creates or assigns an appropriate mandate.
+
+Near-term Prism representation:
+
+- add a flat accountability domain registry without RBAC or inherited policy
+- assign each profile, workflow, and task to exactly one domain
+- assign current role wearers as named domain stewards
+- record the Hats role reference as domain governance metadata
+- preserve built-in/custom as profile origin rather than ownership
+- record explicit cross-domain step execution and Admin fallback in run audit
+- keep credentials and mutations bounded by the profile authority policy
+- require steward approval for consequential actions
+- preserve the initiating user, steward role, executing profile, task/workflow,
+  credential lease, and result in audit history
+
+Later product work may add a first-class `governance-role` owner principal and a
+Hats synchronization path. Hat membership should establish accountability and
+approval eligibility; it must not automatically expose credentials or grant
+unbounded runtime authority. The Hats administrative tree should not be copied
+directly into an agent-parent hierarchy.
+
+Revisit when:
+
+1. Built-in Codegen, Code Review, and Verification profiles have stable
+   workflow ownership and provenance.
+2. Prism can update profile ownership and stewards without direct database
+   changes.
+3. Prism Doctor can detect implicit admin-agent fallbacks in workflows and
+   tasks.
+4. At least one delegated role is ready for an end-to-end pilot with bounded
+   authority and an auditable approval path.
+
 ## Recommended Experiments
 
 ### Experiment 1: internal role agent

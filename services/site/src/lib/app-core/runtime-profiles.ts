@@ -4,6 +4,19 @@ import { getDb } from './db';
 
 export const prismRuntimeContractVersion = '2026-07-10' as const;
 export const readOnlyUtilityAuthorityFeature = 'read-only-utility-authority' as const;
+export const bundledCodexRuntimeFeatures = [
+  'browser-automation',
+  'cancellation',
+  'continuations',
+  'gateway-credentials',
+  'idempotent-job-creation',
+  readOnlyUtilityAuthorityFeature,
+  'repository',
+  'shell',
+  'site-hosted-skills',
+  'trace-events',
+  'workspace-assignment',
+] as const;
 
 export interface RuntimeProfileRecord {
   key: string;
@@ -218,9 +231,10 @@ export function ensureBootstrapRuntimeProfile(db: Database.Database = getDb()) {
         parsedFeatures = [];
       }
       const features = normalizeFeatures(parsedFeatures);
-      if (!features.includes(readOnlyUtilityAuthorityFeature)) {
+      const upgradedFeatures = normalizeFeatures([...features, ...bundledCodexRuntimeFeatures]);
+      if (upgradedFeatures.length !== features.length) {
         db.prepare('UPDATE runtime_profiles SET features_json = ?, updated_at = ? WHERE key = ?').run(
-          JSON.stringify(normalizeFeatures([...features, readOnlyUtilityAuthorityFeature])),
+          JSON.stringify(upgradedFeatures),
           new Date().toISOString(),
           'codex-default',
         );
@@ -237,24 +251,37 @@ export function ensureBootstrapRuntimeProfile(db: Database.Database = getDb()) {
     enabled: true,
     isDefault: true,
     contractVersion: prismRuntimeContractVersion,
-    features: [readOnlyUtilityAuthorityFeature],
+    features: [...bundledCodexRuntimeFeatures],
   }, db);
 }
 
-export function resolveRuntimeProfile(requestedKey?: string | null, db: Database.Database = getDb()) {
+export function resolveRuntimeProfile(
+  requestedKey?: string | null,
+  db: Database.Database = getDb(),
+  requiredFeatures: string[] = [],
+) {
   ensureBootstrapRuntimeProfile(db);
+  const required = normalizeFeatures(requiredFeatures);
+  const supportsRequiredFeatures = (profile: RuntimeProfileRecord) => (
+    required.every((feature) => profile.features.includes(feature))
+  );
   if (requestedKey?.trim()) {
     const row = rowByKey(normalizeKey(requestedKey), db);
     if (!row) throw new Error('RUNTIME_PROFILE_NOT_FOUND');
     if (row.enabled !== 1) throw new Error('RUNTIME_PROFILE_DISABLED');
-    return mapRow(row);
+    const profile = mapRow(row);
+    if (!supportsRequiredFeatures(profile)) {
+      throw new Error(`RUNTIME_PROFILE_FEATURES_MISSING:${required.filter((feature) => !profile.features.includes(feature)).join(',')}`);
+    }
+    return profile;
   }
-  const row = db.prepare(`
+  const rows = db.prepare(`
     SELECT * FROM runtime_profiles
     WHERE enabled = 1
     ORDER BY is_default DESC, created_at, key
-    LIMIT 1
-  `).get() as RuntimeProfileRow | undefined;
-  if (!row) throw new Error('CODEX_RUNTIME_BASE_URL_MISSING');
-  return mapRow(row);
+  `).all() as RuntimeProfileRow[];
+  if (rows.length === 0) throw new Error('CODEX_RUNTIME_BASE_URL_MISSING');
+  const profile = rows.map(mapRow).find(supportsRequiredFeatures);
+  if (!profile) throw new Error(`RUNTIME_PROFILE_CAPABILITIES_UNAVAILABLE:${required.join(',')}`);
+  return profile;
 }

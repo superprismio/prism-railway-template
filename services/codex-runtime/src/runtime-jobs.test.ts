@@ -103,6 +103,7 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
   };
   assert.equal(capabilities.contractVersion, contractVersion);
   assert.ok(capabilities.features.includes('cancellation'));
+  assert.ok(capabilities.features.includes('browser-automation'));
 
   const oversizedBody = JSON.stringify({ padding: 'x'.repeat(2 * 1024 * 1024) });
   const oversizedStandardRequest = await fetch(`${baseUrl}/v1/runtime/jobs`, {

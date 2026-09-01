@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { deleteCustomTaskByKey, getTaskByKey, getTaskScriptByKey, listTasks, upsertTask } from "@/lib/app-core"
+import { assignAccountabilityDomain, deleteCustomTaskByKey, getAccountabilityAssignment, getTaskByKey, getTaskScriptByKey, listTasks, upsertTask } from "@/lib/app-core"
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
 import { validateScriptTaskHandoff } from "@/lib/script-task-handoff-input"
 
@@ -25,7 +25,13 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: access.error }, { status: access.status })
   }
 
-  return NextResponse.json({ ok: true, tasks: listTasks() })
+  return NextResponse.json({
+    ok: true,
+    tasks: listTasks().map((task) => ({
+      ...task,
+      accountabilityDomain: getAccountabilityAssignment("task", task.id),
+    })),
+  })
 }
 
 export async function POST(request: Request) {
@@ -114,7 +120,12 @@ export async function POST(request: Request) {
     agentConfig,
   })
 
-  return NextResponse.json({ ok: true, task })
+  const accountabilityDomainKey = parseString(body.accountabilityDomainKey ?? body.accountability_domain_key)
+  const accountabilityAssignment = accountabilityDomainKey
+    ? assignAccountabilityDomain({ targetType: "task", targetKey: task.key, domainKey: accountabilityDomainKey })
+    : null
+
+  return NextResponse.json({ ok: true, task, accountabilityAssignment })
 }
 
 export async function DELETE(request: Request) {
