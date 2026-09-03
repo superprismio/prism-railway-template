@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ChatMessageTimestamp } from "@/components/chat-message-timestamp";
 import {
   MemoryDocumentUploadButton,
   type UploadedMemoryArtifact,
@@ -26,6 +27,7 @@ type ConsoleMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  createdAt: string;
 };
 
 export type ConsoleSessionSnapshot = {
@@ -38,6 +40,8 @@ type StoredConsoleMessage = {
   id: string;
   role: string;
   content: string;
+  createdAt?: string;
+  created_at?: string;
 };
 
 type ConsoleSession = {
@@ -249,6 +253,7 @@ export function CodexConsole({
               id: message.id,
               role: message.role as "user" | "assistant",
               content: displayConsoleContent(message.role, message.content),
+              createdAt: message.createdAt ?? message.created_at ?? "",
             }))
         : [];
       setSessionId(targetSessionId);
@@ -484,6 +489,7 @@ export function CodexConsole({
       id: randomMessageId("user"),
       role: "user",
       content: prompt,
+      createdAt: new Date().toISOString(),
     };
 
     setDraft("");
@@ -514,6 +520,7 @@ export function CodexConsole({
               id: message.id,
               role: message.role as "user" | "assistant",
               content: message.content,
+              createdAt: message.createdAt ?? message.created_at ?? "",
             })),
         );
         setDraft("");
@@ -701,6 +708,12 @@ export function CodexConsole({
                   >
                     {message.role}
                   </Badge>
+                  {message.createdAt ? (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <ChatMessageTimestamp value={message.createdAt} />
+                    </>
+                  ) : null}
                 </div>
                 <p className="whitespace-pre-wrap">{message.content}</p>
               </div>

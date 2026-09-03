@@ -2,12 +2,14 @@
 
 Recorded: 2026-09-01
 
-Status: proposed step-2 migration; no executor changes in this document have
-been applied yet.
+Status: step-2 migration in progress. The Participation batch was applied to
+the live `prism-stack` instance on 2026-09-01; the remaining batches are still
+proposed.
 
 This map is based on the live `prism-stack` accountability audit after the
-step-1 domain and steward-category reorganization. The audit reports 172 Admin
-fallbacks across 56 definitions. The purpose of this pass is to replace genuine
+step-1 domain and steward-category reorganization. The initial audit reported
+172 Admin fallbacks across 56 definitions. After the Participation batch, 162
+remain. The purpose of this pass is to replace genuine
 fallbacks with explicit domain or specialist Agent Profiles, preserve deliberate
 cross-domain execution, and make intentional Control Plane use of the Admin
 Agent explicit.
@@ -18,7 +20,7 @@ from another domain executes one of its steps.
 
 ## Summary
 
-| Accountability domain | Fallbacks | Proposed default executor | Review state |
+| Accountability domain | Initial fallbacks | Proposed default executor | Review state |
 | --- | ---: | --- | --- |
 | Accounting | 1 | New `accounting-steward-agent` | Clear |
 | BizDev | 2 | `bizdev-agent` | Clear |
@@ -26,7 +28,7 @@ from another domain executes one of its steps.
 | Community Operations | 20 | `sync-steward-agent` | Clear with specialist exceptions |
 | Governance | 1 | `rip-steward` | Clear, intentional cross-domain execution |
 | Handbook & Knowledge | 22 | New `knowledge-steward-agent` | Clear except the lore workflow |
-| Participation | 10 | New `participation-steward-agent` | Clear |
+| Participation | 10 | `participation-steward-agent` | Applied 2026-09-01; 0 remain |
 | Platform Operations | 9 | Explicit `admin-agent` | Intentional Control Plane exception |
 | Software Delivery | 2 | `codegen-agent` | Clear |
 
@@ -159,18 +161,22 @@ Review `lore-entry-draft-review-publish` separately. The proposed split is:
 
 ## Participation Steward
 
-Create `participation-steward-agent` and assign it to every agent step in:
+Applied on 2026-09-01: created workspace-owned
+`participation-steward-agent` and assigned it as the workflow default for every
+agent step in:
 
 - `monthly-share-distro-proposal`;
 - `weekly-participation-admin-snapshot`.
 
-Assign these tasks to `participation-steward-agent`:
+Assigned these tasks explicitly to `participation-steward-agent`:
 
 - `monthly-share-distro-proposal-request`;
 - `weekly-participation-admin-snapshot`.
 
 The human review gate before `submit-onchain` remains mandatory. Both schedules
-remain disabled during the migration.
+remain disabled. The post-migration accountability audit reports all eight agent
+steps as `workflow-default`, both tasks as `task-explicit`, and no remaining
+Participation Admin fallbacks.
 
 ## Platform Operations
 
@@ -201,7 +207,8 @@ and Code Review built-in profiles.
 
 ## Application Order
 
-1. Create and verify `participation-steward-agent`, then migrate Participation.
+1. Completed 2026-09-01: create and verify `participation-steward-agent`, then
+   migrate Participation.
 2. Create narrowly scoped Accounting and Knowledge Steward profiles.
 3. Apply clear existing-profile replacements for BizDev, Community Operations,
    Governance, Software Delivery, and unambiguous Brand definitions.

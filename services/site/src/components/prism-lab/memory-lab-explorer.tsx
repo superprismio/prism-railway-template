@@ -18,6 +18,7 @@ import {
 
 import { AgentAvatar } from "@/components/prism-lab/agent-avatar";
 import { Badge } from "@/components/ui/badge";
+import { ChatMessageTimestamp } from "@/components/chat-message-timestamp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -372,7 +373,17 @@ function AskAgentPanel({
                         : "ml-8 border-l-2 border-primary/60 bg-primary/10 p-3 text-sm"
                     }
                   >
-                    <Badge variant="outline">{message.role}</Badge>
+                    <div className="flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      <Badge variant="outline">{message.role}</Badge>
+                      {message.createdAt ?? message.created_at ? (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <ChatMessageTimestamp
+                            value={message.createdAt ?? message.created_at}
+                          />
+                        </>
+                      ) : null}
+                    </div>
                     <p className="mt-2 whitespace-pre-wrap leading-6">
                       {message.content}
                     </p>
