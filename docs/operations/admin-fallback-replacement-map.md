@@ -3,13 +3,15 @@
 Recorded: 2026-09-01
 
 Status: step-2 migration in progress. The Participation batch was applied to
-the live `prism-stack` instance on 2026-09-01; the remaining batches are still
-proposed.
+the live `prism-stack` instance on 2026-09-01 and the Accounting batch was
+applied on 2026-09-03. The Knowledge Steward batch was applied on 2026-09-03;
+the mixed lore workflow and remaining batches are still proposed.
 
 This map is based on the live `prism-stack` accountability audit after the
 step-1 domain and steward-category reorganization. The initial audit reported
-172 Admin fallbacks across 56 definitions. After the Participation batch, 162
-remain. The purpose of this pass is to replace genuine
+172 Admin fallbacks across 56 definitions. After the Participation, Accounting,
+and Knowledge Steward batches plus intervening explicit assignments, 147 remain. The
+purpose of this pass is to replace genuine
 fallbacks with explicit domain or specialist Agent Profiles, preserve deliberate
 cross-domain execution, and make intentional Control Plane use of the Admin
 Agent explicit.
@@ -22,12 +24,12 @@ from another domain executes one of its steps.
 
 | Accountability domain | Initial fallbacks | Proposed default executor | Review state |
 | --- | ---: | --- | --- |
-| Accounting | 1 | New `accounting-steward-agent` | Clear |
+| Accounting | 1 | `accounting-steward-agent` | Applied 2026-09-03; 0 remain |
 | BizDev | 2 | `bizdev-agent` | Clear |
 | Brand & Communications | 105 | `brand-agent` | Mostly clear; mixed workflows require review |
 | Community Operations | 20 | `sync-steward-agent` | Clear with specialist exceptions |
 | Governance | 1 | `rip-steward` | Clear, intentional cross-domain execution |
-| Handbook & Knowledge | 22 | New `knowledge-steward-agent` | Clear except the lore workflow |
+| Handbook & Knowledge | 22 | `knowledge-steward-agent` | Applied 2026-09-03; 9 lore fallbacks remain |
 | Participation | 10 | `participation-steward-agent` | Applied 2026-09-01; 0 remain |
 | Platform Operations | 9 | Explicit `admin-agent` | Intentional Control Plane exception |
 | Software Delivery | 2 | `codegen-agent` | Clear |
@@ -36,13 +38,22 @@ Veydrift Operations has no Admin fallbacks requiring replacement.
 
 ## Accounting
 
-Create `accounting-steward-agent` and assign it to:
+Applied on 2026-09-03: created workspace-owned
+`accounting-steward-agent` and assigned it explicitly to:
 
 - task `weekly-raidguild-accounting-sync`.
 
-The profile should be narrowly scoped to evidence collection and reconciliation.
-It must not make payments or mutate treasury state without a separately approved
-operation.
+The profile is narrowly scoped to published accounting evidence collection,
+reconciliation, discrepancy reporting, and durable provenance. It may use a
+policy-authorized leased credential only for the fixed data-access fee defined
+by the authoritative accounting sync skill. It cannot initiate discretionary
+payments, transfer treasury assets, sign or broadcast treasury transactions, or
+mutate accounting systems.
+
+The task remains enabled on `15 9 * * 1` in `America/New_York`; its instructions,
+output configuration, and `evm-wallet` Gateway lease are unchanged. The
+post-migration accountability audit resolves it as `task-explicit`, reports no
+cross-domain execution, and reports no remaining Accounting Admin fallbacks.
 
 ## BizDev
 
@@ -140,16 +151,37 @@ work.
 
 ## Knowledge Steward
 
-Create `knowledge-steward-agent`. Do not repurpose `external-chatbot`; that
-profile remains the bounded handbook-answering interface.
+Applied on 2026-09-03: created workspace-owned `knowledge-steward-agent` in the
+Handbook & Knowledge domain. The profile owns source-backed handbook, wiki, and
+institutional knowledge maintenance while preserving review gates and durable
+provenance. It inherits only `prism-api-reader`; research, Portal, publication,
+and safety capabilities remain scoped by the workflows that require them.
 
-Assign `knowledge-steward-agent` to all falling-back agent steps in:
+The existing `external-chatbot` profile remains the bounded handbook-answering
+interface and was not repurposed.
+
+Assigned `knowledge-steward-agent` as the explicit workflow default for all
+agent steps in:
 
 - `fireside-wiki-topic-develop`;
 - `wiki-article-generate`;
 - `wiki-topic-expand`.
 
-Assign task `github-handbook-issue-intake` to `knowledge-steward-agent`.
+Assigned task `github-handbook-issue-intake` explicitly to
+`knowledge-steward-agent`. Its disabled state and `0 7 * * 1` UTC schedule were
+preserved.
+
+The post-migration accountability audit resolves 12 workflow steps as
+`workflow-default`, the task as `task-explicit`, and reports no unassigned
+profiles, workflows, or tasks. Nine Knowledge Admin fallbacks remain, all in
+the intentionally deferred lore workflow.
+
+Prism Doctor completed successfully after the batch. It identified pre-existing
+follow-ups in these workflows: the referenced `rg-portal-ops` skill is missing,
+some skills are overly broad at workflow scope, and `wiki-article-generate`
+needs an explicit artifact/context boundary before its validation step. These
+are workflow-health issues rather than ownership failures and were not changed
+as part of this executor migration.
 
 Review `lore-entry-draft-review-publish` separately. The proposed split is:
 
@@ -209,13 +241,17 @@ and Code Review built-in profiles.
 
 1. Completed 2026-09-01: create and verify `participation-steward-agent`, then
    migrate Participation.
-2. Create narrowly scoped Accounting and Knowledge Steward profiles.
-3. Apply clear existing-profile replacements for BizDev, Community Operations,
+2. Completed 2026-09-03: create and verify `accounting-steward-agent`, then
+   migrate the accounting sync task.
+3. Completed 2026-09-03: create and verify the narrowly scoped Knowledge
+   Steward profile, migrate the three unambiguous wiki workflows and disabled
+   handbook intake task, and defer the mixed lore workflow.
+4. Apply clear existing-profile replacements for BizDev, Community Operations,
    Governance, Software Delivery, and unambiguous Brand definitions.
-4. Convert intended Platform Operations use to explicit `admin-agent`.
-5. Review mixed Brand/Sync/Knowledge workflows step by step.
-6. Run the accountability audit and Prism Doctor after each batch.
-7. Preserve completed run history; apply executor changes only to new definition
+5. Convert intended Platform Operations use to explicit `admin-agent`.
+6. Review mixed Brand/Sync/Knowledge workflows step by step.
+7. Run the accountability audit and Prism Doctor after each batch.
+8. Preserve completed run history; apply executor changes only to new definition
    versions and future runs.
 
 ## Migration Checks
