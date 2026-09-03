@@ -8,6 +8,7 @@ import { config } from './config.js';
 import { generateCodexCliReply } from './codex-runtime.js';
 import { listPrismSkills } from './prism-skills.js';
 import { gatewayClient } from './runtime-gateway.js';
+import { modelTier, modelTiers, type ModelTier, type ReasoningEffort } from './model-tier.js';
 
 const startedAt = new Date();
 const app = express();
@@ -33,12 +34,15 @@ type RuntimeRequestBody = {
   credentials?: unknown;
   context?: unknown;
   metadata?: Record<string, unknown>;
+  modelTier?: unknown;
 };
 
 type RuntimeResponsePayload = {
   id: string | null;
   object: 'response';
   model: string | null;
+  modelTier: ModelTier | null;
+  reasoningEffort: ReasoningEffort | null;
   provider: string;
   responseText: string;
   output_text: string;
@@ -64,6 +68,7 @@ type RuntimeResponseJob = {
     credentials: string[];
     gatewayContext: Record<string, string>;
     metadata: Record<string, unknown>;
+    modelTier: ModelTier | null;
   };
   response: RuntimeResponsePayload | null;
   error: string | null;
@@ -78,6 +83,24 @@ function hasInvalidAuthorityMode(body: RuntimeRequestBody) {
   return body.authorityMode !== undefined
     && body.authorityMode !== 'full'
     && body.authorityMode !== 'read_only_utility';
+}
+
+function requestedModelTierValue(body: RuntimeRequestBody) {
+  const metadata = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
+    ? body.metadata
+    : {};
+  return body.modelTier
+    ?? metadata.modelTier
+    ?? metadata.model_tier
+    ?? (metadata.agentConfig && typeof metadata.agentConfig === 'object' && !Array.isArray(metadata.agentConfig)
+      ? (metadata.agentConfig as Record<string, unknown>).modelTier
+        ?? (metadata.agentConfig as Record<string, unknown>).model_tier
+      : null);
+}
+
+function hasInvalidModelTier(body: RuntimeRequestBody) {
+  const value = requestedModelTierValue(body);
+  return value !== undefined && value !== null && value !== '' && !modelTier(value);
 }
 
 async function pathExists(filePath: string) {
@@ -116,6 +139,7 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
     ? metadata.requestedSkills.filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()))
     : [];
   const normalizedMetadata = { ...metadata };
+  const requestedModelTier = modelTier(requestedModelTierValue(body));
   if (authorityMode === 'read_only_utility') {
     delete normalizedMetadata.requestedSkills;
   } else if (requestedSkills.length) {
@@ -142,6 +166,7 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
     credentials: authorityMode === 'read_only_utility' ? [] : normalizeRuntimeCredentials(body.credentials),
     gatewayContext: normalizeGatewayContext(body.context),
     metadata: normalizedMetadata,
+    modelTier: requestedModelTier,
   };
 }
 
@@ -203,6 +228,8 @@ function responsePayloadFromResult(
     id: result.codexThreadId,
     object: 'response',
     model: result.model,
+    modelTier: result.modelTier,
+    reasoningEffort: result.reasoningEffort,
     provider: result.provider,
     responseText: result.responseText,
     output_text: result.responseText,
@@ -306,6 +333,8 @@ function normalizedJob(job: RuntimeResponseJob) {
           artifacts: [],
           providerMetadata: {
             model: response.model,
+            modelTier: response.modelTier,
+            reasoningEffort: response.reasoningEffort,
             branchName: response.branchName,
             commitSha: response.commitSha,
             branchUrl: response.branchUrl,
@@ -421,6 +450,7 @@ app.get('/v1/runtime/manifest', (_req, res) => {
       gatewayCredentials: true,
       workspaceAssignment: true,
       browserAutomation: true,
+      modelTiers,
       authorityModes: ['full', 'read_only_utility'],
     },
   });
@@ -442,6 +472,7 @@ app.get('/v1/runtime/capabilities', (_req, res) => {
       'trace-events',
       'cancellation',
       'idempotent-job-creation',
+      'model-tier-routing',
       'read-only-utility-authority',
     ],
   });
@@ -463,6 +494,10 @@ app.post('/v1/responses', async (req, res) => {
     res.status(400).json({ ok: false, error: 'RUNTIME_AUTHORITY_MODE_INVALID' });
     return;
   }
+  if (hasInvalidModelTier(body)) {
+    res.status(400).json({ ok: false, error: 'MODEL_TIER_INVALID' });
+    return;
+  }
   const input = normalizeRuntimeRequest(body);
 
   if (!input) {
@@ -482,6 +517,10 @@ app.post('/v1/responses/jobs', (req, res) => {
   const body = req.body as RuntimeRequestBody;
   if (hasInvalidAuthorityMode(body)) {
     res.status(400).json({ ok: false, error: 'RUNTIME_AUTHORITY_MODE_INVALID' });
+    return;
+  }
+  if (hasInvalidModelTier(body)) {
+    res.status(400).json({ ok: false, error: 'MODEL_TIER_INVALID' });
     return;
   }
   const input = normalizeRuntimeRequest(body);
@@ -537,6 +576,13 @@ app.post('/v1/runtime/jobs', (req, res) => {
         message: 'authorityMode must be full or read_only_utility',
         retryable: false,
       },
+    });
+    return;
+  }
+  if (hasInvalidModelTier(body)) {
+    res.status(400).json({
+      ok: false,
+      error: { code: 'MODEL_TIER_INVALID', message: 'modelTier must be economy, standard, or deep', retryable: false },
     });
     return;
   }

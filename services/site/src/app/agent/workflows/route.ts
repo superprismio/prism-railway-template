@@ -5,6 +5,7 @@ import path from "node:path";
 import { assignAccountabilityDomain, getAccountabilityAssignment, listWorkflows, loadConfig, upsertWorkflow } from "@/lib/app-core";
 import { requireServiceAccess } from "@/lib/internal-service";
 import { validateWorkflowContextPolicies } from "@/lib/workflow-context-policy";
+import { modelTierFromAgentConfig } from "@/lib/model-tier";
 
 export async function GET() {
   const access = await requireWorkflowWriteAccess();
@@ -212,6 +213,14 @@ export async function POST(request: Request) {
   const contextPolicyError = validateWorkflowContextPolicies(manifest);
   if (contextPolicyError) {
     return NextResponse.json({ ok: false, error: contextPolicyError }, { status: 400 });
+  }
+  try {
+    modelTierFromAgentConfig(manifest.agentConfig ?? manifest.agent_config);
+    for (const step of manifest.steps) {
+      if (isRecord(step)) modelTierFromAgentConfig(step.agentConfig ?? step.agent_config);
+    }
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "MODEL_TIER_INVALID" }, { status: 400 });
   }
   const normalizedManifest = normalizeManifestPaths(manifest, workflowRoot);
   if (!validateWorkflowPaths(normalizedManifest, workflowRoot)) {

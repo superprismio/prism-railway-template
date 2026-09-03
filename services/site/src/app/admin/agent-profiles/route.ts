@@ -8,6 +8,7 @@ import {
 } from '@/lib/app-core';
 import { requireCapabilityAccess } from '@/lib/admin-auth';
 import { agentAccentColorForKey, normalizeAgentAccentColor } from '@/lib/agent-profile-colors';
+import { modelTiers, normalizeModelTier } from '@/lib/model-tier';
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
   const requestedAccentColor = text(body.accentColor ?? body.accent_color, 20);
   const accentColor = requestedAccentColor ? normalizeAgentAccentColor(requestedAccentColor) : agentAccentColorForKey(key);
   const ownerChoice = body.owner === 'admin-agent' ? 'admin-agent' : 'operator';
+  const modelTierInput = text(body.modelTier ?? body.model_tier, 40);
   const skills = stringList(body.skills);
   const personaInstructions = text(body.personaInstructions ?? body.persona_instructions, 12000);
   const memoryScope = {
@@ -47,6 +49,9 @@ export async function POST(request: Request) {
   };
   if (!key || !name) return NextResponse.json({ ok: false, error: 'key and name are required' }, { status: 400 });
   if (!accentColor) return NextResponse.json({ ok: false, error: 'Select a supported Agent color' }, { status: 400 });
+  if (modelTierInput && !modelTiers.includes(modelTierInput as (typeof modelTiers)[number])) {
+    return NextResponse.json({ ok: false, error: `MODEL_TIER_INVALID:${modelTierInput}` }, { status: 400 });
+  }
   if (ownerChoice === 'operator' && !access.userId) {
     return NextResponse.json({ ok: false, error: 'An authenticated user is required for operator ownership' }, { status: 400 });
   }
@@ -57,6 +62,7 @@ export async function POST(request: Request) {
     accentColor,
     status: 'active' as const,
     owner: ownerChoice,
+    modelTier: normalizeModelTier(modelTierInput),
     stewardUserIds: access.userId ? [access.userId] : [],
     persona: { name, instructions: personaInstructions },
     skills,

@@ -22,9 +22,12 @@ For new profiles:
    only for intentional control-plane profiles or a disclosed temporary fallback.
 4. Request only the skills, memory scope, source bindings, and runtime features the
    profile needs.
-5. Do not embed provider credentials. Gateway leases remain policy-controlled and
+5. Set an optional provider-neutral `modelTier` (`economy`, `standard`, or
+   `deep`) when the profile has a stable cost/quality baseline. Omit it to use
+   the Site default. Do not put provider model names in an Agent Profile.
+6. Do not embed provider credentials. Gateway leases remain policy-controlled and
    job-scoped.
-6. Preview the profile before confirmation and run the accountability audit after
+7. Preview the profile before confirmation and run the accountability audit after
    creation.
 
 Create through `POST /agent/agent-profiles` with service auth. Include
@@ -37,6 +40,7 @@ Create through `POST /agent/agent-profiles` with service auth. Include
   "description": "Operates the community intake and follow-through workflows.",
   "owner": "workspace",
   "accountabilityDomainKey": "community-operations",
+  "modelTier": "standard",
   "skills": ["community-intake"],
   "stewardUserIds": ["<user-id>"],
   "confirm": true

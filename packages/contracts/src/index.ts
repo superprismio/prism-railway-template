@@ -41,6 +41,8 @@ export type PrismRuntimeCredentialGrant = {
   key: string;
 };
 
+export type PrismRuntimeModelTier = "economy" | "standard" | "deep";
+
 export type PrismRuntimeJobRequest = {
   contractVersion: typeof PRISM_RUNTIME_CONTRACT_VERSION;
   prompt: string;
@@ -51,6 +53,7 @@ export type PrismRuntimeJobRequest = {
   credentials?: PrismRuntimeCredentialGrant[];
   context?: PrismRuntimeDelegationContext;
   metadata?: Record<string, unknown>;
+  modelTier?: PrismRuntimeModelTier | null;
 };
 
 export type PrismRuntimeTraceEvent = {

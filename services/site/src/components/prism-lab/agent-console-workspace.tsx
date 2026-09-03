@@ -93,6 +93,7 @@ export function AgentConsoleWorkspace({
               formData.get("personaInstructions") ?? "",
             ),
             runtimeProfileKey: String(formData.get("runtimeProfileKey") ?? ""),
+            modelTier: String(formData.get("modelTier") ?? ""),
             skills: String(formData.get("skills") ?? ""),
             memoryScope: {
               scope: String(formData.get("memoryScopeMode") ?? ""),
@@ -184,6 +185,7 @@ export function AgentConsoleWorkspace({
               </h1>
               <Badge variant="outline">Memory read-only</Badge>
               <Badge variant="outline">v{profile.version}</Badge>
+              {profile.modelTier ? <Badge variant="outline">{profile.modelTier}</Badge> : null}
             </div>
             <p className="truncate text-xs text-muted-foreground">
               Selected Memory context · observable agent session
@@ -229,6 +231,7 @@ export function AgentConsoleWorkspace({
             </h1>
             {profile.systemKey === "admin-agent" ? <Badge>Admin</Badge> : null}
             <Badge variant="outline">v{profile.version}</Badge>
+            {profile.modelTier ? <Badge variant="outline">{profile.modelTier}</Badge> : null}
           </div>
           <p className="truncate text-xs text-muted-foreground">
             {profile.description || "No agent mandate recorded"}
@@ -509,6 +512,23 @@ export function AgentConsoleWorkspace({
                           defaultValue={profile.runtimeProfileKey ?? ""}
                           placeholder="Default runtime"
                         />
+                      </div>
+                      <div>
+                        <Label htmlFor="agent-model-tier">Default model tier</Label>
+                        <select
+                          id="agent-model-tier"
+                          name="modelTier"
+                          defaultValue={profile.modelTier ?? ""}
+                          className="flex h-10 w-full border border-input bg-background px-3 text-sm"
+                        >
+                          <option value="">Site default</option>
+                          <option value="economy">Economy</option>
+                          <option value="standard">Standard</option>
+                          <option value="deep">Deep</option>
+                        </select>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          A workflow step or scheduled task can explicitly override this tier.
+                        </p>
                       </div>
                       <div>
                         <Label htmlFor="agent-skills">Skills</Label>

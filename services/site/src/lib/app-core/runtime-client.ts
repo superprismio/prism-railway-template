@@ -4,6 +4,7 @@ import {
   resolveRuntimeProfile,
   type RuntimeProfileRecord,
 } from './runtime-profiles';
+import { modelTierFromAgentConfig, normalizeModelTier, type ModelTier } from '../model-tier';
 
 export type RuntimeTraceEntry = { at: string; kind: string; message: string };
 
@@ -12,6 +13,8 @@ export type RuntimeAuthorityMode = 'full' | 'read_only_utility';
 export type RuntimeResponse = {
   id: string | null;
   model: string | null;
+  modelTier: ModelTier | null;
+  reasoningEffort: string | null;
   provider: string;
   responseText: string;
   output_text: string;
@@ -37,6 +40,7 @@ export type RuntimeRequestInput = {
   context?: Record<string, string | undefined>;
   metadata?: Record<string, unknown>;
   runtimeKey?: string | null;
+  modelTier?: ModelTier | null;
   timeoutMs?: number;
   onProgress?: (progress: {
     status: string;
@@ -144,7 +148,18 @@ function profileKeyFromMetadata(metadata: Record<string, unknown> | undefined) {
   return typeof sessionRuntimeKey === 'string' && sessionRuntimeKey.trim() ? sessionRuntimeKey.trim() : null;
 }
 
-function requiredRuntimeFeaturesFromMetadata(metadata: Record<string, unknown> | undefined) {
+function modelTierFromMetadata(metadata: Record<string, unknown> | undefined) {
+  const direct = normalizeModelTier(metadata?.modelTier ?? metadata?.model_tier);
+  if (direct) return direct;
+  const workflow = metadata?.workflow && typeof metadata.workflow === 'object' && !Array.isArray(metadata.workflow)
+    ? metadata.workflow as Record<string, unknown>
+    : null;
+  const workflowTier = modelTierFromAgentConfig(workflow?.agentConfig ?? workflow?.agent_config);
+  if (workflowTier) return workflowTier;
+  return modelTierFromAgentConfig(metadata?.agentConfig ?? metadata?.agent_config);
+}
+
+function requiredRuntimeFeaturesFromMetadata(metadata: Record<string, unknown> | undefined, modelTier?: ModelTier | null) {
   const workflow = metadata?.workflow && typeof metadata.workflow === 'object' && !Array.isArray(metadata.workflow)
     ? metadata.workflow as Record<string, unknown>
     : null;
@@ -152,11 +167,13 @@ function requiredRuntimeFeaturesFromMetadata(metadata: Record<string, unknown> |
     ? workflow.agentConfig as Record<string, unknown>
     : null;
   const value = agentConfig?.requiredRuntimeFeatures ?? metadata?.requiredRuntimeFeatures;
-  if (!Array.isArray(value)) return [];
-  return Array.from(new Set(value
+  const configured = Array.isArray(value) ? value : [];
+  const required = configured
     .filter((entry): entry is string => typeof entry === 'string')
     .map((entry) => entry.trim())
-    .filter(Boolean)));
+    .filter(Boolean);
+  if (modelTier ?? modelTierFromMetadata(metadata)) required.push('model-tier-routing');
+  return Array.from(new Set(required));
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
@@ -260,6 +277,8 @@ function normalizedResponse(profile: RuntimeProfileRecord, job: NormalizedJob): 
   return {
     id: continuationId,
     model: typeof metadata.model === 'string' ? metadata.model : null,
+    modelTier: normalizeModelTier(metadata.modelTier ?? metadata.model_tier),
+    reasoningEffort: typeof metadata.reasoningEffort === 'string' ? metadata.reasoningEffort : null,
     provider: profile.adapter,
     responseText,
     output_text: responseText,
@@ -284,6 +303,8 @@ function legacyResponse(profile: RuntimeProfileRecord, payload: LegacyResponse |
   return {
     id: payload?.id ?? payload?.thread_id ?? null,
     model: payload?.model ?? null,
+    modelTier: null,
+    reasoningEffort: null,
     provider: payload?.provider ?? profile.adapter,
     responseText,
     output_text: responseText,
@@ -327,6 +348,7 @@ async function requestNormalized(
       : (input.credentials ?? []).map((entry) => typeof entry === 'string' ? { key: entry } : entry),
     context: input.context ?? {},
     metadata: input.metadata ?? {},
+    modelTier: input.modelTier ?? modelTierFromMetadata(input.metadata),
   };
   const idempotencyKey = `site-${randomUUID()}`;
   const canRetryCreate = profile.adapter === 'codex-cli'
@@ -399,6 +421,7 @@ async function requestLegacy(profile: RuntimeProfileRecord, input: RuntimeReques
     recentHistory: input.recentHistory ?? [],
     credentials: input.credentials ?? [],
     context: input.context ?? {},
+    modelTier: input.modelTier ?? modelTierFromMetadata(input.metadata),
     metadata: {
       ...(input.metadata ?? {}),
       ...((input.skills ?? []).length ? { requestedSkills: input.skills } : {}),
@@ -453,16 +476,18 @@ async function requestLegacy(profile: RuntimeProfileRecord, input: RuntimeReques
 }
 
 export async function requestRuntimeResponse(input: RuntimeRequestInput) {
+  const modelTier = input.modelTier ?? modelTierFromMetadata(input.metadata);
   const profile = resolveRuntimeProfile(
     input.runtimeKey || profileKeyFromMetadata(input.metadata),
     undefined,
-    requiredRuntimeFeaturesFromMetadata(input.metadata),
+    requiredRuntimeFeaturesFromMetadata(input.metadata, modelTier),
   );
   const sessionRuntimeKey = typeof input.metadata?.sessionRuntimeKey === 'string'
     ? input.metadata.sessionRuntimeKey.trim()
     : '';
   return requestRuntimeResponseWithProfile(profile, {
     ...input,
+    modelTier,
     continuationId: sessionRuntimeKey && sessionRuntimeKey !== profile.key ? null : input.continuationId,
   });
 }

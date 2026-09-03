@@ -4,6 +4,7 @@ import type Database from 'better-sqlite3';
 import { getDb } from './db';
 import { loadConfig } from './config';
 import { agentAccentColorForKey, normalizeAgentAccentColor } from '../agent-profile-colors';
+import { normalizeModelTier, type ModelTier } from '../model-tier';
 import { listExternalInterfaces, listInteractionProfiles } from './external-interactions';
 import {
   readSourceAdapterPolicy,
@@ -91,6 +92,7 @@ export type AgentProfileRecord = {
   stewards: AgentProfileSteward[];
   persona: Record<string, unknown>;
   runtimeProfileKey: string | null;
+  modelTier: ModelTier | null;
   skills: string[];
   memoryScope: Record<string, unknown>;
   authority: Record<string, unknown>;
@@ -115,6 +117,7 @@ export type UpsertAgentProfileInput = {
   stewardUserIds?: string[];
   persona?: Record<string, unknown>;
   runtimeProfileKey?: string | null;
+  modelTier?: ModelTier | null;
   skills?: string[];
   memoryScope?: Record<string, unknown>;
   authority?: Record<string, unknown>;
@@ -205,6 +208,7 @@ type AgentProfileRow = {
   owner_agent_profile_id: string | null;
   persona_json: string;
   runtime_profile_key: string | null;
+  model_tier?: string | null;
   skills_json: string;
   memory_scope_json: string;
   authority_json: string;
@@ -385,6 +389,7 @@ function mapRow(row: AgentProfileRow, db: Database.Database): AgentProfileRecord
     systemKey: row.system_key,
     owner: { type: row.owner_type, userId: row.owner_user_id, agentProfileId: row.owner_agent_profile_id },
     stewards: stewardRows(row.id, db), persona: jsonRecord(row.persona_json), runtimeProfileKey: row.runtime_profile_key,
+    modelTier: normalizeModelTier(row.model_tier),
     skills: jsonStrings(row.skills_json), memoryScope: jsonRecord(row.memory_scope_json),
     authority: jsonRecord(row.authority_json), contextPolicy: jsonRecord(row.context_policy_json),
     version: row.version, createdByUserId: row.created_by_user_id, bindings: bindingRows(row.id, db),
@@ -406,7 +411,7 @@ function snapshot(record: AgentProfileRecord) {
     accentColor: record.accentColor, status: record.status,
     systemKey: record.systemKey, owner: record.owner,
     stewards: record.stewards.map(({ userId, role }) => ({ userId, role })),
-    persona: record.persona, runtimeProfileKey: record.runtimeProfileKey, skills: record.skills,
+    persona: record.persona, runtimeProfileKey: record.runtimeProfileKey, modelTier: record.modelTier, skills: record.skills,
     memoryScope: record.memoryScope, authority: record.authority, contextPolicy: record.contextPolicy,
     version: record.version,
   };
@@ -471,6 +476,7 @@ export function getAgentProfileVersion(profileId: string, version: number | null
     accentColor: normalizeAgentAccentColor(stored.accentColor) ?? agentAccentColorForKey(current.key),
     persona: unknownRecord(stored.persona),
     runtimeProfileKey: text(stored.runtimeProfileKey, 120) || null,
+    modelTier: normalizeModelTier(stored.modelTier),
     skills: stringList(stored.skills),
     memoryScope: unknownRecord(stored.memoryScope),
     authority: unknownRecord(stored.authority),
@@ -514,6 +520,9 @@ export function upsertAgentProfile(input: UpsertAgentProfileInput, db: Database.
     ? existing?.runtime_profile_key ?? null
     : text(input.runtimeProfileKey, 120) || null;
   if (runtimeProfileKey && !db.prepare('SELECT 1 FROM runtime_profiles WHERE key = ?').get(runtimeProfileKey)) throw new Error('RUNTIME_PROFILE_NOT_FOUND');
+  const modelTier = input.modelTier === undefined
+    ? normalizeModelTier(existing?.model_tier)
+    : normalizeModelTier(input.modelTier);
   const createdByUserId = text(input.createdByUserId ?? existing?.created_by_user_id, 200) || null;
   const stewardUserIds = Array.from(new Set((input.stewardUserIds ?? []).map((item) => text(item, 200)).filter(Boolean)));
   if (ownerType === 'user' && ownerUserId && !stewardUserIds.includes(ownerUserId)) stewardUserIds.unshift(ownerUserId);
@@ -521,22 +530,22 @@ export function upsertAgentProfile(input: UpsertAgentProfileInput, db: Database.
   db.transaction(() => {
     db.prepare(`
       INSERT INTO agent_profiles (id, key, name, description, avatar_url, accent_color, status, system_key, owner_type, owner_user_id,
-        owner_agent_profile_id, persona_json, runtime_profile_key, skills_json, memory_scope_json, authority_json,
+        owner_agent_profile_id, persona_json, runtime_profile_key, model_tier, skills_json, memory_scope_json, authority_json,
         context_policy_json, version, created_by_user_id, created_at, updated_at)
       VALUES (@id, @key, @name, @description, @avatarUrl, @accentColor, @status, NULL, @ownerType, @ownerUserId, @ownerAgentProfileId,
-        @persona, @runtimeProfileKey, @skills, @memoryScope, @authority, @contextPolicy, @version,
+        @persona, @runtimeProfileKey, @modelTier, @skills, @memoryScope, @authority, @contextPolicy, @version,
         @createdByUserId, @createdAt, @updatedAt)
       ON CONFLICT(key) DO UPDATE SET name=excluded.name, description=excluded.description, avatar_url=excluded.avatar_url,
         accent_color=excluded.accent_color, status=excluded.status,
         owner_type=excluded.owner_type, owner_user_id=excluded.owner_user_id,
         owner_agent_profile_id=excluded.owner_agent_profile_id, persona_json=excluded.persona_json,
-        runtime_profile_key=excluded.runtime_profile_key, skills_json=excluded.skills_json,
+        runtime_profile_key=excluded.runtime_profile_key, model_tier=excluded.model_tier, skills_json=excluded.skills_json,
         memory_scope_json=excluded.memory_scope_json, authority_json=excluded.authority_json,
         context_policy_json=excluded.context_policy_json, version=excluded.version, updated_at=excluded.updated_at
     `).run({ id, key: profileKey, name, description: input.description === undefined
       ? existing?.description ?? null
       : text(input.description, 2000) || null, avatarUrl, accentColor,
-      status, ownerType, ownerUserId, ownerAgentProfileId, persona: JSON.stringify(persona), runtimeProfileKey,
+      status, ownerType, ownerUserId, ownerAgentProfileId, persona: JSON.stringify(persona), runtimeProfileKey, modelTier,
       skills: JSON.stringify(skills), memoryScope: JSON.stringify(memoryScope), authority: JSON.stringify(authority),
       contextPolicy: JSON.stringify(contextPolicy), version: nextVersion, createdByUserId,
       createdAt: existing?.created_at ?? now, updatedAt: now });

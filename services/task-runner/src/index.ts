@@ -87,6 +87,13 @@ type AppTask = {
   instructionConfig: Record<string, unknown>;
   outputConfig: Record<string, unknown>;
   agentConfig: Record<string, unknown>;
+  executionPolicy?: {
+    executorProfileKey?: string | null;
+    executorProfileVersion?: number | null;
+    resolution?: string | null;
+    runtimeProfileKey?: string | null;
+    modelTier?: string | null;
+  } | null;
 };
 
 type WorkflowRunStepResult = {
@@ -575,6 +582,13 @@ function mergeRequestedSkills(siteTask: AppTask): string[] {
   return Array.from(new Set([...instructionSkills, ...agentSkills]));
 }
 
+function modelTierForTask(siteTask: AppTask): string | null {
+  const explicit = siteTask.agentConfig.modelTier ?? siteTask.agentConfig.model_tier
+  if (typeof explicit === "string" && explicit.trim()) return explicit.trim()
+  const inherited = siteTask.executionPolicy?.modelTier
+  return typeof inherited === "string" && inherited.trim() ? inherited.trim() : null
+}
+
 function requestedGatewayKeysFromConfig(
   config: Record<string, unknown>,
   keys: string[],
@@ -799,6 +813,7 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
         sessionId: `scheduled-task:${siteTask.key}:${Date.now()}`,
         codexThreadId: null,
         recentHistory: [],
+        modelTier: modelTierForTask(siteTask),
         credentials: requestedGatewayKeysFromConfig(siteTask.agentConfig, [
           "gatewayCredentials",
           "gateway_credentials",

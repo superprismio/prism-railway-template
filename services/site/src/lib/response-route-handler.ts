@@ -43,6 +43,7 @@ import {
   resolveAgentProfileRuntimeScope,
 } from "@/lib/agent-profile-runtime-scope"
 import { publishCheckpointReceipt } from "@/lib/prism-lab/checkpoint-receipt"
+import { modelTierFromAgentConfig, normalizeModelTier } from "@/lib/model-tier"
 
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
@@ -451,6 +452,9 @@ function workflowAgentRunResult(input: {
     runtimeContinuationId: input.runtimeResponse.thread_id ?? null,
     runtimeKey: input.runtimeResponse.runtimeKey,
     runtimeProvider: input.runtimeResponse.provider,
+    model: input.runtimeResponse.model,
+    modelTier: input.runtimeResponse.modelTier,
+    reasoningEffort: input.runtimeResponse.reasoningEffort,
     codexThreadId: input.runtimeResponse.thread_id ?? null,
     branchName: input.runtimeResponse.branchName ?? null,
     commitSha: input.runtimeResponse.commitSha ?? null,
@@ -892,6 +896,12 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     parseNullableString(body.linked_target_environment_id ?? body.linkedTargetEnvironmentId) ?? null
   const callerRequestedRuntimeProfileKey =
     parseNullableString(body.runtime_profile_key ?? body.runtimeProfileKey ?? body.runtime_key ?? body.runtimeKey) ?? null
+  let callerRequestedModelTier = null
+  try {
+    callerRequestedModelTier = normalizeModelTier(body.model_tier ?? body.modelTier)
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "MODEL_TIER_INVALID" }, { status: 400 })
+  }
   const inputMessages = parseResponseInputMessages(body.input)
   const latestUserMessage = [...inputMessages].reverse().find((entry) => entry.role === "user") ?? null
 
@@ -1122,6 +1132,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     executionMode: runtimeExecutionMode,
     requestSkills: requestScopedSkills,
     callerRuntimeProfileKey: callerRequestedRuntimeProfileKey,
+    requestedModelTier: modelTierFromAgentConfig(workflowAgentConfig) ?? callerRequestedModelTier,
   })
   const requestedSkills = agentRuntimeScope.skills
   const requestedRuntimeProfileKey = agentRuntimeScope.runtimeProfileKey
@@ -1339,6 +1350,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         policyInstructions: agentRuntimeScope.policyInstructions,
         agentProfile: agentRuntimeScope.metadata,
         runtimeProfileKey: requestedRuntimeProfileKey,
+        modelTier: agentRuntimeScope.modelTier,
         sessionRuntimeKey: typeof session.meta?.runtimeKey === "string" ? session.meta.runtimeKey : null,
         requestedSkills,
         skillSelectionMode: linkedWorkflow ? "exact" : "inferred",
@@ -1423,6 +1435,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           runtimeResponse.thread_id ?? session.meta?.runtimeContinuationId ?? session.meta?.codexThreadId ?? null,
         runtimeKey: runtimeResponse.runtimeKey,
         runtimeProvider: runtimeResponse.provider,
+        model: runtimeResponse.model,
+        modelTier: runtimeResponse.modelTier,
+        reasoningEffort: runtimeResponse.reasoningEffort,
         codexThreadId: runtimeResponse.thread_id ?? session.meta?.codexThreadId ?? null,
         codexProvider: runtimeResponse.provider ?? "codex-cli",
       },
@@ -1440,6 +1455,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         runtimeContinuationId: runtimeResponse.thread_id ?? null,
         runtimeKey: runtimeResponse.runtimeKey,
         runtimeProvider: runtimeResponse.provider,
+        model: runtimeResponse.model,
+        modelTier: runtimeResponse.modelTier,
+        reasoningEffort: runtimeResponse.reasoningEffort,
         codexThreadId: runtimeResponse.thread_id ?? null,
       },
     })
@@ -1569,6 +1587,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           executionMode: continuationExecutor.executionMode,
           requestSkills: continuationWorkflowRunSkills(continuationAgentConfig),
           callerRuntimeProfileKey: null,
+          requestedModelTier: modelTierFromAgentConfig(continuationAgentConfig),
         })
         const profileContinuation = continuationProfile && typeof continuationProfile.contextPolicy.continuation === "string"
           ? continuationProfile.contextPolicy.continuation
@@ -1607,6 +1626,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
               policyInstructions: continuationScope.policyInstructions,
               agentProfile: continuationScope.metadata,
               runtimeProfileKey: continuationScope.runtimeProfileKey,
+              modelTier: continuationScope.modelTier,
               sessionRuntimeKey: continuationRuntimeKey,
               requestedSkills: continuationScope.skills,
               skillSelectionMode: "exact",
@@ -1805,6 +1825,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         runtime_continuation_id: runtimeResponse.thread_id ?? null,
         runtime_key: runtimeResponse.runtimeKey,
         runtime_provider: runtimeResponse.provider,
+        model_tier: runtimeResponse.modelTier,
+        reasoning_effort: runtimeResponse.reasoningEffort,
         codex_thread_id: runtimeResponse.thread_id ?? null,
         trace: Array.isArray(runtimeResponse.trace) ? runtimeResponse.trace : [],
         auto_continued_steps: autoContinuedSteps,

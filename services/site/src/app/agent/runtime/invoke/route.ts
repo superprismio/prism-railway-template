@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requestRuntimeResponse } from "@/lib/app-core/runtime-client";
 import { requireServiceAccess } from "@/lib/internal-service";
+import { normalizeModelTier } from "@/lib/model-tier";
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -68,6 +69,12 @@ export async function POST(request: Request) {
     ? stringArray(body?.skills)
     : stringArray(metadata.requestedSkills);
   const runtimeKey = stringValue(body?.runtimeProfileKey ?? body?.runtimeKey) || null;
+  let modelTier = null;
+  try {
+    modelTier = normalizeModelTier(body?.modelTier ?? body?.model_tier ?? metadata.modelTier ?? metadata.model_tier);
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "MODEL_TIER_INVALID" }, { status: 400 });
+  }
 
   try {
     const response = await requestRuntimeResponse({
@@ -82,6 +89,7 @@ export async function POST(request: Request) {
       ),
       metadata,
       runtimeKey,
+      modelTier,
       timeoutMs: timeoutMs(body?.timeoutMs),
     });
     return NextResponse.json({ ok: true, response });

@@ -9,6 +9,7 @@ import {
   upsertAgentProfile,
 } from '@/lib/app-core';
 import { requireServiceAccess } from '@/lib/internal-service';
+import { modelTiers, normalizeModelTier } from '@/lib/model-tier';
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -67,6 +68,10 @@ export async function POST(request: Request) {
   const name = text(body.name, 160);
   if (!key || !name) return NextResponse.json({ ok: false, error: 'key and name are required' }, { status: 400 });
   const owner = body.owner === 'workspace' ? 'workspace' : 'admin-agent';
+  const modelTierInput = text(body.modelTier ?? body.model_tier, 40);
+  if (modelTierInput && !modelTiers.includes(modelTierInput as (typeof modelTiers)[number])) {
+    return NextResponse.json({ ok: false, error: `MODEL_TIER_INVALID:${modelTierInput}` }, { status: 400 });
+  }
   const memoryScope = optionalMemoryScope(body);
   const preview = {
     key,
@@ -74,6 +79,7 @@ export async function POST(request: Request) {
     description: text(body.description, 2000) || null,
     status: 'active' as const,
     owner,
+    modelTier: normalizeModelTier(modelTierInput),
     persona: { name, instructions: text(body.personaInstructions ?? body.persona_instructions, 12000) },
     skills: stringList(body.skills),
     ...(memoryScope ? { memoryScope } : {}),

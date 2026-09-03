@@ -10,6 +10,7 @@ export const bundledCodexRuntimeFeatures = [
   'continuations',
   'gateway-credentials',
   'idempotent-job-creation',
+  'model-tier-routing',
   readOnlyUtilityAuthorityFeature,
   'repository',
   'shell',

@@ -11,7 +11,7 @@ test("assigned Agent Profile controls runtime identity, runtime, and skills", ()
     profile: {
       id: "profile-1", key: "research", name: "Research Agent", description: "Ground decisions in evidence.", avatarUrl: null, accentColor: "#36E7FF",
       status: "active", systemKey: null, owner: { type: "workspace", userId: null, agentProfileId: null }, stewards: [],
-      persona: { name: "Rook", instructions: "Cite sources and state uncertainty." }, runtimeProfileKey: "careful-runtime",
+      persona: { name: "Rook", instructions: "Cite sources and state uncertainty." }, runtimeProfileKey: "careful-runtime", modelTier: "standard",
       skills: ["research-reader"], memoryScope: { buckets: ["research"] }, authority: { maximumAccessMode: "readonly" },
       contextPolicy: { continuation: "session" }, version: 4, createdByUserId: null, bindings: [], createdAt: "", updatedAt: "",
     },
@@ -21,6 +21,7 @@ test("assigned Agent Profile controls runtime identity, runtime, and skills", ()
     callerRuntimeProfileKey: "untrusted-runtime",
   })
   assert.equal(scope.runtimeProfileKey, "careful-runtime")
+  assert.equal(scope.modelTier, "standard")
   assert.deepEqual(scope.skills, ["research-reader", "attachment-reader"])
   assert.match(scope.policyInstructions ?? "", /Rook/)
   assert.match(scope.policyInstructions ?? "", /Cite sources/)
@@ -33,7 +34,7 @@ test("profile Gateway credential allowlists cap workflow credentials", () => {
     id: "reviewer", key: "code-review-agent", name: "Code Review Agent", description: null, avatarUrl: null,
     accentColor: "#36E7FF", status: "active" as const, systemKey: "code-review-agent",
     owner: { type: "workspace" as const, userId: null, agentProfileId: null }, stewards: [], persona: {},
-    runtimeProfileKey: null, skills: [], memoryScope: {},
+    runtimeProfileKey: null, modelTier: null, skills: [], memoryScope: {},
     authority: { credentialPolicy: "allowlist", gatewayCredentials: ["github"] }, contextPolicy: {}, version: 1,
     createdByUserId: null, bindings: [], createdAt: "", updatedAt: "",
   }
@@ -46,8 +47,23 @@ test("credential-free profiles receive no Gateway credentials", () => {
     id: "verifier", key: "verification-agent", name: "Verification Agent", description: null, avatarUrl: null,
     accentColor: "#36E7FF", status: "active" as const, systemKey: "verification-agent",
     owner: { type: "agent" as const, userId: null, agentProfileId: "agent-profile-admin" }, stewards: [], persona: {},
-    runtimeProfileKey: null, skills: [], memoryScope: {}, authority: { credentialPolicy: "none" },
+    runtimeProfileKey: null, modelTier: null, skills: [], memoryScope: {}, authority: { credentialPolicy: "none" },
     contextPolicy: {}, version: 1, createdByUserId: null, bindings: [], createdAt: "", updatedAt: "",
   }
   assert.deepEqual(filterGatewayCredentialKeysForProfile(profile, ["github", "portal"]), [])
+})
+
+test("request model tiers override profile defaults", () => {
+  const scope = resolveAgentProfileRuntimeScope({
+    profile: {
+      id: "profile-1", key: "summarizer", name: "Summarizer", description: null, avatarUrl: null,
+      accentColor: "#36E7FF", status: "active", systemKey: null,
+      owner: { type: "workspace", userId: null, agentProfileId: null }, stewards: [], persona: {},
+      runtimeProfileKey: null, modelTier: "standard", skills: [], memoryScope: {}, authority: {},
+      contextPolicy: {}, version: 1, createdByUserId: null, bindings: [], createdAt: "", updatedAt: "",
+    },
+    executionMode: "worker",
+    requestedModelTier: "economy",
+  })
+  assert.equal(scope.modelTier, "economy")
 })

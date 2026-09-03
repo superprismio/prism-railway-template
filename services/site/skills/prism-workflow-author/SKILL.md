@@ -263,6 +263,14 @@ deliberately pinned to a configured Site runtime profile. Do not add the legacy
 `agentConfig.runtime` field to new workflows, and do not infer the active
 runtime from that field when inspecting an older workflow.
 
+Use provider-neutral `agentConfig.modelTier` values when a workflow or step has
+an intentional cost/quality requirement: `economy`, `standard`, or `deep`.
+Step-local configuration overrides the Agent Profile default; omit it to inherit
+the profile and Site defaults. Do not hardcode provider model names in workflow
+manifests. Reserve `deep` for work whose verification or reasoning needs justify
+the added cost, and validate representative outputs before moving work to
+`economy`.
+
 Do not put long prompts, implementation logic, scripts, or large prose in the manifest. Put those in markdown.
 
 Do not require a target repository unless the workflow actually needs repo/deploy helpers. Requests can produce artifacts, Discord messages, summaries, or other outputs without a `targetAppId`.

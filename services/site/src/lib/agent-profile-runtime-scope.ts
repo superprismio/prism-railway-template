@@ -1,4 +1,5 @@
 import type { AgentProfileRecord } from "@/lib/app-core"
+import { normalizeModelTier, type ModelTier } from "@/lib/model-tier"
 
 function stringList(value: unknown) {
   return Array.isArray(value)
@@ -24,14 +25,17 @@ export function resolveAgentProfileRuntimeScope(input: {
   executionMode: string
   requestSkills?: string[]
   callerRuntimeProfileKey?: string | null
+  requestedModelTier?: ModelTier | string | null
 }) {
   const profile = input.profile
   const skills = Array.from(new Set([...(profile?.skills ?? []), ...(input.requestSkills ?? [])]))
-  if (!profile) return { runtimeProfileKey: input.callerRuntimeProfileKey ?? null, skills, policyInstructions: undefined, metadata: null }
+  const modelTier = normalizeModelTier(input.requestedModelTier) ?? profile?.modelTier ?? null
+  if (!profile) return { runtimeProfileKey: input.callerRuntimeProfileKey ?? null, modelTier, skills, policyInstructions: undefined, metadata: null }
   const personaName = typeof profile.persona.name === "string" && profile.persona.name.trim() ? profile.persona.name.trim() : profile.name
   const personaInstructions = typeof profile.persona.instructions === "string" ? profile.persona.instructions.trim() : ""
   return {
     runtimeProfileKey: profile.runtimeProfileKey,
+    modelTier,
     skills,
     policyInstructions: [
       `You are operating as the Prism Agent Profile \"${personaName}\" (key: ${profile.key}, version: ${input.assignedVersion ?? profile.version}).`,
@@ -49,6 +53,7 @@ export function resolveAgentProfileRuntimeScope(input: {
       name: profile.name,
       version: input.assignedVersion ?? profile.version,
       executionMode: input.executionMode,
+      modelTier,
       memoryScope: profile.memoryScope,
     },
   }

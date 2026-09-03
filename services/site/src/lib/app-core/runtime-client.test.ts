@@ -40,7 +40,7 @@ test('runtime client uses the normalized contract without adapter-specific parsi
           result: {
             responseText: 'GROK_NORMALIZED_OK',
             continuationId: 'grok-session-1',
-            providerMetadata: { model: 'grok-build' },
+            providerMetadata: { model: 'grok-build-fast', modelTier: 'economy', reasoningEffort: 'low' },
           },
           trace: [{ at: '2026-07-13T00:00:00.000Z', kind: 'run.completed', message: 'done' }],
         },
@@ -73,6 +73,7 @@ test('runtime client uses the normalized contract without adapter-specific parsi
     continuationId: 'existing-session',
     skills: ['test-skill'],
     credentials: ['sendgrid'],
+    modelTier: 'economy',
     timeoutMs: 10_000,
     onProgress: (entry) => progress.push(entry),
   });
@@ -81,11 +82,14 @@ test('runtime client uses the normalized contract without adapter-specific parsi
   assert.equal(result.thread_id, 'grok-session-1');
   assert.equal(result.provider, 'grok-build');
   assert.equal(result.runtimeKey, 'grok-local');
+  assert.equal(result.modelTier, 'economy');
+  assert.equal(result.reasoningEffort, 'low');
   assert.equal(submitted.body?.contractVersion, '2026-07-10');
   assert.equal(submitted.body?.authorityMode, 'read_only_utility');
   assert.equal(submitted.body?.continuationId, 'existing-session');
   assert.deepEqual(submitted.body?.skills, []);
   assert.deepEqual(submitted.body?.credentials, []);
+  assert.equal(submitted.body?.modelTier, 'economy');
   assert.equal(capabilitiesCalls, 1);
   assert.ok(progress.length >= 1);
   assert.equal(progress[0]?.runtimeJobId, 'job-1');

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
+import { resolveCodexModelPolicy, type ModelTier, type ReasoningEffort } from './model-tier.js';
 import { createNativePrismSkillHome, loadRelevantPrismSkills } from './prism-skills.js';
 import { gatewayClient } from './runtime-gateway.js';
 import { processInvocationSizeMetrics } from './process-size.js';
@@ -59,6 +60,7 @@ export type CodexRuntimeInput = {
   credentials?: string[];
   gatewayContext?: Record<string, string>;
   metadata?: Record<string, unknown>;
+  modelTier?: ModelTier | null;
   signal?: AbortSignal;
   onTrace?: (trace: CodexRuntimeResult['trace']) => void;
 };
@@ -66,6 +68,8 @@ export type CodexRuntimeInput = {
 export type CodexRuntimeResult = {
   provider: 'codex-cli';
   model: string | null;
+  modelTier: ModelTier | null;
+  reasoningEffort: ReasoningEffort | null;
   responseText: string;
   codexThreadId: string | null;
   branchName: string | null;
@@ -1126,18 +1130,32 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   const composedPrompt = buildPrompt(input, isResume, prismSkills);
   const prompt = composedPrompt.prompt;
   const args = buildCodexArgs(input, outputFile, executionWorkspaceRoot);
+  const modelPolicy = resolveCodexModelPolicy({
+    tier: input.modelTier ?? null,
+    defaultModel: config.codexModel,
+    economyModel: config.codexModelEconomy,
+    standardModel: config.codexModelStandard,
+    deepModel: config.codexModelDeep,
+    economyReasoningEffort: config.codexReasoningEffortEconomy,
+    standardReasoningEffort: config.codexReasoningEffortStandard,
+    deepReasoningEffort: config.codexReasoningEffortDeep,
+  });
 
   if (authorityMode === 'full' && config.codexImageGenerationEnabled) {
     args.push('--enable', 'image_generation');
   }
 
-  if (config.codexModel) {
-    args.push('-m', config.codexModel);
+  if (modelPolicy.model) {
+    args.push('-m', modelPolicy.model);
+  }
+  if (modelPolicy.reasoningEffort) {
+    args.push('-c', `model_reasoning_effort=${JSON.stringify(modelPolicy.reasoningEffort)}`);
   }
 
   args.push('-');
 
   appendTrace(trace, 'prompt.composed', JSON.stringify(composedPrompt.metrics), input.onTrace);
+  appendTrace(trace, 'model.selected', JSON.stringify(modelPolicy), input.onTrace);
   if (config.codexRuntimePromptWarnBytes && composedPrompt.metrics.totalBytes > config.codexRuntimePromptWarnBytes) {
     appendTrace(
       trace,
@@ -1365,7 +1383,9 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         });
         resolve({
           provider: 'codex-cli',
-          model: config.codexModel,
+          model: modelPolicy.model,
+          modelTier: modelPolicy.modelTier,
+          reasoningEffort: modelPolicy.reasoningEffort,
           responseText: finalResponseText,
           codexThreadId: threadId,
           branchName: finalGitState.branchName,

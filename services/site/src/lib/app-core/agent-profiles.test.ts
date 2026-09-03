@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 import { agentProfilesMigration } from './migrations/040_agent_profiles';
 import { agentProfileAvatarMigration } from './migrations/041_agent_profile_avatar';
 import { agentProfileAccentColorMigration } from './migrations/042_agent_profile_accent_color';
+import { agentProfileModelTierMigration } from './migrations/049_agent_profile_model_tier';
 import { activeAgentExecutorFallbackMigration } from './migrations/043_active_agent_executor_fallback';
 import { codeReviewAgentMigration } from './migrations/044_code_review_agent';
 import { codeReviewAgentV2Migration } from './migrations/045_code_review_agent_v2';
@@ -63,6 +64,7 @@ function testDb() {
   db.exec(agentProfilesMigration.sql);
   db.exec(agentProfileAvatarMigration.sql);
   db.exec(agentProfileAccentColorMigration.sql);
+  db.exec(agentProfileModelTierMigration.sql);
   return db;
 }
 
@@ -76,6 +78,19 @@ test('seeds the protected Admin Agent with workspace stewardship', () => {
   const editedAdmin = upsertAgentProfile({ key: 'admin-agent', name: 'Admin Agent', avatarUrl: '/avatars/admin.png', allowSystemProfileUpdate: true }, db);
   assert.equal(editedAdmin.avatarUrl, '/avatars/admin.png');
   assert.equal(getAgentProfileVersion(adminAgentProfileId, 1, db)?.avatarUrl, null);
+  db.close();
+});
+
+test('stores model tier defaults in profile versions', () => {
+  const db = testDb();
+  const profile = upsertAgentProfile({
+    key: 'economy-agent',
+    name: 'Economy Agent',
+    ownerType: 'workspace',
+    modelTier: 'economy',
+  }, db);
+  assert.equal(profile.modelTier, 'economy');
+  assert.equal(getAgentProfileVersion(profile.id, profile.version, db)?.modelTier, 'economy');
   db.close();
 });
 

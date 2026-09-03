@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
-import { assignAccountabilityDomain, deleteCustomTaskByKey, getAccountabilityAssignment, getTaskByKey, getTaskScriptByKey, listTasks, upsertTask } from "@/lib/app-core"
+import { assignAccountabilityDomain, deleteCustomTaskByKey, getAccountabilityAssignment, getAgentProfileVersion, getTaskByKey, getTaskScriptByKey, listTasks, taskAgentExecutor, taskUsesAgentExecutor, upsertTask } from "@/lib/app-core"
 import { parseNullableString, parseString, requireServiceAccess } from "@/lib/internal-service"
+import { modelTierFromAgentConfig } from "@/lib/model-tier"
 import { validateScriptTaskHandoff } from "@/lib/script-task-handoff-input"
 
 function parseBoolean(value: unknown, fallback = false) {
@@ -19,6 +20,23 @@ function parseConfig(value: unknown) {
     : {}
 }
 
+function taskExecutionPolicy(task: { taskType: string; agentConfig: Record<string, unknown> }) {
+  if (!taskUsesAgentExecutor(task.taskType, task.agentConfig)) return null
+  try {
+    const executor = taskAgentExecutor(task.agentConfig)
+    const profile = getAgentProfileVersion(executor.profileId, executor.profileVersion)
+    return {
+      executorProfileKey: executor.profileKey,
+      executorProfileVersion: executor.profileVersion,
+      resolution: executor.resolution,
+      runtimeProfileKey: profile?.runtimeProfileKey ?? null,
+      modelTier: profile?.modelTier ?? null,
+    }
+  } catch {
+    return null
+  }
+}
+
 export async function GET() {
   const access = await requireServiceAccess()
   if (!access.ok) {
@@ -29,6 +47,7 @@ export async function GET() {
     ok: true,
     tasks: listTasks().map((task) => ({
       ...task,
+      executionPolicy: taskExecutionPolicy(task),
       accountabilityDomain: getAccountabilityAssignment("task", task.id),
     })),
   })
@@ -66,6 +85,11 @@ export async function POST(request: Request) {
   const inputConfig = parseConfig(body.inputConfig ?? body.input_config)
   const instructionConfig = parseConfig(body.instructionConfig ?? body.instruction_config)
   const agentConfig = parseConfig(body.agentConfig ?? body.agent_config)
+  try {
+    modelTierFromAgentConfig(agentConfig)
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "MODEL_TIER_INVALID" }, { status: 400 })
+  }
   let normalizedInputConfig = inputConfig
   if (taskType === "script-runner") {
     const scriptKey = parseString(inputConfig.scriptKey ?? inputConfig.script_key)

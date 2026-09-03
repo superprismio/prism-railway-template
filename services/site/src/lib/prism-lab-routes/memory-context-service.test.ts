@@ -24,6 +24,7 @@ function profile(
     stewards: [],
     persona: {},
     runtimeProfileKey: null,
+    modelTier: null,
     skills: [],
     memoryScope,
     authority: {},

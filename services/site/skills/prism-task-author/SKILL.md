@@ -35,7 +35,11 @@ Task authoring rules:
 19. Set `agentConfig.executorAgent` deliberately for agent-backed tasks. Omitting
     it invokes the visible Admin fallback and should be disclosed as temporary
     authoring debt.
-20. After creation, inspect `GET /agent/accountability/audit` for the task's
+20. Use provider-neutral `agentConfig.modelTier` values (`economy`, `standard`,
+    or `deep`) when a task should override its executor profile default. Omit it
+    to inherit the Agent Profile and Site defaults. Never store a provider model
+    name in a task definition.
+21. After creation, inspect `GET /agent/accountability/audit` for the task's
     assignment, executor resolution, cross-domain execution, and fallback state.
 
 Workflow-runner request types must use one of: `bug`, `feature`, `issue`, `content`, `design`, `config`, or `ops`. Use `issue` for imported GitHub issues or issue-like support intake when the source item itself is the request.

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { createAuditLog, getAgentProfile, upsertAgentProfile } from '@/lib/app-core';
 import { requireCapabilityAccess } from '@/lib/admin-auth';
+import { modelTiers, normalizeModelTier } from '@/lib/model-tier';
 
 export async function GET(_request: Request, context: { params: Promise<{ key: string }> }) {
   const access = await requireCapabilityAccess('canChatAgents');
@@ -50,6 +51,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ key: 
   const name = text(body.name, 160);
   if (!name) return NextResponse.json({ ok: false, error: 'name is required' }, { status: 400 });
   const personaInstructions = text(body.personaInstructions ?? body.persona_instructions, 20_000);
+  const modelTierInput = text(body.modelTier ?? body.model_tier, 40);
+  if (modelTierInput && !modelTiers.includes(modelTierInput as (typeof modelTiers)[number])) {
+    return NextResponse.json({ ok: false, error: `MODEL_TIER_INVALID:${modelTierInput}` }, { status: 400 });
+  }
   try {
     const updated = upsertAgentProfile({
       key: profile.key,
@@ -64,6 +69,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ key: 
       stewardUserIds: profile.stewards.map((steward) => steward.userId),
       persona: { ...profile.persona, name, instructions: personaInstructions },
       runtimeProfileKey: text(body.runtimeProfileKey ?? body.runtime_profile_key, 120) || null,
+      modelTier: normalizeModelTier(modelTierInput),
       skills: stringList(body.skills),
       memoryScope: memoryScopeInput(body, profile.memoryScope),
       authority: profile.authority,
