@@ -103,6 +103,7 @@ Requests and artifacts:
 
 - `GET /agent/target-apps`
 - `POST /agent/target-apps`
+- `PATCH /agent/target-apps/:id`
 - `POST /agent/change-board/requests`
 - `GET /agent/change-board/requests/:id`
 - `PATCH /agent/change-board/requests/:id`
@@ -122,6 +123,13 @@ standard writable development environment. `name`, `slug`, and
 `defaultBranch` are optional and derive from the repository URL with `main` as
 the branch default. Repeating the same repository request returns the existing
 target instead of creating a duplicate.
+
+`PATCH /agent/target-apps/:id` updates an existing target's agent-safe metadata:
+`name`, `description`, `repoUrl`, `defaultBranch`, and `agentEnabled`. When the
+default branch changes, Prism also updates the default agent environment if it
+is the conventional `<target-slug>-default` environment or still follows the
+target's previous default branch. An explicitly divergent environment branch is
+preserved and `defaultEnvironmentBranchSynced` is returned as `false`.
 
 `workflow/reconcile` is a maintenance operation for terminal workflow runs with
 stale request or step projection. It also closes a request timeline that

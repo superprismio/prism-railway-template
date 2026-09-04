@@ -71,6 +71,7 @@ Send service auth as:
 - `GET /agent/workflow-events`
 - `GET /agent/target-apps`
 - `POST /agent/target-apps`
+- `PATCH /agent/target-apps/:id`
 - `GET /agent/change-board/requests/:id`
 - `POST /agent/change-board/requests`
 - `GET /agent/change-board/requests/next`

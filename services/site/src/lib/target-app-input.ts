@@ -10,6 +10,18 @@ export type AgentTargetAppInputResult =
   | { ok: true; input: AgentTargetAppInput }
   | { ok: false; error: string }
 
+export interface AgentTargetAppPatchInput {
+  name?: string
+  description?: string | null
+  repoUrl?: string | null
+  defaultBranch?: string
+  agentEnabled?: boolean
+}
+
+export type AgentTargetAppPatchInputResult =
+  | { ok: true; input: AgentTargetAppPatchInput }
+  | { ok: false; error: string }
+
 export function slugFromName(value: string) {
   return value
     .trim()
@@ -50,6 +62,10 @@ function text(value: unknown) {
   return typeof value === "string" ? value.trim() : ""
 }
 
+function isValidBranch(value: string) {
+  return value.length <= 255 && !/[\u0000-\u001f\u007f\s]/.test(value)
+}
+
 export function parseAgentTargetAppInput(body: Record<string, unknown> | null): AgentTargetAppInputResult {
   const rawRepoUrl = text(body?.repoUrl ?? body?.repo_url)
   const repoUrl = normalizeGitHubRepoUrl(rawRepoUrl)
@@ -68,7 +84,7 @@ export function parseAgentTargetAppInput(body: Record<string, unknown> | null): 
   if (!slug || slug.length > 100 || slug !== slugFromName(slug)) {
     return { ok: false, error: "slug must contain only lowercase letters, numbers, and hyphens" }
   }
-  if (defaultBranch.length > 255 || /[\u0000-\u001f\u007f\s]/.test(defaultBranch)) {
+  if (!isValidBranch(defaultBranch)) {
     return { ok: false, error: "defaultBranch is invalid" }
   }
   if (description && description.length > 2000) {
@@ -76,4 +92,70 @@ export function parseAgentTargetAppInput(body: Record<string, unknown> | null): 
   }
 
   return { ok: true, input: { slug, name, description, repoUrl, defaultBranch } }
+}
+
+export function parseAgentTargetAppPatchInput(body: Record<string, unknown> | null): AgentTargetAppPatchInputResult {
+  if (!body) return { ok: false, error: "Invalid JSON body" }
+
+  const input: AgentTargetAppPatchInput = {}
+
+  if (body.name !== undefined) {
+    const name = text(body.name)
+    if (!name || name.length > 200) return { ok: false, error: "name must be 1-200 characters" }
+    input.name = name
+  }
+
+  if (body.description !== undefined) {
+    if (body.description !== null && typeof body.description !== "string") {
+      return { ok: false, error: "description must be a string or null" }
+    }
+    const description = text(body.description) || null
+    if (description && description.length > 2000) {
+      return { ok: false, error: "description must be at most 2000 characters" }
+    }
+    input.description = description
+  }
+
+  if (body.repoUrl !== undefined || body.repo_url !== undefined) {
+    const rawRepoUrl = body.repoUrl ?? body.repo_url
+    if (rawRepoUrl === null || rawRepoUrl === "") {
+      input.repoUrl = null
+    } else {
+      const repoUrl = normalizeGitHubRepoUrl(text(rawRepoUrl))
+      if (!repoUrl) return { ok: false, error: "repoUrl must be an HTTPS GitHub repository URL or null" }
+      input.repoUrl = repoUrl
+    }
+  }
+
+  if (body.defaultBranch !== undefined || body.default_branch !== undefined) {
+    const defaultBranch = text(body.defaultBranch ?? body.default_branch)
+    if (!defaultBranch || !isValidBranch(defaultBranch)) {
+      return { ok: false, error: "defaultBranch is invalid" }
+    }
+    input.defaultBranch = defaultBranch
+  }
+
+  if (body.agentEnabled !== undefined || body.agent_enabled !== undefined) {
+    const agentEnabled = body.agentEnabled ?? body.agent_enabled
+    if (typeof agentEnabled !== "boolean") {
+      return { ok: false, error: "agentEnabled must be a boolean" }
+    }
+    input.agentEnabled = agentEnabled
+  }
+
+  if (Object.keys(input).length === 0) {
+    return { ok: false, error: "No supported target app fields were provided" }
+  }
+
+  return { ok: true, input }
+}
+
+export function shouldSyncDefaultEnvironmentBranch(input: {
+  environmentSlug: string
+  environmentBranch: string | null
+  targetSlug: string
+  previousDefaultBranch: string | null
+}) {
+  return input.environmentSlug === `${input.targetSlug}-default`
+    || input.environmentBranch === input.previousDefaultBranch
 }

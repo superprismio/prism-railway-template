@@ -21,6 +21,7 @@ Core endpoints:
 
 - `GET /agent/target-apps`
 - `POST /agent/target-apps`
+- `PATCH /agent/target-apps/:id`
 - `POST /agent/change-board/requests`
 - `GET /agent/change-board/requests/next`
 - `GET /agent/change-board/requests/current`
