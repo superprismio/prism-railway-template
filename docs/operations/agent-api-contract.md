@@ -139,6 +139,11 @@ Send `{"dryRun":false}` to apply a verified repair.
 When a workflow has multiple terminal steps, include the selected
 `terminalStepKey` returned by the dry-run candidates.
 
+The by-number workflow continue route accepts `{"retryCurrentStep":true}` to
+rerun an agent, checkpoint, or loop step without advancing past its attention
+state. A retry uses the latest saved workflow definition and current request
+evidence. Do not combine `retryCurrentStep` with `workflowAction`.
+
 Request creation accepts these `requestType` values:
 
 - `bug`

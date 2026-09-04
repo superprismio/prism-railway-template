@@ -41,6 +41,11 @@ Core endpoints:
 - `GET /agent/change-board/requests/:id/executions`
 - `GET /agent/change-board/requests/:id/deploy-plan`
 
+To rerun the current agent, checkpoint, or loop step without advancing an
+attention state, call the by-number workflow continue route with
+`{"retryCurrentStep":true,"comment":"..."}`. Do not combine a current-step
+retry with `workflowAction`.
+
 Queue reads:
 
 ```bash
