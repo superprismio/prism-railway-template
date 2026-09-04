@@ -114,6 +114,29 @@ Send that body to `POST /agent/responses` with `x-service-token` service auth. F
 
 Workflow steps should save durable files through the request artifact API instead of leaving important outputs only in chat text. Use artifacts for drafts, image prompts, generated images, publish packets, JSON plans, or any step output that future steps or humans should inspect.
 
+## Scheduled Workflow Ownership
+
+Every scheduled agent task should be a thin `workflow-runner` launcher. Each
+scheduled occurrence creates and starts a native request; the workflow owns the
+work itself. Keep analysis, durable artifacts, retries, operator recovery,
+external delivery, delivery verification, provenance, and terminal closure in
+workflow steps rather than in task-runner output delivery. Keep ad hoc prompts
+in an Agent Console or an explicitly invoked disabled utility task.
+
+If external delivery is part of the promised outcome:
+
+- save the exact deliverable as a request artifact before sending it
+- send from the workflow step through the authorized adapter or provider skill
+- require a provider-accepted identifier before reporting success
+- attach the external message or publication as a request external ref when the
+  API supports that provider
+- leave a retryable, accurately described workflow failure when delivery fails;
+  never close merely because content generation succeeded
+
+A valid no-op or empty-result report may close when the workflow contract says
+it is a successful outcome. Keep newly authored scheduled tasks disabled until
+the request lifecycle, artifacts, delivery, and closure have been validated.
+
 If a triage or intake step sees a request without `estimatedHumanHours` and the scope is clear, patch the request once with a coarse whole-request human effort estimate. Include expected human gates, review/approval time, coordination, and likely loopbacks such as review changes that return the workflow to an earlier step. Use one bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`. Do not add rationale/source fields or per-step estimates.
 
 ```json

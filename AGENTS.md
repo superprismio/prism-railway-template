@@ -250,6 +250,15 @@ Examples:
 - Task create/update/reasoning: use `prism-task-author`, then `GET /agent/tasks` or `POST /agent/tasks`.
 - Skill create/update/reasoning: use `prism-skill-author`, then `GET /agent/skills` or `POST /agent/skills`.
 
+Every scheduled agent task should use a request-backed lifecycle. Use a
+`workflow-runner` task as a thin scheduler/request launcher, and let the
+workflow own analysis, artifacts, retries, external delivery and verification,
+provenance, and closure. Keep `codex-prompt` out of the recurring scheduler;
+ad hoc prompts belong in an Agent Console or an explicitly invoked disabled
+utility task. Deterministic `builtin`, `http-post`, and `script-runner` jobs may
+remain outside the request inbox and should create a request only when they
+produce actionable work that needs follow-through.
+
 Instance-owned deterministic workflows may declare required Gateway credentials in
 `SKILL.md` frontmatter:
 
