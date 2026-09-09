@@ -8,6 +8,7 @@ import {
   codexRolloutSubagentTraceEvents,
   codexSubagentTraceEvent,
   isReviewerExecution,
+  extractGitHubPullRequestRef,
   workflowDelegationPolicy,
 } from './codex-runtime.js';
 
@@ -237,6 +238,24 @@ test('reviewer execution is derived from trusted Agent Profile metadata', () => 
     metadata: { agentProfile: { key: 'code-review-agent', executionMode: 'worker' } },
   }), false);
   assert.equal(isReviewerExecution({ metadata: {} }), false);
+});
+
+test('reviewer can resolve a GitHub pull request from the current prompt or recent console history', () => {
+  assert.deepEqual(extractGitHubPullRequestRef({
+    prompt: 'Please review https://github.com/raid-guild/prism/pull/42/files.',
+    recentHistory: [],
+  }), {
+    owner: 'raid-guild', repo: 'prism', number: 42, url: 'https://github.com/raid-guild/prism/pull/42',
+  });
+  assert.deepEqual(extractGitHubPullRequestRef({
+    prompt: 'Review it again.',
+    recentHistory: [{ role: 'user', content: 'Use https://github.com/acme/widgets/pull/7' }],
+  })?.number, 7);
+  assert.equal(extractGitHubPullRequestRef({
+    prompt: 'Compare https://github.com/acme/widgets/pull/7 with https://github.com/acme/widgets/pull/8.',
+    recentHistory: [],
+  }), null);
+  assert.equal(extractGitHubPullRequestRef({ prompt: 'Review the current request.', recentHistory: [] }), null);
 });
 
 test('reviewer prompt explains the tracked-file runtime guard', () => {

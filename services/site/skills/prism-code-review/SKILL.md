@@ -1,11 +1,16 @@
 ---
 name: prism-code-review
 description: Independently review a linked pull request or repository diff, verify it against request and repository policy, run focused checks, preserve incremental findings, and publish bounded GitHub review feedback when authorized. Do not implement fixes or approve, merge, push, or deploy changes.
+metadata:
+  gateway-credentials:
+    - github
 ---
 
 # Prism Code Review
 
-Review the current request's repository change from fresh context. Produce high-signal evidence for a human decision; do not become a second implementation agent.
+Review the target pull request from fresh context. The target may come from a linked Prism request or an explicit GitHub pull-request URL in Admin Console. Produce high-signal evidence for a human decision; do not become a second implementation agent.
+
+An Admin Console instruction such as `review https://github.com/OWNER/REPO/pull/123` authorizes the bounded GitHub feedback described below. It does not authorize an approval, request-changes event, merge, code change, push, or deployment. If a console request does not identify exactly one pull request and no linked request supplies one, ask for the PR URL instead of guessing.
 
 ## Boundaries
 
@@ -20,11 +25,11 @@ Review the current request's repository change from fresh context. Produce high-
 
 Resolve and verify:
 
-1. Request acceptance criteria and `triage-fix-notes.md`, when present.
+1. Request acceptance criteria and `triage-fix-notes.md`, when a Prism request is linked; otherwise use the PR title, body, linked issues, and operator instruction as the stated intent.
 2. Target repository, base branch, linked pull request, and immutable base and head commit SHAs.
 3. The complete `base...head` diff. Report `inconclusive` if the reviewed head cannot be identified reliably.
 4. Applicable repository policy: root and path-scoped `AGENTS.md`, contribution guidance, package manifests, required CI checks, and relevant architecture or testing documentation.
-5. Current `verification.json` and `verification.md`, plus prior `code-review.json` and linked Prism GitHub comments when re-reviewing.
+5. Current `verification.json` and `verification.md`, plus prior `code-review.json` and linked Prism GitHub comments when a Prism request is linked. In standalone Admin Console review, use existing marker-bearing GitHub feedback as prior review evidence.
 
 Confirm that verification evidence targets the current `headSha`. Treat a conclusive failed verification as direct review evidence: create an open blocking or high finding for each material failure. Do not mark a conclusive failure `inconclusive`. Missing, stale, or inconclusive required verification evidence makes the review inconclusive.
 
@@ -75,7 +80,7 @@ When a prior review exists:
 
 ## Durable outputs
 
-Write or replace these request artifacts and include the current `agent_run_id`:
+When a Prism request is linked, write or replace these request artifacts and include the current `agent_run_id`:
 
 - `code-review.md`: concise human-readable review with reviewed SHAs, repository policy consulted, checks run, prioritized findings, resolved findings, and recommendation.
 - `code-review.json`: structured source of truth using version 2.
@@ -123,9 +128,11 @@ node "/resolved/skill-directory/scripts/validate-review.mjs" "/path/to/code-revi
 
 If validation fails, correct the artifact rather than bypassing validation.
 
+For a standalone Admin Console review, do not fail merely because request artifact routes are unavailable. Return the same structured findings concisely in chat and make the GitHub summary comment the durable review record.
+
 ## GitHub delivery
 
-When a linked pull request exists and GitHub write access is available, read and follow [references/github-delivery.md](references/github-delivery.md). Maintain one summary comment and bounded, marker-based inline comments. Delivery failure does not erase local review evidence or change the technical result.
+When a pull request target exists and GitHub write access is available, read and follow [references/github-delivery.md](references/github-delivery.md). Maintain one summary comment and bounded, marker-based inline comments. Delivery failure does not erase local review evidence or change the technical result.
 
 ## Workflow result
 

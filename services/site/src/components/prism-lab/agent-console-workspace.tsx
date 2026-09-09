@@ -287,7 +287,13 @@ export function AgentConsoleWorkspace({
               isActive
               agentProfileKey={profile.key}
               executionMode={
-                profile.systemKey === "admin-agent" ? "orchestrator" : "worker"
+                profile.systemKey === "admin-agent"
+                  ? "orchestrator"
+                  : profile.systemKey === "code-review-agent"
+                    ? "reviewer"
+                    : profile.systemKey === "verification-agent"
+                      ? "verifier"
+                      : "worker"
               }
               configuredRuntimeKey={profile.runtimeProfileKey}
               configuredProfileVersion={profile.version}

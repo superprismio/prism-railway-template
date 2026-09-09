@@ -51,6 +51,22 @@ type LinkedLatestExecutionMetadata = {
   meta?: Record<string, unknown>;
 };
 
+export type GitHubPullRequestRef = {
+  owner: string;
+  repo: string;
+  number: number;
+  url: string;
+};
+
+type GitHubPullRequestMetadata = GitHubPullRequestRef & {
+  title: string | null;
+  baseRef: string;
+  baseSha: string;
+  headRef: string;
+  headSha: string;
+  repositoryUrl: string;
+};
+
 export type CodexRuntimeInput = {
   prompt: string;
   recentHistory: HistoryEntry[];
@@ -131,6 +147,24 @@ function slugifySegment(value: string) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80);
+}
+
+export function extractGitHubPullRequestRef(input: Pick<CodexRuntimeInput, 'prompt' | 'recentHistory'>) {
+  const candidates = [input.prompt, ...input.recentHistory.slice().reverse().map((entry) => entry.content)];
+  for (const candidate of candidates) {
+    const refs = new Map<string, GitHubPullRequestRef>();
+    for (const match of candidate.matchAll(/https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)(?:\b|\/)/gi)) {
+      const number = Number.parseInt(match[3]!, 10);
+      if (!Number.isSafeInteger(number) || number < 1) continue;
+      const owner = match[1]!;
+      const repo = match[2]!.replace(/\.git$/i, '');
+      const ref = { owner, repo, number, url: `https://github.com/${owner}/${repo}/pull/${number}` } satisfies GitHubPullRequestRef;
+      refs.set(ref.url.toLowerCase(), ref);
+    }
+    if (refs.size === 1) return refs.values().next().value ?? null;
+    if (refs.size > 1) return null;
+  }
+  return null;
 }
 
 function parseLinkedTargetApp(metadata: Record<string, unknown> | undefined): LinkedTargetAppMetadata | null {
@@ -248,6 +282,55 @@ async function inspectGitHubRepoAccess(repoUrl: string, githubToken: string | nu
     repoSlug: parsed.slug,
     canPull: typeof permissions?.pull === 'boolean' ? permissions.pull : null,
     canPush: typeof permissions?.push === 'boolean' ? permissions.push : null,
+  };
+}
+
+async function inspectGitHubPullRequest(
+  ref: GitHubPullRequestRef,
+  githubToken: string | null,
+): Promise<GitHubPullRequestMetadata> {
+  const response = await fetch(`https://api.github.com/repos/${ref.owner}/${ref.repo}/pulls/${ref.number}`, {
+    headers: {
+      ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
+      'User-Agent': 'prism-codex-runtime',
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  }).catch(() => null);
+  if (!response) throw new Error(`GITHUB_PR_LOOKUP_FAILED:${ref.owner}/${ref.repo}#${ref.number}`);
+  if (!response.ok) {
+    throw new Error(`GITHUB_PR_LOOKUP_FAILED:${response.status}:${ref.owner}/${ref.repo}#${ref.number}`);
+  }
+
+  const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+  const base = payload?.base && typeof payload.base === 'object' && !Array.isArray(payload.base)
+    ? payload.base as Record<string, unknown>
+    : null;
+  const head = payload?.head && typeof payload.head === 'object' && !Array.isArray(payload.head)
+    ? payload.head as Record<string, unknown>
+    : null;
+  const baseRepo = base?.repo && typeof base.repo === 'object' && !Array.isArray(base.repo)
+    ? base.repo as Record<string, unknown>
+    : null;
+  const baseRef = typeof base?.ref === 'string' ? base.ref : '';
+  const baseSha = typeof base?.sha === 'string' ? base.sha : '';
+  const headRef = typeof head?.ref === 'string' ? head.ref : '';
+  const headSha = typeof head?.sha === 'string' ? head.sha : '';
+  const repositoryUrl = typeof baseRepo?.clone_url === 'string'
+    ? baseRepo.clone_url
+    : `https://github.com/${ref.owner}/${ref.repo}.git`;
+  if (!baseRef || !baseSha || !headSha) {
+    throw new Error(`GITHUB_PR_LOOKUP_INVALID:${ref.owner}/${ref.repo}#${ref.number}`);
+  }
+
+  return {
+    ...ref,
+    title: typeof payload?.title === 'string' ? payload.title : null,
+    baseRef,
+    baseSha,
+    headRef,
+    headSha,
+    repositoryUrl,
   };
 }
 
@@ -496,11 +579,73 @@ type PreparedExecutionWorkspace = {
   baseCommitSha: string | null;
 };
 
+async function preparePullRequestReviewWorkspace(
+  input: CodexRuntimeInput,
+  pullRequestRef: GitHubPullRequestRef,
+  trace: CodexRuntimeResult['trace'],
+  githubToken: string | null,
+): Promise<PreparedExecutionWorkspace> {
+  const pullRequest = await inspectGitHubPullRequest(pullRequestRef, githubToken);
+  const targetSlug = slugifySegment(`${pullRequest.owner}-${pullRequest.repo}`) || 'github-pr';
+  const workspacePath = path.resolve(config.targetWorkspaceRoot, 'reviews', targetSlug, `pr-${pullRequest.number}`);
+  const gitDir = path.join(workspacePath, '.git');
+  await fs.mkdir(path.dirname(workspacePath), { recursive: true });
+
+  if (!(await pathExists(gitDir))) {
+    appendTrace(trace, 'workspace.clone', `Cloning ${pullRequest.owner}/${pullRequest.repo} for PR #${pullRequest.number}`);
+    try {
+      await runGitHubReadCommand(pullRequest.repositoryUrl, [
+        'clone', '--no-checkout', pullRequest.repositoryUrl, workspacePath,
+      ], githubToken);
+    } catch (error) {
+      throw await normalizeGitHubRepoError(pullRequest.repositoryUrl, 'clone', error, githubToken);
+    }
+  } else {
+    appendTrace(trace, 'workspace.reuse', `Refreshing review workspace for ${pullRequest.owner}/${pullRequest.repo}#${pullRequest.number}`);
+    await runCommand(['git', 'remote', 'set-url', 'origin', pullRequest.repositoryUrl], { cwd: workspacePath }).catch(() => undefined);
+  }
+
+  const reviewRef = `refs/remotes/origin/pr-${pullRequest.number}`;
+  try {
+    await runGitHubReadCommand(pullRequest.repositoryUrl, [
+      'fetch', '--force', 'origin',
+      `+refs/heads/${pullRequest.baseRef}:refs/remotes/origin/${pullRequest.baseRef}`,
+      `+refs/pull/${pullRequest.number}/head:${reviewRef}`,
+    ], githubToken, { cwd: workspacePath });
+  } catch (error) {
+    throw await normalizeGitHubRepoError(pullRequest.repositoryUrl, 'fetch', error, githubToken);
+  }
+  await runCommand(['git', 'checkout', '--detach', reviewRef], { cwd: workspacePath });
+  const checkedOutHead = await runCommandCapture(['git', 'rev-parse', 'HEAD'], { cwd: workspacePath });
+  if (checkedOutHead !== pullRequest.headSha) {
+    throw new Error(`GITHUB_PR_HEAD_MISMATCH:expected=${pullRequest.headSha}:actual=${checkedOutHead}`);
+  }
+
+  input.metadata = {
+    ...(input.metadata ?? {}),
+    linkedPullRequest: pullRequest,
+  };
+  appendTrace(trace, 'workspace.review_ready', `Checked out ${pullRequest.owner}/${pullRequest.repo}#${pullRequest.number} at ${pullRequest.headSha}`);
+  return {
+    workspacePath,
+    repoUrl: pullRequest.repositoryUrl,
+    branchName: pullRequest.headRef || `pull/${pullRequest.number}/head`,
+    commitSha: pullRequest.headSha,
+    baseBranch: pullRequest.baseRef,
+    baseCommitSha: pullRequest.baseSha,
+  };
+}
+
 async function prepareExecutionWorkspace(
   input: CodexRuntimeInput,
   trace: CodexRuntimeResult['trace'],
   githubToken: string | null,
 ) : Promise<PreparedExecutionWorkspace> {
+  const directPullRequest = isReviewerExecution(input) ? extractGitHubPullRequestRef(input) : null;
+  if (directPullRequest && !shouldHydrateExternalWorkspace(input.metadata)) {
+    return await preparePullRequestReviewWorkspace(input, directPullRequest, trace, githubToken);
+  }
+
   if (!shouldHydrateExternalWorkspace(input.metadata)) {
     return {
       workspacePath: config.codexWorkspaceRoot,

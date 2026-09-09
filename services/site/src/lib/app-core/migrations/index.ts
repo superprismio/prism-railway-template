@@ -46,6 +46,7 @@ import { codegenAgentMigration } from './046_codegen_agent';
 import { verificationAgentMigration } from './047_verification_agent';
 import { accountabilityDomainsMigration } from './048_accountability_domains';
 import { agentProfileModelTierMigration } from './049_agent_profile_model_tier';
+import { codeReviewConsoleMigration } from './050_code_review_console';
 
 export interface Migration {
   name: string;
@@ -101,4 +102,5 @@ export const migrations: Migration[] = [
   verificationAgentMigration,
   accountabilityDomainsMigration,
   agentProfileModelTierMigration,
+  codeReviewConsoleMigration,
 ];

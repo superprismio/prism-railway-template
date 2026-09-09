@@ -6,6 +6,7 @@ import { agentProfilesMigration } from './migrations/040_agent_profiles';
 import { agentProfileAvatarMigration } from './migrations/041_agent_profile_avatar';
 import { agentProfileAccentColorMigration } from './migrations/042_agent_profile_accent_color';
 import { agentProfileModelTierMigration } from './migrations/049_agent_profile_model_tier';
+import { codeReviewConsoleMigration } from './migrations/050_code_review_console';
 import { activeAgentExecutorFallbackMigration } from './migrations/043_active_agent_executor_fallback';
 import { codeReviewAgentMigration } from './migrations/044_code_review_agent';
 import { codeReviewAgentV2Migration } from './migrations/045_code_review_agent_v2';
@@ -65,6 +66,7 @@ function testDb() {
   db.exec(agentProfileAvatarMigration.sql);
   db.exec(agentProfileAccentColorMigration.sql);
   db.exec(agentProfileModelTierMigration.sql);
+  db.exec(codeReviewConsoleMigration.sql);
   return db;
 }
 
@@ -147,6 +149,12 @@ test('seeds a protected Code Review Agent and assigns it to the review workflow 
     (getAgentProfileVersion('agent-profile-code-review', 2, db)?.authority.allowedMutations as string[]).includes('github.pr_review_comment'),
     true,
   );
+
+  db.exec(codeReviewConsoleMigration.sql);
+  const consoleReviewer = getAgentProfile('code-review-agent', db);
+  assert.equal(consoleReviewer?.authority.consoleAccessMode, 'full');
+  assert.equal(consoleReviewer?.memoryScope.scope, 'review-target-only');
+  assert.match(String(consoleReviewer?.persona.instructions), /explicit GitHub pull-request URL/);
 
   const upgradedWorkflowRow = db.prepare('SELECT version, definition_json FROM workflows WHERE key = ?')
     .get('change-request-default') as { version: number; definition_json: string };

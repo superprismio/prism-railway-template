@@ -1,6 +1,26 @@
 import type { AgentProfileRecord } from "@/lib/app-core"
 import { normalizeModelTier, type ModelTier } from "@/lib/model-tier"
 
+export type AgentProfileExecutionMode = "worker" | "orchestrator" | "verifier" | "reviewer" | "judge" | "repair"
+
+export function consoleExecutionModeForAgentProfile(
+  profile: AgentProfileRecord | null,
+  requestedMode: string | null | undefined,
+): AgentProfileExecutionMode {
+  if (profile?.systemKey === "admin-agent") return "orchestrator"
+  if (profile?.systemKey === "code-review-agent") return "reviewer"
+  if (profile?.systemKey === "verification-agent") return "verifier"
+
+  const normalized = requestedMode?.trim()
+  return normalized === "orchestrator"
+    || normalized === "verifier"
+    || normalized === "reviewer"
+    || normalized === "judge"
+    || normalized === "repair"
+    ? normalized
+    : "worker"
+}
+
 function stringList(value: unknown) {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)

@@ -1,6 +1,8 @@
 # GitHub Review Delivery
 
-Use this procedure only for a linked pull request when the job has GitHub write access.
+Use this procedure for a linked pull request or an explicit pull-request URL supplied by an Admin Console operator when the job has GitHub write access.
+
+The skill bundle includes `scripts/github-review.mjs` for authenticated inspection and idempotent comment delivery. Prefer it over hand-building API requests. It reads `GH_TOKEN`, `GITHUB_TOKEN`, or `TARGET_REPO_GITHUB_TOKEN` from the environment and never prints the credential. Run `node scripts/github-review.mjs help` from this skill's resolved directory for its exact commands.
 
 ## Invariants
 
@@ -12,12 +14,13 @@ Use this procedure only for a linked pull request when the job has GitHub write 
 
 ## Summary comment
 
-Maintain exactly one top-level pull-request conversation comment containing the concise result, reviewed head SHA, checks, prioritized findings, resolved findings, and Prism request reference.
+Maintain exactly one top-level pull-request conversation comment containing the concise result, reviewed head SHA, checks, prioritized findings, resolved findings, and Prism request reference when one exists.
 
-Use this marker:
+Preserve the existing request marker when linked to a Prism request; use the console marker for a standalone Admin Console review. The helper adds the appropriate marker:
 
 ```text
 <!-- prism-code-review request:<request-number> -->
+<!-- prism-code-review console -->
 ```
 
 If a comment by the authenticated Prism identity already contains the marker, update it. Otherwise create it.
@@ -30,6 +33,7 @@ Use one stable marker per finding:
 
 ```text
 <!-- prism-code-review request:<request-number> finding:<stable-finding-id> -->
+<!-- prism-code-review console finding:<stable-finding-id> -->
 ```
 
 Before creating a comment, search existing pull-request review comments for that marker:

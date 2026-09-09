@@ -2,9 +2,28 @@ import assert from "node:assert/strict"
 import test from "node:test"
 
 import {
+  consoleExecutionModeForAgentProfile,
   filterGatewayCredentialKeysForProfile,
   resolveAgentProfileRuntimeScope,
 } from "./agent-profile-runtime-scope"
+
+function systemProfile(systemKey: string | null) {
+  return {
+    id: `profile-${systemKey ?? "custom"}`, key: systemKey ?? "custom", name: systemKey ?? "Custom", description: null, avatarUrl: null,
+    accentColor: "#36E7FF", status: "active" as const, systemKey,
+    owner: { type: "workspace" as const, userId: null, agentProfileId: null }, stewards: [], persona: {},
+    runtimeProfileKey: null, modelTier: null, skills: [], memoryScope: {}, authority: {}, contextPolicy: {}, version: 1,
+    createdByUserId: null, bindings: [], createdAt: "", updatedAt: "",
+  }
+}
+
+test("built-in console profiles use their trusted execution modes", () => {
+  assert.equal(consoleExecutionModeForAgentProfile(systemProfile("admin-agent"), "worker"), "orchestrator")
+  assert.equal(consoleExecutionModeForAgentProfile(systemProfile("code-review-agent"), "worker"), "reviewer")
+  assert.equal(consoleExecutionModeForAgentProfile(systemProfile("verification-agent"), "worker"), "verifier")
+  assert.equal(consoleExecutionModeForAgentProfile(systemProfile("codegen-agent"), "worker"), "worker")
+  assert.equal(consoleExecutionModeForAgentProfile(systemProfile(null), "repair"), "repair")
+})
 
 test("assigned Agent Profile controls runtime identity, runtime, and skills", () => {
   const scope = resolveAgentProfileRuntimeScope({

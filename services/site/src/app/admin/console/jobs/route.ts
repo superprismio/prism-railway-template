@@ -16,6 +16,7 @@ import {
 } from "@/lib/app-core"
 import { requireLocalAdminAccess } from "@/lib/local-admin-api"
 import { handleResponsePost } from "@/lib/response-route-handler"
+import { consoleExecutionModeForAgentProfile } from "@/lib/agent-profile-runtime-scope"
 
 type ResponseInputMessage = {
   role?: unknown
@@ -143,8 +144,8 @@ export async function POST(request: Request) {
   }
 
   const body = payload && typeof payload === "object" ? payload as Record<string, unknown> : {}
-  const requestedExecutionMode = parseString(body.execution_mode ?? body.executionMode) || "worker"
-  if (!agentExecutionModes.includes(requestedExecutionMode as (typeof agentExecutionModes)[number])) {
+  const rawExecutionMode = parseString(body.execution_mode ?? body.executionMode) || "worker"
+  if (!agentExecutionModes.includes(rawExecutionMode as (typeof agentExecutionModes)[number])) {
     return NextResponse.json({ ok: false, error: "Invalid Agent execution mode" }, { status: 400 })
   }
   const requestedAgentProfileKey = parseString(body.agent_profile_key ?? body.agentProfileKey)
@@ -152,6 +153,7 @@ export async function POST(request: Request) {
   if (requestedAgentProfileKey && (!requestedAgentProfile || requestedAgentProfile.status !== "active")) {
     return NextResponse.json({ ok: false, error: "Agent Profile is unavailable" }, { status: 400 })
   }
+  const requestedExecutionMode = consoleExecutionModeForAgentProfile(requestedAgentProfile, rawExecutionMode)
   const inputMessages = parseInputMessages(body.input)
   const latestUserMessage = [...inputMessages].reverse().find((entry) => entry.role === "user") ?? null
   if (!latestUserMessage) {
