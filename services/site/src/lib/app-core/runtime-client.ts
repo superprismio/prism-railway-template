@@ -112,6 +112,8 @@ type RuntimeCapabilitiesPayload = {
 };
 
 function defaultTimeoutMs() {
+  const maximum = Number.parseInt(process.env.PRISM_RUNTIME_MAX_DURATION_MS ?? '', 10);
+  if (Number.isFinite(maximum) && maximum > 0) return maximum + 60_000;
   const milliseconds = Number.parseInt(process.env.CODEX_RUNTIME_TIMEOUT_MS ?? '', 10);
   if (Number.isFinite(milliseconds) && milliseconds > 0) return milliseconds;
   const seconds = Number.parseInt(process.env.CODEX_RUNTIME_REQUEST_TIMEOUT_SECONDS ?? '', 10);
@@ -320,9 +322,21 @@ function legacyResponse(profile: RuntimeProfileRecord, payload: LegacyResponse |
 }
 
 async function cancelNormalizedJob(profile: RuntimeProfileRecord, jobId: string) {
-  await fetch(`${profile.baseUrl}/v1/runtime/jobs/${encodeURIComponent(jobId)}/cancel`, {
+  await fetchWithTimeout(`${profile.baseUrl}/v1/runtime/jobs/${encodeURIComponent(jobId)}/cancel`, {
     method: 'POST',
-  }).catch(() => null);
+  }, 5_000).catch(() => null);
+}
+
+// A timed-out poll is not proof that the remote job failed. Re-read once with
+// an independent, bounded budget before cancellation; never submit a new job.
+async function reconcileNormalizedPollFailure(profile: RuntimeProfileRecord, jobId: string, error: unknown) {
+  try {
+    const response = await fetchWithTimeout(`${profile.baseUrl}/v1/runtime/jobs/${encodeURIComponent(jobId)}`, { cache: 'no-store' }, 10_000);
+    const payload = await response.json() as NormalizedJobPayload;
+    if (response.ok && payload.job?.status === 'succeeded') return normalizedResponse(profile, payload.job);
+  } catch { /* Preserve the original failure if reconciliation is unavailable. */ }
+  await cancelNormalizedJob(profile, jobId);
+  throw error;
 }
 
 async function requestNormalized(
@@ -384,16 +398,23 @@ async function requestNormalized(
 
   for (;;) {
     if (Date.now() - startedAt >= timeoutMs) {
-      await cancelNormalizedJob(profile, jobId);
-      throw new Error(`RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`);
+      return reconcileNormalizedPollFailure(profile, jobId, new Error(`RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`));
     }
     await new Promise((resolve) => setTimeout(resolve, 2_000));
-    const poll = await fetchWithTransportRetries(
-      `${jobsUrl}/${encodeURIComponent(jobId)}`,
-      { cache: 'no-store' },
-      Math.min(30_000, Math.max(1, timeoutMs - (Date.now() - startedAt))),
-      { attempts: 3, operation: 'poll-job' },
-    );
+    let poll: Response;
+    try {
+      poll = await fetchWithTransportRetries(
+        `${jobsUrl}/${encodeURIComponent(jobId)}`,
+        { cache: 'no-store' },
+        Math.min(30_000, Math.max(1, timeoutMs - (Date.now() - startedAt))),
+        { attempts: 3, operation: 'poll-job' },
+      );
+    } catch (error) {
+      // Keep observing the same job through a temporary network outage. A
+      // failed HTTP poll must not become a failed execution before its budget.
+      if (Date.now() - startedAt < timeoutMs) continue;
+      return reconcileNormalizedPollFailure(profile, jobId, new Error(`RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`, { cause: error }));
+    }
     const payload = await poll.json().catch(() => null) as NormalizedJobPayload | null;
     if (!poll.ok) throw new Error(`RUNTIME_JOB_POLL_FAILED:${poll.status}:${payload?.error?.code || 'unknown'}`);
     const job = payload?.job;

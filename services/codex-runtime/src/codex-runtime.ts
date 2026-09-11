@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
+import { RunBudget, isExecutionProgress, resolveRunBudget } from './run-budget.js';
 import { resolveCodexModelPolicy, type ModelTier, type ReasoningEffort } from './model-tier.js';
 import { createNativePrismSkillHome, loadRelevantPrismSkills } from './prism-skills.js';
 import { gatewayClient } from './runtime-gateway.js';
@@ -801,19 +802,22 @@ function buildChangeRequestCommitMessage(input: CodexRuntimeInput) {
   return `${requestNumber}: ${title}`;
 }
 
-async function finalizeGitWorkspace(
+export async function finalizeGitWorkspace(
   input: CodexRuntimeInput,
   preparedWorkspace: PreparedExecutionWorkspace,
   trace: CodexRuntimeResult['trace'],
   githubToken: string | null,
 ) {
   const workspacePath = preparedWorkspace.workspacePath;
-  if (isReviewerExecution(input)) {
+  const profile = input.metadata?.agentProfile;
+  const verification = Boolean(profile && typeof profile === 'object' && !Array.isArray(profile)
+    && (profile as Record<string, unknown>).executionMode === 'verifier');
+  if (isReviewerExecution(input) || verification) {
     if (await gitHasTrackedChanges(workspacePath)) {
-      appendTrace(trace, 'git.review_modified', 'Reviewer modified tracked repository files; refusing to commit or push');
-      throw new Error('REVIEWER_TRACKED_WORKSPACE_MODIFIED');
+      appendTrace(trace, verification ? 'git.verify_modified' : 'git.review_modified', 'Independent evaluator modified tracked repository files; refusing to commit or push');
+      throw new Error(verification ? 'VERIFIER_TRACKED_WORKSPACE_MODIFIED' : 'REVIEWER_TRACKED_WORKSPACE_MODIFIED');
     }
-    appendTrace(trace, 'git.review_readonly', 'Reviewer left tracked files unchanged; skipped commit and push');
+    appendTrace(trace, verification ? 'git.verify_readonly' : 'git.review_readonly', 'Independent evaluator left tracked files unchanged; skipped commit and push');
     return await captureGitState(workspacePath, preparedWorkspace.baseBranch || 'main').catch(() => preparedWorkspace);
   }
 
@@ -1378,17 +1382,31 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       reject(error);
     };
 
-    const timeout = setTimeout(() => {
+    const workflowConfig = recordValue(recordValue(input.metadata?.workflow)?.agentConfig);
+    const limits = resolveRunBudget(workflowConfig?.executionBudget, {
+      idleMs: config.codexRuntimeIdleTimeoutMs, maxMs: config.codexRuntimeMaxDurationMs,
+    });
+    const budget = new RunBudget(Date.now(), limits.idleMs, limits.maxMs);
+    recordTrace('run.budget', `Idle timeout ${budget.idleMs}ms; maximum duration ${budget.maxMs}ms`);
+    const timeout = setInterval(() => {
       if (settled) return;
+      const reason = budget.expired(Date.now());
+      if (!reason) return;
       settled = true;
+      clearInterval(timeout);
+      input.signal?.removeEventListener('abort', cancelRun);
       child.kill('SIGTERM');
       child.stdin.destroy();
-      const error = new Error('CODEX_RUNTIME_TIMEOUT') as CodexRuntimeError;
+      const forceKill = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }, 5_000);
+      forceKill.unref();
+      const error = new Error(reason === 'idle' ? 'CODEX_RUNTIME_IDLE_TIMEOUT' : 'CODEX_RUNTIME_BUDGET_EXCEEDED') as CodexRuntimeError;
       error.codexThreadId = threadId;
       error.trace = trace;
-      recordTrace('run.timeout', 'Codex runtime timed out before completion');
+      recordTrace('run.timeout', `Codex runtime ${reason === 'idle' ? 'stopped making progress' : 'exhausted its maximum duration'} before completion`);
       reject(error);
-    }, config.codexRuntimeTimeoutMs);
+    }, 1_000);
 
     if (input.signal?.aborted) {
       cancelRun();
@@ -1418,6 +1436,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       for (const line of lines) {
         const event = parseJsonEvent(line.trim());
         if (!event) continue;
+        if (isExecutionProgress(event)) budget.progress(Date.now());
         const subagentTrace = codexSubagentTraceEvent(event);
         if (subagentTrace) {
           recordTrace(subagentTrace.kind, subagentTrace.message);

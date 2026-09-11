@@ -5,6 +5,7 @@ import path from 'node:path';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { config } from './config.js';
+import { JobReceipts } from './job-receipts.js';
 import { generateCodexCliReply } from './codex-runtime.js';
 import { listPrismSkills } from './prism-skills.js';
 import { gatewayClient } from './runtime-gateway.js';
@@ -13,6 +14,8 @@ import { modelTier, modelTiers, type ModelTier, type ReasoningEffort } from './m
 const startedAt = new Date();
 const app = express();
 const responseJobs = new Map<string, RuntimeResponseJob>();
+const jobReceipts = new JobReceipts(process.env.PRISM_RUNTIME_RECEIPTS_DIR?.trim()
+  || path.join(config.targetWorkspaceRoot, '.runtime-receipts'));
 const responseJobAbortControllers = new Map<string, AbortController>();
 const responseJobIdempotencyKeys = new Map<string, string>();
 const runtimeContractVersion = '2026-07-10' as const;
@@ -398,6 +401,14 @@ async function runResponseJob(jobId: string) {
     job.status = 'failed';
   } finally {
     job.finishedAt ??= new Date().toISOString();
+    try {
+      jobReceipts.save(normalizedJob(job));
+    } catch (error) {
+      // Fail closed: do not advertise durable success when the receipt could not be saved.
+      job.status = 'failed';
+      job.error = 'RUNTIME_RESULT_PERSIST_FAILED';
+      console.error('[codex-runtime] terminal receipt persistence failed', error instanceof Error ? error.message : 'unknown');
+    }
     pruneResponseJobs();
   }
 }
@@ -470,6 +481,8 @@ app.get('/v1/runtime/capabilities', (_req, res) => {
       'gateway-credentials',
       'workspace-assignment',
       'trace-events',
+      'progress-aware-timeouts',
+      'durable-terminal-results',
       'cancellation',
       'idempotent-job-creation',
       'model-tier-routing',
@@ -631,6 +644,11 @@ app.post('/v1/runtime/jobs', (req, res) => {
 app.get('/v1/runtime/jobs/:jobId', (req, res) => {
   const job = responseJobs.get(req.params.jobId);
   if (!job) {
+    const receipt = jobReceipts.read(req.params.jobId);
+    if (receipt) {
+      res.json({ ok: receipt.status !== 'failed', job: receipt });
+      return;
+    }
     res.status(404).json({
       ok: false,
       error: {

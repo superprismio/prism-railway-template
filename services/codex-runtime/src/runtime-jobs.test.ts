@@ -64,7 +64,7 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  server = spawn(process.execPath, [path.resolve(process.cwd(), 'dist/index.js')], {
+  const startServer = () => spawn(process.execPath, [path.resolve(process.cwd(), 'dist/index.js')], {
     env: {
       ...process.env,
       PORT: String(port),
@@ -88,6 +88,7 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
     },
     stdio: ['ignore', 'ignore', 'inherit'],
   });
+  server = startServer();
   await waitForServer(`${baseUrl}/health`);
 
   const manifest = await fetch(`${baseUrl}/v1/runtime/manifest`).then((response) => response.json()) as {
@@ -275,4 +276,29 @@ console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_messag
   }
   assert.equal(legacyPayload?.job.status, 'succeeded');
   assert.equal(legacyPayload?.response?.responseText, 'NORMALIZED_OK');
+
+  for (const [executionBudget, expected] of [
+    [{ idleTimeoutMs: 300, maxDurationMs: 5000 }, 'IDLE_TIMEOUT'],
+    [{ idleTimeoutMs: 5000, maxDurationMs: 300 }, 'BUDGET_EXCEEDED'],
+  ] as const) {
+    const timed = await fetch(`${baseUrl}/v1/runtime/jobs`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ contractVersion, prompt: 'WAIT_FOR_CANCEL', sessionId: 'budget-test',
+        metadata: { workflow: { agentConfig: { executionBudget } } } }),
+    }).then(r => r.json()) as { jobId: string };
+    const result = await pollJob(baseUrl, timed.jobId) as { job: { status: string; error: { message: string } } };
+    assert.equal(result.job.status, 'failed');
+    assert.match(result.job.error.message, new RegExp(expected));
+  }
+
+  const stopped = new Promise<void>(resolve => server!.once('exit', () => resolve()));
+  server.kill('SIGTERM');
+  await stopped;
+  server = startServer();
+  await waitForServer(`${baseUrl}/health`);
+  const recovered = await pollJob(baseUrl, accepted.jobId) as typeof completed;
+  assert.equal(recovered.job.status, 'succeeded');
+  assert.equal(recovered.job.result.responseText, 'NORMALIZED_OK');
+  const recoveredCancel = await pollJob(baseUrl, waiting.jobId);
+  assert.equal(recoveredCancel.job.status, 'canceled');
 });

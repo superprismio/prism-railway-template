@@ -4,6 +4,37 @@ import test from 'node:test';
 import { requestRuntimeResponseWithProfile } from './runtime-client';
 import type { RuntimeProfileRecord } from './runtime-profiles';
 
+for (const completes of [true, false]) {
+  test(`deadline poll reconciliation ${completes ? 'accepts late success' : 'cancels unfinished job'}`, async (t) => {
+    let posts = 0, polls = 0, cancels = 0;
+    const server = createServer((req, res) => {
+      req.resume();
+      if (req.method === 'POST' && req.url === '/v1/runtime/jobs') {
+        posts++;
+        res.writeHead(202, { 'content-type': 'application/json' }).end(JSON.stringify({ jobId: 'late-job' }));
+      } else if (req.url?.endsWith('/cancel')) {
+        cancels++; res.writeHead(200).end('{}');
+      } else if (req.method === 'GET') {
+        polls++;
+        if (polls === 1) return; // abort at the polling deadline
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+          job: { id: 'late-job', status: completes ? 'succeeded' : 'running', result: completes ? { responseText: 'LATE_SUCCESS' } : null },
+        }));
+      } else res.writeHead(404).end();
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    t.after(() => { server.closeAllConnections(); server.close(); });
+    const addr = server.address(); assert.ok(addr && typeof addr === 'object');
+    const profile: RuntimeProfileRecord = { key: 'late', name: 'Late', adapter: 'codex-cli', baseUrl: `http://127.0.0.1:${addr.port}`, enabled: true, isDefault: true, contractVersion: '2026-07-10', features: [], createdAt: '', updatedAt: '' };
+    const response = requestRuntimeResponseWithProfile(profile, { prompt: 'test', sessionId: 'deadline', timeoutMs: 2200 });
+    if (completes) assert.equal((await response).responseText, 'LATE_SUCCESS');
+    else await assert.rejects(response, /RUNTIME_REQUEST_TIMEOUT:2200/);
+    assert.equal(posts, 1);
+    assert.equal(polls, 2);
+    assert.equal(cancels, completes ? 0 : 1);
+  });
+}
+
 test('runtime client uses the normalized contract without adapter-specific parsing', async (t) => {
   const submitted: { body?: Record<string, unknown> } = {};
   const progress: Array<{ runtimeJobId: string; runtimeKey: string; status: string }> = [];
@@ -143,7 +174,7 @@ test('restricted authority fails closed when live capabilities omit support', as
   assert.equal(jobPosts, 0);
 });
 
-test('runtime client safely retries transport failures for bundled adapters', async (t) => {
+test('runtime client keeps observing the same job after exhausting one poll retry batch', async (t) => {
   let createAttempts = 0;
   let pollAttempts = 0;
   const idempotencyKeys: string[] = [];
@@ -164,7 +195,7 @@ test('runtime client safely retries transport failures for bundled adapters', as
     }
     if (request.method === 'GET' && request.url === '/v1/runtime/jobs/retry-job') {
       pollAttempts += 1;
-      if (pollAttempts === 1) {
+      if (pollAttempts <= 3) {
         request.socket.destroy();
         return;
       }
@@ -206,7 +237,7 @@ test('runtime client safely retries transport failures for bundled adapters', as
 
   assert.equal(result.responseText, 'RETRY_OK');
   assert.equal(createAttempts, 2);
-  assert.equal(pollAttempts, 2);
+  assert.equal(pollAttempts, 4);
   assert.equal(idempotencyKeys.length, 2);
   assert.ok(idempotencyKeys[0]);
   assert.equal(idempotencyKeys[1], idempotencyKeys[0]);

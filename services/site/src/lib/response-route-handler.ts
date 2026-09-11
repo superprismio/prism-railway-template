@@ -276,11 +276,11 @@ function workflowOutcomeInstruction() {
 }
 
 function runtimeRequestTimeoutMs() {
-  const parsed = Number.parseInt(process.env.CODEX_RUNTIME_TIMEOUT_MS ?? "", 10)
+  const parsed = Number.parseInt(process.env.PRISM_RUNTIME_MAX_DURATION_MS ?? "", 10)
   if (Number.isFinite(parsed) && parsed > 0) {
     return Math.max(parsed + 60_000, 60_000)
   }
-  return 900_000
+  return 3_660_000
 }
 
 function readPositiveInteger(value: unknown, fallback: number) {
@@ -480,6 +480,8 @@ function failedWorkflowAgentRunResult(input: {
   sessionId: string
 }) {
   return {
+    // Keep the provider job reference and last progress for audited recovery.
+    ...input.latestAgentRun?.result,
     responseText: null,
     workflowKey: input.workflowKey,
     workflowRunId: input.workflowRunId,
@@ -1008,6 +1010,14 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           const agentRun = getAgentRun(agentRunId)
           if (agentRun && !isStoppedAgentRunStatus(agentRun.status)) {
             updateAgentRun(agentRunId, {
+              // Lease liveness is separate from execution progress. A healthy
+              // poll keeps ownership alive, but cannot exceed the hard budget.
+              ...(['queued', 'running'].includes(progress.status) ? {
+                leaseExpiresAt: new Date(Math.min(
+                  Date.now() + workflowAgentRunLeaseSeconds() * 1000,
+                  new Date(agentRun.startedAt ?? agentRun.createdAt).getTime() + runtimeRequestTimeoutMs() + 60_000,
+                )).toISOString(),
+              } : {}),
               result: {
                 ...agentRun.result,
                 runtimeJobId: progress.runtimeJobId,
@@ -1748,14 +1758,14 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           const continuationMessage =
             continuationError instanceof Error ? continuationError.message : "CODEX_RUNTIME_REQUEST_FAILED"
           const runtimeContinuationError = continuationError as RuntimeError
-          const failureTrace = Array.isArray(runtimeContinuationError.trace) ? runtimeContinuationError.trace : []
-          const failureSummary = formatTraceSummary(failureTrace)
+          const failureTrace = Array.isArray(runtimeContinuationError.trace) ? runtimeContinuationError.trace : getAgentRun(continuationAgentRunId ?? "")?.trace ?? []
+          const failureSummary = formatTraceSummary(failureTrace as RuntimeTraceEntry[])
           if (continuationAgentRunId) {
             updateAgentRun(continuationAgentRunId, {
               status: "failed",
               result: failedWorkflowAgentRunResult({
                 runtimeError: runtimeContinuationError,
-                latestAgentRun: listAgentRuns({ requestId: activeLinkedChangeRequestId, limit: 1 })[0] ?? null,
+                latestAgentRun: getAgentRun(continuationAgentRunId),
                 workflowKey: linkedChangeRequest.workflowKey,
                 workflowRunId: latestRun.id,
                 workflowStepKey: continuationStepKey,
@@ -1835,8 +1845,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   } catch (error) {
     const message = error instanceof Error ? error.message : "CODEX_RUNTIME_REQUEST_FAILED"
     const runtimeError = error as RuntimeError
-    const failureTrace = Array.isArray(runtimeError.trace) ? runtimeError.trace : []
-    const failureSummary = formatTraceSummary(failureTrace)
+    const failureTrace = Array.isArray(runtimeError.trace) ? runtimeError.trace : getAgentRun(activeAgentRunId ?? "")?.trace ?? []
+    const failureSummary = formatTraceSummary(failureTrace as RuntimeTraceEntry[])
     const activeAgentRunWasStopped =
       Boolean(activeAgentRunId) &&
       isStoppedAgentRunStatus(getAgentRun(activeAgentRunId!)?.status)
@@ -1850,7 +1860,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           status: "failed",
           result: failedWorkflowAgentRunResult({
             runtimeError,
-            latestAgentRun: linkedLatestAgentRun,
+            latestAgentRun: getAgentRun(activeAgentRunId),
             workflowKey: linkedChangeRequest.workflowKey,
             workflowRunId: linkedWorkflowRun.id,
             workflowStepKey: runnableStepKey,

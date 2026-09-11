@@ -56,6 +56,18 @@ as debt with an exact definition and step/task key.
 
 Doctor does not infer downstream RBAC or duplicate provider policy.
 
+Doctor repair tickets default to the targetless `prism-maintenance` workflow,
+not `change-request-default`. They are created without auto-start; report
+generation alone does not authorize configuration repairs. An instance may
+override `PRISM_DOCTOR_REPAIR_WORKFLOW_KEY`. Existing tickets are reused only
+when their workflow matches that configured key. Preserve old tickets and
+reports when handing off legacy code-shaped repair requests to maintenance.
+
+Configuration drift, missing skills, and credential-entry needs are not by
+themselves code defects. Create a linked repository change request only for a
+verified code defect with a known target and explicit operator authorization.
+Never manufacture a target or ask an agent to collect credentials through chat.
+
 When summarizing a report:
 
 1. Lead with failed workflow checks.

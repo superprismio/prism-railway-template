@@ -69,6 +69,8 @@ export const config = {
   codexRuntimeEnabled: readBooleanEnv('CODEX_RUNTIME_ENABLED', true),
   codexImageGenerationEnabled: readBooleanEnv('CODEX_IMAGE_GENERATION_ENABLED', true),
   codexRuntimeTimeoutMs: readNumberEnv('CODEX_RUNTIME_TIMEOUT_MS', 600_000),
+  codexRuntimeIdleTimeoutMs: readNumberEnv('PRISM_RUNTIME_IDLE_TIMEOUT_MS', readNumberEnv('CODEX_RUNTIME_TIMEOUT_MS', 1_200_000)),
+  codexRuntimeMaxDurationMs: readNumberEnv('PRISM_RUNTIME_MAX_DURATION_MS', 3_600_000),
   codexRuntimePromptWarnBytes: readOptionalNumberEnv('CODEX_RUNTIME_PROMPT_WARN_BYTES'),
   codexRuntimePromptMaxBytes: readOptionalNumberEnv('CODEX_RUNTIME_PROMPT_MAX_BYTES'),
   codexWorkspaceRoot: process.env.CODEX_WORKSPACE_ROOT?.trim() || workspaceRoot,

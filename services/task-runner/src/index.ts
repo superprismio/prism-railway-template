@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from "express";
+import { findOpenWorkflowRequests } from './workflow-single-flight.js';
 import { CronExpressionParser } from "cron-parser";
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
@@ -8,6 +9,7 @@ import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { leaseGatewayCredentials } from "./gateway-lease.js";
 import { legacyGatewayWorkflowFindings } from "./prism-doctor-legacy-gateway.js";
+import { doctorRepairWorkflowKey, matchingDoctorRepairRequest } from "./prism-doctor-repair.js";
 import { taskLifecycleFindings } from "./prism-doctor-task-lifecycle.js";
 import { workflowContextFindings } from "./prism-doctor-workflow-context.js";
 import {
@@ -1795,10 +1797,6 @@ function doctorRepairRequestTitle() {
   return "Repair Prism Doctor findings";
 }
 
-function doctorRepairWorkflowKey() {
-  return (process.env.PRISM_DOCTOR_REPAIR_WORKFLOW_KEY ?? "change-request-default").trim() || "change-request-default";
-}
-
 function doctorReportArtifactStamp(generatedAt: string) {
   return generatedAt.replace(/[^0-9A-Za-z]+/g, "-").replace(/^-|-$/g, "");
 }
@@ -1964,7 +1962,7 @@ async function ensureDoctorRepairRequest(report: {
   const existingRequests = Array.isArray(existingPayload.changeRequests)
     ? existingPayload.changeRequests.filter(isRecord)
     : [];
-  const existing = existingRequests.find((request) => request.title === doctorRepairRequestTitle()) ?? null;
+  const existing = matchingDoctorRepairRequest(existingRequests, doctorRepairRequestTitle(), doctorRepairWorkflowKey());
   const existingId = typeof existing?.id === "string" ? existing.id : null;
   const request = existingId
     ? doctorRequestRecord((await appApiRequest(`/agent/change-board/requests/${encodeURIComponent(existingId)}`, {
@@ -2224,6 +2222,7 @@ async function appApiPost(path: string, body: Record<string, unknown>, timeoutMs
   };
 }
 
+const workflowLaunchLocks = new Set<string>();
 function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
   const workflowKey = stringFromConfig(siteTask.inputConfig, "workflowKey");
   const requestConfig = recordFromConfig(siteTask.inputConfig, "request");
@@ -2263,6 +2262,21 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
     enabled: siteTask.enabled,
     cron,
     run: async () => {
+      const singleFlight = boolFromConfig(siteTask.inputConfig, 'singleFlight', false);
+      const singleFlightKeys = Array.from(new Set([workflowKey, ...(
+        Array.isArray(siteTask.inputConfig.singleFlightWorkflowKeys)
+          ? siteTask.inputConfig.singleFlightWorkflowKeys.filter((key): key is string => typeof key === 'string') : []
+      )])).sort();
+      const lockKey = singleFlightKeys.join(',');
+      const skip = (reason: string, requestNumbers: unknown[] = []) => ({ ok: true, status: 200, url: 'workflow-single-flight', body: JSON.stringify({ skipped: true, reason, requestNumbers }) });
+      if (singleFlight && workflowLaunchLocks.has(lockKey)) return skip('launch-in-progress');
+      if (singleFlight) workflowLaunchLocks.add(lockKey);
+      try {
+      if (singleFlight) {
+        const open = await appApiRequest('/agent/change-board/requests?openOnly=true&limit=500', { method: 'GET' });
+        const matches = findOpenWorkflowRequests(open, singleFlightKeys);
+        if (matches.length) return skip('existing-open-workflow', matches.map(row => row.requestNumber));
+      }
       const requestPayload: Record<string, unknown> = {
         title,
         description,
@@ -2344,6 +2358,9 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
           })),
         }),
       };
+      } finally {
+        if (singleFlight) workflowLaunchLocks.delete(lockKey);
+      }
     },
     outputConfig: siteTask.outputConfig,
   };

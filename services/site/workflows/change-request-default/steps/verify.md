@@ -6,6 +6,10 @@ Use the `prism-code-verification` skill from fresh step context. Read the reques
 
 Required behavior:
 
+- read request context with `GET /agent/change-board/requests/by-number/<request-number>/review` and artifact bodies with the corresponding `/artifacts` route; use the Site base URL and `x-service-token`, not Gateway or browser-admin routes
+- verify the actual repository head and linked PR metadata; public repository/provider reads do not require a GitHub credential, and absence of a token alone is not a blocker
+- use assigned authenticated read capabilities only when the target requires them; never obtain broader credentials or send the Site service token to GitHub or Gateway
+
 - inspect the complete relevant diff and select checks proportionate to the changed paths
 - run the repository's relevant lint, type, test, build, and runtime checks
 - for user-facing changes, execute representative browser journeys and inspect console and network failures
