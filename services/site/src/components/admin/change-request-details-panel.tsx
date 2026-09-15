@@ -1322,7 +1322,6 @@ export function RequestDetailsPanel({
         linked_change_request_id: request.id,
         linked_target_environment_id: request.targetEnvironmentId,
         workflow_action: workflowAction ?? null,
-        requested_skills: ["change-request-ops", "target-deploy-ops"],
       }),
     });
 

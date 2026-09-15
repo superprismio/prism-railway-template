@@ -26,13 +26,47 @@ Current workflow checks:
 - loop steps have `loop.target`, `next`, and positive `loop.maxIterations`;
 - referenced step keys exist.
 - referenced skills exist;
+- shared workflow skills are reviewed when they expand multiple agent steps;
+- adjacent agent steps with different effective skill sets have an explicit
+  artifact handoff and either `contextPolicy.continuation: step` with
+  `handoff: artifacts`, or a gate/checkpoint justified by a real decision;
 - skill-declared Gateway credentials exist and contain secret values;
 - direct workflow and task Gateway credentials exist and contain secret values.
 - workflow manifests do not declare legacy Gateway toolset or capability fields;
 - inline and file-backed workflow instructions do not require legacy admin
   toolset keys or `PRISM_RUNTIME_TOOLSET_*` variables.
 
+Current accountability checks come from `GET /agent/accountability/audit`:
+
+- every Agent Profile, workflow, and task has exactly one active domain;
+- each domain identifies its stewards;
+- every workflow agent step resolves to an active profile;
+- resolution source is recorded as step explicit, workflow default, task
+  explicit, hook workflow default, Admin fallback, historical unknown, or not
+  applicable;
+- Admin fallback is reported separately from an explicit Admin assignment;
+- intentional cross-domain execution is visible;
+- recent run snapshots include definition version/domain and executor
+  profile-version/domain when applicable.
+
+Do not treat cross-domain execution as a failure by itself. Fail a check when the
+executor cannot resolve, a definition is unassigned, a referenced domain is
+archived, or a prospective run omits required provenance. Report Admin fallback
+as debt with an exact definition and step/task key.
+
 Doctor does not infer downstream RBAC or duplicate provider policy.
+
+Doctor repair tickets default to the targetless `prism-maintenance` workflow,
+not `change-request-default`. They are created without auto-start; report
+generation alone does not authorize configuration repairs. An instance may
+override `PRISM_DOCTOR_REPAIR_WORKFLOW_KEY`. Existing tickets are reused only
+when their workflow matches that configured key. Preserve old tickets and
+reports when handing off legacy code-shaped repair requests to maintenance.
+
+Configuration drift, missing skills, and credential-entry needs are not by
+themselves code defects. Create a linked repository change request only for a
+verified code defect with a known target and explicit operator authorization.
+Never manufacture a target or ask an agent to collect credentials through chat.
 
 When summarizing a report:
 
@@ -43,12 +77,13 @@ When summarizing a report:
 5. Treat a missing credential as a blocker to removing the corresponding legacy
    runtime credential.
 6. Mention that Doctor did not mutate content.
+7. Separate definition ownership findings from executor provenance findings.
 
-When Doctor or a repair workflow finds a completed/closed request whose
-terminal workflow run (completed or canceled) projects a non-terminal current
-step, use the documented by-number workflow reconciliation route. Dry-run it
-first. The route only corrects terminal projection drift; it does not execute
-steps, rerun work, or repair active requests.
+When Doctor or a repair workflow finds a terminal workflow run with stale
+request or step projection, use the documented by-number workflow
+reconciliation route. This includes a request left open after its workflow run
+completed. Dry-run first. The route only corrects terminal projection drift;
+it does not execute steps, rerun work, or repair active workflow/agent runs.
 
 Useful commands:
 
@@ -56,6 +91,10 @@ Useful commands:
 curl -fsSL \
   -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
   "$PRISM_AGENT_API_BASE_URL/agent/tasks"
+
+curl -fsSL \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/accountability/audit"
 ```
 
 Manual runs are started from the Task Runner UI or the task-runner service

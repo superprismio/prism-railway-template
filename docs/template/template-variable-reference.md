@@ -28,6 +28,7 @@ Use this while filling out the Railway template composer.
 | `NEXT_PUBLIC_INTERACTION_BASE_URL` | `https://${{discord-adapter.RAILWAY_PUBLIC_DOMAIN}}` | Browser-visible base URL used to display external interaction endpoints. | Yes |
 | `API_INTERNAL_BASE_URL` | `https://${{api.RAILWAY_PUBLIC_DOMAIN}}` | Server-side API URL used by the site. | No |
 | `COMMUNICATION_ADAPTER_BASE_URL` | `http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}` | Private communication adapter URL used by Site server routes. | Yes |
+| `PRISM_LAB_ENABLED` | Unset (enabled) | Optional opt-out for `/admin/lab`. Only `false` disables Lab; no variable is required for normal operation. | No |
 | `PRISM_GATEWAY_ENABLED` | `true` | Shows Gateway connection administration. Set false only when Gateway is intentionally omitted. | Yes |
 | `PRISM_GATEWAY_BASE_URL` | `http://${{prism-gateway.RAILWAY_PRIVATE_DOMAIN}}:${{prism-gateway.PORT}}` | Private Gateway URL used by Site server routes. | Yes |
 | `PRISM_GATEWAY_TOKEN` | `${{prism-gateway.GATEWAY_SITE_TOKEN}}` | Site-specific Gateway caller token. Never expose it to browser code. | Yes |
@@ -131,6 +132,9 @@ following Buzz-specific configuration.
 | `BUZZ_INTERACTION_DISPLAY_NAME` | `Prism` | Leading `@name` removed from the runtime prompt. | Yes |
 | `BUZZ_INTERACTION_POLL_SECONDS` | `5` | Delay between non-overlapping interaction polls. | Yes |
 | `BUZZ_INTERACTION_LOOKBACK_SECONDS` | `3600` | First-start lookback; durable checkpoints are used afterward. | Yes |
+| `BUZZ_HISTORY_CHANNEL_ALLOWLIST` | channel UUIDs | Channels readable through the internal service-authenticated direct-history route. Empty disables the route. | Yes |
+| `BUZZ_HISTORY_MAX_LOOKBACK_SECONDS` | `7200` | Maximum direct-history lookback accepted by the adapter. | Yes |
+| `BUZZ_HISTORY_MAX_MESSAGES` | `100` | Maximum messages returned by one direct-history request. | Yes |
 
 ## Codex Runtime
 
@@ -141,6 +145,8 @@ following Buzz-specific configuration.
 | `CODEX_BIN` | `/app/node_modules/.bin/codex` | Path to the Codex CLI binary inside the runtime image. | No |
 | `CODEX_HOME` | `/data/codex` | Mounted Codex home directory for auth and thread state. | No |
 | `CODEX_RUNTIME_TIMEOUT_MS` | `600000` | Maximum Codex execution timeout in milliseconds. | No |
+| `CODEX_RUNTIME_PROMPT_WARN_BYTES` | empty | Emits a size warning trace when the composed stdin prompt exceeds this byte count. | Yes |
+| `CODEX_RUNTIME_PROMPT_MAX_BYTES` | empty | Rejects an oversized composed prompt with structured section metrics before spawning Codex. | Yes |
 | `CODEX_IMAGE_GENERATION_ENABLED` | `true` | Enables the Codex CLI built-in `image_generation` feature for `$imagegen` workflows. | No |
 | `CODEX_WORKSPACE_ROOT` | `/app` | Default workspace root for Codex execution. | No |
 | `CODEX_TARGET_WORKSPACE_ROOT` | `/data/workspaces` | Mounted directory for cloned target repositories. | No |

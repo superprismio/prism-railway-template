@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
+import { workflowContinuationPolicy } from "@/lib/workflow-context-policy"
+import { continuationWorkflowRunSkills, initialWorkflowRunSkills } from "@/lib/workflow-skill-scope"
+import { interactiveContinuationPolicy } from "@/lib/interactive-continuation-policy"
 import { NextResponse } from "next/server"
 import {
   buildTargetEnvironmentDeployPlan,
@@ -10,7 +13,10 @@ import {
   createWorkflowEvent,
   ensureWorkflowRunForRequest,
   findActiveAgentRunByIdempotencyKey,
+  findAgentSessionBySourceContext,
   getAgentSession,
+  getAgentSessionProfileAssignment,
+  getAgentProfileVersion,
   getAgentRun,
   getChangeRequest,
   getTargetApp,
@@ -28,9 +34,16 @@ import {
   updateAgentResponseJob,
   updateChangeRequest,
   updateWorkflowRun,
+  workflowAgentExecutor,
   type RuntimeResponse,
   type RuntimeTraceEntry,
 } from "@/lib/app-core"
+import {
+  filterGatewayCredentialKeysForProfile,
+  resolveAgentProfileRuntimeScope,
+} from "@/lib/agent-profile-runtime-scope"
+import { publishCheckpointReceipt } from "@/lib/prism-lab/checkpoint-receipt"
+import { modelTierFromAgentConfig, normalizeModelTier } from "@/lib/model-tier"
 
 import { adminFetch } from "@/lib/admin"
 import { parseNullableString, useLocalAppApi } from "@/lib/local-admin-api"
@@ -76,6 +89,7 @@ export async function handleResponseGet(request: Request, requireAccess: RouteAc
   return NextResponse.json({
     ok: true,
     session,
+    agentProfileAssignment: getAgentSessionProfileAssignment(session.id),
     messages: listAgentMessages(session.id, 100),
   })
 }
@@ -262,11 +276,11 @@ function workflowOutcomeInstruction() {
 }
 
 function runtimeRequestTimeoutMs() {
-  const parsed = Number.parseInt(process.env.CODEX_RUNTIME_TIMEOUT_MS ?? "", 10)
+  const parsed = Number.parseInt(process.env.PRISM_RUNTIME_MAX_DURATION_MS ?? "", 10)
   if (Number.isFinite(parsed) && parsed > 0) {
     return Math.max(parsed + 60_000, 60_000)
   }
-  return 900_000
+  return 3_660_000
 }
 
 function readPositiveInteger(value: unknown, fallback: number) {
@@ -321,12 +335,6 @@ function readInstructionFile(instructionPath: unknown) {
   } catch {
     return null
   }
-}
-
-function requestedSkillsFromAgentConfig(config: unknown) {
-  if (!isRecord(config)) return []
-  const skills = Array.isArray(config.skills) ? config.skills : []
-  return skills.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim())
 }
 
 function requestedCredentialsFromAgentConfig(config: unknown) {
@@ -390,6 +398,7 @@ async function requestPrismRuntimeResponse(input: {
   onProgress?: (progress: {
     status: string
     runtimeJobId: string
+    runtimeKey: string
     threadId: string | null
     trace: RuntimeTraceEntry[]
   }) => void
@@ -443,6 +452,9 @@ function workflowAgentRunResult(input: {
     runtimeContinuationId: input.runtimeResponse.thread_id ?? null,
     runtimeKey: input.runtimeResponse.runtimeKey,
     runtimeProvider: input.runtimeResponse.provider,
+    model: input.runtimeResponse.model,
+    modelTier: input.runtimeResponse.modelTier,
+    reasoningEffort: input.runtimeResponse.reasoningEffort,
     codexThreadId: input.runtimeResponse.thread_id ?? null,
     branchName: input.runtimeResponse.branchName ?? null,
     commitSha: input.runtimeResponse.commitSha ?? null,
@@ -468,6 +480,8 @@ function failedWorkflowAgentRunResult(input: {
   sessionId: string
 }) {
   return {
+    // Keep the provider job reference and last progress for audited recovery.
+    ...input.latestAgentRun?.result,
     responseText: null,
     workflowKey: input.workflowKey,
     workflowRunId: input.workflowRunId,
@@ -598,6 +612,26 @@ function completeWorkflowAgentStep(input: {
     return false
   }
 
+  const echoCheckpointReceipt = (status: "succeeded" | "blocked" | "needs_attention") => {
+    if (!shouldStayOnStep || !agentRunId) return
+    const request = getChangeRequest(input.requestId)
+    if (!request) return
+    publishCheckpointReceipt({
+      request,
+      stepKey: input.stepKey,
+      stepLabel: typeof currentStep?.label === "string" ? currentStep.label : input.stepKey,
+      agentRunId,
+      responseText: input.responseText,
+      status,
+    }, {
+      findSession: findAgentSessionBySourceContext,
+      createSession: createAgentSession,
+      listMessages: listAgentMessages,
+      createMessage: createAgentMessage,
+      updateSession: updateAgentSession,
+    })
+  }
+
   if (shouldStopForOutcome && workflowOutcome) {
     createWorkflowEvent({
       workflowRunId: input.workflowRunId,
@@ -621,6 +655,7 @@ function completeWorkflowAgentStep(input: {
       status: "active",
       completedAt: null,
     })
+    echoCheckpointReceipt(workflowOutcome.status === "blocked" ? "blocked" : "needs_attention")
     return input.stepKey
   }
 
@@ -638,6 +673,7 @@ function completeWorkflowAgentStep(input: {
       nextStepKey: input.nextStep ? stepKey(input.nextStep) : null,
     },
   })
+  echoCheckpointReceipt("succeeded")
 
   const nextStep = input.nextStep
   const nextStepKey = !shouldStayOnStep && nextStep ? stepKey(nextStep) ?? input.stepKey : input.stepKey
@@ -743,9 +779,22 @@ function startWorkflowAgentStep(input: {
   agentRunId?: string | null
   action?: string | null
   autoContinued?: boolean
+  agentProfileId: string
+  agentProfileVersion: number
+  executionMode: string
 }) {
   const existingAgentRun = input.agentRunId ? getAgentRun(input.agentRunId) : null
   if (input.agentRunId && !existingAgentRun) {
+    return null
+  }
+  if (
+    existingAgentRun &&
+    (
+      existingAgentRun.agentProfileId !== input.agentProfileId ||
+      existingAgentRun.agentProfileVersion !== input.agentProfileVersion ||
+      existingAgentRun.executionMode !== input.executionMode
+    )
+  ) {
     return null
   }
   const startedAt = new Date().toISOString()
@@ -793,6 +842,9 @@ function startWorkflowAgentStep(input: {
         workflowRunId: input.workflowRunId,
         workflowStepKey: input.stepKey,
         sessionId: input.sessionId,
+        agentProfileId: input.agentProfileId,
+        agentProfileVersion: input.agentProfileVersion,
+        executionMode: input.executionMode,
         source: "site",
         input: {
           workflowKey: input.workflowKey,
@@ -844,8 +896,14 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     parseNullableString(body.linked_change_request_id ?? body.linkedChangeRequestId) ?? null
   const linkedTargetEnvironmentId =
     parseNullableString(body.linked_target_environment_id ?? body.linkedTargetEnvironmentId) ?? null
-  const requestedRuntimeProfileKey =
+  const callerRequestedRuntimeProfileKey =
     parseNullableString(body.runtime_profile_key ?? body.runtimeProfileKey ?? body.runtime_key ?? body.runtimeKey) ?? null
+  let callerRequestedModelTier = null
+  try {
+    callerRequestedModelTier = normalizeModelTier(body.model_tier ?? body.modelTier)
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "MODEL_TIER_INVALID" }, { status: 400 })
+  }
   const inputMessages = parseResponseInputMessages(body.input)
   const latestUserMessage = [...inputMessages].reverse().find((entry) => entry.role === "user") ?? null
 
@@ -879,6 +937,12 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   if (!session) {
     return NextResponse.json({ ok: false, error: "AGENT_SESSION_CREATE_FAILED" }, { status: 500 })
   }
+
+  const profileAssignment = getAgentSessionProfileAssignment(session.id)
+  const assignedAgentProfile = profileAssignment?.profileId
+    ? getAgentProfileVersion(profileAssignment.profileId, profileAssignment.profileVersion)
+    : null
+  const requestedExecutionMode = parseNullableString(body.execution_mode ?? body.executionMode) ?? "worker"
 
   const storedMessages = listAgentMessages(session.id, 100)
   const recentHistory = storedMessages.length
@@ -921,25 +985,53 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       { status: 409 },
     )
   }
-  const recordRuntimeProgress = responseJobId
-    ? (progress: {
-        status: string
-        runtimeJobId: string
-        threadId: string | null
-        trace: RuntimeTraceEntry[]
-      }) => {
-        updateAgentResponseJob(responseJobId, {
-          status: "running",
-          response: {
-            runtimeJobId: progress.runtimeJobId,
-            runtimeJobStatus: progress.status,
-            runtimeThreadId: progress.threadId,
-            lastProgressAt: new Date().toISOString(),
-          },
-          trace: progress.trace,
-        })
+  const recordRuntimeProgress = (agentRunId: string | null) =>
+    responseJobId || agentRunId
+      ? (progress: {
+          status: string
+          runtimeJobId: string
+          runtimeKey: string
+          threadId: string | null
+          trace: RuntimeTraceEntry[]
+        }) => {
+        if (responseJobId) {
+          updateAgentResponseJob(responseJobId, {
+            status: "running",
+            response: {
+              runtimeJobId: progress.runtimeJobId,
+              runtimeJobStatus: progress.status,
+              runtimeThreadId: progress.threadId,
+              lastProgressAt: new Date().toISOString(),
+            },
+            trace: progress.trace,
+          })
+        }
+        if (agentRunId) {
+          const agentRun = getAgentRun(agentRunId)
+          if (agentRun && !isStoppedAgentRunStatus(agentRun.status)) {
+            updateAgentRun(agentRunId, {
+              // Lease liveness is separate from execution progress. A healthy
+              // poll keeps ownership alive, but cannot exceed the hard budget.
+              ...(['queued', 'running'].includes(progress.status) ? {
+                leaseExpiresAt: new Date(Math.min(
+                  Date.now() + workflowAgentRunLeaseSeconds() * 1000,
+                  new Date(agentRun.startedAt ?? agentRun.createdAt).getTime() + runtimeRequestTimeoutMs() + 60_000,
+                )).toISOString(),
+              } : {}),
+              result: {
+                ...agentRun.result,
+                runtimeJobId: progress.runtimeJobId,
+                runtimeKey: progress.runtimeKey,
+                runtimeJobStatus: progress.status,
+                runtimeThreadId: progress.threadId,
+                lastProgressAt: new Date().toISOString(),
+              },
+              trace: progress.trace,
+            })
+          }
+        }
       }
-    : undefined
+      : undefined
   const linkedWorkflow = linkedChangeRequest ? getWorkflowByKey(linkedChangeRequest.workflowKey) : null
   const linkedWorkflowSteps = workflowSteps(linkedWorkflow?.definition)
   const linkedWorkflowRun = linkedChangeRequest
@@ -1006,6 +1098,11 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       { status: 409 },
     )
   }
+  const nextWorkflowStepAfterRun = runnableWorkflowStep
+    ? nextStepForAction(linkedWorkflowSteps, runnableWorkflowStep, null)
+    : null
+  const runnableStepKey = runnableWorkflowStep ? stepKey(runnableWorkflowStep) : null
+  const nextStepKeyAfterRun = nextWorkflowStepAfterRun ? stepKey(nextWorkflowStepAfterRun) : null
   const workflowStepInstruction = runnableWorkflowStep
     ? readInstructionFile(runnableWorkflowStep.instructionPath)
     : null
@@ -1013,25 +1110,50 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     ...(isRecord(linkedWorkflow?.definition?.agentConfig) ? linkedWorkflow.definition.agentConfig : {}),
     ...(isRecord(runnableWorkflowStep?.agentConfig) ? runnableWorkflowStep?.agentConfig : {}),
   }
-  const requestedSkillsInput: unknown[] = Array.isArray(body.requested_skills ?? body.requestedSkills)
-    ? (body.requested_skills ?? body.requestedSkills) as unknown[]
-    : []
-  const requestedSkills = Array.from(
-    new Set([
-      ...requestedSkillsInput
-        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-        .map((entry: string) => entry.trim()),
-      ...requestedSkillsFromAgentConfig(workflowAgentConfig),
-    ]),
-  )
+  const requestedSkillsInput = body.requested_skills ?? body.requestedSkills
+  const workflowEntrypoint = typeof linkedWorkflow?.definition?.entrypoint === "string"
+    ? linkedWorkflow.definition.entrypoint
+    : null
+  const requestScopedSkills = initialWorkflowRunSkills({
+    requestedSkills: requestedSkillsInput,
+    agentConfig: workflowAgentConfig,
+    linkedWorkflow: Boolean(linkedWorkflow),
+    isEntrypoint: runnableStepKey === workflowEntrypoint,
+  })
+  let runnableStepExecutor = null
+  if (linkedWorkflow && runnableWorkflowStep) {
+    try {
+      runnableStepExecutor = workflowAgentExecutor(linkedWorkflow.definition, runnableWorkflowStep)
+    } catch (error) {
+      return NextResponse.json(
+        { ok: false, error: error instanceof Error ? error.message : "AGENT_EXECUTOR_RESOLUTION_FAILED" },
+        { status: 409 },
+      )
+    }
+  }
+  const runtimeAgentProfile = runnableStepExecutor
+    ? getAgentProfileVersion(runnableStepExecutor.profileId, runnableStepExecutor.profileVersion)
+    : assignedAgentProfile
+  const runtimeAgentProfileVersion = runnableStepExecutor?.profileVersion ?? profileAssignment?.profileVersion
+  const runtimeExecutionMode = runnableStepExecutor?.executionMode ?? requestedExecutionMode
+  const agentRuntimeScope = resolveAgentProfileRuntimeScope({
+    profile: runtimeAgentProfile,
+    assignedVersion: runtimeAgentProfileVersion,
+    executionMode: runtimeExecutionMode,
+    requestSkills: requestScopedSkills,
+    callerRuntimeProfileKey: callerRequestedRuntimeProfileKey,
+    requestedModelTier: modelTierFromAgentConfig(workflowAgentConfig) ?? callerRequestedModelTier,
+  })
+  const requestedSkills = agentRuntimeScope.skills
+  const requestedRuntimeProfileKey = agentRuntimeScope.runtimeProfileKey
   const includeTrustedRuntimeCredentials = actorType === "admin" || Boolean(linkedWorkflow)
   const activeCredentials = includeTrustedRuntimeCredentials
     ? await listEnabledGatewayCredentialsOrEmpty()
     : []
-  const requestedCredentials = Array.from(new Set([
+  const requestedCredentials = filterGatewayCredentialKeysForProfile(runtimeAgentProfile, [
     ...activeCredentials.map((credential) => credential.key),
     ...requestedCredentialsFromAgentConfig(workflowAgentConfig),
-  ]))
+  ])
 
   createAgentMessage({
     sessionId: session.id,
@@ -1044,11 +1166,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     },
   })
 
-  const nextWorkflowStepAfterRun = runnableWorkflowStep
-    ? nextStepForAction(linkedWorkflowSteps, runnableWorkflowStep, null)
-    : null
-  const runnableStepKey = runnableWorkflowStep ? stepKey(runnableWorkflowStep) : null
-  const nextStepKeyAfterRun = nextWorkflowStepAfterRun ? stepKey(nextWorkflowStepAfterRun) : null
   let activeAgentRunId: string | null = providedAgentRunId
 
   if (
@@ -1130,7 +1247,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         workflow_action: gateEventAction(workflowAction),
         workflow_step_key: runnableStepKey,
       },
-      onProgress: recordRuntimeProgress,
     })
   }
 
@@ -1203,6 +1319,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       idempotencyKey,
       agentRunId: providedAgentRunId,
       action: workflowAction,
+      agentProfileId: runnableStepExecutor?.profileId ?? runtimeAgentProfile?.id ?? "agent-profile-admin",
+      agentProfileVersion: runnableStepExecutor?.profileVersion ?? runtimeAgentProfile?.version ?? 1,
+      executionMode: runtimeExecutionMode,
     })
     if (!activeAgentRunId) {
       return NextResponse.json(
@@ -1213,16 +1332,22 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   }
 
   try {
+    const currentContinuationPolicy = interactiveContinuationPolicy({
+      linkedWorkflow: Boolean(linkedWorkflow),
+      workflowAgentConfig,
+    })
     const runtimeResponse = await requestPrismRuntimeResponse({
       prompt: latestUserMessage.content,
       sessionId: session.id,
       continuationId:
-        typeof session.meta?.runtimeContinuationId === "string"
+        currentContinuationPolicy === "step"
+          ? null
+          : typeof session.meta?.runtimeContinuationId === "string"
           ? session.meta.runtimeContinuationId
           : typeof session.meta?.codexThreadId === "string"
             ? session.meta.codexThreadId
             : null,
-      recentHistory,
+      recentHistory: currentContinuationPolicy === "step" ? [] : recentHistory,
       credentials: requestedCredentials,
       gatewayContext: {
         delegatedActorId: actorType === "admin" ? "admin-console" : undefined,
@@ -1232,9 +1357,13 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       },
       metadata: {
         transport: "site",
+        policyInstructions: agentRuntimeScope.policyInstructions,
+        agentProfile: agentRuntimeScope.metadata,
         runtimeProfileKey: requestedRuntimeProfileKey,
+        modelTier: agentRuntimeScope.modelTier,
         sessionRuntimeKey: typeof session.meta?.runtimeKey === "string" ? session.meta.runtimeKey : null,
         requestedSkills,
+        skillSelectionMode: linkedWorkflow ? "exact" : "inferred",
         workflow: linkedWorkflow
           ? {
               key: linkedWorkflow.key,
@@ -1242,7 +1371,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
               currentStepKey: runnableStepKey,
               action: workflowAction,
               agentConfig: workflowAgentConfig,
-              stepInstruction: workflowStepInstruction,
             }
           : null,
         linkedChangeRequestId: activeLinkedChangeRequestId,
@@ -1290,11 +1418,19 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             ].filter(Boolean).join("\n\n")
           : null,
       },
+      onProgress: recordRuntimeProgress(activeAgentRunId),
     })
 
     const responseText = (runtimeResponse.responseText || runtimeResponse.output_text || "").trim()
     if (!responseText) {
       return NextResponse.json({ ok: false, error: "CODEX_RUNTIME_EMPTY_RESPONSE" }, { status: 502 })
+    }
+    if (activeAgentRunId && isStoppedAgentRunStatus(getAgentRun(activeAgentRunId)?.status)) {
+      return NextResponse.json({
+        ok: true,
+        output_text: "The stopped agent run returned after cancellation and was ignored.",
+        session_id: session.id,
+      })
     }
     const workflowOutcome = parseWorkflowOutcomeFromResponseText(responseText)
 
@@ -1309,6 +1445,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           runtimeResponse.thread_id ?? session.meta?.runtimeContinuationId ?? session.meta?.codexThreadId ?? null,
         runtimeKey: runtimeResponse.runtimeKey,
         runtimeProvider: runtimeResponse.provider,
+        model: runtimeResponse.model,
+        modelTier: runtimeResponse.modelTier,
+        reasoningEffort: runtimeResponse.reasoningEffort,
         codexThreadId: runtimeResponse.thread_id ?? session.meta?.codexThreadId ?? null,
         codexProvider: runtimeResponse.provider ?? "codex-cli",
       },
@@ -1326,6 +1465,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         runtimeContinuationId: runtimeResponse.thread_id ?? null,
         runtimeKey: runtimeResponse.runtimeKey,
         runtimeProvider: runtimeResponse.provider,
+        model: runtimeResponse.model,
+        modelTier: runtimeResponse.modelTier,
+        reasoningEffort: runtimeResponse.reasoningEffort,
         codexThreadId: runtimeResponse.thread_id ?? null,
       },
     })
@@ -1420,6 +1562,17 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           break
         }
 
+        let continuationExecutor
+        try {
+          continuationExecutor = workflowAgentExecutor(linkedWorkflow!.definition, continuationStep)
+        } catch {
+          break
+        }
+        const continuationProfile = getAgentProfileVersion(
+          continuationExecutor.profileId,
+          continuationExecutor.profileVersion,
+        )
+
         const continuationAgentRunId = startWorkflowAgentStep({
           requestId: activeLinkedChangeRequestId,
           workflowRunId: latestRun.id,
@@ -1428,6 +1581,9 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           sessionId: session.id,
           idempotencyKey: continuationIdempotencyKey,
           autoContinued: true,
+          agentProfileId: continuationExecutor.profileId,
+          agentProfileVersion: continuationExecutor.profileVersion,
+          executionMode: continuationExecutor.executionMode,
         })
 
         const continuationInstruction = readInstructionFile(continuationStep.instructionPath)
@@ -1435,16 +1591,25 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           ...(isRecord(linkedWorkflow?.definition?.agentConfig) ? linkedWorkflow.definition.agentConfig : {}),
           ...(isRecord(continuationStep?.agentConfig) ? continuationStep.agentConfig : {}),
         }
-        const continuationRequestedSkills = Array.from(
-          new Set([
-            ...requestedSkills,
-            ...requestedSkillsFromAgentConfig(continuationAgentConfig),
-          ]),
-        )
-        const continuationCredentials = Array.from(new Set([
+        const continuationScope = resolveAgentProfileRuntimeScope({
+          profile: continuationProfile,
+          assignedVersion: continuationExecutor.profileVersion,
+          executionMode: continuationExecutor.executionMode,
+          requestSkills: continuationWorkflowRunSkills(continuationAgentConfig),
+          callerRuntimeProfileKey: null,
+          requestedModelTier: modelTierFromAgentConfig(continuationAgentConfig),
+        })
+        const profileContinuation = continuationProfile && typeof continuationProfile.contextPolicy.continuation === "string"
+          ? continuationProfile.contextPolicy.continuation
+          : null
+        const configuredContinuationPolicy = workflowContinuationPolicy(continuationAgentConfig)
+        const continuationPolicy = configuredContinuationPolicy === "step" || profileContinuation === "step"
+          ? "step"
+          : "session"
+        const continuationCredentials = filterGatewayCredentialKeysForProfile(continuationProfile, [
           ...activeCredentials.map((credential) => credential.key),
           ...requestedCredentialsFromAgentConfig(continuationAgentConfig),
-        ]))
+        ])
         const continuationPrompt = [
           `Automatically continue workflow step ${continuationStepKey} for request #${latestRequest.requestNumber}: ${latestRequest.title}.`,
           `Step label: ${typeof continuationStep.label === "string" ? continuationStep.label : continuationStepKey}.`,
@@ -1458,8 +1623,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           const continuationResponse = await requestPrismRuntimeResponse({
             prompt: continuationPrompt,
             sessionId: session.id,
-            continuationId: continuationThreadId,
-            recentHistory: continuationHistory,
+            continuationId: continuationPolicy === "step" ? null : continuationThreadId,
+            recentHistory: continuationPolicy === "step" ? [] : continuationHistory,
             credentials: continuationCredentials,
             gatewayContext: {
               requestId: activeLinkedChangeRequestId,
@@ -1468,9 +1633,13 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             },
             metadata: {
               transport: "site",
-              runtimeProfileKey: requestedRuntimeProfileKey,
+              policyInstructions: continuationScope.policyInstructions,
+              agentProfile: continuationScope.metadata,
+              runtimeProfileKey: continuationScope.runtimeProfileKey,
+              modelTier: continuationScope.modelTier,
               sessionRuntimeKey: continuationRuntimeKey,
-              requestedSkills: continuationRequestedSkills,
+              requestedSkills: continuationScope.skills,
+              skillSelectionMode: "exact",
               workflow: linkedWorkflow
                 ? {
                     key: linkedWorkflow.key,
@@ -1478,7 +1647,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                     currentStepKey: continuationStepKey,
                     action: null,
                     agentConfig: continuationAgentConfig,
-                    stepInstruction: continuationInstruction,
                     autoContinued: true,
                   }
                 : null,
@@ -1509,7 +1677,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                 "Auto-continue is enabled; the site will run the next agent step until the workflow reaches a gate, checkpoint, or terminal step.",
               ].filter(Boolean).join("\n\n"),
             },
-            onProgress: recordRuntimeProgress,
+            onProgress: recordRuntimeProgress(continuationAgentRunId),
           })
 
           const continuationText = (continuationResponse.responseText || continuationResponse.output_text || "").trim()
@@ -1590,14 +1758,14 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           const continuationMessage =
             continuationError instanceof Error ? continuationError.message : "CODEX_RUNTIME_REQUEST_FAILED"
           const runtimeContinuationError = continuationError as RuntimeError
-          const failureTrace = Array.isArray(runtimeContinuationError.trace) ? runtimeContinuationError.trace : []
-          const failureSummary = formatTraceSummary(failureTrace)
+          const failureTrace = Array.isArray(runtimeContinuationError.trace) ? runtimeContinuationError.trace : getAgentRun(continuationAgentRunId ?? "")?.trace ?? []
+          const failureSummary = formatTraceSummary(failureTrace as RuntimeTraceEntry[])
           if (continuationAgentRunId) {
             updateAgentRun(continuationAgentRunId, {
               status: "failed",
               result: failedWorkflowAgentRunResult({
                 runtimeError: runtimeContinuationError,
-                latestAgentRun: listAgentRuns({ requestId: activeLinkedChangeRequestId, limit: 1 })[0] ?? null,
+                latestAgentRun: getAgentRun(continuationAgentRunId),
                 workflowKey: linkedChangeRequest.workflowKey,
                 workflowRunId: latestRun.id,
                 workflowStepKey: continuationStepKey,
@@ -1667,6 +1835,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
         runtime_continuation_id: runtimeResponse.thread_id ?? null,
         runtime_key: runtimeResponse.runtimeKey,
         runtime_provider: runtimeResponse.provider,
+        model_tier: runtimeResponse.modelTier,
+        reasoning_effort: runtimeResponse.reasoningEffort,
         codex_thread_id: runtimeResponse.thread_id ?? null,
         trace: Array.isArray(runtimeResponse.trace) ? runtimeResponse.trace : [],
         auto_continued_steps: autoContinuedSteps,
@@ -1675,8 +1845,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
   } catch (error) {
     const message = error instanceof Error ? error.message : "CODEX_RUNTIME_REQUEST_FAILED"
     const runtimeError = error as RuntimeError
-    const failureTrace = Array.isArray(runtimeError.trace) ? runtimeError.trace : []
-    const failureSummary = formatTraceSummary(failureTrace)
+    const failureTrace = Array.isArray(runtimeError.trace) ? runtimeError.trace : getAgentRun(activeAgentRunId ?? "")?.trace ?? []
+    const failureSummary = formatTraceSummary(failureTrace as RuntimeTraceEntry[])
     const activeAgentRunWasStopped =
       Boolean(activeAgentRunId) &&
       isStoppedAgentRunStatus(getAgentRun(activeAgentRunId!)?.status)
@@ -1690,7 +1860,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
           status: "failed",
           result: failedWorkflowAgentRunResult({
             runtimeError,
-            latestAgentRun: linkedLatestAgentRun,
+            latestAgentRun: getAgentRun(activeAgentRunId),
             workflowKey: linkedChangeRequest.workflowKey,
             workflowRunId: linkedWorkflowRun.id,
             workflowStepKey: runnableStepKey,

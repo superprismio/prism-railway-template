@@ -16,6 +16,8 @@ Recommended Railway settings:
 
 ## Artifact Endpoints
 
+`GET /memory/dates?limit=180` returns the bounded newest-first index of available rolling-memory snapshots. Use it with `GET /memory/date/{date}` for timeline navigation.
+
 Prism Memory serves memory inbox artifacts directly so services can link to durable transcript and summary pages without teaching the site about the memory filesystem layout.
 
 - `GET /artifacts/{id}` returns a human-readable HTML page for a single artifact. This route is intended for links posted back to Discord.

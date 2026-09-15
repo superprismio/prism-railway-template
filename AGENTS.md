@@ -32,8 +32,8 @@ Send service auth as:
 
 - `GET /agent/tasks`
 - `POST /agent/tasks`
+- `POST /agent/tasks/:key/trigger`
 - `GET /agent/tasks/runs`
-- `POST /agent/tasks/runs`
 - `GET /agent/task-scripts`
 - `POST /agent/task-scripts`
 - `GET /agent/task-scripts/:key`
@@ -52,6 +52,16 @@ Send service auth as:
 - `PATCH /agent/runtime-profiles/:key`
 - `DELETE /agent/runtime-profiles/:key`
 - `POST /agent/runtime/invoke`
+- `GET /agent/agent-profiles`
+- `POST /agent/agent-profiles`
+- `GET /agent/agent-profiles/resolve`
+- `POST /agent/agent-profiles/:key/bindings`
+- `GET /agent/accountability-domains`
+- `POST /agent/accountability-domains`
+- `GET /agent/accountability-domains/:key`
+- `PATCH /agent/accountability-domains/:key`
+- `POST /agent/accountability-domains/:key/assignments`
+- `GET /agent/accountability/audit`
 - `GET /agent/hooks/:key`
 - `PATCH /agent/hooks/:key`
 - `DELETE /agent/hooks/:key`
@@ -60,6 +70,8 @@ Send service auth as:
 - `POST /agent/responses`
 - `GET /agent/workflow-events`
 - `GET /agent/target-apps`
+- `POST /agent/target-apps`
+- `PATCH /agent/target-apps/:id`
 - `GET /agent/change-board/requests/:id`
 - `POST /agent/change-board/requests`
 - `GET /agent/change-board/requests/next`
@@ -73,6 +85,11 @@ Send service auth as:
 - `PATCH /agent/site-content/branding`
 - `GET /agent/source-adapter-policy`
 - `PATCH /agent/source-adapter-policy`
+- `GET /agent/buzz/channels/:channelId/messages`
+- `POST /agent/buzz/commands`
+- `GET /agent/source-history/capabilities`
+- `POST /agent/source-history/search`
+- `POST /agent/source-history/context`
 - `GET /agent/interaction-profiles`
 - `POST /agent/interaction-profiles`
 - `GET /agent/interaction-profiles/:key`
@@ -87,7 +104,21 @@ Send service auth as:
 - `POST /agent/gateway/connections`
 - `POST /agent/gateway/integrations`
 
+To run an existing scheduled task immediately, use
+`POST /agent/tasks/:key/trigger`. This dispatches through task-runner and returns
+its accepted, conflict, or error response. Do not use `POST /agent/tasks/runs`
+to start work; task-run mutations are authenticated bookkeeping operations
+reserved for task-runner after execution has been dispatched.
+
 For logo, title, brand name, or workspace label changes, use `/agent/site-content/branding`.
+
+For authenticated Buzz operations, use `POST /agent/buzz/commands` with a
+JSON body such as `{"args":["channels","list"]}`. The route exposes the
+remote Buzz command groups while keeping relay and signing credentials inside
+the Buzz adapter. Do not pass `--private-key`, `--relay`, or `--auth-tag`.
+Prefer `GET /agent/buzz/channels/:channelId/messages` for ordinary channel
+history reads. Inspect current state before consequential writes, obtain any
+required operator approval, and verify the result afterward.
 
 For runtime adapter registration, default selection, or routing metadata, use
 `/agent/runtime-profiles`. Runtime profiles contain adapter URLs and features,
@@ -105,13 +136,24 @@ result reads are limited to artifacts listed in
 `authConfig.resultArtifactNames` and to requests created by that interface and
 hook.
 
-For source adapter access rules, use `/agent/source-adapter-policy`. Policies are platform-scoped. Use `platforms.discord.targets` for Discord channels or threads, `platforms.discord.groups` for Discord role IDs, and `platforms.discord.users` for Discord user IDs. Use `platforms.telegram.targets` for Telegram chat/group/channel IDs and `platforms.telegram.users` for Telegram user IDs. Telegram DMs are disabled by default unless explicitly enabled in adapter env/config.
+Agent Profiles are the canonical identity and communication-policy records.
+Use `POST /agent/agent-profiles/:key/bindings` to bind a Discord channel/thread,
+Buzz channel, Telegram chat, external interface, or user surface. Put the
+surface-specific `accessMode`, rate limit, allowed workflows, and narrower
+group/user/thread overrides in the binding `policy`. A binding may narrow but
+never widen its parent Agent Profile. `GET /agent/source-adapter-policy` exists
+only for migration and rollback compatibility; its write route is retired.
+Telegram DMs remain disabled by adapter config unless explicitly enabled.
 
-For named external HTTP chat paths, use the built-in
-`prism-interaction-author` skill and the interaction profile/external interface
-routes. Create non-secret configuration through `/agent/*`, keep new interfaces
-disabled, and direct the operator to **Settings > Interfaces** to generate or
-rotate the inbound API key. Never ask for or return that key through chat.
+For older Discord evidence, use the built-in `prism-source-history-reader`
+skill and `/agent/source-history/*`. Site enforces channel scope and calls the
+communication adapter; never call Discord directly or expose the adapter token.
+
+For named external HTTP chat paths, create the non-secret interface record,
+bind its key to an Agent Profile with `surfaceType: "external"`, keep the
+interface disabled, and direct the operator to **Settings > Interfaces** to
+generate or rotate the inbound API key. Legacy Interaction Profiles are import
+sources only. Never ask for or return an interface key through chat.
 
 For Gateway integration setup and troubleshooting, use the built-in
 `prism-gateway-author` skill. Gateway agent routes accept non-secret
@@ -154,9 +196,12 @@ curl -fsSL \
 
 The route records the continue event and uses the normal workflow runner so agent runs and auto-continue behavior stay in sync. Prefer simple `next` flow; do not send `workflowAction` for normal continues.
 
-For a request that is already completed or closed but whose terminal workflow
-run (completed or canceled) still projects a non-terminal current step, use the
-reconciliation route.
+Use the reconciliation route when a terminal workflow run projects stale
+request or step state. It supports both completed/closed requests whose
+completed or canceled run still projects a non-terminal step, and requests
+that remain open even though their workflow run already completed. In the
+latter case, reconciliation closes the request timeline as well as moving the
+run projection to the verified terminal step.
 It does not execute workflow steps or repeat side effects. Dry-run first, then
 apply the exact repair:
 
@@ -177,8 +222,9 @@ curl -fsSL \
 ```
 
 If the workflow has more than one terminal step, the dry-run returns candidates
-and the apply request must include `terminalStepKey`. Do not use this route for
-active requests or as a substitute for continue, cancel, or rerun.
+and the apply request must include `terminalStepKey`. Do not use this route
+while the workflow run or an agent run is active, or as a substitute for
+continue, cancel, or rerun.
 
 For Prism Memory Discord bucket repair after `discord.category_to_bucket` changes, use Prism Memory ops auth and start with a dry-run:
 
@@ -204,6 +250,15 @@ Examples:
 - Workflow create/update/reasoning: use `prism-workflow-author`, then `GET /agent/workflows` or `POST /agent/workflows`.
 - Task create/update/reasoning: use `prism-task-author`, then `GET /agent/tasks` or `POST /agent/tasks`.
 - Skill create/update/reasoning: use `prism-skill-author`, then `GET /agent/skills` or `POST /agent/skills`.
+
+Every scheduled agent task should use a request-backed lifecycle. Use a
+`workflow-runner` task as a thin scheduler/request launcher, and let the
+workflow own analysis, artifacts, retries, external delivery and verification,
+provenance, and closure. Keep `codex-prompt` out of the recurring scheduler;
+ad hoc prompts belong in an Agent Console or an explicitly invoked disabled
+utility task. Deterministic `builtin`, `http-post`, and `script-runner` jobs may
+remain outside the request inbox and should create a request only when they
+produce actionable work that needs follow-through.
 
 Instance-owned deterministic workflows may declare required Gateway credentials in
 `SKILL.md` frontmatter:
@@ -275,6 +330,19 @@ curl -fsSL \
   -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
   "$COMMUNICATION_ADAPTER_BASE_URL/messages" \
   -d '{"destinationId":"discord:<channel-id>","content":"Test message"}'
+```
+
+For a Discord forum, resolve the destination first and preserve its
+`type:"discord-forum"`. Include a title so `/messages` creates a forum post
+instead of trying to send directly to the non-text forum container:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN" \
+  "$COMMUNICATION_ADAPTER_BASE_URL/messages" \
+  -d '{"destinationId":"discord:<forum-id>","type":"discord-forum","title":"CONTENT SEED: Topic","content":"Thread opener"}'
 ```
 
 For Telegram, use `destinationId:"telegram:<chat-id>"` or send

@@ -1,6 +1,7 @@
 import { loadConfig } from './config';
-import { listChangeRequests, listTargetApps, listTargetEnvironments, listWorkflows } from './repository';
+import { listAgentRuns, listChangeRequests, listTargetApps, listTargetEnvironments, listWorkflows } from './repository';
 import { resolveRuntimeProfile } from './runtime-profiles';
+import { projectActiveRequestAgentRuns } from '../prism-lab/active-run-projection';
 
 async function fetchJson(baseUrl: string, path: string) {
   if (!baseUrl) {
@@ -86,6 +87,10 @@ export async function getAdminSetupStatus() {
 }
 
 export function getAdminBoardSnapshot(input: { targetAppId?: string } = {}) {
+  const activeRequestAgentRuns = projectActiveRequestAgentRuns(
+    ['queued', 'claimed', 'running'].flatMap((status) => listAgentRuns({ status, limit: 200 })),
+  );
+
   return {
     targetApps: listTargetApps(),
     targetEnvironments: listTargetEnvironments(input.targetAppId),
@@ -93,5 +98,6 @@ export function getAdminBoardSnapshot(input: { targetAppId?: string } = {}) {
       targetAppId: input.targetAppId,
     }),
     workflows: listWorkflows(),
+    activeRequestAgentRuns,
   };
 }

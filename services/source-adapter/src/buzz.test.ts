@@ -3,21 +3,49 @@ import test from "node:test";
 import { nip19, verifyEvent, type Event, type EventTemplate, type VerifiedEvent } from "nostr-tools";
 import {
   BuzzCliClient,
+  buzzCliEnvironment,
   buildBuzzTypingEvent,
+  buzzInteractionCursorTimestamp,
+  buzzConversationRootFromThread,
+  buzzEventDirectReplyId,
+  buzzEventReplyIds,
+  buzzEventRootIds,
   buzzEventMentionsPubkey,
   buzzMentionPrompt,
   buzzThreadHasReplyFrom,
+  buzzThreadHasDirectReplyFrom,
+  buzzThreadRootId,
   buzzWebSocketUrl,
   normalizeBuzzMessage,
+  normalizeBuzzCommandArgs,
   parseBuzzPrivateKey,
   parseBuzzChannelAllowlist,
   selectUnseenBuzzEvents,
   startBuzzTyping,
+  type BuzzEvent,
   type BuzzCommandRunner,
   type BuzzTypingRelay,
 } from "./buzz.js";
 
 const channelId = "a419a6ec-07ef-4d55-b071-635bc1b4dd4f";
+
+test("Buzz child environment excludes unrelated secrets and loader hooks", () => {
+  assert.deepEqual(buzzCliEnvironment({
+    PATH: "/usr/bin", LANG: "C.UTF-8", TMPDIR: "/tmp", TZ: "UTC",
+    APP_API_SERVICE_TOKEN: "secret", INTERNAL_SERVICE_TOKEN: "secret",
+    PRISM_API_KEY: "secret", COMMUNICATION_ADAPTER_TOKEN: "secret",
+    NODE_OPTIONS: "--require=untrusted", LD_PRELOAD: "/bad.so",
+    HTTPS_PROXY: "https://user:secret@proxy", BUZZ_PRIVATE_KEY: "wrong-key",
+  }), { PATH: "/usr/bin", TMPDIR: "/tmp", LANG: "C.UTF-8", TZ: "UTC" });
+});
+
+test("Buzz runner receives only operational environment and configured Buzz credentials", async () => {
+  const client = clientWithRunner(async (_args, env) => {
+    assert.deepEqual(env, { ...buzzCliEnvironment(process.env), BUZZ_RELAY_URL: "https://buzz.example.test", BUZZ_PRIVATE_KEY: "1".repeat(64) });
+    return "[]";
+  });
+  await client.executeCommand(["channels", "list"]);
+});
 const ownPubkey = "d".repeat(64);
 const humanPubkey = "5".repeat(64);
 
@@ -40,6 +68,19 @@ test("parseBuzzChannelAllowlist normalizes and deduplicates values", () => {
   );
 });
 
+test("full Buzz command proxy accepts remote commands but owns connection credentials", () => {
+  assert.deepEqual(normalizeBuzzCommandArgs(["messages", "get", "--channel", channelId]), [
+    "messages", "get", "--channel", channelId,
+  ]);
+  assert.throws(() => normalizeBuzzCommandArgs(["pack", "inspect"]), /Unsupported Buzz command/);
+  assert.throws(() => normalizeBuzzCommandArgs(["messages", "get", "--private-key=secret"]), /managed by the adapter/);
+});
+
+test("full Buzz command proxy returns structured CLI output", async () => {
+  const client = clientWithRunner(async (args) => JSON.stringify({ args }));
+  assert.deepEqual(await client.executeCommand(["channels", "list"]), { args: ["channels", "list"] });
+});
+
 test("listChannels returns only allowlisted visible channels", async () => {
   const client = clientWithRunner(async () => JSON.stringify([
     { channel_id: channelId, name: "prism-lab", description: "Pilot" },
@@ -54,9 +95,77 @@ test("listChannels returns only allowlisted visible channels", async () => {
   }]);
 });
 
-test("listChannels fails closed when an allowlisted channel is not visible", async () => {
+test("stale ceiling entries do not hide other visible channels or abort discovery", async () => {
   const client = clientWithRunner(async () => "[]");
-  await assert.rejects(() => client.listChannels(), /not visible/);
+  assert.deepEqual(await client.listChannels(), []);
+});
+
+test("an empty infrastructure ceiling discovers every visible channel", async () => {
+  const client = clientWithRunner(async () => JSON.stringify([
+    { channel_id: channelId, name: "prism-lab" },
+    { channel_id: "open-channel", name: "general" },
+  ]), { channelAllowlist: [] });
+  assert.deepEqual((await client.listChannels()).map((channel) => channel.channelId), ["open-channel", channelId]);
+});
+
+test("listVisibleChannels is not constrained by the message allowlist", async () => {
+  const otherChannelId = "b419a6ec-07ef-4d55-b071-635bc1b4dd4f";
+  const client = clientWithRunner(async () => JSON.stringify([
+    { channel_id: channelId, name: "prism-lab" },
+    { channel_id: otherChannelId, name: "new-room" },
+  ]));
+
+  assert.deepEqual((await client.listVisibleChannels()).map((channel) => channel.channelId), [
+    otherChannelId,
+    channelId,
+  ]);
+});
+
+test("channel management methods map to the pinned Buzz CLI", async () => {
+  const calls: string[][] = [];
+  const client = clientWithRunner(async (args) => {
+    calls.push(args);
+    if (args[1] === "members") return JSON.stringify([humanPubkey]);
+    return JSON.stringify({ ok: true, channel_id: channelId });
+  });
+
+  await client.createChannel({
+    name: "delivery",
+    channelType: "forum",
+    visibility: "private",
+    description: "Delivery coordination",
+    ttlSeconds: 3600,
+  });
+  await client.updateChannel(channelId, { name: "shipping", clearTtl: true });
+  await client.setChannelTopic(channelId, "Q3 delivery");
+  await client.setChannelPurpose(channelId, "Coordinate releases");
+  await client.setChannelArchived(channelId, true);
+  assert.deepEqual(await client.listChannelMembers(channelId), [humanPubkey]);
+  await client.addChannelMember(channelId, humanPubkey, "admin");
+  await client.removeChannelMember(channelId, humanPubkey);
+
+  assert.deepEqual(calls, [
+    ["channels", "create", "--name", "delivery", "--type", "forum", "--visibility", "private", "--description", "Delivery coordination", "--ttl", "3600"],
+    ["channels", "update", "--channel", channelId, "--name", "shipping", "--no-ttl"],
+    ["channels", "topic", "--channel", channelId, "--topic", "Q3 delivery"],
+    ["channels", "purpose", "--channel", channelId, "--purpose", "Coordinate releases"],
+    ["channels", "archive", "--channel", channelId],
+    ["channels", "members", "--channel", channelId],
+    ["channels", "add-member", "--channel", channelId, "--pubkey", humanPubkey, "--role", "admin"],
+    ["channels", "remove-member", "--channel", channelId, "--pubkey", humanPubkey],
+  ]);
+});
+
+test("channel management validates identifiers before invoking Buzz", async () => {
+  let called = false;
+  const client = clientWithRunner(async () => {
+    called = true;
+    return "{}";
+  });
+
+  await assert.rejects(() => client.setChannelArchived("not-a-uuid", true), /UUID/);
+  await assert.rejects(() => client.addChannelMember(channelId, "bad", "member"), /64-character/);
+  assert.equal(called, false);
 });
 
 test("getMessages supplies the lower-bound cursor and ignores the adapter identity", async () => {
@@ -74,6 +183,25 @@ test("getMessages supplies the lower-bound cursor and ignores the adapter identi
   assert.deepEqual(messages.map((message) => message.id), ["human"]);
 });
 
+test("getMessages supports bounded direct history including adapter messages", async () => {
+  let capturedArgs: string[] = [];
+  const client = clientWithRunner(async (args) => {
+    capturedArgs = args;
+    return JSON.stringify([
+      { id: "own", pubkey: ownPubkey, created_at: 100, kind: 9, content: "Prism reply", tags: [["h", channelId]] },
+      { id: "human", pubkey: humanPubkey, created_at: 101, kind: 9, content: "Steering", tags: [["h", channelId]] },
+    ]);
+  });
+
+  const messages = await client.getMessages(channelId, new Date(90_000), {
+    limit: 25,
+    includeOwnMessages: true,
+  });
+
+  assert.deepEqual(capturedArgs.slice(-4), ["--limit", "25", "--since", "90"]);
+  assert.deepEqual(messages.map((message) => message.id), ["own", "human"]);
+});
+
 test("sendMessage rejects a destination outside the allowlist before invoking Buzz", async () => {
   let called = false;
   const client = clientWithRunner(async () => {
@@ -82,6 +210,16 @@ test("sendMessage rejects a destination outside the allowlist before invoking Bu
   });
   await assert.rejects(() => client.sendMessage("general", "hello"), /not allowlisted/);
   assert.equal(called, false);
+});
+
+test("an empty infrastructure ceiling permits policy-authorized destinations", async () => {
+  let called = false;
+  const client = clientWithRunner(async () => {
+    called = true;
+    return JSON.stringify({ event_id: "reply" });
+  }, { channelAllowlist: [] });
+  await client.sendMessage("policy-bound-channel", "hello");
+  assert.equal(called, true);
 });
 
 test("sendMessage creates a threaded reply when replyTo is provided", async () => {
@@ -180,7 +318,10 @@ test("Buzz typing authenticates, refreshes, and closes without delaying the call
     relayFactory: () => relay,
     intervalMs: 5,
   });
-  await new Promise((resolve) => setTimeout(resolve, 18));
+  const deadline = Date.now() + 1_000;
+  while (published.length < 2 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
   await typing.stop();
 
   assert.ok(published.length >= 2);
@@ -192,13 +333,90 @@ test("getThread preserves own replies for duplicate-delivery detection", async (
   const rootEventId = "a".repeat(64);
   const client = clientWithRunner(async () => JSON.stringify([
     { id: rootEventId, pubkey: humanPubkey, created_at: 100, kind: 9, content: "@Prism hello", tags: [] },
-    { id: "b".repeat(64), pubkey: ownPubkey, created_at: 101, kind: 9, content: "Hi", tags: [] },
+    { id: "b".repeat(64), pubkey: ownPubkey, created_at: 101, kind: 9, content: "Hi", tags: [["e", rootEventId, "", "reply"]] },
   ]));
 
   const thread = await client.getThread(channelId, rootEventId);
 
   assert.equal(thread.length, 2);
   assert.equal(buzzThreadHasReplyFrom(thread, ownPubkey, rootEventId), true);
+  assert.equal(buzzThreadHasDirectReplyFrom(thread, ownPubkey, rootEventId), true);
+});
+
+test("Buzz reply correlation follows a mention-started conversation", () => {
+  const rootEventId = "a".repeat(64);
+  const assistantEventId = "b".repeat(64);
+  const followupEventId = "c".repeat(64);
+  const root: BuzzEvent = {
+    id: rootEventId,
+    pubkey: humanPubkey,
+    createdAt: 100,
+    kind: 9,
+    content: "@Prism hello",
+    tags: [["h", channelId], ["p", ownPubkey]],
+  };
+  const assistant: BuzzEvent = {
+    id: assistantEventId,
+    pubkey: ownPubkey,
+    createdAt: 101,
+    kind: 9,
+    content: "Hi",
+    tags: [["h", channelId], ["e", rootEventId, "", "reply"]],
+  };
+  const followup: BuzzEvent = {
+    id: followupEventId,
+    pubkey: humanPubkey,
+    createdAt: 102,
+    kind: 9,
+    content: "One more thing",
+    tags: [["h", channelId], ["e", assistantEventId, "", "reply"]],
+  };
+
+  assert.deepEqual(buzzEventReplyIds(followup), [assistantEventId]);
+  assert.equal(buzzConversationRootFromThread([root, assistant, followup], followup, ownPubkey), rootEventId);
+  assert.equal(buzzThreadHasDirectReplyFrom([root, assistant, followup], ownPubkey, followupEventId), false);
+});
+
+test("Buzz reply correlation recognizes a Prism-authored thread root", () => {
+  const rootEventId = "a".repeat(64);
+  const assistantReplyId = "b".repeat(64);
+  const followupEventId = "c".repeat(64);
+  const root: BuzzEvent = {
+    id: rootEventId, pubkey: ownPubkey, createdAt: 100, kind: 9, content: "Autopilot update", tags: [["h", channelId]],
+  };
+  const assistant: BuzzEvent = {
+    id: assistantReplyId, pubkey: ownPubkey, createdAt: 101, kind: 9, content: "Answer", tags: [["h", channelId], ["e", rootEventId, "", "reply"]],
+  };
+  const followup: BuzzEvent = {
+    id: followupEventId,
+    pubkey: humanPubkey,
+    createdAt: 102,
+    kind: 9,
+    content: "Why did you do that?",
+    tags: [["h", channelId], ["e", rootEventId, "", "root"], ["e", assistantReplyId, "", "reply"]],
+  };
+
+  assert.deepEqual(buzzEventRootIds(followup), [rootEventId]);
+  assert.equal(buzzEventDirectReplyId(followup), assistantReplyId);
+  assert.equal(buzzThreadRootId(followup, [root, assistant, followup]), rootEventId);
+  assert.equal(buzzConversationRootFromThread([root, assistant, followup], followup, ownPubkey), rootEventId);
+});
+
+test("Buzz reply correlation flattens a deeply nested follow-up to the channel root", () => {
+  const rootEventId = "a".repeat(64);
+  const assistantEventId = "b".repeat(64);
+  const firstFollowupId = "c".repeat(64);
+  const nestedAssistantId = "d".repeat(64);
+  const nestedFollowupId = "e".repeat(64);
+  const events: BuzzEvent[] = [
+    { id: rootEventId, pubkey: humanPubkey, createdAt: 100, kind: 9, content: "@Prism hello", tags: [["h", channelId], ["p", ownPubkey]] },
+    { id: assistantEventId, pubkey: ownPubkey, createdAt: 101, kind: 9, content: "Hi", tags: [["h", channelId], ["e", rootEventId, "", "reply"]] },
+    { id: firstFollowupId, pubkey: humanPubkey, createdAt: 102, kind: 9, content: "More", tags: [["h", channelId], ["e", assistantEventId, "", "reply"]] },
+    { id: nestedAssistantId, pubkey: ownPubkey, createdAt: 103, kind: 9, content: "Answer", tags: [["h", channelId], ["e", firstFollowupId, "", "reply"]] },
+    { id: nestedFollowupId, pubkey: humanPubkey, createdAt: 104, kind: 9, content: "Again", tags: [["h", channelId], ["e", nestedAssistantId, "", "reply"]] },
+  ];
+
+  assert.equal(buzzConversationRootFromThread(events, events.at(-1)!, ownPubkey), rootEventId);
 });
 
 test("Buzz mention detection requires the adapter public-key tag", () => {
@@ -262,4 +480,14 @@ test("selectUnseenBuzzEvents makes checkpoint overlap idempotent", () => {
   assert.deepEqual(selected.unseen.map((entry) => entry.event.id), ["new-event"]);
   assert.equal(selected.duplicateCount, 1);
   assert.deepEqual(selected.recentEventIds, ["already-seen", "new-event"]);
+});
+
+test("Buzz interaction cursor does not skip messages received during a slow runtime call", () => {
+  const pollStartedTimestamp = 1_785_864_300;
+
+  assert.equal(buzzInteractionCursorTimestamp(pollStartedTimestamp, []), pollStartedTimestamp);
+  assert.equal(
+    buzzInteractionCursorTimestamp(pollStartedTimestamp, [pollStartedTimestamp - 10, pollStartedTimestamp - 4]),
+    pollStartedTimestamp - 10,
+  );
 });

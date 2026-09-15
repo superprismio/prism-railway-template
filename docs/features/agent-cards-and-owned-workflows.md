@@ -2,7 +2,16 @@
 
 ## Status
 
-Planned / future.
+Historical design note. The Agent Card identity model was superseded by the
+versioned Agent Profile model in
+[Prism Lab Agent-First Operations Addendum](./prism-lab-agent-first-addendum.md).
+The one-agent-per-workflow ownership rule in this document is also superseded by
+[Accountability Domains And Execution Audit](./accountability-domains-and-execution-audit.md).
+
+Retain this document for its useful mandate, explicit-step, handoff, and dynamic
+work-proposal ideas. Read `agent card` as the historical precursor to `Agent
+Profile`; do not use the old relationship fields or single-executor ownership
+rules for new implementation.
 
 This captures a product and architecture direction for named agent personas in
 Prism without introducing a new execution environment. The working idea is an
@@ -57,9 +66,12 @@ Agent cards should fit into the existing Prism stack:
 
 ## Goals
 
-- Give recurring agent workflows a clear owner and identity.
-- Attach one primary agent card to a workflow template and workflow run.
-- Snapshot the resolved agent card onto agent runs for provenance.
+- Give recurring agent workflows a clear accountable domain while preserving
+  the distinct identities of their executing profiles.
+- Give each workflow one accountable domain while allowing explicit steps to
+  execute through different Agent Profiles.
+- Snapshot the resolved Agent Profile, version, execution mode, accountability
+  domain, and executor-resolution source onto agent runs for provenance.
 - Use the agent card to guide context, voice, boundaries, and review criteria.
 - Keep workflow steps explicit and visible.
 - Support future chat-based creation of agent cards and owned workflows.
@@ -69,8 +81,8 @@ Agent cards should fit into the existing Prism stack:
 ## Non-Goals
 
 - Do not introduce a new execution environment.
-- Do not make one workflow contain multiple primary agent owners in the first
-  model.
+- Do not confuse a workflow's accountable domain with the Agent Profiles that
+  execute its steps.
 - Do not hide pre-run or post-run work inside an agent card.
 - Do not allow generic "agents can call agents" behavior.
 - Do not allow an orchestration agent to silently assign ownership or enable new
@@ -140,57 +152,49 @@ This can start smaller:
 
 ## Relationship Model
 
-Start with one primary agent card per workflow template:
+The current model separates accountable ownership from execution:
 
 ```txt
-agent_card 1 -> many workflows
+accountability_domain 1 -> many workflows, tasks, and Agent Profiles
 workflow 1 -> many workflow runs
-workflow run snapshots the resolved agent card
-agent_run records the resolved agent card/version
+workflow step -> one resolved Agent Profile for each run
+agent_run -> immutable executor Profile/version/mode and resolution source
 ```
 
-Suggested fields:
-
-```txt
-workflows.agent_card_id
-workflow_runs.agent_card_id
-agent_runs.agent_card_id
-agent_runs.agent_card_snapshot_json
-```
-
-Requests may inherit an agent card from the selected workflow. A direct
-request-level override can wait until there is a clear product need.
+Requests remain shared work items. They do not inherit a single agent owner from
+the workflow because one workflow may involve several profiles.
 
 ## Workflow Ownership
 
-Use this first rule:
+Use this rule:
 
 ```txt
-One workflow run has one primary agent card.
+One workflow has one accountable domain.
+Each agent step has one resolved executor.
 ```
 
-This keeps accountability clean. A Queen Raida workflow can have many explicit
-steps, but they are all phases of Queen Raida's work:
+A workflow can keep accountability clean while using specialists across
+domains:
 
 ```txt
-load brand/context
-draft announcement
-run public-output-safety
-human review
-publish/handoff
+Change Request / Platform Operations
+  triage       -> BizDev Agent / BizDev
+  implement    -> Codegen Agent / Software Delivery
+  verify       -> Verification Agent / Quality
+  review       -> Code Review Agent / Quality
+  human gate   -> no agent executor
 ```
 
-If another owner or persona is needed, use a handoff to another workflow rather
-than a multi-agent workflow:
+Cross-domain execution does not transfer workflow ownership or widen the
+executor's authority. Use a child workflow when the work has its own lifecycle,
+subject, approval path, or accountable outcome—not merely because it needs a
+different specialist profile.
 
 ```txt
 Research Agent workflow
   -> child request/workflow for Content Creator Agent
-  -> child request/workflow for Safety Reviewer
+  -> explicit handoff and separately accountable outcome
 ```
-
-Multi-agent workflows are out of scope for the first slice. Workflow chaining is
-the preferred future pattern for cross-agent handoffs.
 
 ## Explicit Steps
 
@@ -486,19 +490,17 @@ only if operators need backlog planning, dependencies, swimlanes, or due dates.
 - Failure modes: misquoting speakers, weak source grounding, duplicated content.
 - Review: citations, source excerpts, publish checklist.
 
-## First Implementation Slice
+## Superseding Implementation Direction
 
-1. Add `agent_cards` with owner, name, job, sources, boundaries, and review
-   criteria.
-2. Add `agent_card_id` to workflows and workflow runs.
-3. Snapshot agent card metadata onto `agent_runs`.
-4. Show agent card identity and owner in workflow/run history UI.
-5. Inject selected card instructions and allowed skills into workflow run
-   prompt construction.
-6. Add chat-assisted agent card creation that outputs a draft card and suggested
-   explicit workflow nodes.
-7. Keep handoffs as existing spawned requests, but add parent/child provenance
-   fields.
+1. Keep the existing Site-owned, versioned Agent Profile registry.
+2. Add one accountability domain to each Agent Profile, workflow, and task.
+3. Preserve explicit step-level executor selection and cross-domain execution.
+4. Snapshot executor resolution and definition ownership onto durable runs.
+5. Add chat-assisted domain, profile, workflow, and task authoring through
+   dedicated Site-hosted skills and validated APIs.
+6. Add ownership and Admin-fallback checks to Prism Doctor.
+7. Keep handoffs as visible workflow/request records with parent/child
+   provenance.
 
 ## Later Work
 

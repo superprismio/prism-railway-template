@@ -1,6 +1,76 @@
 export { loadConfig, type AppConfig, type CommunityProvider } from './config';
 export { getDb, closeDb, runMigrations } from './db';
+export { detectAgentAvatarMimeType, readAgentAvatar, validateAgentAvatar, writeAgentAvatar, type AgentAvatarMimeType } from './agent-avatar-storage';
+export {
+  adminAgentProfileId,
+  adminAgentProfileKey,
+  agentExecutionModes,
+  assignAgentProfileToSession,
+  ensureAdminAgentStewards,
+  getAgentProfile,
+  hasAgentProfileBinding,
+  getAgentProfileById,
+  getAgentProfileVersion,
+  getAgentProfileSessionDetail,
+  getAgentSessionProfileAssignment,
+  listAgentProfiles,
+  listAgentProfileActivity,
+  listAgentProfileQueueStates,
+  listAgentProfileSessions,
+  listLegacyAgentProfileMigrationCandidates,
+  migrateLegacyInteractionProfileToAgent,
+  resolveAgentProfileBinding,
+  resolveAgentProfileInteraction,
+  normalizeAgentProfileBindingPolicy,
+  upsertAgentProfile,
+  upsertAgentProfileBinding,
+  type AgentConversationScope,
+  type AgentExecutionMode,
+  type AgentProfileBinding,
+  type AgentProfileBindingPolicy,
+  type ResolvedAgentProfileInteraction,
+  type AgentProfileRecord,
+  type AgentProfileActivityItem,
+  type AgentProfileQueueState,
+  type AgentProfileSessionSummary,
+  type AgentProfileSessionDetail,
+  type LegacyAgentProfileMigrationCandidate,
+  type UpsertAgentProfileInput,
+} from './agent-profiles';
 export { getAdminBoardSnapshot, getAdminSetupStatus } from './admin-read';
+export {
+  agentExecutorResolutions,
+  resolveAgentExecutor,
+  taskAgentExecutor,
+  taskUsesAgentExecutor,
+  workflowAgentExecutor,
+  type AgentExecutorSnapshot,
+  type AgentExecutorResolution,
+} from './agent-executors';
+export {
+  accountabilityTargetTypes,
+  assignAccountabilityDomain,
+  buildAccountabilityAuditReport,
+  buildAccountabilitySnapshot,
+  getAccountabilityAssignment,
+  getAccountabilityDomain,
+  listAccountabilityDomains,
+  upsertAccountabilityDomain,
+  type AccountabilityDomainAssignment,
+  type AccountabilityDomainRecord,
+  type AccountabilityDomainStatus,
+  type AccountabilityTargetType,
+} from './accountability-domains';
+export {
+  getRequestOrigin,
+  insertRequestOrigin,
+  listRequestOrigins,
+  normalizeRequestOriginPlatform,
+  resolveRequestOriginSnapshot,
+  type RequestOriginBackfillStatus,
+  type RequestOriginPlatform,
+  type RequestOriginSnapshot,
+} from './request-origin';
 export { buildTargetEnvironmentDeployPlan, type TargetEnvironmentDeployPlan } from './deploy-adapters';
 export { buildHostedSkillArchive, deleteCustomSkill, listHostedSkills, readHostedSkillMarkdown, upsertCustomSkill, type HostedSkillSummary } from './hosted-skills';
 export {
@@ -98,6 +168,7 @@ export {
   type UpsertRuntimeProfileInput,
 } from './runtime-profiles';
 export {
+  cancelRuntimeJob,
   requestRuntimeResponse,
   requestRuntimeResponseWithProfile,
   type RuntimeRequestInput,

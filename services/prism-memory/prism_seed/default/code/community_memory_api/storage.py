@@ -47,6 +47,46 @@ class FilesystemStorageBackend:
     def memory_latest(self) -> Any:
         return self._load_json(self.root / "memory" / "rolling" / "latest.json")
 
+    def memory_dates(self, limit: int = 180) -> Dict[str, Any]:
+        rolling_root = self.root / "memory" / "rolling"
+        candidates = sorted(
+            (
+                path
+                for path in rolling_root.glob("????-??-??.json")
+                if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.json", path.name)
+            ),
+            reverse=True,
+        )
+        items: List[Dict[str, Any]] = []
+        for path in candidates[:limit]:
+            try:
+                payload = self._load_json(path)
+            except StorageError:
+                continue
+            sections = payload.get("sections") if isinstance(payload, dict) else {}
+            sections = sections if isinstance(sections, dict) else {}
+            buckets = {
+                str(entry.get("bucket")).strip()
+                for entries in sections.values()
+                if isinstance(entries, list)
+                for entry in entries
+                if isinstance(entry, dict) and str(entry.get("bucket") or "").strip()
+            }
+            source_paths = payload.get("source_digest_paths") if isinstance(payload, dict) else []
+            for source_path in source_paths if isinstance(source_paths, list) else []:
+                match = re.match(r"^buckets/([^/]+)/", str(source_path))
+                if match:
+                    buckets.add(match.group(1))
+            items.append(
+                {
+                    "date": path.stem,
+                    "section_count": sum(1 for entries in sections.values() if isinstance(entries, list) and entries),
+                    "entry_count": sum(len(entries) for entries in sections.values() if isinstance(entries, list)),
+                    "bucket_count": len(buckets),
+                }
+            )
+        return {"dates": items, "total": len(candidates), "limit": limit}
+
     def memory_by_date(self, date_str: str) -> Any:
         self._validate_date(date_str)
         return self._load_json(self.root / "memory" / "rolling" / f"{date_str}.json")

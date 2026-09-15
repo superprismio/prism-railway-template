@@ -20,6 +20,8 @@ export interface SourceAdapterPolicyRule {
   mode?: SourceAdapterAccessMode;
   interactionProfileKey?: string;
   capabilities?: string[];
+  skills?: string[];
+  historyScopes?: string[];
   rateLimit?: Partial<SourceAdapterRateLimit>;
 }
 
@@ -47,6 +49,8 @@ export interface ResolvedSourceAdapterPolicy {
   mode: SourceAdapterAccessMode;
   interactionProfileKey: string | null;
   capabilities: string[];
+  skills: string[];
+  historyScopes: string[];
   rateLimit: SourceAdapterRateLimit;
   matchedRules: string[];
 }
@@ -172,6 +176,24 @@ function parseCapabilities(value: unknown): string[] | undefined {
   return capabilities.length ? Array.from(new Set(capabilities)) : undefined;
 }
 
+function parseSkills(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const skills = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => /^[a-zA-Z][a-zA-Z0-9_.-]{0,119}$/.test(item));
+  return skills.length ? Array.from(new Set(skills)) : undefined;
+}
+
+function parseHistoryScopes(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const scopes = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => /^\d{1,30}$/.test(item));
+  return scopes.length ? Array.from(new Set(scopes)) : undefined;
+}
+
 function parseInteractionProfileKey(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const key = value.trim().toLowerCase();
@@ -205,12 +227,16 @@ function normalizeRule(value: unknown): SourceAdapterPolicyRule {
     record.interactionProfileKey ?? record.interaction_profile_key,
   );
   const capabilities = parseCapabilities(record.capabilities);
+  const skills = parseSkills(record.skills ?? record.requestedSkills ?? record.requested_skills);
+  const historyScopes = parseHistoryScopes(record.historyScopes ?? record.history_scopes);
   const rateLimit = normalizePartialRateLimit(record.rateLimit ?? record.rate_limit);
 
   return {
     ...(mode ? { mode } : {}),
     ...(interactionProfileKey ? { interactionProfileKey } : {}),
     ...(capabilities ? { capabilities } : {}),
+    ...(skills ? { skills } : {}),
+    ...(historyScopes ? { historyScopes } : {}),
     ...(rateLimit ? { rateLimit } : {}),
   };
 }
@@ -296,6 +322,8 @@ function applySourceAdapterPolicyRule(
     mode,
     interactionProfileKey: rule.interactionProfileKey ?? (modeChanged ? null : current.interactionProfileKey),
     capabilities: rule.capabilities ?? (modeChanged ? sourceAdapterCapabilitiesForMode(mode) : current.capabilities),
+    skills: rule.skills ?? current.skills,
+    historyScopes: rule.historyScopes ?? current.historyScopes,
     rateLimit: {
       windowSeconds: rule.rateLimit?.windowSeconds ?? current.rateLimit.windowSeconds,
       maxRequests: rule.rateLimit?.maxRequests ?? current.rateLimit.maxRequests,
@@ -315,6 +343,8 @@ export function resolveSourceAdapterPolicy(
     mode: platform.defaultMode,
     interactionProfileKey: null,
     capabilities: sourceAdapterCapabilitiesForMode(platform.defaultMode),
+    skills: [],
+    historyScopes: [],
     rateLimit: platform.defaultRateLimit,
     matchedRules: ['default'],
   };

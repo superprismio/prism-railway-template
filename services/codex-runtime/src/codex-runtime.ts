@@ -4,8 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
-import { loadRelevantPrismSkills } from './prism-skills.js';
+import { RunBudget, isExecutionProgress, resolveRunBudget } from './run-budget.js';
+import { resolveCodexModelPolicy, type ModelTier, type ReasoningEffort } from './model-tier.js';
+import { createNativePrismSkillHome, loadRelevantPrismSkills } from './prism-skills.js';
 import { gatewayClient } from './runtime-gateway.js';
+import { processInvocationSizeMetrics } from './process-size.js';
+import { browserToolEnvironment, browserToolInstructions } from './browser-tools.js';
 
 type HistoryEntry = {
   role: string;
@@ -49,14 +53,32 @@ type LinkedLatestExecutionMetadata = {
   meta?: Record<string, unknown>;
 };
 
+export type GitHubPullRequestRef = {
+  owner: string;
+  repo: string;
+  number: number;
+  url: string;
+};
+
+type GitHubPullRequestMetadata = GitHubPullRequestRef & {
+  title: string | null;
+  baseRef: string;
+  baseSha: string;
+  headRef: string;
+  headSha: string;
+  repositoryUrl: string;
+};
+
 export type CodexRuntimeInput = {
   prompt: string;
   recentHistory: HistoryEntry[];
   sessionId: string;
+  authorityMode?: 'full' | 'read_only_utility';
   codexThreadId?: string | null;
   credentials?: string[];
   gatewayContext?: Record<string, string>;
   metadata?: Record<string, unknown>;
+  modelTier?: ModelTier | null;
   signal?: AbortSignal;
   onTrace?: (trace: CodexRuntimeResult['trace']) => void;
 };
@@ -64,6 +86,8 @@ export type CodexRuntimeInput = {
 export type CodexRuntimeResult = {
   provider: 'codex-cli';
   model: string | null;
+  modelTier: ModelTier | null;
+  reasoningEffort: ReasoningEffort | null;
   responseText: string;
   codexThreadId: string | null;
   branchName: string | null;
@@ -76,6 +100,30 @@ export type CodexRuntimeResult = {
     kind: string;
     message: string;
   }>;
+};
+
+type WorkflowDelegationPolicy = {
+  allowed: boolean;
+  maxAgents: number;
+};
+
+type CodexJsonEvent = {
+  type?: string;
+  thread_id?: string;
+  message?: string;
+  item?: {
+    id?: string;
+    type?: string;
+    text?: string;
+    role?: string;
+    status?: string;
+    tool?: string;
+    sender_thread_id?: string;
+    receiver_thread_ids?: string[];
+    prompt?: string | null;
+    agents_states?: Record<string, { status?: string; message?: string | null }>;
+  };
+  error?: { message?: string } | string;
 };
 
 type CodexRuntimeError = Error & {
@@ -101,6 +149,24 @@ function slugifySegment(value: string) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80);
+}
+
+export function extractGitHubPullRequestRef(input: Pick<CodexRuntimeInput, 'prompt' | 'recentHistory'>) {
+  const candidates = [input.prompt, ...input.recentHistory.slice().reverse().map((entry) => entry.content)];
+  for (const candidate of candidates) {
+    const refs = new Map<string, GitHubPullRequestRef>();
+    for (const match of candidate.matchAll(/https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)(?:\b|\/)/gi)) {
+      const number = Number.parseInt(match[3]!, 10);
+      if (!Number.isSafeInteger(number) || number < 1) continue;
+      const owner = match[1]!;
+      const repo = match[2]!.replace(/\.git$/i, '');
+      const ref = { owner, repo, number, url: `https://github.com/${owner}/${repo}/pull/${number}` } satisfies GitHubPullRequestRef;
+      refs.set(ref.url.toLowerCase(), ref);
+    }
+    if (refs.size === 1) return refs.values().next().value ?? null;
+    if (refs.size > 1) return null;
+  }
+  return null;
 }
 
 function parseLinkedTargetApp(metadata: Record<string, unknown> | undefined): LinkedTargetAppMetadata | null {
@@ -218,6 +284,55 @@ async function inspectGitHubRepoAccess(repoUrl: string, githubToken: string | nu
     repoSlug: parsed.slug,
     canPull: typeof permissions?.pull === 'boolean' ? permissions.pull : null,
     canPush: typeof permissions?.push === 'boolean' ? permissions.push : null,
+  };
+}
+
+async function inspectGitHubPullRequest(
+  ref: GitHubPullRequestRef,
+  githubToken: string | null,
+): Promise<GitHubPullRequestMetadata> {
+  const response = await fetch(`https://api.github.com/repos/${ref.owner}/${ref.repo}/pulls/${ref.number}`, {
+    headers: {
+      ...(githubToken ? { Authorization: `Bearer ${githubToken}` } : {}),
+      'User-Agent': 'prism-codex-runtime',
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  }).catch(() => null);
+  if (!response) throw new Error(`GITHUB_PR_LOOKUP_FAILED:${ref.owner}/${ref.repo}#${ref.number}`);
+  if (!response.ok) {
+    throw new Error(`GITHUB_PR_LOOKUP_FAILED:${response.status}:${ref.owner}/${ref.repo}#${ref.number}`);
+  }
+
+  const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+  const base = payload?.base && typeof payload.base === 'object' && !Array.isArray(payload.base)
+    ? payload.base as Record<string, unknown>
+    : null;
+  const head = payload?.head && typeof payload.head === 'object' && !Array.isArray(payload.head)
+    ? payload.head as Record<string, unknown>
+    : null;
+  const baseRepo = base?.repo && typeof base.repo === 'object' && !Array.isArray(base.repo)
+    ? base.repo as Record<string, unknown>
+    : null;
+  const baseRef = typeof base?.ref === 'string' ? base.ref : '';
+  const baseSha = typeof base?.sha === 'string' ? base.sha : '';
+  const headRef = typeof head?.ref === 'string' ? head.ref : '';
+  const headSha = typeof head?.sha === 'string' ? head.sha : '';
+  const repositoryUrl = typeof baseRepo?.clone_url === 'string'
+    ? baseRepo.clone_url
+    : `https://github.com/${ref.owner}/${ref.repo}.git`;
+  if (!baseRef || !baseSha || !headSha) {
+    throw new Error(`GITHUB_PR_LOOKUP_INVALID:${ref.owner}/${ref.repo}#${ref.number}`);
+  }
+
+  return {
+    ...ref,
+    title: typeof payload?.title === 'string' ? payload.title : null,
+    baseRef,
+    baseSha,
+    headRef,
+    headSha,
+    repositoryUrl,
   };
 }
 
@@ -466,11 +581,73 @@ type PreparedExecutionWorkspace = {
   baseCommitSha: string | null;
 };
 
+async function preparePullRequestReviewWorkspace(
+  input: CodexRuntimeInput,
+  pullRequestRef: GitHubPullRequestRef,
+  trace: CodexRuntimeResult['trace'],
+  githubToken: string | null,
+): Promise<PreparedExecutionWorkspace> {
+  const pullRequest = await inspectGitHubPullRequest(pullRequestRef, githubToken);
+  const targetSlug = slugifySegment(`${pullRequest.owner}-${pullRequest.repo}`) || 'github-pr';
+  const workspacePath = path.resolve(config.targetWorkspaceRoot, 'reviews', targetSlug, `pr-${pullRequest.number}`);
+  const gitDir = path.join(workspacePath, '.git');
+  await fs.mkdir(path.dirname(workspacePath), { recursive: true });
+
+  if (!(await pathExists(gitDir))) {
+    appendTrace(trace, 'workspace.clone', `Cloning ${pullRequest.owner}/${pullRequest.repo} for PR #${pullRequest.number}`);
+    try {
+      await runGitHubReadCommand(pullRequest.repositoryUrl, [
+        'clone', '--no-checkout', pullRequest.repositoryUrl, workspacePath,
+      ], githubToken);
+    } catch (error) {
+      throw await normalizeGitHubRepoError(pullRequest.repositoryUrl, 'clone', error, githubToken);
+    }
+  } else {
+    appendTrace(trace, 'workspace.reuse', `Refreshing review workspace for ${pullRequest.owner}/${pullRequest.repo}#${pullRequest.number}`);
+    await runCommand(['git', 'remote', 'set-url', 'origin', pullRequest.repositoryUrl], { cwd: workspacePath }).catch(() => undefined);
+  }
+
+  const reviewRef = `refs/remotes/origin/pr-${pullRequest.number}`;
+  try {
+    await runGitHubReadCommand(pullRequest.repositoryUrl, [
+      'fetch', '--force', 'origin',
+      `+refs/heads/${pullRequest.baseRef}:refs/remotes/origin/${pullRequest.baseRef}`,
+      `+refs/pull/${pullRequest.number}/head:${reviewRef}`,
+    ], githubToken, { cwd: workspacePath });
+  } catch (error) {
+    throw await normalizeGitHubRepoError(pullRequest.repositoryUrl, 'fetch', error, githubToken);
+  }
+  await runCommand(['git', 'checkout', '--detach', reviewRef], { cwd: workspacePath });
+  const checkedOutHead = await runCommandCapture(['git', 'rev-parse', 'HEAD'], { cwd: workspacePath });
+  if (checkedOutHead !== pullRequest.headSha) {
+    throw new Error(`GITHUB_PR_HEAD_MISMATCH:expected=${pullRequest.headSha}:actual=${checkedOutHead}`);
+  }
+
+  input.metadata = {
+    ...(input.metadata ?? {}),
+    linkedPullRequest: pullRequest,
+  };
+  appendTrace(trace, 'workspace.review_ready', `Checked out ${pullRequest.owner}/${pullRequest.repo}#${pullRequest.number} at ${pullRequest.headSha}`);
+  return {
+    workspacePath,
+    repoUrl: pullRequest.repositoryUrl,
+    branchName: pullRequest.headRef || `pull/${pullRequest.number}/head`,
+    commitSha: pullRequest.headSha,
+    baseBranch: pullRequest.baseRef,
+    baseCommitSha: pullRequest.baseSha,
+  };
+}
+
 async function prepareExecutionWorkspace(
   input: CodexRuntimeInput,
   trace: CodexRuntimeResult['trace'],
   githubToken: string | null,
 ) : Promise<PreparedExecutionWorkspace> {
+  const directPullRequest = isReviewerExecution(input) ? extractGitHubPullRequestRef(input) : null;
+  if (directPullRequest && !shouldHydrateExternalWorkspace(input.metadata)) {
+    return await preparePullRequestReviewWorkspace(input, directPullRequest, trace, githubToken);
+  }
+
   if (!shouldHydrateExternalWorkspace(input.metadata)) {
     return {
       workspacePath: config.codexWorkspaceRoot,
@@ -594,6 +771,21 @@ async function gitHasChanges(cwd: string) {
   return Boolean(status.trim());
 }
 
+async function gitHasTrackedChanges(cwd: string) {
+  const status = await runCommandCapture(['git', 'status', '--porcelain', '--untracked-files=no'], { cwd }).catch(() => '');
+  return Boolean(status.trim());
+}
+
+export function isReviewerExecution(input: Pick<CodexRuntimeInput, 'metadata'>) {
+  const profile = input.metadata?.agentProfile;
+  return Boolean(
+    profile
+    && typeof profile === 'object'
+    && !Array.isArray(profile)
+    && (profile as Record<string, unknown>).executionMode === 'reviewer',
+  );
+}
+
 async function remoteBranchExists(repoUrl: string, branchName: string, cwd: string, githubToken: string | null) {
   const output = await runGitHubReadCapture(
     repoUrl,
@@ -611,12 +803,25 @@ function buildChangeRequestCommitMessage(input: CodexRuntimeInput) {
   return `${requestNumber}: ${title}`;
 }
 
-async function finalizeGitWorkspace(
+export async function finalizeGitWorkspace(
   input: CodexRuntimeInput,
   preparedWorkspace: PreparedExecutionWorkspace,
   trace: CodexRuntimeResult['trace'],
   githubToken: string | null,
 ) {
+  const workspacePath = preparedWorkspace.workspacePath;
+  const profile = input.metadata?.agentProfile;
+  const verification = Boolean(profile && typeof profile === 'object' && !Array.isArray(profile)
+    && (profile as Record<string, unknown>).executionMode === 'verifier');
+  if (isReviewerExecution(input) || verification) {
+    if (await gitHasTrackedChanges(workspacePath)) {
+      appendTrace(trace, verification ? 'git.verify_modified' : 'git.review_modified', 'Independent evaluator modified tracked repository files; refusing to commit or push');
+      throw new Error(verification ? 'VERIFIER_TRACKED_WORKSPACE_MODIFIED' : 'REVIEWER_TRACKED_WORKSPACE_MODIFIED');
+    }
+    appendTrace(trace, verification ? 'git.verify_readonly' : 'git.review_readonly', 'Independent evaluator left tracked files unchanged; skipped commit and push');
+    return await captureGitState(workspacePath, preparedWorkspace.baseBranch || 'main').catch(() => preparedWorkspace);
+  }
+
   if (!preparedWorkspace.repoUrl || preparedWorkspace.workspacePath === config.codexWorkspaceRoot) {
     return await captureGitState(
       preparedWorkspace.workspacePath,
@@ -624,7 +829,6 @@ async function finalizeGitWorkspace(
     ).catch(() => preparedWorkspace);
   }
 
-  const workspacePath = preparedWorkspace.workspacePath;
   const currentBranch = await runCommandCapture(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], { cwd: workspacePath })
     .catch(() => preparedWorkspace.branchName || '');
 
@@ -665,20 +869,40 @@ async function finalizeGitWorkspace(
 
 type LoadedPrismSkills = Awaited<ReturnType<typeof loadRelevantPrismSkills>>;
 
-function buildPrompt(
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+export function workflowDelegationPolicy(
+  input: Pick<CodexRuntimeInput, 'metadata'>,
+): WorkflowDelegationPolicy | null {
+  const workflow = recordValue(input.metadata?.workflow);
+  if (!workflow) return null;
+  const agentConfig = recordValue(workflow.agentConfig);
+  const delegation = recordValue(agentConfig?.delegation);
+  if (delegation?.allowed !== true) return { allowed: false, maxAgents: 0 };
+
+  const requestedMax = typeof delegation.maxAgents === 'number' && Number.isInteger(delegation.maxAgents)
+    ? delegation.maxAgents
+    : 1;
+  if (requestedMax < 1) return { allowed: false, maxAgents: 0 };
+  return { allowed: true, maxAgents: Math.min(requestedMax, 8) };
+}
+
+export function buildPrompt(
   input: CodexRuntimeInput,
   isResume: boolean,
   prismSkills: LoadedPrismSkills,
 ) {
+  const isReadOnlyUtility = input.authorityMode === 'read_only_utility';
+  const isReviewer = isReviewerExecution(input);
+  const delegation = workflowDelegationPolicy(input);
   const history = input.recentHistory
-    .slice(-12)
+    .slice(-20)
     .map((entry) => `${entry.role === 'assistant' ? 'Assistant' : 'User'}: ${entry.content}`)
     .join('\n');
-  const availableSkillsSummary = prismSkills.availableSkills.length
-    ? prismSkills.availableSkills
-      .map((skill) => `${skill.name}: ${skill.description}`)
-      .join('\n')
-    : null;
   const policyInstructions = typeof input.metadata?.policyInstructions === 'string'
     ? input.metadata.policyInstructions.trim().slice(0, 40_000)
     : '';
@@ -686,19 +910,44 @@ function buildPrompt(
     Object.entries(input.metadata ?? {}).filter(([key]) => key !== 'policyInstructions'),
   );
 
-  const sections = [
+  const fixedSections = [
     'You are Codex replying through a transport adapter.',
     'Behave like direct Codex chat, not like a fixed retrieval bot.',
     'Keep replies concise unless the user asks for more detail.',
     'Prism memory is optional. Only use it if it materially helps answer the user.',
-    'If Prism memory is useful, query it from the shell with curl against $PRISM_API_BASE and send X-Prism-Api-Key using $PRISM_API_READ_KEY or $PRISM_API_KEY.',
-    'Prism skills are authoritative when they apply. Use the loaded Prism skill instructions before probing ad hoc local paths or browser admin routes.',
-    'Do not treat missing local files under /data/codex/skills, /data/workflows, or /app as a blocker for Prism-managed content. Skills, workflows, tasks, hooks, artifacts, and settings are owned by the site service and should be managed through /agent/* routes with service-token auth.',
+    ...(isReadOnlyUtility
+      ? [
+          'This is a runtime-enforced read-only utility invocation. Inspect and explain only.',
+          'Do not modify files, repository state, workflows, requests, external services, or other persistent state.',
+          'No Site, adapter, Gateway, or repository mutation credentials are available.',
+        ]
+      : [
+          'If Prism memory is useful, query it from the shell with curl against $PRISM_API_BASE and send X-Prism-Api-Key using $PRISM_API_READ_KEY or $PRISM_API_KEY.',
+        ]),
+    ...(isReviewer
+      ? [
+          'This is a reviewer execution. Do not modify tracked repository files.',
+          'The runtime will never auto-commit or push this review, and it will fail the run if tracked files are changed.',
+        ]
+      : []),
+    ...(delegation?.allowed
+      ? [
+          `This workflow step permits at most ${delegation.maxAgents} concurrently open subagent threads. Delegate only independent, bounded work and keep integration, final validation, and external mutations in the parent run.`,
+        ]
+      : delegation
+        ? ['Subagent delegation is disabled for this workflow step. Complete the work in the parent run.']
+        : []),
+    'Prism skills are authoritative when they apply. Select relevant Site-hosted skills through Codex native skill discovery before probing ad hoc local paths or browser admin routes.',
+    ...(isReadOnlyUtility
+      ? []
+      : ['Do not treat missing local files under /data/codex/skills, /data/workflows, or /app as a blocker for Prism-managed content. Skills, workflows, tasks, hooks, artifacts, and settings are owned by the site service and should be managed through /agent/* routes with service-token auth.']),
     'Avoid unnecessary tool use. Return only the assistant reply text.',
     '',
     `External session id: ${input.sessionId}`,
     `Runtime mode: ${isResume ? 'resume' : 'start'}`,
   ];
+  const sections = [...fixedSections];
+  if (!isReadOnlyUtility) sections.push('', browserToolInstructions);
 
   if (policyInstructions) {
     sections.push('', 'Trusted transport policy instructions:', policyInstructions);
@@ -708,40 +957,135 @@ function buildPrompt(
     sections.push(`Session metadata: ${JSON.stringify(sessionMetadata)}`);
   }
 
-  if (availableSkillsSummary) {
-    sections.push('', 'Available Prism skills:', availableSkillsSummary);
-  }
-
   if (prismSkills.selectedSkills.length) {
     for (const skill of prismSkills.selectedSkills) {
       sections.push('', `Prism skill loaded: ${skill.name}`, skill.content.trim());
     }
   }
 
-  if (!isResume && history) {
-    sections.push('', 'Recent conversation:', history);
+  if (history) {
+    sections.push('', 'Recent source conversation snapshot:', history);
   }
 
   sections.push('', `Latest user message: ${input.prompt}`);
-  return sections.join('\n');
+  const prompt = sections.join('\n');
+  const bytes = (value: string | null | undefined) => Buffer.byteLength(value ?? '', 'utf8');
+  return {
+    prompt,
+    metrics: {
+      totalBytes: bytes(prompt),
+      sectionBytes: {
+        fixed: bytes(fixedSections.join('\n')),
+        metadata: bytes(JSON.stringify(sessionMetadata)) + bytes(policyInstructions),
+        skillCatalog: 0,
+        selectedSkills: prismSkills.selectedSkills.reduce((total, skill) => total + bytes(skill.content), 0),
+        history: bytes(history),
+        latestMessage: bytes(input.prompt),
+      },
+      selectedSkillCount: prismSkills.selectedSkills.length,
+      historyMessageCount: input.recentHistory.slice(-20).length,
+      transport: 'stdin',
+    },
+  };
 }
 
 function parseJsonEvent(rawLine: string) {
   try {
-    return JSON.parse(rawLine) as {
-      type?: string;
-      thread_id?: string;
-      message?: string;
-      item?: {
-        type?: string;
-        text?: string;
-        role?: string;
-        status?: string;
-      };
-      error?: { message?: string } | string;
-    };
+    return JSON.parse(rawLine) as CodexJsonEvent;
   } catch {
     return null;
+  }
+}
+
+export function codexSubagentTraceEvent(event: CodexJsonEvent) {
+  const item = event.item;
+  if (!item || item.type !== 'collab_tool_call' || typeof item.tool !== 'string') return null;
+  if (!['item.started', 'item.updated', 'item.completed'].includes(event.type ?? '')) return null;
+
+  const phase = event.type === 'item.started' ? 'started' : event.type === 'item.updated' ? 'updated' : 'completed';
+  const tool = item.tool.trim().toLowerCase();
+  const receivers = Array.from(new Set([
+    ...(Array.isArray(item.receiver_thread_ids) ? item.receiver_thread_ids : []),
+    ...Object.keys(item.agents_states ?? {}),
+  ].filter(Boolean)));
+  const details = [
+    item.id ? `item=${item.id}` : null,
+    item.sender_thread_id ? `parent=${item.sender_thread_id}` : null,
+    receivers.length ? `children=${receivers.join(',')}` : null,
+    item.status ? `status=${item.status}` : null,
+  ].filter(Boolean).join('; ');
+  const label = tool === 'spawn_agent' ? 'spawn' : tool === 'send_input' ? 'message' : tool;
+  return {
+    kind: `subagent.${label}_${phase}`,
+    message: `${tool} ${phase}${details ? `; ${details}` : ''}`,
+  };
+}
+
+export function codexRolloutSubagentTraceEvents(rawJsonl: string) {
+  const events: Array<{ kind: string; message: string }> = [];
+  const seen = new Set<string>();
+  for (const line of rawJsonl.split('\n')) {
+    if (!line.trim()) continue;
+    let record: Record<string, unknown>;
+    try {
+      record = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const payload = recordValue(record.payload);
+    const item = recordValue(payload?.item);
+    if (record.type !== 'event_msg' || payload?.type !== 'item_completed' || item?.type !== 'SubAgentActivity') {
+      continue;
+    }
+    const activity = typeof item.kind === 'string' ? item.kind.trim().toLowerCase() : '';
+    if (activity !== 'started' && activity !== 'completed') continue;
+    const child = typeof item.agent_thread_id === 'string' ? item.agent_thread_id.trim() : '';
+    const agentPath = typeof item.agent_path === 'string' ? item.agent_path.trim() : '';
+    const key = `${activity}:${child}:${agentPath}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const details = [child ? `child=${child}` : null, agentPath ? `agent=${agentPath}` : null]
+      .filter(Boolean)
+      .join('; ');
+    events.push({
+      kind: `subagent.activity_${activity}`,
+      message: `subagent ${activity}${details ? `; ${details}` : ''}`,
+    });
+  }
+  return events;
+}
+
+async function findCodexRolloutFile(directory: string, threadId: string, depth = 0): Promise<string | null> {
+  if (depth > 5) return null;
+  const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.includes(threadId) && entry.name.endsWith('.jsonl')) {
+      return path.join(directory, entry.name);
+    }
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const found = await findCodexRolloutFile(path.join(directory, entry.name), threadId, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function recordRolloutSubagentProvenance(
+  threadId: string,
+  env: NodeJS.ProcessEnv,
+  trace: CodexRuntimeResult['trace'],
+  onTrace?: (trace: CodexRuntimeResult['trace']) => void,
+) {
+  const codexHome = env.CODEX_HOME?.trim() || path.join(env.HOME || os.homedir(), '.codex');
+  const rolloutFile = await findCodexRolloutFile(path.join(codexHome, 'sessions'), threadId);
+  if (!rolloutFile) return;
+  const stats = await fs.stat(rolloutFile).catch(() => null);
+  if (!stats || stats.size > 25 * 1024 * 1024) return;
+  const rawJsonl = await fs.readFile(rolloutFile, 'utf8').catch(() => '');
+  for (const event of codexRolloutSubagentTraceEvents(rawJsonl)) {
+    const duplicate = trace.some((entry) => entry.kind === event.kind && entry.message === event.message);
+    if (!duplicate) appendTrace(trace, event.kind, event.message, onTrace);
   }
 }
 
@@ -786,14 +1130,105 @@ function appendTrace(
     message: message.slice(0, 500),
   });
 
-  if (trace.length > 40) {
-    trace.splice(0, trace.length - 40);
+  while (trace.length > 80) {
+    const removableIndex = trace.findIndex((entry) => !entry.kind.startsWith('subagent.'));
+    trace.splice(removableIndex >= 0 ? removableIndex : 0, 1);
   }
   onTrace?.([...trace]);
 }
 
 function booleanMetadata(metadata: Record<string, unknown> | undefined, key: string) {
   return metadata?.[key] === true;
+}
+
+const readOnlyEnvironmentKeys = [
+  'PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ',
+  'SSL_CERT_FILE', 'SSL_CERT_DIR', 'NODE_EXTRA_CA_CERTS',
+  'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
+  'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
+  // Provider authentication is the sole credential class allowed in this mode.
+  'OPENAI_API_KEY', 'CODEX_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_ORGANIZATION',
+  'OPENAI_ORG_ID', 'OPENAI_PROJECT_ID', 'AZURE_OPENAI_API_KEY',
+  'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_API_VERSION',
+] as const;
+
+export function buildCodexChildEnvironment(
+  authorityMode: 'full' | 'read_only_utility',
+  inherited: NodeJS.ProcessEnv,
+  leasedEnv: Record<string, string>,
+  githubToken: string | null,
+  runtimeHome?: string,
+) {
+  if (authorityMode === 'read_only_utility') {
+    const env: NodeJS.ProcessEnv = {};
+    for (const key of readOnlyEnvironmentKeys) {
+      if (inherited[key]) env[key] = inherited[key];
+    }
+    if (config.codexHome) env.CODEX_HOME = config.codexHome;
+    return env;
+  }
+
+  const env: NodeJS.ProcessEnv = {
+    ...inherited,
+    ...leasedEnv,
+    ...(runtimeHome ? { HOME: runtimeHome } : {}),
+    ...browserToolEnvironment,
+    GIT_AUTHOR_NAME: config.gitAuthorName,
+    GIT_AUTHOR_EMAIL: config.gitAuthorEmail,
+    GIT_COMMITTER_NAME: config.gitCommitterName,
+    GIT_COMMITTER_EMAIL: config.gitCommitterEmail,
+    ...(config.codexHome ? { CODEX_HOME: config.codexHome } : {}),
+    ...(config.appApiBaseUrl ? { PRISM_AGENT_API_BASE_URL: config.appApiBaseUrl } : {}),
+    ...(config.appServiceToken ? { PRISM_AGENT_SERVICE_TOKEN: config.appServiceToken } : {}),
+    ...(githubToken
+      ? {
+          TARGET_REPO_GITHUB_TOKEN: githubToken,
+          GITHUB_TOKEN: inherited.GITHUB_TOKEN?.trim() || githubToken,
+          GH_TOKEN: inherited.GH_TOKEN?.trim() || githubToken,
+        }
+      : {}),
+  };
+  delete env.PRISM_GATEWAY_TOKEN;
+  return env;
+}
+
+export function buildCodexArgs(
+  input: Pick<CodexRuntimeInput, 'codexThreadId' | 'authorityMode' | 'metadata'>,
+  outputFile: string,
+  executionWorkspaceRoot: string,
+) {
+  const isResume = Boolean(input.codexThreadId);
+  const delegation = workflowDelegationPolicy(input);
+  const delegationArgs = delegation?.allowed
+    ? ['-c', 'agents.enabled=true', '-c', `agents.max_concurrent_threads_per_session=${delegation.maxAgents}`]
+    : delegation
+      ? ['-c', 'agents.enabled=false']
+      : [];
+  if (input.authorityMode === 'read_only_utility') {
+    // This mode is intentionally text-in/text-out: the evidence required to
+    // answer must be supplied in the prompt. Disabling every model-facing
+    // execution/integration surface keeps provider auth usable by the CLI
+    // without making it observable to the model through a tool.
+    const disabledFeatures = [
+      'shell_tool', 'unified_exec', 'code_mode', 'code_mode_host',
+      'browser_use', 'browser_use_external', 'browser_use_full_cdp_access', 'in_app_browser', 'computer_use',
+      'apps', 'enable_mcp_apps', 'hooks', 'image_generation',
+      'multi_agent', 'multi_agent_v2', 'remote_plugin', 'plugin_sharing',
+      'skill_mcp_dependency_install', 'tool_suggest',
+      'auth_elicitation', 'tool_call_mcp_elicitation',
+    ].flatMap((feature) => ['--disable', feature]);
+    return [
+      'exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only',
+      '--ephemeral', '--ignore-user-config', '--ignore-rules',
+      '-c', 'mcp_servers={}',
+      '-c', 'agents.enabled=false',
+      ...disabledFeatures,
+      '-o', outputFile, '-C', executionWorkspaceRoot,
+    ];
+  }
+  return isResume
+    ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', ...delegationArgs, '-o', outputFile]
+    : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', ...delegationArgs, '-o', outputFile, '-C', executionWorkspaceRoot];
 }
 
 function emptyResponseFallback(input: CodexRuntimeInput) {
@@ -813,12 +1248,14 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   const outputFile = path.join(os.tmpdir(), `codex-runtime-${randomUUID()}.txt`);
   const isResume = Boolean(input.codexThreadId);
   const trace: CodexRuntimeResult['trace'] = [];
-  const prismSkills = await loadRelevantPrismSkills(input.prompt, input.metadata);
-  const effectiveCredentials = Array.from(new Set([
-    ...(input.credentials ?? []),
-    ...prismSkills.selectedSkills.flatMap((skill) => skill.requiredCredentials),
-  ]));
-  const credentialLeaseKeys = effectiveCredentials;
+  const authorityMode = input.authorityMode ?? 'full';
+  const prismSkills: LoadedPrismSkills = authorityMode === 'read_only_utility'
+    ? { availableSkills: [], selectedSkills: [] }
+    : await loadRelevantPrismSkills(input.prompt, input.metadata);
+  // Site supplies the authorized credential set after applying profile policy.
+  // Prompt-selected skills describe dependencies, never authority to lease more.
+  const effectiveCredentials = Array.from(new Set(input.credentials ?? []));
+  const credentialLeaseKeys = authorityMode === 'read_only_utility' ? [] : effectiveCredentials;
   const lease = credentialLeaseKeys.length
     ? await gatewayClient.leaseCredentials({
         credentials: credentialLeaseKeys,
@@ -826,54 +1263,95 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       })
     : { env: {} };
   const leasedEnv = lease.env;
-  const githubToken = leasedEnv.TARGET_REPO_GITHUB_TOKEN || config.githubToken;
-  const preparedWorkspace = await prepareExecutionWorkspace(input, trace, githubToken);
+  const githubToken = authorityMode === 'read_only_utility'
+    ? null
+    : leasedEnv.TARGET_REPO_GITHUB_TOKEN || config.githubToken;
+  const preparedWorkspace = authorityMode === 'read_only_utility'
+    ? {
+        workspacePath: config.codexWorkspaceRoot,
+        repoUrl: null,
+        branchName: null,
+        commitSha: null,
+        baseBranch: null,
+        baseCommitSha: null,
+      }
+    : await prepareExecutionWorkspace(input, trace, githubToken);
   input.onTrace?.([...trace]);
   const executionWorkspaceRoot = preparedWorkspace.workspacePath;
-  const prompt = buildPrompt(input, isResume, prismSkills);
-  const args = isResume
-    ? ['exec', 'resume', input.codexThreadId!, '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile]
-    : ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-o', outputFile, '-C', executionWorkspaceRoot];
+  const composedPrompt = buildPrompt(input, isResume, prismSkills);
+  const prompt = composedPrompt.prompt;
+  const args = buildCodexArgs(input, outputFile, executionWorkspaceRoot);
+  const modelPolicy = resolveCodexModelPolicy({
+    tier: input.modelTier ?? null,
+    defaultModel: config.codexModel,
+    economyModel: config.codexModelEconomy,
+    standardModel: config.codexModelStandard,
+    deepModel: config.codexModelDeep,
+    economyReasoningEffort: config.codexReasoningEffortEconomy,
+    standardReasoningEffort: config.codexReasoningEffortStandard,
+    deepReasoningEffort: config.codexReasoningEffortDeep,
+  });
 
-  if (config.codexImageGenerationEnabled) {
+  if (authorityMode === 'full' && config.codexImageGenerationEnabled) {
     args.push('--enable', 'image_generation');
   }
 
-  if (config.codexModel) {
-    args.push('-m', config.codexModel);
+  if (modelPolicy.model) {
+    args.push('-m', modelPolicy.model);
+  }
+  if (modelPolicy.reasoningEffort) {
+    args.push('-c', `model_reasoning_effort=${JSON.stringify(modelPolicy.reasoningEffort)}`);
   }
 
-  args.push(prompt);
+  args.push('-');
 
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    ...leasedEnv,
-    GIT_AUTHOR_NAME: config.gitAuthorName,
-    GIT_AUTHOR_EMAIL: config.gitAuthorEmail,
-    GIT_COMMITTER_NAME: config.gitCommitterName,
-    GIT_COMMITTER_EMAIL: config.gitCommitterEmail,
-    ...(config.codexHome ? { CODEX_HOME: config.codexHome } : {}),
-    ...(config.appApiBaseUrl ? { PRISM_AGENT_API_BASE_URL: config.appApiBaseUrl } : {}),
-    ...(config.appServiceToken ? { PRISM_AGENT_SERVICE_TOKEN: config.appServiceToken } : {}),
-    ...(githubToken
-      ? {
-          TARGET_REPO_GITHUB_TOKEN: githubToken,
-          GITHUB_TOKEN: process.env.GITHUB_TOKEN?.trim() || githubToken,
-          GH_TOKEN: process.env.GH_TOKEN?.trim() || githubToken,
-        }
-      : {}),
-  };
-  delete env.PRISM_GATEWAY_TOKEN;
+  appendTrace(trace, 'prompt.composed', JSON.stringify(composedPrompt.metrics), input.onTrace);
+  appendTrace(trace, 'model.selected', JSON.stringify(modelPolicy), input.onTrace);
+  if (config.codexRuntimePromptWarnBytes && composedPrompt.metrics.totalBytes > config.codexRuntimePromptWarnBytes) {
+    appendTrace(
+      trace,
+      'prompt.warning',
+      JSON.stringify({ totalBytes: composedPrompt.metrics.totalBytes, warnBytes: config.codexRuntimePromptWarnBytes }),
+      input.onTrace,
+    );
+  }
+  if (config.codexRuntimePromptMaxBytes && composedPrompt.metrics.totalBytes > config.codexRuntimePromptMaxBytes) {
+    const error = new Error(`RUNTIME_PROMPT_TOO_LARGE:${JSON.stringify(composedPrompt.metrics)}`) as CodexRuntimeError;
+    error.trace = trace;
+    throw error;
+  }
+
+  const nativeSkillHome = authorityMode === 'read_only_utility'
+    ? null
+    : await createNativePrismSkillHome(process.env.HOME || os.homedir(), prismSkills, input.metadata);
+  const env = buildCodexChildEnvironment(authorityMode, process.env, leasedEnv, githubToken, nativeSkillHome?.path);
+  const invocationMetrics = processInvocationSizeMetrics(env, args);
   console.log(
     `[codex-runtime] spawn resume=${isResume ? 'yes' : 'no'} session=${input.sessionId} workspace=${executionWorkspaceRoot}`,
   );
+  if (nativeSkillHome) {
+    appendTrace(
+      trace,
+      'skills.native_ready',
+      `Exposed ${nativeSkillHome.skillCount} Site-hosted skills through Codex native discovery`,
+      input.onTrace,
+    );
+    if (nativeSkillHome.failedSkillNames.length) {
+      appendTrace(
+        trace,
+        'skills.native_partial',
+        `Skipped ${nativeSkillHome.failedSkillNames.length} unavailable hosted skill bundles`,
+        input.onTrace,
+      );
+    }
+  }
 
   try {
     return await new Promise<CodexRuntimeResult>((resolve, reject) => {
       const child = spawn(config.codexBinary, args, {
       cwd: executionWorkspaceRoot,
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
 
     let stderr = '';
@@ -893,6 +1371,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       clearTimeout(timeout);
       input.signal?.removeEventListener('abort', cancelRun);
       child.kill('SIGTERM');
+      child.stdin.destroy();
       const forceKill = setTimeout(() => {
         if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
       }, 5_000);
@@ -905,22 +1384,51 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       reject(error);
     };
 
-    const timeout = setTimeout(() => {
+    const workflowConfig = recordValue(recordValue(input.metadata?.workflow)?.agentConfig);
+    const limits = resolveRunBudget(workflowConfig?.executionBudget, {
+      idleMs: config.codexRuntimeIdleTimeoutMs, maxMs: config.codexRuntimeMaxDurationMs,
+    });
+    const budget = new RunBudget(Date.now(), limits.idleMs, limits.maxMs);
+    recordTrace('run.budget', `Idle timeout ${budget.idleMs}ms; maximum duration ${budget.maxMs}ms`);
+    const timeout = setInterval(() => {
       if (settled) return;
+      const reason = budget.expired(Date.now());
+      if (!reason) return;
       settled = true;
+      clearInterval(timeout);
+      input.signal?.removeEventListener('abort', cancelRun);
       child.kill('SIGTERM');
-      const error = new Error('CODEX_RUNTIME_TIMEOUT') as CodexRuntimeError;
+      child.stdin.destroy();
+      const forceKill = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }, 5_000);
+      forceKill.unref();
+      const error = new Error(reason === 'idle' ? 'CODEX_RUNTIME_IDLE_TIMEOUT' : 'CODEX_RUNTIME_BUDGET_EXCEEDED') as CodexRuntimeError;
       error.codexThreadId = threadId;
       error.trace = trace;
-      recordTrace('run.timeout', 'Codex runtime timed out before completion');
+      recordTrace('run.timeout', `Codex runtime ${reason === 'idle' ? 'stopped making progress' : 'exhausted its maximum duration'} before completion`);
       reject(error);
-    }, config.codexRuntimeTimeoutMs);
+    }, 1_000);
 
     if (input.signal?.aborted) {
       cancelRun();
       return;
     }
     input.signal?.addEventListener('abort', cancelRun, { once: true });
+
+    child.stdin.on('error', (stdinError) => {
+      if (settled || child.exitCode !== null || child.signalCode !== null) return;
+      settled = true;
+      clearTimeout(timeout);
+      input.signal?.removeEventListener('abort', cancelRun);
+      child.kill('SIGTERM');
+      recordTrace('prompt.stdin_failed', 'Codex prompt delivery through stdin failed');
+      const error = new Error(`RUNTIME_PROMPT_STDIN_FAILED:${stdinError.message}`) as CodexRuntimeError;
+      error.codexThreadId = threadId;
+      error.trace = trace;
+      reject(error);
+    });
+    child.stdin.end(prompt, 'utf8');
 
     child.stdout.on('data', (chunk) => {
       stdoutBuffer += String(chunk);
@@ -930,6 +1438,11 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       for (const line of lines) {
         const event = parseJsonEvent(line.trim());
         if (!event) continue;
+        if (isExecutionProgress(event)) budget.progress(Date.now());
+        const subagentTrace = codexSubagentTraceEvent(event);
+        if (subagentTrace) {
+          recordTrace(subagentTrace.kind, subagentTrace.message);
+        }
         if (event.type === 'thread.started' && event.thread_id) {
           threadId = event.thread_id;
           recordTrace('thread.started', `Thread ${event.thread_id} started`);
@@ -938,10 +1451,15 @@ async function runCodexProcess(input: CodexRuntimeInput) {
           lastAgentText = event.item.text.trim();
           recordTrace('agent_message.completed', 'Assistant message completed');
         }
-        if (event.type === 'item.started' && event.item?.type) {
+        if (event.type === 'item.started' && event.item?.type && event.item.type !== 'collab_tool_call') {
           recordTrace('item.started', `${event.item.type} started`);
         }
-        if (event.type === 'item.completed' && event.item?.type && event.item.type !== 'agent_message') {
+        if (
+          event.type === 'item.completed'
+          && event.item?.type
+          && event.item.type !== 'agent_message'
+          && event.item.type !== 'collab_tool_call'
+        ) {
           recordTrace('item.completed', `${event.item.type} completed`);
         }
         const eventErrorMessage = codexEventErrorMessage(event);
@@ -969,10 +1487,20 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       settled = true;
       clearTimeout(timeout);
       input.signal?.removeEventListener('abort', cancelRun);
-      const runtimeError = error as CodexRuntimeError;
+      const errorCode = (error as NodeJS.ErrnoException).code;
+      const runtimeError = (errorCode === 'E2BIG'
+        ? new Error(`RUNTIME_SPAWN_E2BIG:${JSON.stringify({
+            ...invocationMetrics,
+            promptTransport: composedPrompt.metrics.transport,
+            promptBytes: composedPrompt.metrics.totalBytes,
+          })}`)
+        : error) as CodexRuntimeError;
+      if (errorCode === 'E2BIG') {
+        recordTrace('spawn.e2big', JSON.stringify(invocationMetrics));
+      }
       runtimeError.codexThreadId = threadId;
       runtimeError.trace = trace;
-      reject(error);
+      reject(runtimeError);
     });
 
     child.on('close', async (code) => {
@@ -985,6 +1513,10 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         const outputText = await fs.readFile(outputFile, 'utf8').catch(() => '');
         await fs.unlink(outputFile).catch(() => undefined);
         const responseText = outputText.trim() || lastAgentText.trim();
+
+        if (threadId && workflowDelegationPolicy(input)?.allowed) {
+          await recordRolloutSubagentProvenance(threadId, env, trace, input.onTrace).catch(() => undefined);
+        }
 
         if (code !== 0) {
           recordTrace('run.failed', `Codex exited with code ${code}`);
@@ -1017,7 +1549,9 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         });
         resolve({
           provider: 'codex-cli',
-          model: config.codexModel,
+          model: modelPolicy.model,
+          modelTier: modelPolicy.modelTier,
+          reasoningEffort: modelPolicy.reasoningEffort,
           responseText: finalResponseText,
           codexThreadId: threadId,
           branchName: finalGitState.branchName,
@@ -1033,6 +1567,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     });
     });
   } finally {
+    await nativeSkillHome?.cleanup();
     // The leased child environment is discarded when the process exits.
   }
 }

@@ -712,6 +712,10 @@ def create_app(settings: Settings) -> FastAPI:
     async def memory_latest():
         return storage.memory_latest()
 
+    @app.get("/memory/dates", dependencies=[read_auth_dependency], tags=["memory"])
+    async def memory_dates(limit: int = Query(180, ge=1, le=730)):
+        return storage.memory_dates(limit=limit)
+
     @app.get("/latest", dependencies=[read_auth_dependency], tags=["memory"], include_in_schema=False)
     async def memory_latest_alias():
         return storage.memory_latest()

@@ -20,6 +20,8 @@ Do not use browser admin routes such as `/admin/board` from Codex Runtime. Runti
 Core endpoints:
 
 - `GET /agent/target-apps`
+- `POST /agent/target-apps`
+- `PATCH /agent/target-apps/:id`
 - `POST /agent/change-board/requests`
 - `GET /agent/change-board/requests/next`
 - `GET /agent/change-board/requests/current`
@@ -38,6 +40,11 @@ Core endpoints:
 - `GET /agent/runs`
 - `GET /agent/change-board/requests/:id/executions`
 - `GET /agent/change-board/requests/:id/deploy-plan`
+
+To rerun the current agent, checkpoint, or loop step without advancing an
+attention state, call the by-number workflow continue route with
+`{"retryCurrentStep":true,"comment":"..."}`. Do not combine a current-step
+retry with `workflowAction`.
 
 Queue reads:
 
@@ -152,10 +159,12 @@ curl -fsSL \
 
 Use this route when a user approves a gate or asks to move a request along from Discord or another non-browser surface. It uses the normal workflow runner; do not manually patch `currentWorkflowStepKey` to bypass gates. Prefer simple `next` flow and do not send `workflowAction` for normal continues. The workflow continues through agent steps until it reaches a gate, checkpoint, terminal step, failure, or emergency continuation guard.
 
-Reconcile terminal projection drift by request number only when the request is
-already completed or closed and its terminal workflow run (completed or
-canceled) still projects a non-terminal step. This operation never executes
-workflow steps. Dry-run first:
+Reconcile terminal projection drift by request number when a terminal workflow
+run projects stale request or step state. This includes completed or closed
+requests whose completed/canceled run still projects a non-terminal step, and
+requests left open even though their workflow run already completed. In the
+second case, reconciliation closes the request timeline too. This operation
+never executes workflow steps. Dry-run first:
 
 ```bash
 curl -fsSL \
@@ -169,9 +178,25 @@ curl -fsSL \
 Apply only a verified `would_repair` result with `"dryRun":false`. If the result
 is `TERMINAL_STEP_AMBIGUOUS`, select the intended key from
 `terminalStepCandidates` and send it as `terminalStepKey`. Never use this route
-for an active request, to skip work, or to repeat a side-effecting step.
+while the workflow run or an agent run is active, to skip work, or to repeat a
+side-effecting step.
 
 Create request pattern:
+
+Select the execution lane before creating a request. Discover applicable provider
+skills/APIs and enabled workflows with `GET /agent/workflows`. CMS catalog/media
+records, Action Items, and configuration supported by existing APIs are operational
+work, not repository implementation. Perform an authorized bounded operation in
+chat or select an appropriate operational workflow. Do not create a code request
+merely to track work, because a repository URL was mentioned, or because an API
+call failed. Missing credentials and unknown endpoints do not prove code is needed.
+
+Every creation call must supply `workflowKey` explicitly. Missing/blank values
+return `WORKFLOW_KEY_REQUIRED` without creating or starting anything. Do not
+blindly retry that error with `change-request-default`; that workflow is only for
+actual authorized repository changes. Record the concrete missing capability
+before proposing code work. If no suitable workflow exists, explain the gap
+without creating a repository issue or expanding the task's scope.
 
 1. If the user is asking to create or open a tracked change request, do not write to Prism memory.
 2. If the target app is unclear, list target apps first and either infer the best match or ask a focused follow-up.
@@ -191,6 +216,21 @@ curl -fsSL \
   "$PRISM_AGENT_API_BASE_URL/agent/target-apps"
 ```
 
+When the user explicitly asks to register a GitHub repository as a target app,
+create it through the same Agent API. The route derives `name`, `slug`, and the
+`main` default branch when omitted, creates the standard writable development
+environment, and safely returns the existing target on an exact repository
+retry:
+
+```bash
+curl -fsSL \
+  -X POST \
+  -H "content-type: application/json" \
+  -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN" \
+  "$PRISM_AGENT_API_BASE_URL/agent/target-apps" \
+  -d '{"repoUrl":"https://github.com/owner/repository","defaultBranch":"main"}'
+```
+
 Create tracked change request:
 
 ```bash
@@ -203,6 +243,7 @@ curl -fsSL \
     "title": "'"$TITLE"'",
     "description": "'"$DESCRIPTION"'",
     "requestType": "'"$REQUEST_TYPE"'",
+    "workflowKey": "'"$WORKFLOW_KEY"'",
     "targetAppId": "'"$TARGET_APP_ID"'",
     "priority": "'"${PRIORITY:-normal}"'",
     "estimatedHumanHours": 2,
@@ -235,7 +276,7 @@ curl -fsSL \
 
 Attach external records when the request interacts with a live system outside Prism. Use this for GitHub issues, GitHub pull requests, Discord messages or threads, deployments, publishing targets, or DAO proposal pages. Do not leave these only in comments if later workflow steps need to inspect or sync them.
 
-For the built-in repository-backed change request workflow, triage should create a GitHub issue in the target repository when repository access is configured and no GitHub issue external ref already exists. Do not create a duplicate issue when the request was imported from GitHub or already has an issue ref; attach the existing source issue instead.
+For the built-in repository-backed change request workflow, first establish that actual repository changes are required and authorized. Only then should triage create a GitHub issue in the target repository when repository access is configured and no GitHub issue external ref already exists. Operational/CMS work must not create a GitHub issue. Do not create a duplicate issue when the request was imported from GitHub or already has an issue ref; attach the existing source issue instead.
 
 ```bash
 curl -fsSL \
