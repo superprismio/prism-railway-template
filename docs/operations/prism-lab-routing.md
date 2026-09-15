@@ -1,12 +1,14 @@
 # Lab entry routing and legacy compatibility
 
-Lab promotion is opt-in and independent of feature availability:
+Lab is the default workspace:
 
-- `PRISM_LAB_ENABLED=true` enables the existing Lab routes.
-- `PRISM_LAB_DEFAULT=true` additionally redirects authenticated **bare** `/admin`
-  to `/admin/lab`. Both flags are required. Defaults remain false.
-- Set `PRISM_LAB_DEFAULT=false` to roll navigation back without changing data,
-  API routes, jobs, or direct Lab bookmarks. No live flag was changed here.
+- Missing, empty, or `true` `PRISM_LAB_ENABLED` enables Lab and redirects
+  authenticated **bare** `/admin` to `/admin/lab`.
+- Only `PRISM_LAB_ENABLED=false` (case-insensitive, whitespace trimmed) opts out:
+  bare `/admin` renders legacy and direct Lab routes show the disabled surface.
+  This does not change data, API routes, jobs, or permissions.
+- `PRISM_LAB_DEFAULT` is retired and ignored. Existing installations with
+  `PRISM_LAB_ENABLED=false` stay opted out; remove it or set true to use Lab.
 
 Authentication is checked before promotion. Any query string stays on the
 legacy page, preserving form errors, success messages, credential setup URLs,
@@ -18,7 +20,7 @@ link to Lab when enabled. Existing login/logout endpoints are unchanged.
 
 | Surface | Destination | Treatment |
 | --- | --- | --- |
-| Bare authenticated entry | `/admin` | Flag-controlled Lab promotion |
+| Bare authenticated entry | `/admin` | Lab by default; explicit false opts out |
 | Lab sidebar legacy escape | `/admin?legacy=true` | Always render legacy, no loop |
 | Gateway credential setup links | `/admin?tab=settings&settings=gateway&connection=...&action=credential&secretName=...` | Keep secure legacy forms and parameters unchanged |
 | Interfaces / runtime adapters | `/admin?tab=settings&settings=interfaces` / `runtimes` | Keep legacy forms, label them explicitly in Lab |

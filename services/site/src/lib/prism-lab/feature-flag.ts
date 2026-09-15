@@ -1,7 +1,6 @@
 /**
- * Prism Lab is an opt-in field-test surface. Only an explicit `true` enables
- * the route; missing, empty, false, and unrecognized values fail closed.
+ * Lab is the default workspace. Only an explicit `false` opts out.
  */
 export function isPrismLabEnabled(value: string | null | undefined) {
-  return value?.trim().toLowerCase() === "true";
+  return value?.trim().toLowerCase() !== "false";
 }

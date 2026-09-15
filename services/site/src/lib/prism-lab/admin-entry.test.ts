@@ -2,11 +2,12 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { legacyAdminHref, shouldRedirectAdminToLab } from "./admin-entry"
 
-test("bare admin promotion requires both explicit flags", () => {
-  assert.equal(shouldRedirectAdminToLab({}, "true", "true"), true)
-  for (const disabled of [undefined, "", "false", "1", "yes"]) {
-    assert.equal(shouldRedirectAdminToLab({}, disabled, "true"), false)
-    assert.equal(shouldRedirectAdminToLab({}, "true", disabled), false)
+test("bare admin defaults to Lab unless explicitly disabled", () => {
+  for (const enabled of [undefined, "", "true", "1", "yes"]) {
+    assert.equal(shouldRedirectAdminToLab({}, enabled), true)
+  }
+  for (const disabled of ["false", " FALSE "]) {
+    assert.equal(shouldRedirectAdminToLab({}, disabled), false)
   }
 })
 
@@ -18,7 +19,7 @@ test("legacy settings, credentials, request links and form feedback never redire
     "tab=requests&request=2604", "error=request-create", "success=saved",
     "tab=", "unknown=value", legacyAdminHref.split("?")[1],
   ]) {
-    assert.equal(shouldRedirectAdminToLab(Object.fromEntries(new URLSearchParams(query)), "true", "true"), false, query)
+    assert.equal(shouldRedirectAdminToLab(Object.fromEntries(new URLSearchParams(query)), undefined), false, query)
   }
-  assert.equal(shouldRedirectAdminToLab({ tab: ["settings", "requests"] }, "true", "true"), false)
+  assert.equal(shouldRedirectAdminToLab({ tab: ["settings", "requests"] }, undefined), false)
 })

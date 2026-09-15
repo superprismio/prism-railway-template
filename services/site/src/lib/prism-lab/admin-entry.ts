@@ -4,9 +4,8 @@ import { isPrismLabEnabled } from "./feature-flag"
 export function shouldRedirectAdminToLab(
   params: Record<string, string | string[] | undefined>,
   labEnabled: string | undefined,
-  labDefault: string | undefined,
 ) {
-  return isPrismLabEnabled(labEnabled) && isPrismLabEnabled(labDefault)
+  return isPrismLabEnabled(labEnabled)
     && Object.keys(params).length === 0
 }
 

@@ -3,18 +3,18 @@ import test from "node:test";
 
 import { isPrismLabEnabled } from "./feature-flag";
 
-test("Lab fails closed when the rollout variable is absent or empty", () => {
-  assert.equal(isPrismLabEnabled(undefined), false);
-  assert.equal(isPrismLabEnabled(null), false);
-  assert.equal(isPrismLabEnabled(""), false);
-  assert.equal(isPrismLabEnabled("   "), false);
+test("Lab is default-on when the variable is absent or empty", () => {
+  for (const value of [undefined, null, "", "   "]) {
+    assert.equal(isPrismLabEnabled(value), true);
+  }
 });
 
-test("Lab is enabled only by an explicit true value", () => {
+test("only explicit false disables Lab", () => {
   assert.equal(isPrismLabEnabled("true"), true);
   assert.equal(isPrismLabEnabled(" TRUE "), true);
   assert.equal(isPrismLabEnabled("false"), false);
-  assert.equal(isPrismLabEnabled("1"), false);
-  assert.equal(isPrismLabEnabled("yes"), false);
-  assert.equal(isPrismLabEnabled("enabled"), false);
+  assert.equal(isPrismLabEnabled(" FALSE "), false);
+  assert.equal(isPrismLabEnabled("1"), true);
+  assert.equal(isPrismLabEnabled("yes"), true);
+  assert.equal(isPrismLabEnabled("enabled"), true);
 });

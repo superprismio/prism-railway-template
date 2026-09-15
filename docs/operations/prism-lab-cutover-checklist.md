@@ -5,6 +5,13 @@ legacy functionality or implement the entire orchestration roadmap.
 
 ## Decision
 
+Updated routing decision: Lab is default-on. `PRISM_LAB_DEFAULT` is retired;
+only `PRISM_LAB_ENABLED=false` disables Lab and restores the legacy entry.
+This supersedes the two-flag rollout plan and rollback instructions recorded
+below. Deploying this revision to an instance with Lab enabled will promote
+bare `/admin` automatically. Explicit legacy settings/query links stay intact.
+Remaining acceptance limitations below are not claimed as completed.
+
 Proceed with release preparation; do not flip the default route yet. Existing
 field operations work, but routing compatibility, configuration preservation,
 and deployed acceptance checks remain release gates. No live writes, rollout,
@@ -121,6 +128,30 @@ an external write needs a designated target and cleanup plan.
   clean/unchanged result; new actionable findings retain accepted delivery receipts.
 
 ## Cutover and rollback
+
+### Pre-switch evidence — 2026-09-15
+
+- Authenticated admin navigation verified: Lab Settings → legacy Gateway →
+  Return to Lab; explicit legacy escape renders without looping.
+- Mobile 390×844: navigator opens, Settings navigation closes it, and Settings
+  renders. Viewport restored afterward. This is not a full mobile visual audit.
+- Railway reports SUCCESS for Site, task-runner and runtime at `db5f460`.
+- Current Site deployment: `4d64e162-e71c-42bf-9488-eb0712ac85ae`;
+  task-runner: `e44f40c1-a569-493a-ab5f-a90c86e2150a`;
+  runtime: `b3b9a3cb-0329-49a7-80ed-e8de52b392a9`;
+  Gateway: `38a5c008-6cd4-4c0c-9451-117229c7bea4` (unchanged `e88994f`).
+- No Railway Site/Gateway volume backups were initially listed. Created named
+  snapshots `pre-lab-cutover-db5f460-2026-09-15`; both subsequently listed by
+  Railway at 18:58 UTC, without expiration:
+  Site `71bd191e-8923-4d1a-a30d-7d898adfbbdb`,
+  Gateway `a5aaa05b-9a12-42bf-9d2f-bed6456ca3ea`.
+  These are provider snapshots, not a tested restore. Gateway recovery still
+  requires its existing encryption key/version in the deployment secret store.
+- Lower-privilege browser acceptance remains unverified. Actual roles are
+  `moderator` and `member`, not `operator` and `viewer`; only an admin browser
+  session was available. No account roles or credentials were changed for tests.
+- Default-route switch remains off pending this acceptance decision. Rollback
+  remains `PRISM_LAB_DEFAULT=false`; do not restore a database for UI rollback.
 
 1. Freeze the release revision and configuration manifest; capture backups.
 2. Deploy with Lab still opt-in; run acceptance checks and record evidence.

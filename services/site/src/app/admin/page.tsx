@@ -34,7 +34,7 @@ export default async function AdminPage({
     return <LoginCard error={error} />
   }
 
-  if (shouldRedirectAdminToLab(resolvedSearchParams, process.env.PRISM_LAB_ENABLED, process.env.PRISM_LAB_DEFAULT)) {
+  if (shouldRedirectAdminToLab(resolvedSearchParams, process.env.PRISM_LAB_ENABLED)) {
     redirect("/admin/lab")
   }
 
