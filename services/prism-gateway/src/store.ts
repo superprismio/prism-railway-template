@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
 import { decryptSecret, encryptSecret, type EncryptedSecret } from "./crypto.js";
+import { generatedEnvironmentName, isProtectedLeasedEnvironmentName } from "./environment-names.js";
 import type {
   GatewayConnection,
   GatewayStoredCredential,
@@ -204,6 +205,7 @@ export class GatewayStore {
   }
 
   private backfillCredentialBundles() {
+    const repairedAliases: Array<{ credentialKey: string; environmentName: string }> = [];
     const rows = this.db.prepare(
       "SELECT * FROM integration_connections ORDER BY created_at, id",
     ).all() as ConnectionRow[];
@@ -231,7 +233,20 @@ export class GatewayStore {
         const prefix = environmentPrefix(key);
         for (const secretName of secretNames) {
           const envName = `${prefix}_${secretEnvironmentSuffix(secretName)}`;
-          envBindings[envName] ??= secretName;
+          // Only migrate pre-bundle records. Existing explicit mappings, including
+          // empty mappings, must not acquire extra aliases on every restart.
+          if (!row.credential_key) {
+            envBindings[generatedEnvironmentName(prefix, secretEnvironmentSuffix(secretName))] ??= secretName;
+          }
+          // Repair only a redundant alias produced by the old backfill. Keep
+          // the secret and its working explicit alias unchanged.
+          if (isProtectedLeasedEnvironmentName(envName)
+            && envBindings[envName] === secretName
+            && Object.entries(envBindings).some(([name, target]) =>
+              name !== envName && target === secretName && !isProtectedLeasedEnvironmentName(name))) {
+            delete envBindings[envName];
+            repairedAliases.push({ credentialKey: key, environmentName: envName });
+          }
         }
 
         const configurationJson = JSON.stringify(configuration);
@@ -251,6 +266,9 @@ export class GatewayStore {
         }
       }
     })();
+    for (const repair of repairedAliases) {
+      console.info(JSON.stringify({ event: "prism-gateway.generated_alias_repaired", ...repair }));
+    }
   }
 
   encryptionStatus() {
@@ -554,7 +572,7 @@ export class GatewayStore {
     const configuration = input.configuration ?? {};
     const prefix = environmentPrefix(key);
     const envBindings = input.envBindings ?? Object.fromEntries(
-      entries.map(([name]) => [`${prefix}_${secretEnvironmentSuffix(name)}`, name]),
+      entries.map(([name]) => [generatedEnvironmentName(prefix, secretEnvironmentSuffix(name)), name]),
     );
     validateCredentialConfiguration(configuration);
     validateCredentialEnvBindings(envBindings);

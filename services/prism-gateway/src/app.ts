@@ -5,6 +5,7 @@ import path from "node:path";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { gatewayAuth, requireLeaseCaller, requireSiteCaller } from "./auth.js";
 import { GatewayStore, GatewayStoreError } from "./store.js";
+import { isProtectedLeasedEnvironmentName } from "./environment-names.js";
 import type { GatewayCaller, GatewayConfig, GatewayInvocationContext } from "./types.js";
 
 type AppDependencies = {
@@ -49,16 +50,6 @@ function isProtectedStoredCredentialName(name: string) {
     || name === "COMMUNICATION_ADAPTER_TOKEN"
     || /_PRISM_API_(?:READ_)?KEY$/.test(name)
     || /^CODEX_(?:ACCESS|REFRESH|ID)_TOKEN$/.test(name);
-}
-
-function isProtectedLeasedEnvironmentName(name: string) {
-  return new Set([
-    "PATH", "HOME", "SHELL", "PWD", "TMPDIR", "NODE_OPTIONS",
-    "INTERNAL_SERVICE_TOKEN", "APP_API_SERVICE_TOKEN", "TASK_RUNNER_TOKEN",
-    "COMMUNICATION_ADAPTER_TOKEN",
-  ]).has(name)
-    || ["PRISM_", "RAILWAY_", "GATEWAY_", "CODEX_", "NODE_", "NPM_", "npm_", "LD_", "DYLD_"]
-      .some((prefix) => name.startsWith(prefix));
 }
 
 function storedCredentialsField(value: unknown) {
