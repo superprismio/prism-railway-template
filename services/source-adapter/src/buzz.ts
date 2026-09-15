@@ -349,6 +349,12 @@ export function assertBuzzConfig(config: BuzzCliConfig): void {
   if (!config.privateKey) throw new Error("BUZZ_PRIVATE_KEY is required when Buzz is enabled");
 }
 
+export function buzzCliEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  // Do not forward service credentials, proxy auth, loader hooks or CLI config.
+  const allowed = ["PATH", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "TZ"];
+  return Object.fromEntries(allowed.flatMap((key) => env[key] === undefined ? [] : [[key, env[key]]]));
+}
+
 export class BuzzCliClient {
   private readonly runner: BuzzCommandRunner;
 
@@ -367,7 +373,7 @@ export class BuzzCliClient {
 
   private async run(args: string[]): Promise<string> {
     return this.runner(args, {
-      ...process.env,
+      ...buzzCliEnvironment(process.env),
       BUZZ_RELAY_URL: this.config.relayUrl,
       BUZZ_PRIVATE_KEY: this.config.privateKey,
     });

@@ -8,6 +8,7 @@ export {
   assignAgentProfileToSession,
   ensureAdminAgentStewards,
   getAgentProfile,
+  hasAgentProfileBinding,
   getAgentProfileById,
   getAgentProfileVersion,
   getAgentProfileSessionDetail,

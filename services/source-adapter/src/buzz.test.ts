@@ -3,6 +3,7 @@ import test from "node:test";
 import { nip19, verifyEvent, type Event, type EventTemplate, type VerifiedEvent } from "nostr-tools";
 import {
   BuzzCliClient,
+  buzzCliEnvironment,
   buildBuzzTypingEvent,
   buzzInteractionCursorTimestamp,
   buzzConversationRootFromThread,
@@ -27,6 +28,24 @@ import {
 } from "./buzz.js";
 
 const channelId = "a419a6ec-07ef-4d55-b071-635bc1b4dd4f";
+
+test("Buzz child environment excludes unrelated secrets and loader hooks", () => {
+  assert.deepEqual(buzzCliEnvironment({
+    PATH: "/usr/bin", LANG: "C.UTF-8", TMPDIR: "/tmp", TZ: "UTC",
+    APP_API_SERVICE_TOKEN: "secret", INTERNAL_SERVICE_TOKEN: "secret",
+    PRISM_API_KEY: "secret", COMMUNICATION_ADAPTER_TOKEN: "secret",
+    NODE_OPTIONS: "--require=untrusted", LD_PRELOAD: "/bad.so",
+    HTTPS_PROXY: "https://user:secret@proxy", BUZZ_PRIVATE_KEY: "wrong-key",
+  }), { PATH: "/usr/bin", TMPDIR: "/tmp", LANG: "C.UTF-8", TZ: "UTC" });
+});
+
+test("Buzz runner receives only operational environment and configured Buzz credentials", async () => {
+  const client = clientWithRunner(async (_args, env) => {
+    assert.deepEqual(env, { ...buzzCliEnvironment(process.env), BUZZ_RELAY_URL: "https://buzz.example.test", BUZZ_PRIVATE_KEY: "1".repeat(64) });
+    return "[]";
+  });
+  await client.executeCommand(["channels", "list"]);
+});
 const ownPubkey = "d".repeat(64);
 const humanPubkey = "5".repeat(64);
 

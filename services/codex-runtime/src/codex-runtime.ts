@@ -1252,10 +1252,9 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   const prismSkills: LoadedPrismSkills = authorityMode === 'read_only_utility'
     ? { availableSkills: [], selectedSkills: [] }
     : await loadRelevantPrismSkills(input.prompt, input.metadata);
-  const effectiveCredentials = Array.from(new Set([
-    ...(input.credentials ?? []),
-    ...prismSkills.selectedSkills.flatMap((skill) => skill.requiredCredentials),
-  ]));
+  // Site supplies the authorized credential set after applying profile policy.
+  // Prompt-selected skills describe dependencies, never authority to lease more.
+  const effectiveCredentials = Array.from(new Set(input.credentials ?? []));
   const credentialLeaseKeys = authorityMode === 'read_only_utility' ? [] : effectiveCredentials;
   const lease = credentialLeaseKeys.length
     ? await gatewayClient.leaseCredentials({

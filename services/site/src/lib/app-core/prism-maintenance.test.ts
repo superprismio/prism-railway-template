@@ -3,6 +3,17 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { prismMaintenanceMigration, prismMaintenanceWorkflow } from './migrations/051_prism_maintenance';
+import { migrations } from './migrations';
+
+test('full migration chain assigns seeded maintenance to Dreamer', () => {
+  const db = new Database(':memory:');
+  try {
+    for (const migration of migrations) db.exec(migration.sql);
+    const workflow = db.prepare("SELECT definition_json FROM workflows WHERE key = 'prism-maintenance'").get() as { definition_json: string };
+    assert.equal(JSON.parse(workflow.definition_json).defaultAgent, 'dreamer-agent');
+    assert.ok(db.prepare("SELECT id FROM agent_profiles WHERE key = 'dreamer-agent' AND status = 'active'").get());
+  } finally { db.close(); }
+});
 
 test('maintenance keeps full evidence while suppressing clean and already-reported no-ops', () => {
   const instructions = readFileSync(new URL('../../../workflows/prism-maintenance/steps/verify.md', import.meta.url), 'utf8');

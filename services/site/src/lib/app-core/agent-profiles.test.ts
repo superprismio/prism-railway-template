@@ -17,6 +17,7 @@ import {
   adminAgentProfileId,
   assignAgentProfileToSession,
   getAgentProfile,
+  hasAgentProfileBinding,
   getAgentProfileSessionDetail,
   getAgentProfileVersion,
   getAgentSessionProfileAssignment,
@@ -328,6 +329,26 @@ test('creates owned agents, prevents cycles, and assigns a surface to one primar
     'readonly',
   );
   db.close();
+});
+
+test('inactive bound profiles deny direct and thread interactions without parent fallback', () => {
+  const db = testDb();
+  try {
+    const parent = upsertAgentProfile({ key: 'active-parent', name: 'Parent', status: 'active', ownerType: 'workspace' }, db);
+    const child = upsertAgentProfile({ key: 'thread-agent', name: 'Thread', status: 'active', ownerType: 'workspace' }, db);
+    upsertAgentProfileBinding({ profileId: parent.id, surfaceType: 'discord', surfaceKey: 'channel' }, db);
+    upsertAgentProfileBinding({ profileId: child.id, surfaceType: 'discord', surfaceKey: 'thread' }, db);
+    for (const status of ['draft', 'disabled', 'archived', 'active'] as const) {
+      upsertAgentProfile({ key: child.key, name: child.name, status }, db);
+      assert.equal(hasAgentProfileBinding('discord', 'thread', db), true);
+      assert.equal(hasAgentProfileBinding('discord', 'unbound', db), false);
+      const expected = status === 'active' ? child.id : undefined;
+      assert.equal(resolveAgentProfileBinding('discord', 'thread', db)?.id, expected);
+      const interaction = resolveAgentProfileInteraction({ surfaceType: 'discord', surfaceKey: 'channel', threadId: 'thread' }, db);
+      assert.equal(Boolean(interaction), status === 'active');
+      assert.ok(resolveAgentProfileInteraction({ surfaceType: 'discord', surfaceKey: 'channel' }, db));
+    }
+  } finally { db.close(); }
 });
 
 test('pins session and new job/run records to an immutable agent profile version', () => {

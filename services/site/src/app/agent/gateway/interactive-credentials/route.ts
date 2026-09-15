@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   isSourceAdapterPlatform,
+  hasAgentProfileBinding,
   loadConfig,
   readSourceAdapterPolicy,
   resolveAgentProfileInteraction,
@@ -46,7 +47,9 @@ export async function POST(request: Request) {
     groupIds: identity.groupIds,
     userId,
   });
-  const legacyPolicy = boundAgent ? null : resolveSourceAdapterPolicy(readSourceAdapterPolicy(loadConfig()), identity);
+  const hasBinding = hasAgentProfileBinding(platform, targetId)
+    || Boolean(identity.threadId && hasAgentProfileBinding(platform, identity.threadId));
+  const legacyPolicy = hasBinding ? null : resolveSourceAdapterPolicy(readSourceAdapterPolicy(loadConfig()), identity);
   const mode = boundAgent?.policy.accessMode ?? legacyPolicy?.mode ?? "off";
   const credentials = mode === "full" ? await listEnabledGatewayCredentialsOrEmpty() : [];
   return NextResponse.json({
@@ -54,6 +57,6 @@ export async function POST(request: Request) {
     profile: mode === "full" ? "admin" : mode === "off" ? "off" : "read",
     accessPolicy: boundAgent?.policy ?? legacyPolicy,
     agentProfile: boundAgent ? { key: boundAgent.profile.key, version: boundAgent.profile.version } : null,
-    credentials: credentialsForSourceMode(mode, credentials),
+    credentials: credentialsForSourceMode(mode, credentials, boundAgent?.profile ?? null),
   });
 }

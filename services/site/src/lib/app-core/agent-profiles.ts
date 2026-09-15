@@ -592,9 +592,20 @@ export function upsertAgentProfileBinding(input: {
   return bindingRows(input.profileId, db).find((binding) => binding.id === id)!;
 }
 
-export function resolveAgentProfileBinding(surfaceType: AgentProfileBinding['surfaceType'], surfaceKey: string, db: Database.Database = getDb()) {
+function boundAgentProfile(surfaceType: AgentProfileBinding['surfaceType'], surfaceKey: string, db: Database.Database) {
   const row = db.prepare('SELECT profile_id FROM agent_profile_bindings WHERE surface_type = ? AND surface_key = ? AND enabled = 1').get(surfaceType, text(surfaceKey, 300)) as { profile_id: string } | undefined;
   return row ? getAgentProfileById(row.profile_id, db) : null;
+}
+
+// Authorization callers must distinguish an absent binding from an inactive
+// profile. Only absence may fall back to legacy source policy.
+export function hasAgentProfileBinding(surfaceType: AgentProfileBinding['surfaceType'], surfaceKey: string, db: Database.Database = getDb()) {
+  return Boolean(db.prepare('SELECT 1 FROM agent_profile_bindings WHERE surface_type = ? AND surface_key = ? AND enabled = 1').get(surfaceType, text(surfaceKey, 300)));
+}
+
+export function resolveAgentProfileBinding(surfaceType: AgentProfileBinding['surfaceType'], surfaceKey: string, db: Database.Database = getDb()) {
+  const profile = boundAgentProfile(surfaceType, surfaceKey, db);
+  return profile?.status === 'active' ? profile : null;
 }
 
 export function resolveAgentProfileInteraction(input: {
@@ -604,9 +615,10 @@ export function resolveAgentProfileInteraction(input: {
   groupIds?: string[];
   userId?: string | null;
 }, db: Database.Database = getDb()): ResolvedAgentProfileInteraction | null {
-  const profile = (input.threadId ? resolveAgentProfileBinding(input.surfaceType, input.threadId, db) : null)
-    ?? resolveAgentProfileBinding(input.surfaceType, input.surfaceKey, db);
-  if (!profile) return null;
+  // An inactive thread-specific profile must not fall through to a broader parent.
+  const profile = (input.threadId ? boundAgentProfile(input.surfaceType, input.threadId, db) : null)
+    ?? boundAgentProfile(input.surfaceType, input.surfaceKey, db);
+  if (!profile || profile.status !== 'active') return null;
   const binding = profile.bindings.find((candidate) => candidate.enabled && (
     candidate.surfaceKey === input.threadId || candidate.surfaceKey === input.surfaceKey
   ));

@@ -43,7 +43,7 @@ Short evidence log for the Slices 0–2 implementation gauntlet.
 - Component: Lab shell and rollout controls
 - Evaluated: absent/true/false flag cases, configuration references, standard Site suite, typecheck, build, and independent re-review
 - Largest gap: an unset flag enabled the unfinished field-test route on every instance
-- Fix: only explicit `PRISM_LAB_ENABLED=true` enables Lab; documented the default and registered focused tests in the standard suite
+- Historical Wave 1 fix: only explicit `PRISM_LAB_ENABLED=true` enabled Lab; documented the default and registered focused tests in the standard suite. Superseded by the September 15, 2026 cutover: Lab is now enabled when unset, and only `false` opts out. See `../operations/prism-lab-routing.md`.
 - Result: focused flag tests, 61-test suite at the time of correction, build, and scoped critic review pass
 - Remaining risk: field-test operators must deliberately set the flag, as intended
 

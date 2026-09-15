@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { authorizeExternalInterface, resolveAgentProfileInteraction } from '@/lib/app-core';
+import { authorizeExternalInterface, hasAgentProfileBinding, resolveAgentProfileInteraction } from '@/lib/app-core';
 import { credentialsForSourceMode } from '@/lib/gateway-credential-assignment';
 import { requireServiceAccess } from '@/lib/internal-service';
 import { readRouteParam } from '@/lib/local-admin-api';
@@ -21,7 +21,7 @@ export async function POST(request: Request, context: RouteContext) {
   });
   if (result.ok) {
     const agent = resolveAgentProfileInteraction({ surfaceType: 'external', surfaceKey: interfaceKey });
-    if (agent?.policy.accessMode === 'off') {
+    if (agent?.policy.accessMode === 'off' || (!agent && hasAgentProfileBinding('external', interfaceKey))) {
       return NextResponse.json({ ok: false, code: 'EXTERNAL_INTERFACE_DISABLED' }, { status: 409 });
     }
     const resolved = agent ? {
@@ -45,6 +45,7 @@ export async function POST(request: Request, context: RouteContext) {
     const credentials = credentialsForSourceMode(
       resolved.profile.mode,
       resolved.profile.mode === 'full' ? await listEnabledGatewayCredentialsOrEmpty() : [],
+      agent?.profile ?? null,
     );
     return NextResponse.json({ ...result, resolved, credentials });
   }
