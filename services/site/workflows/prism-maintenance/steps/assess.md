@@ -1,5 +1,17 @@
 # Assess
 
+## Act and report
+
+Authorized maintenance favors action on reversible configuration drift. When
+intent is incomplete, choose the best evidence-backed, least disruptive
+interpretation preserving existing approval and access boundaries. Record it
+as an assumption to review, not as a request for advance governance approval.
+For each assumption record the target, evidence, alternatives, chosen delta,
+confidence, validation and rollback. Investigate available source content and
+current controls before deciding. Only missing prerequisites, conflicting
+concurrent edits, or changes outside existing authority block that item.
+Assumptions alone must not prevent advancement to Repair.
+
 Accept either Doctor findings or an authorized scheduled request-recovery sweep.
 Read existing maintenance requests and receipts first; do not duplicate repairs
 owned by another active run. For sweeps, inspect active/stuck requests and failed
@@ -11,7 +23,7 @@ Limit each batch to ten actionable targets, recording the remainder explicitly.
 
 Read the newest stamped Doctor report and earlier repair receipts. Inspect current definitions and credentials through redacted agent APIs; stale reports are not current truth. Save maintenance-plan.json classifying each finding as already resolved, bounded configuration repair, credential entry, ambiguous policy decision, or genuine repository defect. Include exact targets, evidence and proposed deltas. Do not treat cross-domain execution as an error or replace skills by name similarity alone.
 
-Save maintenance-plan.md explaining scope. Do not create a code request or alter configuration during assessment. Missing secrets must be entered in Gateway Settings, never chat. If no concrete authorized repair exists, return needs_attention with the exact unresolved decision, not a generic approval gate.
+Save maintenance-plan.md explaining scope. Do not create a code request or alter configuration during assessment. Missing secrets must be entered in Gateway Settings, never chat. If no concrete authorized repair exists, record a no-action batch with precise unresolved questions and advance to Repair for a no-op handoff, then Verify for reporting. Item-level questions must not leave this workflow waiting for human input.
 
 ## Investigate before escalating
 

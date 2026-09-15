@@ -183,6 +183,21 @@ side-effecting step.
 
 Create request pattern:
 
+Select the execution lane before creating a request. Discover applicable provider
+skills/APIs and enabled workflows with `GET /agent/workflows`. CMS catalog/media
+records, Action Items, and configuration supported by existing APIs are operational
+work, not repository implementation. Perform an authorized bounded operation in
+chat or select an appropriate operational workflow. Do not create a code request
+merely to track work, because a repository URL was mentioned, or because an API
+call failed. Missing credentials and unknown endpoints do not prove code is needed.
+
+Every creation call must supply `workflowKey` explicitly. Missing/blank values
+return `WORKFLOW_KEY_REQUIRED` without creating or starting anything. Do not
+blindly retry that error with `change-request-default`; that workflow is only for
+actual authorized repository changes. Record the concrete missing capability
+before proposing code work. If no suitable workflow exists, explain the gap
+without creating a repository issue or expanding the task's scope.
+
 1. If the user is asking to create or open a tracked change request, do not write to Prism memory.
 2. If the target app is unclear, list target apps first and either infer the best match or ask a focused follow-up.
 3. Create the request through the internal change-board API.
@@ -228,6 +243,7 @@ curl -fsSL \
     "title": "'"$TITLE"'",
     "description": "'"$DESCRIPTION"'",
     "requestType": "'"$REQUEST_TYPE"'",
+    "workflowKey": "'"$WORKFLOW_KEY"'",
     "targetAppId": "'"$TARGET_APP_ID"'",
     "priority": "'"${PRIORITY:-normal}"'",
     "estimatedHumanHours": 2,
@@ -260,7 +276,7 @@ curl -fsSL \
 
 Attach external records when the request interacts with a live system outside Prism. Use this for GitHub issues, GitHub pull requests, Discord messages or threads, deployments, publishing targets, or DAO proposal pages. Do not leave these only in comments if later workflow steps need to inspect or sync them.
 
-For the built-in repository-backed change request workflow, triage should create a GitHub issue in the target repository when repository access is configured and no GitHub issue external ref already exists. Do not create a duplicate issue when the request was imported from GitHub or already has an issue ref; attach the existing source issue instead.
+For the built-in repository-backed change request workflow, first establish that actual repository changes are required and authorized. Only then should triage create a GitHub issue in the target repository when repository access is configured and no GitHub issue external ref already exists. Operational/CMS work must not create a GitHub issue. Do not create a duplicate issue when the request was imported from GitHub or already has an issue ref; attach the existing source issue instead.
 
 ```bash
 curl -fsSL \

@@ -9,6 +9,7 @@ import {
 import { trackedChangeRequestPriorities, trackedChangeRequestTypes } from "@/lib/local-admin-api"
 import { parseEstimatedHumanHours } from "@/lib/request-estimates"
 import { autoStartWorkflowRequest } from "@/lib/workflow-autostart"
+import { requireRequestWorkflowKey, workflowSelectionHint } from "@/lib/request-workflow-selection"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
@@ -71,7 +72,12 @@ export async function POST(request: Request) {
   const description = parseString(body.description)
   const requestType = parseString(body.requestType ?? body.request_type)
   const targetAppId = parseString(body.targetAppId ?? body.target_app_id)
-  const workflowKey = parseString(body.workflowKey ?? body.workflow_key) || "change-request-default"
+  let workflowKey: string
+  try {
+    workflowKey = requireRequestWorkflowKey(body.workflowKey ?? body.workflow_key)
+  } catch {
+    return NextResponse.json({ ok: false, error: "WORKFLOW_KEY_REQUIRED", hint: workflowSelectionHint }, { status: 400 })
+  }
   const priority = parseString(body.priority) || "normal"
   const hasEstimatedHumanHours = body.estimatedHumanHours !== undefined || body.estimated_human_hours !== undefined
   const estimatedHumanHours = parseEstimatedHumanHours(body.estimatedHumanHours ?? body.estimated_human_hours)

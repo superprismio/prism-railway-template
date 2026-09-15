@@ -4162,7 +4162,8 @@ function getNextChangeRequestNumber() {
 export function createChangeRequest(input: CreateChangeRequestInput) {
   const now = new Date().toISOString();
   const id = randomUUID();
-  const workflowKey = normalizeText(input.workflowKey) || 'change-request-default';
+  const workflowKey = normalizeText(input.workflowKey);
+  if (!workflowKey) throw new Error('WORKFLOW_KEY_REQUIRED');
   const workflow = getWorkflowByKey(workflowKey);
   if (!workflow) {
     throw new Error('WORKFLOW_NOT_FOUND');

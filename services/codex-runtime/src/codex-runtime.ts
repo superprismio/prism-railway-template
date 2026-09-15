@@ -9,6 +9,7 @@ import { resolveCodexModelPolicy, type ModelTier, type ReasoningEffort } from '.
 import { createNativePrismSkillHome, loadRelevantPrismSkills } from './prism-skills.js';
 import { gatewayClient } from './runtime-gateway.js';
 import { processInvocationSizeMetrics } from './process-size.js';
+import { browserToolEnvironment, browserToolInstructions } from './browser-tools.js';
 
 type HistoryEntry = {
   role: string;
@@ -946,6 +947,7 @@ export function buildPrompt(
     `Runtime mode: ${isResume ? 'resume' : 'start'}`,
   ];
   const sections = [...fixedSections];
+  if (!isReadOnlyUtility) sections.push('', browserToolInstructions);
 
   if (policyInstructions) {
     sections.push('', 'Trusted transport policy instructions:', policyInstructions);
@@ -1170,6 +1172,7 @@ export function buildCodexChildEnvironment(
     ...inherited,
     ...leasedEnv,
     ...(runtimeHome ? { HOME: runtimeHome } : {}),
+    ...browserToolEnvironment,
     GIT_AUTHOR_NAME: config.gitAuthorName,
     GIT_AUTHOR_EMAIL: config.gitAuthorEmail,
     GIT_COMMITTER_NAME: config.gitCommitterName,
