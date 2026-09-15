@@ -36,13 +36,18 @@ or database restoration were performed during this audit.
 
 ## Required before promotion
 
-- [ ] Integrate the missing main commit; review the aggregate release diff and
+Preparation update: merged `origin/main` (`e88994f`) into the Lab branch without
+conflicts. Implemented reversible bare-entry routing, explicit legacy escape,
+return navigation, and settings-link cleanup; see [routing inventory](prism-lab-routing.md).
+Live rollout flags remain unchanged. Deployed acceptance is still required.
+
+- [x] Integrate the missing main commit; review the aggregate release diff and
   commit all intended browser, maintenance and request-routing changes.
-- [ ] Choose and implement reversible default routing. Recommended first stage:
-  route the bare authenticated `/admin` entry to Lab under a separate rollout
-  flag, while preserving explicit legacy tab URLs. Alternatively implement
-  `/admin/legacy` and update every settings/return link before redirecting.
-  Preserve `/admin/lab/...` request links and login/unauthorized behavior.
+- [x] Implement reversible default routing: bare authenticated `/admin` redirects
+  to Lab only with both `PRISM_LAB_ENABLED=true` and `PRISM_LAB_DEFAULT=true`.
+  Explicit query URLs remain legacy, including credential links and errors;
+  `/admin?legacy=true` is the escape hatch. Lab request links are unchanged.
+  Production flag activation and browser/auth acceptance remain pending.
 - [ ] Verify capability parity for admin, operator and request-viewer accounts:
   inbox, chat, artifacts, approval/retry/cancel, agent management and settings.
 - [ ] Confirm all service callers explicitly select workflows. The new agent

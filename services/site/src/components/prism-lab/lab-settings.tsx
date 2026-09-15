@@ -39,9 +39,9 @@ const settingsAreas = [
   },
   {
     key: "sources",
-    title: "Source policies",
-    description: "Control Discord, Telegram, and Buzz access by platform, target, group, and user context.",
-    href: "/admin?tab=settings&settings=config",
+    title: "Agent access and bindings",
+    description: "Manage agent profiles and their Discord, Telegram, Buzz, and external interface bindings in Lab.",
+    href: "/admin/lab/agents",
     icon: RadioTower,
   },
 ] as const
@@ -53,7 +53,7 @@ export function LabSettings() {
         <header className="border-b border-border/60 pb-5">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary"><span>Live instance</span><span aria-hidden="true">·</span><span>Settings</span></div>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">Focused configuration</h1>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Start with the four settings surfaces that most directly control safe agent access. Specialized configuration remains available in the current UI.</p>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Manage agent access in Lab. Gateway, Interfaces, and Runtimes open their existing secure forms in the legacy workspace; use Return to Prism Lab to come back.</p>
         </header>
 
         <section aria-labelledby="settings-areas-heading" className="mt-5">
@@ -66,11 +66,11 @@ export function LabSettings() {
                   <div className="flex items-start gap-3">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-primary/30 bg-primary/8 text-primary"><Icon aria-hidden="true" /></div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">{area.title}</h3><Badge variant="outline">Secure flow</Badge></div>
+                      <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">{area.title}</h3><Badge variant="outline">{area.key === "sources" ? "Lab" : "Legacy settings"}</Badge></div>
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">{area.description}</p>
                       <div className="mt-4 flex flex-wrap gap-2">
                         <Link href={area.href} className={buttonVariants({ variant: "outline", size: "sm" })}>Open settings<ArrowUpRight aria-hidden="true" /></Link>
-                        <Link href={`/admin/lab/console?focus=${area.key}`} className={buttonVariants({ variant: "ghost", size: "sm" })}><MessageSquareText aria-hidden="true" />Draft a plan in Console</Link>
+                        <Link href="/admin/lab/agents/admin-agent" className={buttonVariants({ variant: "ghost", size: "sm" })}><MessageSquareText aria-hidden="true" />Open Admin Console</Link>
                       </div>
                     </div>
                   </div>
@@ -94,7 +94,7 @@ export function LabSettings() {
             <div>
               <h2 id="legacy-settings-heading" className="font-semibold">Everything else remains available</h2>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">Branding, members, repository targets, environment setup, capture dispatch, and service diagnostics have not been duplicated in Lab.</p>
-              <Link href="/admin?tab=settings&settings=status" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-3")}>Open all current settings<ArrowUpRight aria-hidden="true" /></Link>
+              <Link href="/admin?tab=settings&settings=status" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-3")}>Open legacy settings<ArrowUpRight aria-hidden="true" /></Link>
             </div>
           </div>
         </section>

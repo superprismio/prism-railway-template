@@ -1,5 +1,7 @@
 "use client"
 
+import { legacyAdminHref } from "@/lib/prism-lab/admin-entry"
+
 import type { ReactNode } from "react"
 import { useEffect, useState } from "react"
 import Link from "next/link"
@@ -112,7 +114,7 @@ function Navigator({ capabilities, agents, memoryConfigured, onNavigate }: { cap
           </section>)}
         </div>
       </div> : null}
-      <div className="mt-auto border-t border-border/50 p-3"><Link href="/admin" onClick={onNavigate} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-muted-foreground")}>Current UI<ArrowUpRight aria-hidden="true" /></Link></div>
+      <div className="mt-auto border-t border-border/50 p-3"><Link href={legacyAdminHref} onClick={onNavigate} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "w-full justify-between text-muted-foreground")}>Legacy workspace<ArrowUpRight aria-hidden="true" /></Link></div>
     </nav>
   )
 }
