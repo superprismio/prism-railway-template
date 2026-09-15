@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { prismMaintenanceMigration, prismMaintenanceWorkflow } from './migrations/051_prism_maintenance';
+
+test('maintenance keeps full evidence while suppressing clean and already-reported no-ops', () => {
+  const instructions = readFileSync(new URL('../../../workflows/prism-maintenance/steps/verify.md', import.meta.url), 'utf8');
+  assert.match(instructions, /Quiet no-op notification policy \(takes precedence/);
+  assert.match(instructions, /Always save the complete maintenance report/);
+  assert.match(instructions, /unchanged-already-reported/);
+  assert.match(instructions, /Never suppress a failed or\s+uncertain delivery retry/);
+  assert.match(instructions, /provider-accepted message IDs/);
+});
 
 test('maintenance workflow is targetless, explicitly owned and has valid transitions', () => {
   const w = prismMaintenanceWorkflow;

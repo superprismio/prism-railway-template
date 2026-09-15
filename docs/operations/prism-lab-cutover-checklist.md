@@ -41,6 +41,18 @@ conflicts. Implemented reversible bare-entry routing, explicit legacy escape,
 return navigation, and settings-link cleanup; see [routing inventory](prism-lab-routing.md).
 Live rollout flags remain unchanged. Deployed acceptance is still required.
 
+Follow-up preparation: routing commit `0fe49cd` was pushed; Railway automatically
+deploys this branch (do not assume a push is deployment-free). Live readback
+confirmed `PRISM_LAB_ENABLED=true` and `PRISM_LAB_DEFAULT` unset. Doctor now
+prefers whole canonical Site skill records while retaining runtime-only skills;
+27 task-runner tests passed. Bundled maintenance now has an explicit quiet-no-op
+exception with 3 maintenance tests passing; live maintenance v7 was preserved.
+Live Change Request v15 was updated narrowly to v16: inserted the operational-lane
+guard before GitHub issue creation, preserving every other instruction step and
+the graph/executors. Readback verified the change. A non-secret rollback snapshot
+was saved locally at `/tmp/prism-cutover-change-request-before.json` (temporary,
+not a durable database/volume backup). No business request was rerun.
+
 - [x] Integrate the missing main commit; review the aggregate release diff and
   commit all intended browser, maintenance and request-routing changes.
 - [x] Implement reversible default routing: bare authenticated `/admin` redirects
@@ -53,9 +65,9 @@ Live rollout flags remain unchanged. Deployed acceptance is still required.
 - [ ] Confirm all service callers explicitly select workflows. The new agent
   API and shared creation function reject missing workflow keys. External custom
   callers may need updates; never substitute code work merely to satisfy validation.
-- [ ] Resolve Doctor's catalog precedence defect: runtime skill entries currently
-  overwrite Site-hosted entries by name in `doctorMergeSkills`. Test canonical
-  Site precedence while retaining runtime-only skills. Do not hide findings.
+- [x] Resolve Doctor's catalog precedence defect with canonical Site precedence
+  while retaining runtime-only skills. Regression tests cover changed and removed
+  requirements. Verify the new behavior on the deployed task-runner as well.
 - [ ] Reconcile bundled vs Site-owned instructions. Local maintenance changes do
   not include all live v7 quiet-reporting rules; deploying repository markdown
   is not proof that a custom instance workflow has been updated. The live custom

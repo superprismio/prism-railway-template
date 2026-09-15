@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from "express";
+import { doctorMergeSkills } from "./prism-doctor-skills.js";
 import { findOpenWorkflowRequests } from './workflow-single-flight.js';
 import { CronExpressionParser } from "cron-parser";
 import { spawn } from "node:child_process";
@@ -1600,8 +1601,6 @@ function doctorStringList(value: unknown) {
     : [];
 }
 
-const doctorRuntimeProvidedSkills = ["imagegen"];
-
 async function doctorRuntimeSkills() {
   const baseUrl = codexRuntimeBaseUrl();
   if (!baseUrl) return [] as Record<string, unknown>[];
@@ -1611,18 +1610,6 @@ async function doctorRuntimeSkills() {
   }
   const payload = await response.json() as Record<string, unknown>;
   return Array.isArray(payload.skills) ? payload.skills.filter(isRecord) : [];
-}
-
-function doctorMergeSkills(...groups: Record<string, unknown>[][]) {
-  const byName = new Map<string, Record<string, unknown>>();
-  for (const skill of groups.flat()) {
-    if (typeof skill.name !== "string" || !skill.name.trim()) continue;
-    byName.set(skill.name.trim(), skill);
-  }
-  for (const name of doctorRuntimeProvidedSkills) {
-    if (!byName.has(name)) byName.set(name, { name, source: "codex-runtime" });
-  }
-  return Array.from(byName.values());
 }
 
 function doctorAgentConfigSkills(value: unknown) {

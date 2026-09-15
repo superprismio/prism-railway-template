@@ -7,7 +7,8 @@ and reason. An assumption with successful verification does not itself block
 completion; verification is evidence of correctness, not proof of operator
 agreement. Never describe unavailable checks as passed.
 
-When the instance supplies an explicit maintenance report destination, send a
+When the instance supplies an explicit maintenance report destination and the
+notification policy below calls for delivery, send a
 secret-free full maintenance report there after saving the report artifact, including
 partial outcomes and explicit questions for unresolved items. This
 is authorized maintenance reporting, not authorization for arbitrary external
@@ -16,6 +17,28 @@ retry reconcile the delivery receipt before sending again. If delivery fails,
 preserve the completed repairs and report the delivery failure separately.
 
 ## Report delivery is the deliverable
+
+### Quiet no-op notification policy (takes precedence over delivery requirements)
+
+Always save the complete maintenance report and verification artifacts. Send an
+external report only when the batch applied repairs, found new or materially
+changed actionable findings/questions, or encountered an execution/verification
+failure that needs attention. Do not send a routine clean report or repeat
+unchanged unresolved findings that were already reported successfully.
+
+Compare stable finding IDs, affected targets, and material evidence against the
+last accepted report, not merely counts. If prior delivery cannot be established,
+do not suppress an actionable report as a duplicate. Never suppress a failed or
+uncertain delivery retry. Follow any explicit instance reporting override.
+
+For a clean or unchanged already-reported batch, save
+maintenance-report-delivery.json with status `suppressed`, reason `clean-no-op`
+or `unchanged-already-reported`, report artifact ID/content hash, comparison
+evidence, and prior delivery reference where applicable. This is a successful
+no-notification outcome; do not wait for a human or send a notification announcing
+suppression. The confirmed-delivery requirements below apply only when delivery
+is required. If no destination is configured, save the report locally and record
+that limitation; do not invent a destination.
 
 Create maintenance-report.md from the plan, repair receipts, fresh Doctor output
 and unresolved backlog. Include exact affected workflow/step keys, before/after
