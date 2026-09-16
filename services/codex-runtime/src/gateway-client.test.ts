@@ -2,6 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { GatewayClientError, PrismGatewayClient } from './gateway-client.js';
 
+test('gateway string errors retain the actual lease failure code', async () => {
+  const client = new PrismGatewayClient(
+    { enabled: true, baseUrl: 'http://gateway.internal', token: 'test', timeoutMs: 1000 },
+    async () => new Response(JSON.stringify({ok: false, error: 'CREDENTIAL_LEASE_ENV_PROTECTED'}), {status: 409}),
+  );
+  await assert.rejects(client.leaseCredentials({credentials: ['test']}),
+    (error: unknown) => error instanceof GatewayClientError && error.code === 'CREDENTIAL_LEASE_ENV_PROTECTED');
+});
+
 test('gateway client leases credential bundles for trusted runtime jobs', async () => {
   let observedToken = '';
   let observedBody: Record<string, unknown> = {};

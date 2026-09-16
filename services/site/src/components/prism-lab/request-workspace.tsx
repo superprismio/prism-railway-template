@@ -1,4 +1,5 @@
 "use client"
+import { runFailureDetails } from "@/lib/prism-lab/run-failure"
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
@@ -461,6 +462,7 @@ export function RequestWorkspace({
     })
   }, [review])
   const state = review ? workspaceState(review) : null
+  const failureDetails = state === "failed" ? runFailureDetails(review?.agentRuns[0]?.errorMessage) : null
   const activeAgentRun = review?.agentRuns.find((run) => activeRunStatuses.has(run.status.toLowerCase())) ?? null
   const activeRun = Boolean(activeAgentRun)
   const participatingAgents = useMemo(() => {
@@ -855,6 +857,11 @@ export function RequestWorkspace({
               <div className="min-w-0">
                 <h3 id="request-now-heading" className="font-semibold">What is happening now</h3>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">{statePresentation[state].description}</p>
+                {failureDetails ? <div className="mt-3 border-l-2 border-destructive pl-3 text-sm" role="status">
+                  <p className="font-semibold">{failureDetails.label}</p>
+                  <p className="break-words font-mono text-xs">{failureDetails.detail}</p>
+                  <p className="mt-1 text-muted-foreground">{failureDetails.recovery}</p>
+                </div> : null}
                 <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
                   <div className="flex items-center gap-2"><GitBranch aria-hidden="true" /><dt className="sr-only">Current phase</dt><dd>{step.label} · {step.type}</dd></div>
                   <div className="flex items-center gap-2"><TerminalSquare aria-hidden="true" /><dt className="sr-only">Runs</dt><dd>{review.agentRuns.length} recorded run{review.agentRuns.length === 1 ? "" : "s"}</dd></div>
