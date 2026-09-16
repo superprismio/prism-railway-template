@@ -1,4 +1,5 @@
 import express, { type Request, type Response } from "express";
+import { ScriptFailure, redactDiagnostic } from "./script-failure.js";
 import { doctorMergeSkills } from "./prism-doctor-skills.js";
 import { findOpenWorkflowRequests } from './workflow-single-flight.js';
 import { CronExpressionParser } from "cron-parser";
@@ -431,7 +432,8 @@ async function appApiRequest(path: string, init: RequestInit): Promise<Record<st
   }, httpTimeoutMs());
   const text = await response.text();
   if (!response.ok) {
-    throw new Error(`APP_API_REQUEST_FAILED:${response.status}:${text.slice(0, 500)}`);
+    const detail = redactDiagnostic(`${init.method || "GET"} ${url}: ${text}`, [token, controlToken]);
+    throw new Error(`APP_API_REQUEST_FAILED:${response.status}:${detail.slice(0, 1500)}`);
   }
   return text ? JSON.parse(text) as Record<string, unknown> : {};
 }
@@ -988,7 +990,8 @@ async function runSiteTaskScript(input: {
         }
       }, killGraceMs);
       cleanupTemp();
-      reject(new Error(`SCRIPT_RUNNER_TIMEOUT:${input.scriptKey}:${timeoutMs}`));
+      reject(new ScriptFailure({ scriptKey: input.scriptKey, exitCode: null, signal: "SIGTERM", timedOut: true,
+        stdout, stderr, secrets: Object.values(leasedEnv) }));
     }, timeoutMs);
 
     child.stdout.on("data", (chunk) => {
@@ -1012,14 +1015,15 @@ async function runSiteTaskScript(input: {
       cleanupTemp();
       reject(error);
     });
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       if (settled) return;
       settled = true;
       cleanupTimers();
       cleanupTemp();
       const stderrText = `${stderr.trim()}${stderrTruncated ? "\n[stderr truncated]" : ""}`;
       if (code !== 0) {
-        reject(new Error(`SCRIPT_RUNNER_FAILED:${input.scriptKey}:${code}:${stderrText.slice(0, 500)}`));
+        reject(new ScriptFailure({ scriptKey: input.scriptKey, exitCode: code, signal,
+          stdout, stderr: stderrText, secrets: Object.values(leasedEnv) }));
         return;
       }
 
@@ -2639,6 +2643,7 @@ async function runTask(task: RunnableTask, source: "schedule" | "manual"): Promi
     taskState.nextRunAt = nextCronDate(task.cron);
     await updateTaskRunInSite(appRun, "failed", {
       errorMessage: message,
+      ...(error instanceof ScriptFailure ? { outputSnapshot: { diagnostics: error.diagnostics } } : {}),
     });
     console.error(JSON.stringify({ event: "task.failed", task: task.key, source, error: message, at: nowIso() }));
     throw error;
