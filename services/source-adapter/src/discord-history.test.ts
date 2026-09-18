@@ -109,3 +109,35 @@ test("Discord context is returned chronologically with the selected message", as
   });
   assert.deepEqual(result.messages.map((message) => message.messageId), ["19", "20", "21"]);
 });
+
+
+test("date-only history requires a bounded window and omits the content filter", () => {
+  const bounds = { from: "2026-06-21T00:00:00Z", to: "2026-06-22T00:00:00Z" };
+  for (const query of [undefined, "", "   "]) {
+    const params = discordSearchParams(parseDiscordHistorySearchInput({ ...bounds, query, channelIds: ["123"], sortBy: "timestamp" }));
+    assert.equal(params.has("content"), false);
+    assert.ok(params.get("min_id"));
+    assert.ok(params.get("max_id"));
+    assert.deepEqual(params.getAll("channel_id"), ["123"]);
+    assert.equal(params.get("include_nsfw"), "false");
+  }
+  for (const input of [{}, { from: bounds.from }, { to: bounds.to },
+    { ...bounds, to: "2026-06-22T00:00:00.001Z" },
+    { ...bounds, to: bounds.from }, { ...bounds, from: "invalid" }]) {
+    assert.throws(() => parseDiscordHistorySearchInput(input), DiscordHistoryError);
+  }
+});
+
+test("date-only pagination preserves bounds and rejects a cursor from another window", async () => {
+  const bounds = { from: "2026-06-21T00:00:00Z", to: "2026-06-22T00:00:00Z", limit: 1, sortBy: "timestamp" };
+  const result = await searchDiscordHistory({ token: "test", guildId: "555",
+    search: parseDiscordHistorySearchInput(bounds),
+    fetchImpl: async () => Response.json({ total_results: 2, messages: [[{ id: "999", channel_id: "123", content: "retained evidence" }]] }),
+  });
+  assert.ok(result.nextCursor);
+  const params = discordSearchParams(parseDiscordHistorySearchInput({ ...bounds, cursor: result.nextCursor }));
+  assert.equal(params.get("offset"), "1");
+  assert.equal(params.has("content"), false);
+  assert.throws(() => discordSearchParams(parseDiscordHistorySearchInput({ ...bounds,
+    from: "2026-06-21T01:00:00Z", cursor: result.nextCursor })), DiscordHistoryError);
+});

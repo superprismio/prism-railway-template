@@ -72,6 +72,13 @@ curl -fsSL \
   }'
 ```
 
+For authorized historical enumeration, omit `query` only with explicit `from` and
+`to` bounds spanning at most 24 hours. Process a longer requested period as daily
+windows and paginate each using its returned cursor. This is still read-only;
+use a separately authorized ingestion path to retain results. Provider search
+visibility and indexing limits still apply. Do not infer complete coverage from
+one page or a cursor ending at the provider offset limit.
+
 Supported Discord filters include `channelIds`, `authorIds`, `mentions`, `from`,
 `to`, `has`, `sortBy`, `sortOrder`, `limit`, and an opaque `cursor`. Never alter
 or construct a cursor; reuse only the cursor returned for the same query.
