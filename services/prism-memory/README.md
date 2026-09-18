@@ -296,6 +296,13 @@ Current behavior:
 
 ## Legacy generated-state compatibility
 
+Normal `memory` and full pipeline runs no longer invoke project/objective builders.
+Recaps no longer read throughlines; JSON keeps an empty `current_throughlines` field
+for compatibility. Schema v2 causes old daily outputs to rebuild once on the next
+normal run when source digests or knowledge events are present. Explicit `state`
+commands remain for compatibility, but require builder enablement in config;
+project/objective generation and objective enrichment default off.
+
 This section documents the legacy implementation for compatibility and rollback,
 not the preferred coordination or evidence path. The
 [cutover runbook](../../docs/runbooks/prism-memory-cutover-cleanup.md) tracks retirement

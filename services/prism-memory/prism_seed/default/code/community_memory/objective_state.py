@@ -252,7 +252,7 @@ class ObjectiveStateBuilder:
 
         state_conf = self.config.state or {}
         objectives_conf = state_conf.get("objectives") or state_conf.get("workstreams") or {}
-        if objectives_conf and not bool(objectives_conf.get("enabled", True)):
+        if not bool(objectives_conf.get("enabled", False)):
             return None
 
         activity_windows = objectives_conf.get("activity_windows") or {}

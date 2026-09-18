@@ -1,9 +1,35 @@
 # Prism Memory: cleanup and full cutover
 
-Status: **internal reader cutover is live; producer and consumer cleanup is not complete.**
+Status: **internal reader cutover is live; producer retirement is implemented in #90, pending deployment verification.**
 Last audited: September 18, 2026, after PRs #88 and #89.
 This is the authoritative work list. The architecture specification is the target
 contract; notes under `docs/archive/prism-memory-rewrite/` are historical evidence.
+
+## Producer retirement implemented in PR #90
+
+Pending merge/deployment: normal memory runs no longer instantiate or call state
+builders. Removed throughline loading, freshness dependencies, narrative and Markdown
+sections. Schema v2 retains an empty `current_throughlines` field for JSON compatibility;
+old-schema daily output rebuilds once without `--force`. Template builder/enrichment
+flags default off; absent objective settings now default off. Registry APIs expose
+legacy mode and original as-of dates. The existing view is labeled Legacy state,
+shows its snapshot date, and loads only when opened.
+
+Live operations already applied: `weekly-state-cleanup-review` disabled; project,
+objective, and enrichment flags off via ops config API. Recent cleanup runs were
+terminal. The separate weekly action-items digest reads the Action Items service
+and remains enabled. Backups: Site
+`/data/custom/memory-retirement-20260918/cleanup-task-before.json`; Memory
+`state/retirement-20260918/builder-settings-before.json` under the space root.
+
+Validation: 105 Memory tests and Site tests/typecheck. A Railway source-copy check
+rebuilt September 18 using five real digest files, excluded legacy throughlines,
+and skipped an unchanged repeat. It did not rewrite the live recap or source data.
+
+**Deployment gate:** after merging, verify the next normal memory run writes schema
+v2, no throughline section, and no state-builder activity. Old deployed recap code
+can still read the retained throughline file until this branch deploys. The new code
+has NOT yet been verified in a live scheduled run.
 
 ## What complete means
 
@@ -25,12 +51,11 @@ optional follow-ups, not conditions for calling the core cutover complete.
   checkpoint; these counts will change as ingestion continues.
 - `memory-shadow-refresh`: enabled, every five minutes; last tested through the
   normal task runner with HTTP 200. Internal refresh timer remains disabled.
-- `memory-run`: enabled, hourly at minute 45. `pipeline.run_memory()` still calls
-  `run_state()` before generating the recap. Thus reader cutover did NOT retire
-  the old state producers.
-- Live `state.projects.enabled` is true. Objective settings are absent in the live
-  state config; the builder defaults still matter. Do not interpret absence as off.
-- `weekly-state-cleanup-review`: enabled Mondays 10:00 UTC. This is still legacy work.
+- `memory-run`: enabled, hourly at minute 45. the pre-#90 deployed code calls `run_state()`. This branch removes that call;
+  deployment verification remains required.
+- Live project/objective generation and enrichment are now explicitly off;
+  prior settings are backed up as noted above.
+- `weekly-state-cleanup-review`: now disabled; prior schedule Mondays 10:00 UTC.
 - `weekly-action-items-discord-digest`: enabled Mondays 11:00 UTC; inspect workflow
   dependencies before changing it. Do not equate source-backed action items with
   generated objective-registry maintenance.
@@ -50,29 +75,29 @@ optional follow-ups, not conditions for calling the core cutover complete.
 
 Owner: Memory pipeline and Site integration maintainer.
 
-- [ ] Remove automatic `run_state()` from normal recap generation in
+- [x] Remove automatic `run_state()` from normal recap generation in
   `services/prism-memory/prism_seed/default/code/community_memory/pipeline.py`.
   Preserve explicit legacy commands during compatibility retirement.
-- [ ] Remove throughline loading, freshness dependencies, narrative sections, and
+- [x] Remove throughline loading, freshness dependencies, narrative sections, and
   output assumptions from `community_memory/memory.py`; preserve any required
   legacy response field as an explicitly deprecated empty/dated compatibility field.
   Merely disabling builders would otherwise leave stale throughlines in new recaps.
-- [ ] Default generated project/objective/enrichment builders off in template config,
+- [x] Default generated project/objective/enrichment builders off in template config,
   then explicitly turn them off in the live config. Verify runtime seed behavior:
   a template edit is not proof that an existing volume was changed.
-- [ ] Disable `weekly-state-cleanup-review` after inspecting its workflow and recording
+- [x] Disable `weekly-state-cleanup-review` after inspecting its workflow and recording
   the prior definition. Stop queued legacy maintenance work without canceling unrelated
   workflows. Keep `memory-run`, collectors, knowledge sync, and refresh enabled.
-- [ ] Inspect `weekly-action-items-discord-digest` and other workflows for reads of
+- [x] Inspect `weekly-action-items-discord-digest` and other workflows for reads of
   generated state. Move any dependent evidence reads to retained meeting summaries.
   Preserve the authorized delivery behavior; a maintenance run must not send messages.
-- [ ] Remove the default emphasis on objectives/throughlines in the existing Memory
+- [x] Remove the default emphasis on objectives/throughlines in the existing Memory
   Explorer and label remaining legacy views with real as-of dates. Existing consumers
   include `services/site/src/components/admin/memory-explorer-workspace.tsx` and
   `/admin/memory/api/state/{objectives,throughlines}` proxies.
-- [ ] After migrating consumers, delete unused state-builder code, old fixture/config
-  branches, and cleanup workflow definitions. Keep a dated archive of generated
-  historical state. Do not delete source events, manual curation, or audit history.
+- [x] Remove unused throughline recap code and eager builder initialization. Explicit
+  legacy commands, curation, and read APIs remain for compatibility, outside the normal
+  pipeline. Keep the disabled cleanup definition and its history for rollback.
 
 Done when: a normal scheduled memory run creates a source-backed recap, invokes no
 state builder, produces no objective cleanup queue, and all active consumers avoid
@@ -171,8 +196,9 @@ cleanup. No requirement to build a new interface or visualization.
 - Removed 113 local scratch files (about 5.65 MB): the obsolete upload tree, duplicate
   remote trial scripts, non-idempotent skill-patching helper, and redundant base64
   catalog transfer. The extracted corpus and evidence labels remain available.
-- All 100 Memory tests passed. This pass did not alter live tasks, producer settings,
-  source data, or public interfaces.
+- The initial documentation-only pass passed 100 Memory tests and did not alter
+  live settings. The subsequent producer-retirement changes and operations are
+  recorded at the top of this runbook; source data and public interfaces remain intact.
 
 ## Rollback and closeout
 

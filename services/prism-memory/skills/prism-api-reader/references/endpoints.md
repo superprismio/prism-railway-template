@@ -128,4 +128,3 @@ Read active throughlines:
 curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
   "$PRISM_API_BASE/state/throughlines?status=active&limit=25"
 ```
-

@@ -63,6 +63,8 @@ type SourcesPayload = {
 };
 
 type ObjectivesPayload = {
+  as_of_date?: string;
+  generated_at?: string;
   objectives: PrismStateObjective[];
   total?: number;
 };
@@ -547,6 +549,7 @@ export function MemoryExplorerWorkspace({
   const [objectives, setObjectives] = useState<PrismStateObjective[]>([]);
   const [objectiveTotal, setObjectiveTotal] = useState(0);
   const [objectiveError, setObjectiveError] = useState<string | null>(null);
+  const [legacyAsOf, setLegacyAsOf] = useState<string | null>(null);
   const [objectiveLoading, setObjectiveLoading] = useState(false);
   const [objectiveStatus, setObjectiveStatus] = useState("active");
   const [objectiveSource, setObjectiveSource] = useState("");
@@ -750,6 +753,7 @@ export function MemoryExplorerWorkspace({
       const payload = await fetchJson<ObjectivesPayload>(
         `/admin/memory/api/state/objectives?${params.toString()}`,
       );
+      setLegacyAsOf(payload.as_of_date ?? payload.generated_at ?? null);
       const nextObjectives = payload.objectives ?? [];
       setObjectives(nextObjectives);
       setObjectiveTotal(payload.total ?? nextObjectives.length);
@@ -813,8 +817,6 @@ export function MemoryExplorerWorkspace({
   useEffect(() => {
     loadArtifacts();
     loadSources();
-    loadObjectives();
-    loadThroughlines();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -824,14 +826,17 @@ export function MemoryExplorerWorkspace({
   }, [category, status, source, type, limit]);
 
   useEffect(() => {
+    if (activeTab !== "objectives") return;
     loadObjectives();
+    loadThroughlines();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [objectiveStatus, objectiveSource, objectiveExternalSystem]);
+  }, [activeTab, objectiveStatus, objectiveSource, objectiveExternalSystem]);
 
   useEffect(() => {
+    if (activeTab !== "objectives") return;
     loadSignals(selectedObjectiveKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedObjectiveKey]);
+  }, [activeTab, selectedObjectiveKey]);
 
   function setArtifactChatSelection(artifact: PrismArtifactSummary, selected: boolean) {
     setSelectedArtifactIds((current) => {
@@ -906,7 +911,7 @@ export function MemoryExplorerWorkspace({
                 value="objectives"
                 className="rounded-xl border border-transparent px-4 py-2.5 data-[state=active]:border-border/70 data-[state=active]:bg-background"
               >
-                Objectives
+                Legacy state
                 <Badge variant="outline" className="ml-2">
                   {objectiveTotal}
                 </Badge>
@@ -1352,6 +1357,11 @@ export function MemoryExplorerWorkspace({
         </TabsContent>
 
         <TabsContent value="objectives" className="mt-0 flex-1">
+          <p className="border-b px-5 py-3 text-sm text-muted-foreground">
+            Legacy generated registry. Status labels describe the saved snapshot, not verified current work.
+            Use meeting and message evidence for current decisions and ownership.
+            {" "}Snapshot as of: {legacyAsOf ? formatDate(legacyAsOf) : "not recorded"}.
+          </p>
           <section className="grid min-h-full xl:grid-cols-[minmax(0,1fr)_460px]">
             <div className="min-w-0">
               <div className="grid gap-3 border-b border-border/60 px-5 py-4 md:px-6 lg:grid-cols-[1.5fr_repeat(3,minmax(120px,170px))_auto]">
@@ -1431,7 +1441,7 @@ export function MemoryExplorerWorkspace({
               <div className="grid border-b border-border/60 px-5 py-4 md:px-6 lg:grid-cols-3">
                 <div>
                   <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Objectives
+                    Legacy state
                   </p>
                   <p className="mt-1 text-2xl font-semibold">{visibleObjectives.length}</p>
                 </div>
@@ -1525,7 +1535,7 @@ export function MemoryExplorerWorkspace({
                 ) : (
                   <EmptyState
                     title="No active throughlines"
-                    body="Run generated state with enrichment or add explicit throughline keys to source metadata."
+                    body="No retained throughlines match these filters. New recaps do not generate this registry."
                   />
                 )}
               </div>
@@ -1715,7 +1725,7 @@ export function MemoryExplorerWorkspace({
                     ) : (
                       <EmptyState
                         title="No signals loaded"
-                        body="Select another objective or refresh generated state."
+                        body="Select another retained objective to inspect its historical evidence."
                       />
                     )}
                   </div>
