@@ -53,3 +53,19 @@ Deployment gate: verify one manual workflow request, its private receipt, the
 stored annotations, and an unchanged second pass before enabling the hourly
 `:17 UTC` schedule. Enabling recurrence requires operator approval. No messages
 are sent to Discord, email, or any other community destination.
+
+
+## Live validation, September 18, 2026
+
+Manual request #2803 classified two summaries with JEV 1.13.0: 11 judgments,
+one abstention, two revision-bound annotation files. Reposting the same results
+returned cached twice; pending work fell from 102 to 100 and neither completed
+revision was selected again. Search remains independent of these annotations.
+
+The initial workflow used an incorrect artifact endpoint and required receipt
+recovery before closing. The instance skill and this example now specify the
+exact Site UUID write route, distinguish Site from Memory authentication, require
+a successful attempt receipt before provider calls, and prevent selecting fresh
+batches while resuming the same request. A fresh request #2804 is the verification
+of this correction. The hourly task remains disabled until that verification and
+operator approval to enable recurrence.
