@@ -217,11 +217,13 @@ def _build_catalog(root: Path, output: Path) -> dict:
                 (folder / f"{key}.json").write_bytes(encoded(item))
         (staging / "manifest.json").write_bytes(encoded({"generation": generation, **report}))
         destination = generations / generation
+        if destination.is_symlink() or (destination.exists() and not destination.is_dir()):
+            raise ValueError("catalog_generation_collision: destination must be a real directory")
         if not destination.exists():
             try:
                 staging.rename(destination)
             except OSError:
-                if not destination.is_dir():
+                if destination.is_symlink() or not destination.is_dir():
                     raise
         # A live collector may move/write files while we scan. Never publish a
         # generation known to have mixed inputs; the refresh worker retries.
@@ -241,8 +243,15 @@ def _build_catalog(root: Path, output: Path) -> dict:
     finally:
         if staging.exists():
             shutil.rmtree(staging)
-    prune_generations(output, generation)
-    return {**report, "published": True, "generation": generation}
+    retention_errors = []
+    try:
+        prune_generations(output, generation)
+    except OSError as exc:
+        # The pointer is already published. Cleanup failure must not misreport
+        # that successful publication or invalidate its refresh fingerprint.
+        retention_errors.append({"error": str(exc)})
+    return {**report, "published": True, "generation": generation,
+            "retention_errors": retention_errors}
 
 
 def prune_generations(output: Path, current: str) -> None:

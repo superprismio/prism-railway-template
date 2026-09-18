@@ -184,7 +184,11 @@ current source authority. Context requests for a replaced generation return 409.
 
 Successful builds also remove abandoned `.build-*` staging directories. Symlinks
 and unrelated directory names are untouched. Failed builds preserve the current
-pointer and do not prune. Retention bounds generation count, not source size;
+pointer and do not prune. Generation destination symlinks (including broken links)
+and non-directory collisions are rejected without replacing them. If pruning fails
+after publication, the new generation remains successful and `retention_errors`
+records the warning separately from build `errors`. Unchanged refreshes retain that
+warning without rebuilding; the next successful build retries cleanup. Retention bounds generation count, not source size;
 continue monitoring disk capacity. Deploy the reader and builder changes together
 and restart all processes sharing the catalog before enabling this pruning code;
 older readers do not participate in the retention lock. Unset the catalog root to

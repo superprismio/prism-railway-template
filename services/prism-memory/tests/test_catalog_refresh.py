@@ -88,6 +88,48 @@ class RefreshTests(unittest.TestCase):
         self.assertTrue(completed.is_set())
         self.assertEqual(failures, [])
 
+    def test_generation_destination_collisions_preserve_pointer_and_targets(self):
+        first = refresh(self.root, self.output)
+        self.put('a', 'New generation')
+        preview = build_catalog(self.root, Path(self.tmp.name) / 'preview')
+        destination = self.output / 'generations' / preview['generation']
+        external = Path(self.tmp.name) / 'external'
+        external.mkdir(); (external / 'evidence').write_text('untouched')
+        for collision in ['directory_symlink', 'broken_symlink', 'file']:
+            with self.subTest(collision=collision):
+                if collision == 'file':
+                    destination.write_text('untouched')
+                else:
+                    destination.symlink_to(external if collision == 'directory_symlink' else external / 'absent')
+                try:
+                    result = refresh(self.root, self.output)
+                    self.assertEqual(result['status'], 'error')
+                    self.assertIn('catalog_generation_collision', result['errors'][0]['error'])
+                    self.assertEqual(json.loads((self.output / 'current.json').read_text())['generation'], first['generation'])
+                    if collision == 'file': self.assertEqual(destination.read_text(), 'untouched')
+                    else: self.assertTrue(destination.is_symlink())
+                    self.assertEqual((external / 'evidence').read_text(), 'untouched')
+                finally:
+                    destination.unlink()
+
+    def test_retention_failure_does_not_undo_publication_or_repeat_build(self):
+        from community_memory.retrieval import CatalogReader
+        first = refresh(self.root, self.output)
+        self.put('a', 'Published despite cleanup failure')
+        with patch('community_memory.catalog.prune_generations', side_effect=PermissionError('retention denied')):
+            result = refresh(self.root, self.output)
+        self.assertEqual(result['status'], 'updated')
+        self.assertNotEqual(result['generation'], first['generation'])
+        self.assertEqual(result['errors'], [])
+        self.assertIn('retention denied', result['retention_errors'][0]['error'])
+        self.assertEqual(CatalogReader(self.output).snapshot()[0], result['generation'])
+        with patch('community_memory.catalog_refresh.build_catalog', side_effect=AssertionError('redundant build')):
+            unchanged = refresh(self.root, self.output)
+        self.assertEqual(unchanged['status'], 'unchanged')
+        self.assertEqual(unchanged['retention_errors'], result['retention_errors'])
+        self.put('a', 'Next publication retries retention')
+        self.assertEqual(refresh(self.root, self.output)['retention_errors'], [])
+
     def test_add_edit_delete_and_unchanged(self):
         first=refresh(self.root,self.output)
         self.assertEqual(first['status'],'updated')
