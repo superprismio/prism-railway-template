@@ -965,7 +965,7 @@ class ObjectiveStateBuilder:
     ) -> int:
         settings = self.config.agentic_ingest
         enrichment_conf = objectives_conf.get("enrichment") if isinstance(objectives_conf.get("enrichment"), dict) else {}
-        enrichment_enabled = bool(settings.enabled) and bool(enrichment_conf.get("enabled", True))
+        enrichment_enabled = bool(settings.enabled) and bool(enrichment_conf.get("enabled", False))
         if not enrichment_enabled:
             for objective in objectives:
                 objective.setdefault("enrichment_status", "disabled")

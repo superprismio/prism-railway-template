@@ -93,8 +93,10 @@ class FilesystemStorageBackend:
 
     @staticmethod
     def _legacy_registry(payload: Dict[str, Any]) -> Dict[str, Any]:
+        state_index = payload.get("state_index")
+        window_end = state_index.get("window_end") if isinstance(state_index, dict) else None
         return {**payload, "registry_mode": "legacy-compatibility",
-                "registry_as_of": payload.get("as_of_date") or payload.get("generated_at"),
+                "registry_as_of": payload.get("as_of_date") or window_end,
                 "registry_notice": "Generated registry snapshot; use retained meeting/message evidence for current work."}
 
     def state_latest(self) -> Any:

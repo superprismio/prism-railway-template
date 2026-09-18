@@ -64,7 +64,7 @@ type SourcesPayload = {
 
 type ObjectivesPayload = {
   as_of_date?: string;
-  generated_at?: string;
+  registry_as_of?: string | null;
   objectives: PrismStateObjective[];
   total?: number;
 };
@@ -753,7 +753,7 @@ export function MemoryExplorerWorkspace({
       const payload = await fetchJson<ObjectivesPayload>(
         `/admin/memory/api/state/objectives?${params.toString()}`,
       );
-      setLegacyAsOf(payload.as_of_date ?? payload.generated_at ?? null);
+      setLegacyAsOf(payload.registry_as_of ?? payload.as_of_date ?? null);
       const nextObjectives = payload.objectives ?? [];
       setObjectives(nextObjectives);
       setObjectiveTotal(payload.total ?? nextObjectives.length);

@@ -69,3 +69,36 @@ class RecapRetirementTests(unittest.TestCase):
         self.assertEqual(result['registry_mode'], 'legacy-compatibility')
         self.assertEqual(result['registry_as_of'], '2026-09-01')
         self.assertEqual(result['objectives'], payload['objectives'])
+
+    def test_enrichment_requires_its_own_explicit_opt_in(self):
+        from community_memory.objective_state import ObjectiveStateBuilder
+        builder = ObjectiveStateBuilder(base_path=self.root, activity=Mock(),
+            config=Mock(agentic_ingest=Mock(enabled=True)))
+        for enrichment, expected_calls in [(None, 0), ({}, 0), ({'enabled': False}, 0),
+                                           ({'enabled': True}, 1)]:
+            with self.subTest(enrichment=enrichment):
+                conf = {'enabled': True}
+                if enrichment is not None:
+                    conf['enrichment'] = enrichment
+                objectives = [{'objective_key': 'explicit-work'}]
+                with patch.object(builder, '_objective_needs_enrichment', return_value=True), \
+                     patch.object(builder, '_signals_for_objective', return_value=[{'kind': 'decision'}]), \
+                     patch.object(builder, '_call_objective_enricher', return_value={}) as provider:
+                    count = builder._enrich_objectives(objectives=objectives, signals=[], objectives_conf=conf)
+                self.assertEqual(provider.call_count, expected_calls)
+                self.assertEqual(count, expected_calls)
+                self.assertEqual(objectives[0]['enrichment_status'], 'fresh' if expected_calls else 'disabled')
+
+    def test_aggregate_registry_date_is_evidence_window_not_write_time(self):
+        from community_memory_api.storage import FilesystemStorageBackend
+        for extra, expected in [
+            ({'state_index': {'window_end': '2026-09-01'}}, '2026-09-01'),
+            ({'as_of_date': '2026-08-31', 'state_index': {'window_end': '2026-09-01'}}, '2026-08-31'),
+            ({}, None), ({'state_index': None}, None), ({'state_index': {}}, None),
+        ]:
+            with self.subTest(extra=extra):
+                payload = {'generated_at': '2026-09-18T00:00:00Z', **extra}
+                (self.root / 'state/latest.json').write_text(json.dumps(payload))
+                result = FilesystemStorageBackend(self.root).state_latest()
+                self.assertEqual(result['registry_as_of'], expected)
+                self.assertEqual(result['generated_at'], payload['generated_at'])
