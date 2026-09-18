@@ -75,3 +75,11 @@ receipts and stored annotations before enabling recurrence.
 Daily is the selected cadence; the two-summary cap remains unchanged. Handle any
 historical catch-up separately rather than increasing recurring frequency. The
 example timezone is instance-specific and should be changed for another deployment.
+
+A checkpointed operator catch-up then stored 99 additional annotations. One
+connection failure remained uncommitted; fresh workflow request #2806 retried it
+and completed with one written annotation and a final private receipt. Live
+verification found 102 cached revisions, zero eligible pending, 407 judgments,
+110 abstentions, and 35 ineligible/no-candidate summaries. Search still returned
+results. The instance daily schedule was enabled after this verification; the
+reusable examples remain disabled by default.
