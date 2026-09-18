@@ -245,3 +245,33 @@ Close this runbook only after steps 1–3 are checked off with deployment/test e
 Track backfill and JEV separately. Record commits, task keys, configuration changes,
 verification dates, and any deliberately retained compatibility endpoint here. The
 cleanup PR itself does not claim that producer retirement or scoped rollout is done.
+
+
+## Post-merge verification and source-backfill prerequisite — 2026-09-18
+
+Memory deployment `7eb193c45fe57ef26140592ec79ba2dc2f5a6cf9` succeeded.
+Triggered the existing `memory-run` task through its normal agent trigger route;
+run `80715646-5d6c-4860-98ab-00a258c1a4aa` succeeded at 21:13:54 UTC.
+The live latest recap now has `recap_schema_version: 2` and an empty
+`current_throughlines` array. This verifies task-dispatched execution; the next
+hourly scheduled occurrence remains a separate observation.
+
+The requested source-history backfill has **not** imported any history yet.
+The initial catalog contains 3,925 logical records / 3,929 revisions / 128 meetings;
+observed dates alone do not establish continuous coverage. A live date-only search
+was rejected with `INVALID_SEARCH: query is required`. The adapter change allows
+query-free windows of at most 24 hours and omits the provider content filter.
+Discord documents content as optional:
+https://docs.discord.com/developers/resources/message#search-guild-messages
+
+Deploy the adapter change before attempting daily source enumeration for
+2026-06-21 through 2026-09-18 (90 calendar days, ending at a fixed run timestamp).
+Keep Site authorization and bot visibility restrictions. Follow opaque cursors,
+honor retry intervals, and split any saturated windows rather than treating the
+provider offset ceiling as completeness. Reconcile canonical message IDs/URLs
+against retained records before ingestion; preserve upstream meeting metadata
+and do not fabricate summaries from arbitrary messages. Record gaps and skipped
+records explicitly, then refresh and verify retrieval. This source acquisition
+is different from `/ops/memory/backfill`, which reprocesses collector inputs and
+cannot by itself enumerate missing Discord history. Do not reset live collector
+checkpoints to emulate a historical replay.

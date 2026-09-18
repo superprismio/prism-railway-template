@@ -75,12 +75,15 @@ function isoTimestamp(value: unknown, field: string): string | null {
 export function parseDiscordHistorySearchInput(value: unknown): DiscordHistorySearchInput {
   const input = record(value);
   const query = stringValue(input.query);
-  if (!query) throw new DiscordHistoryError(400, "INVALID_SEARCH", "query is required");
   if (query.length > 1_024) throw new DiscordHistoryError(400, "INVALID_SEARCH", "query must not exceed 1024 characters");
   const from = isoTimestamp(input.from, "from");
   const to = isoTimestamp(input.to, "to");
   if (from && to && new Date(from).getTime() >= new Date(to).getTime()) {
     throw new DiscordHistoryError(400, "INVALID_SEARCH", "from must be earlier than to");
+  }
+  // Date-only enumeration is bounded independently of ordinary topic searches.
+  if (!query && (!from || !to || new Date(to).getTime() - new Date(from).getTime() > 86_400_000)) {
+    throw new DiscordHistoryError(400, "INVALID_SEARCH", "A query or a date window of at most 24 hours is required");
   }
   const sortBy = stringValue(input.sortBy ?? input.sort_by) || "relevance";
   if (sortBy !== "timestamp" && sortBy !== "relevance") {
@@ -160,13 +163,13 @@ function nextCursor(input: DiscordHistorySearchInput, offset: number, resultCoun
 
 export function discordSearchParams(input: DiscordHistorySearchInput): URLSearchParams {
   const params = new URLSearchParams({
-    content: input.query,
     limit: String(input.limit),
     offset: String(cursorOffset(input)),
     sort_by: input.sortBy,
     sort_order: input.sortOrder,
     include_nsfw: String(input.includeNsfw),
   });
+  if (input.query) params.set("content", input.query);
   for (const value of input.channelIds) params.append("channel_id", value);
   for (const value of input.authorIds) params.append("author_id", value);
   for (const value of input.mentions) params.append("mentions", value);
