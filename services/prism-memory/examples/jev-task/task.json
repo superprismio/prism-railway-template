@@ -30,7 +30,7 @@
   },
   "agentConfig": {
     "executorAgent": "admin-agent",
-    "modelTier": "economy"
+    "modelTier": "standard"
   },
   "outputConfig": {}
 }

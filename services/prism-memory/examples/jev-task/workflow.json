@@ -11,7 +11,7 @@
     "workflowPath": "workflow.md",
     "defaultAgent": "admin-agent",
     "agentConfig": {
-      "modelTier": "economy",
+      "modelTier": "standard",
       "skills": [
         "prism-memory-jev-classifier"
       ],

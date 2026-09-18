@@ -19,6 +19,12 @@ If a final receipt already reports all selected IDs written/cached/stale, finish
 without calling pending or JEV again. If an attempt receipt exists, resume only
 its original selected IDs; never select replacements in the same request.
 
+Keep pending batches and provider responses in variables inside one Node.js or
+Python process. Forward each batch.request using JSON serialization directly to
+the provider; do not copy payloads through chat text or reconstruct them manually.
+Only print sanitized receipt counts and IDs. A tool response being too large to
+display does not prevent processing it programmatically.
+
 1. POST /ops/annotations/jev/pending with {"limit":2} exactly once per request.
    If there are no batches, save a private no-op receipt and finish. If endpoints
    are unavailable, fail accurately; do not use a legacy state endpoint instead.

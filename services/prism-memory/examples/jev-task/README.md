@@ -2,7 +2,7 @@
 
 This is a request-backed agent workflow, not a standalone deterministic script:
 the runtime already has authorized Memory access and receives the provider key
-through Gateway. It uses an explicit `admin-agent` executor at the economy tier;
+through Gateway. It uses an explicit `admin-agent` executor at the standard tier;
 there is orchestration-model overhead even for no-op runs. The task and workflow
 are disabled by default. Replace the accountable domain, executor, and Gateway
 credential key for another instance before installing these examples.
@@ -66,9 +66,11 @@ The initial workflow used an incorrect artifact endpoint and required receipt
 recovery before closing. The instance skill and this example now specify the
 exact Site UUID write route, distinguish Site from Memory authentication, require
 a successful attempt receipt before provider calls, and prevent selecting fresh
-batches while resuming the same request. A fresh request #2804 is the verification
-of this correction. The daily task remains disabled until that verification and
-operator approval to enable recurrence.
+batches while resuming the same request. Request #2804 subsequently stopped before provider calls because the agent
+failed to preserve pending payloads; its closed workflow status was not evidence
+of successful classification. The skill now requires programmatic forwarding in
+one process, and the example uses the standard orchestration tier. Validate actual
+receipts and stored annotations before enabling recurrence.
 
 Daily is the selected cadence; the two-summary cap remains unchanged. Handle any
 historical catch-up separately rather than increasing recurring frequency. The
