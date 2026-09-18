@@ -758,6 +758,8 @@ def create_app(settings: Settings) -> FastAPI:
         app.include_router(retrieval_router(Path(catalog_root), require_read_api_key))
         from .scoped_retrieval import scoped_retrieval_router
         app.include_router(scoped_retrieval_router(Path(catalog_root)))
+        from .jev_routes import jev_router
+        app.include_router(jev_router(Path(catalog_root), data_root, require_ops_api_key))
 
     read_auth_dependency = Depends(require_read_api_key)
     write_auth_dependency = Depends(require_write_api_key)

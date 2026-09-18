@@ -310,3 +310,21 @@ checkpoints to emulate a historical replay.
 The earlier custom-reader and generation-guard inventory above records historical
 state; this receipt supersedes those entries. JEV scheduling and graph passes
 remain optional follow-up work, not part of this cleanup.
+
+
+## Retention verification and optional JEV staging — 2026-09-18
+
+After #92 deployed, a rebuild of the unchanged source published the same generation
+with no retention errors and retained exactly three generations. Source files were
+not modified. The normal scheduled refresh also remained healthy.
+
+The optional JEV annotation API and example workflow are implemented separately.
+See `services/prism-memory/examples/jev-task/README.md` for limits and deployment.
+Site now has the instance skill and disabled `memory-jev-classification` workflow
+and hourly task, assigned to platform-operations with explicit admin-agent executor.
+The skill requests only the existing typesafe-jev-api Gateway credential.
+A read-only production selection check found 102 eligible summary revisions, selected
+two, and skipped 35 ineligible/no-candidate summaries. It made zero provider calls
+and wrote zero annotations. The initial backlog includes historical summaries.
+Do not enable recurrence before deploying the API and verifying a manual workflow
+request. JEV annotations remain outside source evidence, search, and graph state.

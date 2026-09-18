@@ -1,0 +1,36 @@
+{
+  "key": "memory-jev-classification",
+  "name": "Memory JEV classification",
+  "description": "Optional hourly pass; at most two uncached summary revisions per occurrence.",
+  "enabled": false,
+  "triggerType": "schedule",
+  "scheduleCron": "17 * * * *",
+  "timezone": "UTC",
+  "taskType": "workflow-runner",
+  "accountabilityDomainKey": "platform-operations",
+  "inputConfig": {
+    "workflowKey": "memory-jev-classification",
+    "request": {
+      "title": "Memory JEV classification",
+      "description": "Run one bounded optional meeting classification pass.",
+      "requestType": "ops",
+      "priority": "normal",
+      "estimatedHumanHours": 0.25
+    },
+    "autoRun": {
+      "enabled": true,
+      "maxSteps": 1,
+      "stopStatuses": [
+        "closed"
+      ]
+    }
+  },
+  "instructionConfig": {
+    "prompt": "Run the workflow step under its bounded classification contract."
+  },
+  "agentConfig": {
+    "executorAgent": "admin-agent",
+    "modelTier": "economy"
+  },
+  "outputConfig": {}
+}
