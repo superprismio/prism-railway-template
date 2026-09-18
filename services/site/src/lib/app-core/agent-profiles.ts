@@ -600,7 +600,7 @@ function boundAgentProfile(surfaceType: AgentProfileBinding['surfaceType'], surf
 // Authorization callers must distinguish an absent binding from an inactive
 // profile. Only absence may fall back to legacy source policy.
 export function hasAgentProfileBinding(surfaceType: AgentProfileBinding['surfaceType'], surfaceKey: string, db: Database.Database = getDb()) {
-  return Boolean(db.prepare('SELECT 1 FROM agent_profile_bindings WHERE surface_type = ? AND surface_key = ? AND enabled = 1').get(surfaceType, text(surfaceKey, 300)));
+  return Boolean(db.prepare('SELECT 1 FROM agent_profile_bindings WHERE surface_type = ? AND surface_key = ?').get(surfaceType, text(surfaceKey, 300)));
 }
 
 export function resolveAgentProfileBinding(surfaceType: AgentProfileBinding['surfaceType'], surfaceKey: string, db: Database.Database = getDb()) {

@@ -497,6 +497,53 @@ def create_app(settings: Settings) -> FastAPI:
     async def _startup() -> None:  # pragma: no cover
         logger.info("data_root=%s root_path=%s", data_root, settings.root_path or "/")
 
+    refresh_task: asyncio.Task | None = None
+    refresh_seconds = int(os.getenv("PRISM_SHADOW_REFRESH_SECONDS", "0"))
+    if refresh_seconds and refresh_seconds < 30:
+        raise ValueError("PRISM_SHADOW_REFRESH_SECONDS must be 0 or at least 30")
+
+    async def _refresh_shadow_loop() -> None:
+        while True:
+            process = None
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    sys.executable, "-m", "community_memory.catalog_refresh",
+                    "--root", str(data_root), "--output", os.environ["PRISM_SHADOW_CATALOG_ROOT"],
+                    env=_ops_env(), stdout=asyncio.subprocess.DEVNULL,
+                )
+                await process.wait()
+                if process.returncode:
+                    logger.warning("Shadow catalog refresh failed; previous generation retained")
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Shadow catalog refresh could not start")
+            finally:
+                if process is not None and process.returncode is None:
+                    try:
+                        process.terminate()
+                    except ProcessLookupError:
+                        pass
+                    await process.wait()
+            await asyncio.sleep(refresh_seconds)
+
+    @app.on_event("startup")
+    async def _start_shadow_refresh() -> None:
+        nonlocal refresh_task
+        if refresh_seconds:
+            if not os.getenv("PRISM_SHADOW_CATALOG_ROOT", "").strip():
+                raise ValueError("Shadow refresh requires PRISM_SHADOW_CATALOG_ROOT")
+            refresh_task = asyncio.create_task(_refresh_shadow_loop())
+
+    @app.on_event("shutdown")
+    async def _stop_shadow_refresh() -> None:
+        if refresh_task:
+            refresh_task.cancel()
+            try:
+                await refresh_task
+            except asyncio.CancelledError:
+                pass
+
     ops_workspace_root = (
         data_root.parent.parent if settings.data_root_override is not None else settings.base_dir
     )
@@ -704,9 +751,64 @@ def create_app(settings: Settings) -> FastAPI:
     async def health() -> schemas.HealthResponse:
         return schemas.HealthResponse(service=settings.service_name, space=settings.space)
 
+    # Disabled unless an operator explicitly points at a shadow catalog.
+    catalog_root = os.getenv("PRISM_SHADOW_CATALOG_ROOT", "").strip()
+    if catalog_root:
+        from .retrieval_routes import retrieval_router
+        app.include_router(retrieval_router(Path(catalog_root), require_read_api_key))
+        from .scoped_retrieval import scoped_retrieval_router
+        app.include_router(scoped_retrieval_router(Path(catalog_root)))
+
     read_auth_dependency = Depends(require_read_api_key)
     write_auth_dependency = Depends(require_write_api_key)
     ops_auth_dependency = Depends(require_ops_api_key)
+
+    @app.get("/ops/retrieval/status", dependencies=[ops_auth_dependency], tags=["ops"])
+    def shadow_refresh_status():
+        root = os.getenv("PRISM_SHADOW_CATALOG_ROOT", "").strip()
+        status_path = (Path(root) if root else data_root / "shadow/retrieval-v2") / "refresh-status.json"
+        try:
+            status = json.loads(status_path.read_text())
+            if not isinstance(status, dict):
+                raise ValueError("invalid refresh status")
+        except (OSError, ValueError):
+            status = {"status": "not_initialized"}
+        return {**status, "refresh_seconds": refresh_seconds,
+                "automatic_refresh_enabled": bool(refresh_seconds)}
+
+    @app.post("/ops/retrieval/refresh", dependencies=[ops_auth_dependency], tags=["ops"])
+    async def shadow_refresh():
+        if refresh_seconds:
+            raise HTTPException(409, "Disable the internal refresh timer before using a Prism task")
+        root = os.getenv("PRISM_SHADOW_CATALOG_ROOT", "").strip()
+        output = Path(root) if root else data_root / "shadow/retrieval-v2"
+        process = await asyncio.create_subprocess_exec(
+            sys.executable, "-m", "community_memory.catalog_refresh",
+            "--root", str(data_root), "--output", str(output),
+            env=_ops_env(), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+        except asyncio.TimeoutError:
+            raise HTTPException(504, "Shadow refresh timed out; inspect ops retrieval status")
+        finally:
+            if process.returncode is None:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                await process.wait()
+        if process.returncode:
+            raise HTTPException(503, "Shadow refresh failed; previous generation retained; inspect ops retrieval status")
+        try:
+            result = json.loads(stdout)
+        except ValueError:
+            raise HTTPException(502, "Invalid shadow refresh response")
+        if result.get("status") == "busy":
+            raise HTTPException(409, "Shadow refresh already running")
+        if result.get("status") not in {"updated", "unchanged"}:
+            raise HTTPException(503, "Shadow refresh did not complete successfully")
+        return {"ok": True, **result}
 
     @app.get("/memory/latest", dependencies=[read_auth_dependency], tags=["memory"])
     async def memory_latest():

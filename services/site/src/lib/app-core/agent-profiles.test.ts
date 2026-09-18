@@ -451,3 +451,15 @@ test('migration attributes only currently active unassigned runs to the Admin Ag
   );
   db.close();
 });
+
+
+test('disabled external bindings remain present and block legacy fallback', () => {
+  const db = testDb();
+  try {
+    const profile = upsertAgentProfile({ key: 'disabled-external', name: 'Disabled external', ownerType: 'workspace' }, db);
+    upsertAgentProfileBinding({ profileId: profile.id, surfaceType: 'external', surfaceKey: 'handbook', enabled: false }, db);
+    assert.equal(hasAgentProfileBinding('external', 'handbook', db), true);
+    assert.equal(resolveAgentProfileInteraction({ surfaceType: 'external', surfaceKey: 'handbook' }, db), null);
+    assert.equal(hasAgentProfileBinding('external', 'absent', db), false);
+  } finally { db.close(); }
+});
