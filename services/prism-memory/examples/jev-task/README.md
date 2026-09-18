@@ -50,8 +50,8 @@ billing cap. Concurrent manual invocations can repeat provider work; annotation
 commits are idempotent, but this is not an exactly-once provider guarantee.
 
 Deployment gate: verify one manual workflow request, its private receipt, the
-stored annotations, and an unchanged second pass before enabling the hourly
-`:17 UTC` schedule. Enabling recurrence requires operator approval. No messages
+stored annotations, and an unchanged second pass before enabling the daily
+`06:17 America/Denver` schedule. Enabling recurrence requires operator approval. No messages
 are sent to Discord, email, or any other community destination.
 
 
@@ -67,5 +67,9 @@ recovery before closing. The instance skill and this example now specify the
 exact Site UUID write route, distinguish Site from Memory authentication, require
 a successful attempt receipt before provider calls, and prevent selecting fresh
 batches while resuming the same request. A fresh request #2804 is the verification
-of this correction. The hourly task remains disabled until that verification and
+of this correction. The daily task remains disabled until that verification and
 operator approval to enable recurrence.
+
+Daily is the selected cadence; the two-summary cap remains unchanged. Handle any
+historical catch-up separately rather than increasing recurring frequency. The
+example timezone is instance-specific and should be changed for another deployment.
