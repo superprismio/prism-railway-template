@@ -1,5 +1,6 @@
 """Opt-in trusted-reader preview. Do not expose to scoped public interfaces."""
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,6 +19,7 @@ class Filters(BaseModel):
 
 
 class Search(Filters):
+    query_mode: Literal["auto", "literal", "question"] = "auto"
     query: str = Field(min_length=1, max_length=500)
     limit: int = Field(default=20, ge=1, le=100)
 

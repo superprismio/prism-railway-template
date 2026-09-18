@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 import math
 import re
-from collections import Counter
+import threading
+from collections import Counter, OrderedDict
 from datetime import datetime
 from pathlib import Path
 
@@ -12,6 +13,51 @@ from .catalog import normalize, timestamp
 
 TOKEN = re.compile(r"\w+", re.UNICODE)
 HEX = re.compile(r"[0-9a-f]{64}")
+
+
+# Cache derived immutable files only. Authority files and deny policy are always
+# read afresh below. One process-wide LRU is shared by scoped reader instances.
+_CACHE_LOCK = threading.Lock()
+_CATALOG_CACHE = OrderedDict()
+_CACHE_BYTES = 32 * 1024 * 1024  # serialized size budget; Python objects cost more
+
+
+def cached_records(folder):
+    stat = folder.stat()
+    key = (str(folder.resolve()), stat.st_ino, stat.st_mtime_ns)
+    with _CACHE_LOCK:
+        if key in _CATALOG_CACHE:
+            _CATALOG_CACHE.move_to_end(key)
+            return _CATALOG_CACHE[key][1]
+        paths = sorted(folder.glob('*.json'))
+        size = sum(p.stat().st_size for p in paths)
+        records = [json.loads(p.read_text()) for p in paths]
+        if size <= _CACHE_BYTES:
+            while _CATALOG_CACHE and (len(_CATALOG_CACHE) >= 2 or
+                    sum(v[0] for v in _CATALOG_CACHE.values()) + size > _CACHE_BYTES):
+                _CATALOG_CACHE.popitem(last=False)
+            _CATALOG_CACHE[key] = (size, records)
+        return records
+
+
+QUESTION_WORDS = frozenset("""what which who whom whose when where why how is are was were
+be been being do does did has have had a an the and or of for to in on at by with
+from about as it its this that these those we our us they their there any would
+could should can will came come up discussed discuss discussion tell me please
+""".split())
+
+
+def query_terms(query, mode):
+    if mode not in {'auto', 'literal', 'question'}:
+        raise RetrievalError('query_mode must be auto, literal, or question')
+    tokens = TOKEN.findall(query.casefold())
+    question = mode == 'question' or (mode == 'auto' and
+        (query.rstrip().endswith('?') or bool(tokens and tokens[0] in
+         {'what', 'which', 'who', 'when', 'where', 'why', 'how', 'was', 'were', 'did', 'does'})))
+    terms = set(tokens)
+    if question:
+        terms -= QUESTION_WORDS
+    return terms, 'question' if question else 'literal'
 
 
 class RetrievalError(ValueError):
@@ -69,7 +115,7 @@ class CatalogReader:
             folder = self.root / 'generations' / generation / 'records'
             if not folder.is_dir():
                 raise ValueError('missing generation')
-            records = [json.loads(p.read_text()) for p in sorted(folder.glob('*.json'))]
+            records = cached_records(folder)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             if isinstance(exc, RetrievalError):
                 raise
@@ -185,11 +231,12 @@ class CatalogReader:
                 'alternative_artifact_kinds': sorted(k for k, n in Counter(r['kind'] for r in selected).items() if n > 1),
                 'coverage': self.coverage(selected)}
 
-    def search(self, query: str, *, limit=20, **filters):
+    def search(self, query: str, *, limit=20, query_mode="auto", **filters):
         if not 1 <= limit <= 100 or len(query) > 500:
             raise RetrievalError('limit must be 1–100 and query at most 500 characters')
-        terms = set(TOKEN.findall(query.casefold()))
-        if not terms:
+        planned_terms, planned_mode = query_terms(query, query_mode)
+        terms = set(TOKEN.findall(query.casefold())) if planned_mode == 'question' else planned_terms
+        if not planned_terms:
             raise RetrievalError('Provide a query containing words or identifiers')
         generation, records = self.snapshot()
         selected = self.select(records, **filters)
@@ -208,15 +255,31 @@ class CatalogReader:
         hits = []
         for r, p, counts, length in entries:
             matches = terms.intersection(counts)
-            if not matches:
+            if not matches.intersection(planned_terms):
                 continue
             score = sum(math.log(1 + (n - frequency[t] + .5) / (frequency[t] + .5)) *
                         counts[t] * 2.2 / (counts[t] + 1.2 * (.25 + .75 * length / average)) for t in matches)
-            hits.append({**self.reference(r), **p, 'score': round(score, 6), 'matched_terms': sorted(matches)})
+            focused_score = sum(math.log(1 + (n - frequency[t] + .5) / (frequency[t] + .5)) *
+                        counts[t] * 2.2 / (counts[t] + 1.2 * (.25 + .75 * length / average))
+                        for t in matches.intersection(planned_terms)) if planned_mode == 'question' else score
+            hits.append({**self.reference(r), **p, 'score': round(score, 6),
+                         '_focused_score': focused_score, 'matched_terms': sorted(matches)})
         hits.sort(key=lambda h: (-h['score'], h['record_id'], h['revision'], h['start']))
+        if planned_mode == 'question':
+            # Preserve raw-query recall while gently promoting salient-term matches.
+            # Fixed weighted reciprocal-rank fusion; no provider call or inferred scope.
+            focused = sorted(hits, key=lambda h: (-h['_focused_score'], h['record_id'], h['revision'], h['start']))
+            ranks = {(h['record_id'], h['revision'], h['start']): i for i, h in enumerate(focused)}
+            for i, h in enumerate(hits):
+                h['score'] = .8 / (60 + i + 1) + .2 / (60 + ranks[(h['record_id'], h['revision'], h['start'])] + 1)
+            hits.sort(key=lambda h: (-h['score'], h['record_id'], h['revision'], h['start']))
+        for h in hits:
+            del h['_focused_score']
         return {'generation': generation, 'query': query, 'hits': hits[:limit], 'total': len(hits),
                 'truncated': len(hits) > limit, 'coverage': self.coverage(records),
-                'ranking': 'lexical-bm25-passage-v1'}
+                'ranking': 'lexical-question-fusion-v1' if planned_mode == 'question' else 'lexical-bm25-passage-v1',
+                'query_plan': {'mode': planned_mode, 'terms': sorted(planned_terms),
+                               'original_terms_retained': planned_mode == 'question'}}
 
     def context(self, *, generation, record_id, revision, passage_id, max_chars=8000):
         if not 1 <= max_chars <= 32000:

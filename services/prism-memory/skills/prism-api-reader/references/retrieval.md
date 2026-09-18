@@ -43,3 +43,35 @@ When confidence is limited:
 - state the exact date window or filters used
 - avoid implying data exists when the API returned none
 - do not improvise endpoint shapes
+
+## Opt-in scoped meeting retrieval
+
+Use this path only when the caller has a configured scoped retrieval tool. Do not
+fall back to broad Memory credentials after a scoped denial. Knowledge-only questions
+continue through the existing knowledge reader; the meeting catalog has no knowledge
+repository coverage.
+
+Plan the request before searching:
+
+1. For “last meeting”, list meetings within the authorized scope, then fetch the
+   selected meeting. Use occurrence time, not import time. Ask which meeting series
+   only if the scope and conversation do not disambiguate it.
+2. For a question about meeting content, extract 2–6 distinctive topic/entity terms
+   (for example “Livepeer funding execution”), set `kind=meeting_summary`, and use
+   explicit participant/date selectors only when supported by the question. Resolve
+   relative dates using the user's timezone and the reference date; do not invent dates.
+3. Send focused terms with `query_mode=literal`. If passing a whole question, use
+   `query_mode=question`; its transparent lexical plan is a fallback, not semantic
+   interpretation. It cannot infer commitments, resolve aliases, or translate dates.
+4. For a change across meetings, search each requested period separately. Retrieve
+   bounded revision context for each selected passage and compare dated evidence.
+   Do not assume one top-ten list covers both periods.
+5. If results miss the topic, try one alternate focused query before expanding the
+   source kind to retained transcripts. Preserve caller scope throughout. Describe
+   coverage gaps rather than treating an empty result as proof nothing happened.
+6. Check the entire cited context before asserting ownership or a decision. A proposal
+   is not an accepted decision; a person mentioned nearby is not necessarily the owner.
+   Keep record ID, revision, passage ID and generation together for context requests.
+7. For scoped results, do not construct links to broad `/artifacts/*` endpoints. Return
+   the scoped evidence references supported by the caller. On a generation conflict,
+   repeat retrieval rather than silently swapping the cited revision.

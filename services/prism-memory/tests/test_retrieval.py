@@ -27,6 +27,46 @@ class RetrievalTests(unittest.TestCase):
             'bucket_hint': 'private' if source == 'private' else 'meetings',
             'metadata': {'session_id': session or name}}))
 
+    def test_question_planning_is_explicit_and_literal_mode_preserves_words(self):
+        result = self.reader.search('What was the Alpha launch about?')
+        self.assertEqual(result['query_plan']['terms'], ['alpha', 'launch'])
+        self.assertEqual(result['query_plan']['mode'], 'question')
+        self.assertEqual(self.reader.search('What was the Alpha launch about?', query_mode='literal')['query_plan']['mode'], 'literal')
+        self.assertIn('what', self.reader.search('what', query_mode='literal')['query_plan']['terms'])
+        self.assertEqual(self.reader.search('What was quasarzeppelin?')['total'], 0)
+        with self.assertRaises(RetrievalError):
+            self.reader.search('What was it about?')
+        with self.assertRaises(RetrievalError):
+            self.reader.search('Alpha', query_mode='unknown')
+
+    def test_immutable_snapshot_cache_is_shared_and_generation_changes_invalidate(self):
+        from unittest.mock import patch
+        from community_memory import retrieval
+        retrieval._CATALOG_CACHE.clear()
+        original = Path.read_text
+        reads = []
+        def read(path, *args, **kwargs):
+            if path.parent.name == 'records':
+                reads.append(path)
+            return original(path, *args, **kwargs)
+        with patch.object(Path, 'read_text', read):
+            first = self.reader.snapshot()[0]
+            count = len(reads)
+            CatalogReader(self.output, allowed_sources=frozenset()).snapshot()
+            self.assertEqual(len(reads), count)
+            self.put('new', 'discord-voice', 'meeting_summary', 'New', '2026-09-18T10:00:00Z')
+            build_catalog(self.root, self.output)
+            self.assertNotEqual(self.reader.snapshot()[0], first)
+            self.assertGreater(len(reads), count)
+
+    def test_oversize_generation_is_not_cached(self):
+        from unittest.mock import patch
+        from community_memory import retrieval
+        retrieval._CATALOG_CACHE.clear()
+        with patch.object(retrieval, '_CACHE_BYTES', 1):
+            self.reader.snapshot()
+            self.assertEqual(len(retrieval._CATALOG_CACHE), 0)
+
     def test_nonobject_catalog_pointer_is_unavailable(self):
         for pointer in [None, [], 'bad', 1, {}, {'generation': []}]:
             (self.output / 'current.json').write_text(json.dumps(pointer))
