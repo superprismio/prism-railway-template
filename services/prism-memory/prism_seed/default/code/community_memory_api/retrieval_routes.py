@@ -1,4 +1,4 @@
-"""Opt-in trusted-reader preview. Do not expose to scoped public interfaces."""
+"""Opt-in trusted internal retrieval. Do not expose to scoped public interfaces."""
 from pathlib import Path
 from typing import Literal
 
@@ -34,7 +34,7 @@ class Context(BaseModel):
 
 
 def retrieval_router(root: Path, auth) -> APIRouter:
-    router = APIRouter(dependencies=[Depends(auth)], tags=['experimental-retrieval'])
+    router = APIRouter(dependencies=[Depends(auth)], tags=['retrieval'])
     reader = CatalogReader(root)
 
     def call(fn, **kwargs):

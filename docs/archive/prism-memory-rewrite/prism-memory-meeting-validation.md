@@ -1,5 +1,8 @@
 # Meeting catalog validation — 2026-09-18
 
+> Historical checkpoint, not current operating instructions. See the
+> [cutover and cleanup runbook](../../runbooks/prism-memory-cutover-cleanup.md).
+
 Status: local implementation and read-only production-data validation complete;
 not deployed. This is a bounded meeting-catalog slice, not the retrieval cutover.
 

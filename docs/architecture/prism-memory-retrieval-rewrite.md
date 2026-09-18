@@ -1,6 +1,7 @@
 # Prism Memory: File-First Retrieval Rewrite
 
-Status: proposed implementation specification; no production migration authorized by this document
+Status: architectural target, partially implemented. Trusted internal reader cutover is live.
+Current status and remaining work: [cutover and cleanup runbook](../runbooks/prism-memory-cutover-cleanup.md).
 
 Date: 2026-09-18
 

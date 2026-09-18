@@ -1,8 +1,11 @@
 # Prism Memory Service
 
-## Experimental shadow meeting catalog
+## File-backed meeting catalog and retrieval
 
-The opt-in catalog is the first slice of the
+Current deployment and remaining migration work are tracked in the
+[cutover and cleanup runbook](../../docs/runbooks/prism-memory-cutover-cleanup.md).
+
+The catalog implements the core of the
 [file-first retrieval rewrite](../../docs/architecture/prism-memory-retrieval-rewrite.md).
 It reads processed inbox JSON and writes versioned normalized records, meeting
 manifests, and explicit `artifact_of` relationships into a separate directory.
@@ -40,16 +43,16 @@ deduplication or infer missing session IDs from free text. Display-name particip
 lists are observations, not verified person identities.
 
 Current scope: processed inbox JSON only. Raw bucket reconciliation, knowledge
-indexing, date-bounded resumable replay, Jev, and production cutover remain later
-slices. Use a quiescent snapshot:
-locking serializes catalog writers, not edits to source files. Existing readers
-do not consume this catalog yet.
+indexing, date-bounded resumable replay, and scheduled Jev enrichment remain later
+slices. Trusted internal readers are using retrieval; broader consumer migration
+is tracked in the runbook. Use a quiescent snapshot:
+locking serializes catalog writers, not edits to source files. The template keeps route registration opt-in; deployment state is instance-specific.
 
-### Read-only retrieval preview
+### Trusted internal retrieval
 
 Set `PRISM_SHADOW_CATALOG_ROOT` to the catalog output directory to register these
 routes in the existing service. They are absent by default and use existing Memory
-read-key authentication. This preview is for trusted internal readers only;
+read-key authentication. These routes are for trusted internal readers only;
 source filters are query selectors, not Site interface authorization. Do not wire
 it to handbook-only/public interfaces yet. Current permission changes and source
 deletions are not reconciled until a catalog rebuild.
@@ -79,10 +82,11 @@ Limits default to 20 results (maximum 100), and 8,000 context characters (maximu
 implemented, so narrow filters rather than treating returned hits as exhaustive.
 
 This is a file-scan baseline, not the proposed persisted inverted index. Search
-grouping, phrase/alias expansion, broader source coverage, Site policy proxies,
-permission/deletion reconciliation, and public UI integration are still pending.
+grouping, phrase/alias expansion, broader source coverage, and upstream
+permission/deletion synchronization remain pending. Site scope enforcement exists
+on the separate route described below. No new UI is required for cutover.
 Install `requirements-test.txt` to run all Python tests, including authenticated
-FastAPI route tests. Existing production readers and recap behavior are unchanged.
+FastAPI route tests. Legacy APIs and recap behavior remain compatible.
 
 ### Site-enforced interface retrieval (opt-in)
 
@@ -95,13 +99,15 @@ token or Memory credentials to interface clients.
 
 The body is `{"operation":"search","arguments":{"query":"launch"}}`.
 Supported operations: `search`, `context`, `meetings`, `meeting`, `coverage`.
-Scope is read from the current authenticated interaction profile on every call;
-client-supplied scope fields are rejected. Empty bucket selectors grant no records.
+Scope is read from the canonical Agent Profile binding on every call; legacy
+interaction-profile fallback applies only when no canonical binding exists. Disabled
+bindings and missing memory.read capability deny access.
+Client-supplied scope fields are rejected. Empty bucket selectors grant no records.
 Query filters can only narrow authorized results. This enforcement applies to the
 new path only; legacy profile `enforcement: instructions-only` remains an accurate
 description of the old chat path, which is not migrated by this change.
 
-Additional configuration for this experimental path:
+Additional configuration for this scoped path:
 
 - Set a dedicated matching `PRISM_RETRIEVAL_SERVICE_KEY` on Site and Memory. It is
   distinct from the legacy Memory read key and is used only for `/retrieval/scoped`.
@@ -128,7 +134,7 @@ message deletions or platform permission changes: adapter synchronization must
 update retained files or the deny policy. No existing interface or production
 configuration is switched automatically.
 
-### Live-file shadow refresh
+### Catalog refresh
 
 `community_memory.catalog_refresh` checks processed inbox content hashes, skips
 unchanged input, and atomically publishes a rebuilt generation after additions,
