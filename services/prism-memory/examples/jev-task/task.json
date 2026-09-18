@@ -1,11 +1,11 @@
 {
   "key": "memory-jev-classification",
   "name": "Memory JEV classification",
-  "description": "Optional hourly pass; at most two uncached summary revisions per occurrence.",
+  "description": "Optional daily pass at 06:17 America/Denver; at most two uncached summary revisions per occurrence.",
   "enabled": false,
   "triggerType": "schedule",
-  "scheduleCron": "17 * * * *",
-  "timezone": "UTC",
+  "scheduleCron": "17 6 * * *",
+  "timezone": "America/Denver",
   "taskType": "workflow-runner",
   "accountabilityDomainKey": "platform-operations",
   "inputConfig": {

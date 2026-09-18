@@ -14,6 +14,11 @@ Use PRISM_API_BASE (fallback PRISM_MEMORY_BASE_URL) and X-Prism-Api-Key from
 PRISM_API_OPS_KEY (fallback PRISM_API_KEY). Never expose environment values.
 TYPESAFE_API_KEY is leased by Gateway into this trusted workflow job.
 
+Before selecting work, read the current request receipts using the Site route below.
+If a final receipt already reports all selected IDs written/cached/stale, finish
+without calling pending or JEV again. If an attempt receipt exists, resume only
+its original selected IDs; never select replacements in the same request.
+
 1. POST /ops/annotations/jev/pending with {"limit":2} exactly once per request.
    If there are no batches, save a private no-op receipt and finish. If endpoints
    are unavailable, fail accurately; do not use a legacy state endpoint instead.
@@ -41,3 +46,26 @@ TYPESAFE_API_KEY is leased by Gateway into this trusted workflow job.
 Annotations are experimental judgments about summary text, not verified decisions
 or assignments. Do not build relationship graphs, update Action Items, generate
 objectives, rewrite meeting summaries, or change retrieval ranking.
+
+
+## Exact private receipt API
+
+Memory and Site have different base URLs and credentials. Receipts belong to Site:
+resolve PRISM_AGENT_API_BASE_URL, falling back to APP_API_BASE_URL, and authenticate
+with x-service-token from PRISM_AGENT_SERVICE_TOKEN or APP_API_SERVICE_TOKEN.
+Use the current request UUID from runtime metadata, not its numeric display number.
+
+- Read existing artifacts: GET /agent/change-board/requests/<request-uuid>/artifacts.
+- Write: POST /agent/change-board/requests/<request-uuid>/artifacts with JSON:
+  {"kind":"json","name":"jev-classification-receipt.json","mimeType":"application/json",
+   "encoding":"utf8","content":"<JSON-encoded receipt>","metadata":{"workflowStep":"classify"}}
+  Include agent_run_id when available. The content field must be a string.
+- Read bodies by number: GET /agent/change-board/requests/by-number/<number>/artifacts.
+  This by-number route is read-only; never POST to it or to Memory for a receipt.
+
+Persist the selected IDs and attempted IDs before any provider call and require a
+successful artifact response before proceeding. If saving fails, stop before
+calling JEV. After commits, save a new final receipt with outcome=completed and
+written/cached/stale counts. When several receipts exist, inspect their content
+and timestamps; do not assume the first one is final. A recovered final receipt
+is sufficient to finish without making more provider calls.
