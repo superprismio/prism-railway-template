@@ -25,6 +25,7 @@ import { spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 import prism from "prism-media";
 import { requestSiteRuntime } from "./site-runtime.js";
+import { meetingMemoryMetadata } from "./meeting-memory-metadata.js";
 
 const voiceDaveEncryptionRaw = process.env.VOICE_DAVE_ENCRYPTION?.trim().toLowerCase();
 const voiceDaveEncryptionExplicit = Boolean(voiceDaveEncryptionRaw);
@@ -2501,6 +2502,7 @@ export class DiscordVoiceManager {
       transcriptPath = await this.prismMemoryInboxWrite({
         ...basePayload,
         type: "meeting_transcript",
+        metadata: { ...meetingMemoryMetadata(metadata), source_type: "meeting_transcript" },
         ts: new Date(metadata.endedAt).toISOString(),
         content: [
           `# ${metadata.metadata.meeting.name || "Discord Meeting Transcript"}`,
@@ -2522,15 +2524,8 @@ export class DiscordVoiceManager {
         type: "meeting_summary",
         ts: new Date(metadata.endedAt).toISOString(),
         metadata: {
-          source_system: "discord-voice",
+          ...meetingMemoryMetadata(metadata),
           source_type: "meeting_summary",
-          source_id: metadata.sessionId,
-          session_id: metadata.sessionId,
-          channel_id: metadata.channelId,
-          channel_name: metadata.metadata.meeting.location || metadata.channelId,
-          meeting_name: metadata.metadata.meeting.name || "Discord meeting",
-          started_at: new Date(metadata.startedAt).toISOString(),
-          ended_at: new Date(metadata.endedAt).toISOString(),
           action_items: summary.actionItems,
           notable_quotes: summary.notableQuotes,
           tags: summary.tags,

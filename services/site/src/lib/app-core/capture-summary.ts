@@ -255,6 +255,7 @@ export async function summarizeCaptureSession(captureId: string) {
       author: "Prism Browser Capture",
       metadata: {
         capture_id: transcript.manifest.id,
+        session_id: transcript.manifest.id,
         request_id: transcript.manifest.requestId,
         started_at: transcript.manifest.startedAt,
         ended_at: transcript.manifest.finalizedAt,

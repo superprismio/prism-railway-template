@@ -238,6 +238,9 @@ export async function processBuiltInRecordingHook(input: {
         author: "Prism Recording Workflow",
         metadata: {
           request_id: request.id,
+          session_id: source.sessionId,
+          started_at: source.startedAt,
+          ended_at: source.endedAt,
           discord: source.discord,
           action_items: Array.isArray(normalizedSummaryJson.actionItems) ? normalizedSummaryJson.actionItems : [],
           tags: Array.isArray(normalizedSummaryJson.tags) ? normalizedSummaryJson.tags : [],
