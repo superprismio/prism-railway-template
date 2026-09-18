@@ -91,11 +91,19 @@ class FilesystemStorageBackend:
         self._validate_date(date_str)
         return self._load_json(self.root / "memory" / "rolling" / f"{date_str}.json")
 
+    @staticmethod
+    def _legacy_registry(payload: Dict[str, Any]) -> Dict[str, Any]:
+        state_index = payload.get("state_index")
+        window_end = state_index.get("window_end") if isinstance(state_index, dict) else None
+        return {**payload, "registry_mode": "legacy-compatibility",
+                "registry_as_of": payload.get("as_of_date") or window_end,
+                "registry_notice": "Generated registry snapshot; use retained meeting/message evidence for current work."}
+
     def state_latest(self) -> Any:
-        return self._load_json(self.root / "state" / "latest.json")
+        return self._legacy_registry(self._load_json(self.root / "state" / "latest.json"))
 
     def state_projects(self) -> Any:
-        return self._load_json(self.root / "state" / "current" / "projects.json")
+        return self._legacy_registry(self._load_json(self.root / "state" / "current" / "projects.json"))
 
     def state_signals(
         self,
@@ -145,7 +153,7 @@ class FilesystemStorageBackend:
         result = dict(payload)
         result["signals"] = signals
         result["total"] = len(signals)
-        return result
+        return self._legacy_registry(result)
 
     def state_objectives(
         self,
@@ -179,7 +187,7 @@ class FilesystemStorageBackend:
         result = dict(payload)
         result["objectives"] = objectives
         result["total"] = len(objectives)
-        return result
+        return self._legacy_registry(result)
 
     def state_throughlines(
         self,
@@ -198,7 +206,7 @@ class FilesystemStorageBackend:
         result = dict(payload)
         result["throughlines"] = throughlines
         result["total"] = len(throughlines)
-        return result
+        return self._legacy_registry(result)
 
     def upsert_state_project(self, project_key: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         normalized_key = self._safe_slug(project_key)

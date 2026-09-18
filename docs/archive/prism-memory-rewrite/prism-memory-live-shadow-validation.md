@@ -1,5 +1,8 @@
 # Live shadow catalog validation — 2026-09-18
 
+> Historical checkpoint, not current operating instructions. See the
+> [cutover and cleanup runbook](../../runbooks/prism-memory-cutover-cleanup.md).
+
 The new catalog was built directly from the active Railway Memory service's
 processed inbox, not just from the earlier local meeting sample. Production
 readers, code deployment, environment configuration, and collector checkpoints

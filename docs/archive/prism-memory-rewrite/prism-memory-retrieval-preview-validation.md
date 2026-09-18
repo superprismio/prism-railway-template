@@ -1,5 +1,8 @@
 # Shadow retrieval preview — 2026-09-18
 
+> Historical checkpoint, not current operating instructions. See the
+> [cutover and cleanup runbook](../../runbooks/prism-memory-cutover-cleanup.md).
+
 Implemented locally; disabled by default; not deployed.
 
 The existing Memory service can now expose read-authenticated, opt-in meeting

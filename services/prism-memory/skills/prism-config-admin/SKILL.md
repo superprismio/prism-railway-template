@@ -52,6 +52,17 @@ X-Prism-Reason: <short reason>
   `POST /ops/memory/run`
 - Run memory backfill:
   `POST /ops/memory/backfill?days=...&force=true`
+- Run knowledge pipeline:
+  `POST /ops/knowledge/run`
+
+## Legacy registry maintenance (explicit opt-in only)
+
+The generated project/objective/throughline registry is retired from normal memory
+processing. Leave its builders and cleanup schedules disabled. Use these
+compatibility routes only for explicit legacy-registry maintenance or rollback;
+they do not backfill source history or refresh the retrieval catalog.
+Never enable builders just because a registry is empty or stale.
+
 - Run generated state rebuild:
   `POST /ops/state/run?date=YYYY-MM-DD&force=true`
 - Run generated state backfill:
@@ -62,8 +73,6 @@ X-Prism-Reason: <short reason>
   `POST /state/throughlines/{throughline_key}/merge`
 - Hide/delete a generated throughline:
   `DELETE /state/throughlines/{throughline_key}`
-- Run knowledge pipeline:
-  `POST /ops/knowledge/run`
 
 ## Rules
 
@@ -73,7 +82,7 @@ X-Prism-Reason: <short reason>
 - Prefer `enabled=true|false` plus `scope=bot_only|scoped|all` in new config writes.
 - Treat legacy `mode` fields as backward-compatible input only.
 - Treat `space.json.state.objectives` as policy/config, not living objective state.
-- Do not write current objectives, signals, throughlines, summaries, or daily status into `space.json`; rebuild generated state through `/ops/state/*` and use `/state/throughlines/*` curation routes for throughline edits.
+- Do not write current objectives, signals, throughlines, summaries, or daily status into `space.json`; keep source evidence in Memory inbox. Use legacy rebuild/curation routes only for explicit registry maintenance or rollback.
 - For agentic ingest:
   - default to `enabled=false`
   - use `scope=bot_only` for first experiments

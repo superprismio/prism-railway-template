@@ -15,8 +15,6 @@ from .custom_collectors import CollectorLoadError, CommandCollector, load_python
 from .digest import DigestGenerator
 from .github_backup import GitHubBackup, GitHubEnv
 from .memory import RollingMemoryBuilder
-from .objective_state import ObjectiveStateBuilder
-from .project_state import ProjectStateBuilder
 from .seeds import SeedBuilder
 from .state_manager import StateManager
 from .utils import ensure_dir, load_env_file, to_iso, utc_now
@@ -114,8 +112,6 @@ def build_pipeline(base_path: Path) -> dict:
     activity = ActivityLogger(base_path / "activity" / "activity.jsonl")
     digest = DigestGenerator(base_path=base_path, config=config, activity=activity)
     memory_builder = RollingMemoryBuilder(base_path=base_path, activity=activity, config=config)
-    project_state = ProjectStateBuilder(base_path=base_path, activity=activity, config=config)
-    objective_state = ObjectiveStateBuilder(base_path=base_path, activity=activity, config=config)
     seeds = SeedBuilder(base_path=base_path, activity=activity)
 
     pipeline = {
@@ -125,8 +121,6 @@ def build_pipeline(base_path: Path) -> dict:
         "collectors": _collector_objects(config, base_path, state, activity),
         "digest": digest,
         "memory": memory_builder,
-        "project_state": project_state,
-        "objective_state": objective_state,
         "seeds": seeds,
         "base_path": base_path,
     }
@@ -179,7 +173,6 @@ def run_digests(pipeline: dict, target_date: date, force: bool = False) -> None:
 
 
 def run_memory(pipeline: dict, target_date: date, force: bool = False) -> None:
-    run_state(pipeline, target_date, force=force)
     _log(f"running rolling memory for {target_date} (force={force})")
     output = pipeline["memory"].run(target_date, force=force)
     if output:
@@ -188,7 +181,17 @@ def run_memory(pipeline: dict, target_date: date, force: bool = False) -> None:
         _log("memory step skipped (already up to date or no digests)")
 
 
+def _legacy_state_builders(pipeline: dict) -> None:
+    """Load registry builders only for explicit legacy state commands."""
+    from .objective_state import ObjectiveStateBuilder
+    from .project_state import ProjectStateBuilder
+    for key, builder in (("project_state", ProjectStateBuilder), ("objective_state", ObjectiveStateBuilder)):
+        if key not in pipeline:
+            pipeline[key] = builder(base_path=pipeline["base_path"], activity=pipeline["activity"], config=pipeline["config"])
+
+
 def run_state(pipeline: dict, target_date: date, force: bool = False) -> None:
+    _legacy_state_builders(pipeline)
     _log(f"running state builders for {target_date} (force={force})")
     state_output = pipeline["project_state"].run(target_date, force=force)
     if state_output:
@@ -204,6 +207,7 @@ def run_state_range(
     end_date: date,
     force: bool = False,
 ) -> None:
+    _legacy_state_builders(pipeline)
     _log(f"running state builders for {start_date}..{end_date} (force={force})")
     # Project state remains single-day for now; objective state is range-aware.
     state_output = pipeline["project_state"].run(end_date, force=force)

@@ -133,7 +133,7 @@
   },
   "state": {
     "objectives": {
-      "enabled": true,
+      "enabled": false,
       "activity_windows": {
         "active_days": 7,
         "watching_days": 30
@@ -149,13 +149,13 @@
         "explicit_throughline_keys": true
       },
       "enrichment": {
-        "enabled": true,
+        "enabled": false,
         "changed_only": true,
         "max_objectives_per_run": 5
       }
     },
     "projects": {
-      "enabled": true,
+      "enabled": false,
       "activity_windows": {
         "active_days": 7,
         "watching_days": 30

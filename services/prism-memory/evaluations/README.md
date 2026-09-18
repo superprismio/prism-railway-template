@@ -1,5 +1,8 @@
 # Retrieval evaluation
 
+Current rollout and remaining work: [cutover and cleanup runbook](../../../docs/runbooks/prism-memory-cutover-cleanup.md).
+The measurements below are versioned checkpoints, not proof all cutover work is done.
+
 Two separate checks are available:
 
 1. `tests/test_retrieval_quality.py` contains controlled, synthetic community scenarios. These are regression contracts: ranking must find specific evidence, meeting identity/dates must stay correct, citations must refer to the exact revision, and scoped access must fail closed.
@@ -81,7 +84,17 @@ No citation errors or absence failures. Keyword-query median search latency was 
 
 The cross-meeting cohort-change question lost the needed passage at top 5 even when both labeled records were found. With raw questions, launch coordination, hosting alternatives, and Brand Agent scope returned relevant records without the needed evidence; the cohort-change question missed both labeled records. Next experiments: query normalization, passage diversity/grouping, and better bounded context selection. Preserve this baseline when testing changes.
 
-Still outstanding: fresh full-catalog benchmarking, independent labels/holdout questions, legacy API comparison, knowledge sources, upstream permission synchronization, query-planner and end-to-end answer evaluation, production concurrency, and a real user-facing interface trial.
+Subsequent validation expanded this to 50 questions over 3,927 retained revisions:
+focused evidence recall@10 was 100%, raw-question evidence recall@10 was 92.71%,
+and no citation errors were found. The headless scoped HTTP trial measured p95
+892 ms at five clients on Railway, using copied meeting authority files. These
+remain assistant-labeled/warm-cache checks, not independent answer accuracy or
+upstream-permission validation. A chronological legacy artifact inventory was
+compared; it is not equivalent to a ranked legacy-search evaluation.
+
+Independent labels, knowledge coverage, upstream permission synchronization, and
+end-to-end caller verification remain open. No new UI is required. See the runbook
+for concrete consumer and producer retirement work.
 
 ## Optional JEV relationship pilot
 

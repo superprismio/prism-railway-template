@@ -190,7 +190,7 @@ class CatalogReader:
                 'observed_end': max(times) if times else None,
                 'record_revisions': len(records), 'sources': sorted({r['source'] for r in records}),
                 'limitations': ['Retained snapshot only; missing artifacts and sources are not searched.',
-                                'Source permissions and deletions require a catalog rebuild; trusted-reader preview only.']}
+                                'Source permissions and deletions require a catalog rebuild; restricted to trusted internal readers only.']}
 
     @staticmethod
     def reference(record):

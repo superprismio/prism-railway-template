@@ -24,8 +24,31 @@ Use a read-scoped key only.
 1. Start from the narrowest endpoint that can answer the question.
 2. For knowledge questions, search first, then fetch specific docs.
 3. For recent community activity, prefer digests and participant queries over scanning raw memory.
-4. For meeting summaries, transcripts, or linked artifact IDs, fetch the artifact detail directly before broader search.
+4. For trusted internal meeting and historical-mention questions, use the retrieval
+   routes below first. Use legacy artifact detail for explicit legacy artifact IDs.
 5. Cite the exact docs, artifact IDs, dates, buckets, and endpoints used.
+
+## Trusted internal meeting retrieval
+
+When the job is already authorized for broad internal Memory reads, prefer:
+
+- `GET /meetings` and `GET /meetings/{meeting_id}` for recent meetings and metadata.
+- `POST /retrieval/search` with `query`, `query_mode: literal`, `kind: meeting_summary`,
+  and `limit: 10` for focused meeting queries. Omit kind for general retained messages.
+- `POST /retrieval/context` with returned generation, record_id, revision, passage_id,
+  and max_chars for exact evidence; repeat search on a generation conflict.
+- `GET /retrieval/coverage` to describe retained-history limits.
+
+These POST endpoints are read-only. Use existing read-key auth. An environment key
+alone does not establish authorization: obey job/profile/channel restrictions.
+Public and narrowly scoped callers must use their existing enforced path; never
+fall back to broad Memory reads after denial. Handbook/knowledge remains on the
+knowledge API. New routes are available only when enabled for the instance.
+
+Use 2–6 distinctive topic terms and explicit date/participant selectors when known.
+Search separate periods for cross-meeting changes. Consult the retrieval reference
+for context, evidence, and scope rules. Retained history is not complete Discord
+history; missing results do not establish that a discussion never occurred.
 
 ## Endpoint selection
 
@@ -41,14 +64,6 @@ Use a read-scoped key only.
   `GET /digests/bucket/{bucket}/date/{yyyy-mm-dd}`
 - Active participants in a time window:
   `GET /memory/participants?start=...&end=...&bucket=...`
-- Latest project state:
-  `GET /state/latest`
-- Objective state:
-  `GET /state/objectives?status=active&source=portal&externalSystem=portal&objective_key=...`
-- Extracted signals:
-  `GET /state/signals?anchor=request:26&kind=change_request_ref&objective_key=...`
-- Throughline state:
-  `GET /state/throughlines?status=active&throughline_key=...`
 - Knowledge manifest:
   `GET /knowledge/indexes/manifest`
 - Knowledge sources:
@@ -94,22 +109,27 @@ Use a read-scoped key only.
 - For participation:
   - use `/memory/participants`
   - report the exact `start` and `end` used
-- For generated state:
-  - use `/state/latest`
-  - use `/state/objectives` for source-agnostic active work
-  - use `/state/signals` for evidence and anchors such as request, PR, task, workflow, artifact, external ref, or URL signals
-  - use `/state/throughlines` for higher-level narrative grouping
-  - treat `/state/projects` as legacy compatibility state for channel-derived projects
-  - do not infer active objective state from memory alone
-- For artifacts:
-  - if the user provides a Prism artifact link, use the final path segment as the artifact ID
-  - use `/artifacts/{artifact-id}` when the user wants a human-viewable link to share in Discord or chat
-  - use `/api/artifacts/{artifact-id}` for structured metadata and content lookup
-  - use `/api/artifacts/{artifact-id}/raw` only when the user explicitly wants the raw payload
-  - use `/api/artifacts?source=discord-voice&type=meeting_summary&limit=...` for recent voice summaries
-  - do not present `/api/artifacts/{artifact-id}` as the primary human-facing link
-  - do not invent alternate raw paths; the raw route is exactly `/api/artifacts/{artifact-id}/raw`
-  - when giving a link back to the user, prefer the full absolute Prism URL when the base is known
+- For legacy generated state:
+  - `/state/latest`, `/state/objectives`, `/state/signals`, `/state/throughlines`, and
+    `/state/projects` are compatibility reads, not the default evidence source.
+  - Use only when explicitly asked about that registry; report its as-of time and
+    distinguish generated proposals from source-backed commitments.
+  - Prefer meeting/message evidence for current decisions, actions, and ownership.
+
+## Legacy registry compatibility endpoints
+
+Only use these for explicit questions about the generated registry. They are not
+the default evidence source for current work; report the registry's as-of time.
+The query parameter `status=active` is a legacy label, not verified current work.
+
+- Latest project state:
+  `GET /state/latest`
+- Objective state:
+  `GET /state/objectives?status=active&source=portal&externalSystem=portal&objective_key=...`
+- Extracted signals:
+  `GET /state/signals?anchor=request:26&kind=change_request_ref&objective_key=...`
+- Throughline state:
+  `GET /state/throughlines?status=active&throughline_key=...`
 
 ## Safety
 

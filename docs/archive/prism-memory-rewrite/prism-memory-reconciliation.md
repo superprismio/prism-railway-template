@@ -1,5 +1,8 @@
 # Memory rewrite reconciliation — 2026-09-18
 
+> Historical checkpoint, not current operating instructions. See the
+> [cutover and cleanup runbook](../../runbooks/prism-memory-cutover-cleanup.md).
+
 The rewrite is consolidated on `feat/memory-retrieval-rewrite`.
 
 - `7fab571` preserves the previously uncommitted catalog, refresh, retrieval,

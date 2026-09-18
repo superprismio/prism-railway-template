@@ -1,5 +1,8 @@
 # Headless retrieval trial — 2026-09-18
 
+> Historical checkpoint, not current operating instructions. See the
+> [cutover and cleanup runbook](../../runbooks/prism-memory-cutover-cleanup.md).
+
 No new UI or persistent external interface was created. The scoped Memory API was
 configured temporarily on localhost inside the Railway Memory container and tested
 against a copy of retained meeting authority files. The service credential existed
