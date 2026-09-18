@@ -26,39 +26,6 @@ curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
 
 ```bash
 curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
-  "$PRISM_API_BASE/state/latest"
-```
-
-Generated objective state:
-
-```bash
-curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
-  "$PRISM_API_BASE/state/objectives?status=active&limit=25"
-```
-
-Filter objectives by Portal/external refs:
-
-```bash
-curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
-  "$PRISM_API_BASE/state/objectives?externalSystem=portal&limit=25"
-```
-
-Find signals for a request anchor:
-
-```bash
-curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
-  "$PRISM_API_BASE/state/signals?anchor=request:26&limit=50"
-```
-
-Read active throughlines:
-
-```bash
-curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
-  "$PRISM_API_BASE/state/throughlines?status=active&limit=25"
-```
-
-```bash
-curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
   "$PRISM_API_BASE/knowledge/search?q=discord&limit=10"
 ```
 
@@ -121,3 +88,44 @@ Fetch one knowledge source:
 curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
   "$PRISM_API_BASE/knowledge/sources/<source-id>"
 ```
+
+## Legacy registry compatibility examples
+
+Use only when explicitly inspecting historical/generated registry state. Prefer
+meeting/message retrieval for current decisions and ownership. Report as-of dates;
+`status=active` is a stored legacy label. These examples do not recommend rebuilding
+or continuing objective/throughline maintenance.
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/state/latest"
+```
+
+Generated objective state:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/state/objectives?status=active&limit=25"
+```
+
+Filter objectives by Portal/external refs:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/state/objectives?externalSystem=portal&limit=25"
+```
+
+Find signals for a request anchor:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/state/signals?anchor=request:26&limit=50"
+```
+
+Read active throughlines:
+
+```bash
+curl -H "X-Prism-Api-Key: $PRISM_API_READ_KEY" \
+  "$PRISM_API_BASE/state/throughlines?status=active&limit=25"
+```
+

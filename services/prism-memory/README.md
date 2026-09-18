@@ -153,7 +153,7 @@ For refresh scheduled by Prism, create an `http-post` task calling
 Use a 150-second task timeout and bounded retries. Keep
 `PRISM_SHADOW_REFRESH_SECONDS=0` with this scheduler; the endpoint rejects calls
 when the internal timer is enabled. Without `PRISM_SHADOW_CATALOG_ROOT`, refresh
-uses `<data_root>/shadow/retrieval-v2` without enabling preview reader routes.
+uses `<data_root>/shadow/retrieval-v2` without enabling opt-in retrieval routes.
 Create the task disabled, validate a manual run, then enable after review.
 
 For automatic refresh inside the existing service instead, set
@@ -186,7 +186,7 @@ catalog readers/builders, and archive obsolete generation directories outside th
 catalog volume. Preserve the generation named in `current.json` and any generation
 needed for rollback. Remove abandoned `.build-*` directories only while builders
 are stopped, then restart readers and refresh. Automatic reader-safe pruning is
-still deferred. Unset the catalog root to remove preview read routes.
+still deferred. Unset the catalog root to remove opt-in retrieval routes.
 No upstream Discord history is fetched by this worker.
 
 Starter FastAPI service for:
@@ -294,9 +294,17 @@ Current behavior:
 - scope `scoped` limits enrichment to configured sources and/or buckets
 - records classified with `memory_include_default=false` remain stored in raw transcripts but are excluded from default digest generation
 
-## Generated State
+## Legacy generated-state compatibility
 
-Prism Memory exposes generated state for source-agnostic coordination:
+This section documents the legacy implementation for compatibility and rollback,
+not the preferred coordination or evidence path. The
+[cutover runbook](../../docs/runbooks/prism-memory-cutover-cleanup.md) tracks retirement
+of its active builders and consumers. Existing state writes/rebuilds below remain
+implemented but are not recommended for new workflows. Read registry values only
+when explicitly needed and report their as-of time; use retained evidence for
+current decisions, actions, and ownership.
+
+Legacy routes:
 
 - `GET /state/latest`
 - `GET /state/projects`

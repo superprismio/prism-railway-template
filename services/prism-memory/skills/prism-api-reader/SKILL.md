@@ -64,14 +64,6 @@ history; missing results do not establish that a discussion never occurred.
   `GET /digests/bucket/{bucket}/date/{yyyy-mm-dd}`
 - Active participants in a time window:
   `GET /memory/participants?start=...&end=...&bucket=...`
-- Latest project state:
-  `GET /state/latest`
-- Objective state:
-  `GET /state/objectives?status=active&source=portal&externalSystem=portal&objective_key=...`
-- Extracted signals:
-  `GET /state/signals?anchor=request:26&kind=change_request_ref&objective_key=...`
-- Throughline state:
-  `GET /state/throughlines?status=active&throughline_key=...`
 - Knowledge manifest:
   `GET /knowledge/indexes/manifest`
 - Knowledge sources:
@@ -123,6 +115,21 @@ history; missing results do not establish that a discussion never occurred.
   - Use only when explicitly asked about that registry; report its as-of time and
     distinguish generated proposals from source-backed commitments.
   - Prefer meeting/message evidence for current decisions, actions, and ownership.
+
+## Legacy registry compatibility endpoints
+
+Only use these for explicit questions about the generated registry. They are not
+the default evidence source for current work; report the registry's as-of time.
+The query parameter `status=active` is a legacy label, not verified current work.
+
+- Latest project state:
+  `GET /state/latest`
+- Objective state:
+  `GET /state/objectives?status=active&source=portal&externalSystem=portal&objective_key=...`
+- Extracted signals:
+  `GET /state/signals?anchor=request:26&kind=change_request_ref&objective_key=...`
+- Throughline state:
+  `GET /state/throughlines?status=active&throughline_key=...`
 
 ## Safety
 

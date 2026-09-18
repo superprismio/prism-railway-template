@@ -192,29 +192,40 @@ Preserve provenance only according to the configured retention/deletion policy;
 file-first does not imply irrevocable retention. Apply authorization against
 current policy even while reading an older index generation.
 
-### Proposed API additions
+### API implementation status
 
-These are new contracts, not claims about existing routes. Memory uses existing
-read/ops authentication; Site provides policy-scoped agent/interface proxies.
+The following routes are implemented. Trusted read routes are enabled in the live
+instance by its catalog-root setting; templates remain opt-in. They use existing
+Memory read authentication. The scoped route requires its dedicated server key and
+source visibility configuration and has not been enabled for production interfaces.
 
-| Route | Purpose |
+| Implemented route | Current behavior |
 | --- | --- |
-| `POST /retrieval/search` | Query plus source/kind/date/participant/context filters, grouping, limit and cursor |
-| `POST /retrieval/context` | Bounded neighboring passages for returned record/revision/passage IDs |
+| `POST /retrieval/search` | Required lexical query; source/kind/date/participant/meeting filters; bounded passage hits; no cursor |
+| `POST /retrieval/context` | Bounded exact-revision context; generation changes return 409 |
 | `GET /meetings` | Filtered meeting listing, sorted by occurrence time |
-| `GET /meetings/{id}` | Meeting metadata and authorized linked artifacts |
-| `GET /retrieval/coverage` | Source coverage, index freshness and known gaps |
-| `POST /ops/retrieval/reindex` | Start a scoped index job |
-| `POST /ops/memory/replay` | Start a scoped historical normalization/enrichment/recap job |
-| `GET /ops/jobs/{id}` | Job progress, counts, errors and checkpoint |
+| `GET /meetings/{meeting_id}` | Meeting metadata and linked revision references |
+| `GET /retrieval/coverage` | Observed retained source/date bounds and coverage limits |
+| `POST /retrieval/scoped` | Five read operations with caller bucket scope and current retained-file/deny-policy checks |
+| `POST /ops/retrieval/refresh` | Ops-authenticated catalog refresh; used by the live scheduled task |
+| `GET /ops/retrieval/status` | Refresh status, counts, errors, and generation |
 
-Search responses include effective scope, index generation, applied filters,
-coverage, warnings, grouped hits, source URLs, evidence excerpts, revision IDs,
-match reasons, and an opaque cursor. Default 20 results, maximum 100; context
-defaults to 8,000 characters, maximum 32,000 per call. Date windows use inclusive
-start/exclusive end, with the resolved timezone echoed. Filter-only searches are
-valid. Cursor pagination is bound to query, scope, and index generation; expiration
-returns an explicit restart instruction rather than silently skipping records.
+Search defaults to 20 hits (maximum 100); context defaults to 8,000 characters
+(maximum 32,000). Date windows use inclusive start/exclusive end. Search includes
+ranking/query-plan metadata, generation, evidence offsets and coverage. Scoped
+responses strip source paths, metadata blobs, and unscoped artifact URLs.
+
+The following remain **proposed, not implemented routes**:
+
+| Proposed route | Target purpose |
+| --- | --- |
+| `POST /ops/retrieval/reindex` | Start a scoped index job |
+| `POST /ops/memory/replay` | Historical normalization/enrichment/recap job |
+| `GET /ops/jobs/{id}` | Job progress, errors and checkpoints |
+
+Cursor pagination, grouped search hits, filter-only searches, richer coverage,
+and timezone echoing are target behavior, not current API guarantees. Do not call
+these proposed ops routes or send unsupported request fields.
 
 ### Scoped interfaces
 
