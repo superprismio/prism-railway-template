@@ -374,3 +374,33 @@ See [evaluations/README.md](evaluations/README.md) for synthetic regression test
 a read-only labeled benchmark runner, metric definitions, and the initial
 retained-production-snapshot results. Keep production-derived labels outside the
 repository. The benchmark measures retrieval evidence, not generated answers.
+
+### Headless scoped retrieval trial
+
+No UI or new external interface is required to test the Memory API boundary:
+
+```bash
+PYTHONPATH=prism_seed/default/code python scripts/scoped_retrieval_trial.py \
+  --root /data/prism_seed/community \
+  --catalog /data/prism_seed/community/shadow/retrieval-v2
+```
+
+This starts a temporary loopback-only API with an ephemeral key and copies retained
+`meetings` authority files into a temporary directory. It exercises search, context,
+meeting listing/detail, coverage, scope rejection, and warm-cache revocation, then
+reports a small five-client HTTP latency benchmark. It deletes the trial server
+and temporary files afterward. It does not enable production readers, configure
+Site interfaces, or claim to validate upstream permission synchronization. Run it
+as a separate process, never inside an existing API process.
+
+Readers cache at most two immutable catalog snapshots with a combined serialized
+size budget of 32 MiB per process. Python object overhead is additional; oversized
+snapshots are read without caching. Pointer/generation changes select a new entry.
+Current source files and visibility policy are never cached. Catalog generation
+files must remain immutable; publish edits as a new generation.
+
+Search accepts `query_mode=auto|literal|question`. Auto recognizes common English
+question forms. Question mode exposes salient lexical terms and combines their
+ranking with the original terms; it does not infer dates, identity, or permissions.
+Literal mode preserves existing BM25 behavior. The reader skill describes focused
+query planning and separate date-window searches for cross-meeting comparisons.
