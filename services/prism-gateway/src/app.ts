@@ -277,7 +277,15 @@ export function createGatewayApp(dependencies: AppDependencies) {
   });
 
   app.get("/credential-bundles", requireSiteCaller, (_request, response) => {
-    response.json({ ok: true, credentials: dependencies.store.listConnections() });
+    // This is the automatic runtime catalog, not the Settings inventory.
+    // Pending connections must not poison every full-access job. An explicit
+    // lease still checks missing secrets and fails rather than silently skipping.
+    const credentials = dependencies.store.listConnections().filter((credential) => {
+      if (credential.status === "revoked") return false;
+      const secrets = dependencies.store.getConnectionCredentials(credential.id);
+      return Object.values(credential.envBindings).every((name) => Boolean(secrets[name]));
+    });
+    response.json({ ok: true, credentials });
   });
 
   app.get("/credentials", requireSiteCaller, (_request, response) => {
