@@ -45,6 +45,11 @@ Public and narrowly scoped callers must use their existing enforced path; never
 fall back to broad Memory reads after denial. Handbook/knowledge remains on the
 knowledge API. New routes are available only when enabled for the instance.
 
+If retrieval routes are not enabled (404), use the existing artifact, digest, or
+rolling-memory reads within the same authorized scope and explain that coverage
+is limited. Suggest prism-memory-upgrade for the operator. Never treat a 401/403
+as a reason to bypass scope, and do not present an unavailable catalog as no history.
+
 Use 2–6 distinctive topic terms and explicit date/participant selectors when known.
 Search separate periods for cross-meeting changes. Consult the retrieval reference
 for context, evidence, and scope rules. Retained history is not complete Discord

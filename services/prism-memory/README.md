@@ -1,5 +1,19 @@
 # Prism Memory Service
 
+## Existing installations upgrading from upstream
+
+Syncing this template preserves retained source directories, but does not complete
+the Memory cutover for existing volumes. Saved configuration, Site tasks/workflows,
+and custom skill overrides need an instance-specific audit. Generated registries
+stop updating during normal recap runs; retrieval remains opt-in. JEV is optional.
+
+Ask your agent: **"Use prism-memory-upgrade to audit and repair this installation
+after the upstream Memory update."** The [bundled upgrade skill](skills/prism-memory-upgrade/SKILL.md)
+preserves sources, configures retrieval refresh, retires confirmed legacy cleanup,
+checks custom readers, and verifies the result. It ships through the Memory `/skills`
+API; no separate skill install or provider key is needed. An audit request alone
+does not change the installation.
+
 ## File-backed meeting catalog and retrieval
 
 Current deployment and remaining migration work are tracked in the
