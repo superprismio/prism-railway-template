@@ -207,11 +207,6 @@ def _build_catalog(root: Path, output: Path) -> dict:
     output.mkdir(parents=True, exist_ok=True)
     generations = output / "generations"
     generations.mkdir(exist_ok=True)
-    # Operational guard: do not delete immutable generations underneath readers.
-    # Count abandoned builds too, so interrupted jobs cannot bypass the bound.
-    if not (generations / generation).is_dir() and len(list(generations.iterdir())) >= 32:
-        raise ValueError('catalog_generation_limit: 32 generations retained; pause readers and builders, '
-                         'archive obsolete generations, then retry refresh')
     staging = Path(tempfile.mkdtemp(prefix=".build-", dir=generations))
     try:
         for name, items in (("records", records.values()), ("meetings", meetings.values()), ("relationships", edges)):
@@ -222,11 +217,13 @@ def _build_catalog(root: Path, output: Path) -> dict:
                 (folder / f"{key}.json").write_bytes(encoded(item))
         (staging / "manifest.json").write_bytes(encoded({"generation": generation, **report}))
         destination = generations / generation
+        if destination.is_symlink() or (destination.exists() and not destination.is_dir()):
+            raise ValueError("catalog_generation_collision: destination must be a real directory")
         if not destination.exists():
             try:
                 staging.rename(destination)
             except OSError:
-                if not destination.is_dir():
+                if destination.is_symlink() or not destination.is_dir():
                     raise
         # A live collector may move/write files while we scan. Never publish a
         # generation known to have mixed inputs; the refresh worker retries.
@@ -246,7 +243,34 @@ def _build_catalog(root: Path, output: Path) -> dict:
     finally:
         if staging.exists():
             shutil.rmtree(staging)
-    return {**report, "published": True, "generation": generation}
+    retention_errors = []
+    try:
+        prune_generations(output, generation)
+    except OSError as exc:
+        # The pointer is already published. Cleanup failure must not misreport
+        # that successful publication or invalidate its refresh fingerprint.
+        retention_errors.append({"error": str(exc)})
+    return {**report, "published": True, "generation": generation,
+            "retention_errors": retention_errors}
+
+
+def prune_generations(output: Path, current: str) -> None:
+    """Caller holds the build lock; readers hold a shared retention lock while loading.
+
+    Only derived generation directories and abandoned builder staging directories
+    are eligible. Never follow symlinks or touch unknown files.
+    """
+    with (output / '.retention.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        folders = [p for p in (output / 'generations').iterdir()
+                   if not p.is_symlink() and p.is_dir()]
+        generations = sorted((p for p in folders if re.fullmatch(r'[0-9a-f]{64}', p.name)),
+                             key=lambda p: (p.stat().st_mtime_ns, p.name), reverse=True)
+        keep = {current}
+        keep.update(p.name for p in [p for p in generations if p.name != current][:2])
+        for folder in folders:
+            if (folder in generations and folder.name not in keep) or folder.name.startswith('.build-'):
+                shutil.rmtree(folder)
 
 
 def main() -> int:

@@ -19,21 +19,116 @@ class RefreshTests(unittest.TestCase):
         (self.inbox/(name+'.json')).write_text(json.dumps({'source':'discord-voice','type':'meeting_summary',
             'ts':'2026-09-18T10:00:00Z','content':content,'metadata':{'session_id':name}}))
 
-    def test_generation_guard_preserves_readers_and_recovers_after_maintenance(self):
+    def test_retention_keeps_current_and_two_recent_generations(self):
         from community_memory.retrieval import CatalogReader
-        first = refresh(self.root, self.output)
+        refresh(self.root, self.output)
         generations = self.output / 'generations'
         for i in range(31):
             (generations / ('.build-abandoned-' + str(i))).mkdir()
-        self.put('a', 'Changed')
-        failed = refresh(self.root, self.output)
-        self.assertEqual(failed['status'], 'error')
-        self.assertIn('catalog_generation_limit', failed['errors'][0]['error'])
-        self.assertEqual(len(list(generations.iterdir())), 32)
-        self.assertEqual(CatalogReader(self.output).search('Original')['generation'], first['generation'])
-        (generations / '.build-abandoned-0').rmdir()
-        self.assertEqual(refresh(self.root, self.output)['status'], 'updated')
+        outsider = Path(self.tmp.name) / 'unrelated'
+        outsider.mkdir(); (outsider / 'evidence').write_text('preserve')
+        (generations / ("f" * 64)).symlink_to(outsider, target_is_directory=True)
+        (generations / 'operator-notes').mkdir()
+        published = []
+        for i in range(35):
+            self.put('a', 'Changed ' + str(i))
+            result = refresh(self.root, self.output)
+            self.assertEqual(result['status'], 'updated')
+            published.append(result['generation'])
+        retained = {p.name for p in generations.iterdir() if len(p.name) == 64 and not p.is_symlink()}
+        self.assertEqual(retained, set(published[-3:]))
+        self.assertFalse(list(generations.glob('.build-*')))
+        self.assertTrue((generations / 'operator-notes').exists())
+        self.assertEqual((outsider / 'evidence').read_text(), 'preserve')
+        self.assertEqual(CatalogReader(self.output).search('Changed')['generation'], published[-1])
         self.assertEqual(refresh(self.root, self.output)['status'], 'unchanged')
+
+    def test_failed_build_does_not_prune_and_republished_current_is_preserved(self):
+        generations = []
+        for value in ['one', 'two', 'three']:
+            self.put('a', value)
+            generations.append(refresh(self.root, self.output)['generation'])
+        before = {p.name for p in (self.output / 'generations').iterdir()}
+        (self.inbox / 'bad.json').write_text('invalid')
+        self.assertEqual(refresh(self.root, self.output)['status'], 'error')
+        self.assertEqual({p.name for p in (self.output / 'generations').iterdir()}, before)
+        (self.inbox / 'bad.json').unlink()
+        self.put('a', 'one')
+        result = refresh(self.root, self.output)
+        self.assertEqual(result['generation'], generations[0])
+        self.assertTrue((self.output / 'generations' / generations[0]).exists())
+
+    def test_pruning_waits_for_snapshot_load(self):
+        import threading
+        from community_memory.retrieval import CatalogReader, cached_records
+        for i in range(3):
+            self.put('a', str(i)); refresh(self.root, self.output)
+        entered = threading.Event(); release = threading.Event(); completed = threading.Event()
+        failures = []
+        def blocked(folder):
+            entered.set()
+            if not release.wait(5):
+                raise AssertionError('reader release timed out')
+            return cached_records(folder)
+        def read():
+            try: CatalogReader(self.output).snapshot()
+            except Exception as exc: failures.append(exc)
+        def build():
+            try: refresh(self.root, self.output)
+            except Exception as exc: failures.append(exc)
+            finally: completed.set()
+        with patch('community_memory.retrieval.cached_records', side_effect=blocked):
+            reader = threading.Thread(target=read); reader.start()
+            self.assertTrue(entered.wait(5))
+            self.put('a', 'new')
+            writer = threading.Thread(target=build); writer.start()
+            try: self.assertFalse(completed.wait(.1))
+            finally:
+                release.set(); reader.join(5); writer.join(5)
+        self.assertTrue(completed.is_set())
+        self.assertEqual(failures, [])
+
+    def test_generation_destination_collisions_preserve_pointer_and_targets(self):
+        first = refresh(self.root, self.output)
+        self.put('a', 'New generation')
+        preview = build_catalog(self.root, Path(self.tmp.name) / 'preview')
+        destination = self.output / 'generations' / preview['generation']
+        external = Path(self.tmp.name) / 'external'
+        external.mkdir(); (external / 'evidence').write_text('untouched')
+        for collision in ['directory_symlink', 'broken_symlink', 'file']:
+            with self.subTest(collision=collision):
+                if collision == 'file':
+                    destination.write_text('untouched')
+                else:
+                    destination.symlink_to(external if collision == 'directory_symlink' else external / 'absent')
+                try:
+                    result = refresh(self.root, self.output)
+                    self.assertEqual(result['status'], 'error')
+                    self.assertIn('catalog_generation_collision', result['errors'][0]['error'])
+                    self.assertEqual(json.loads((self.output / 'current.json').read_text())['generation'], first['generation'])
+                    if collision == 'file': self.assertEqual(destination.read_text(), 'untouched')
+                    else: self.assertTrue(destination.is_symlink())
+                    self.assertEqual((external / 'evidence').read_text(), 'untouched')
+                finally:
+                    destination.unlink()
+
+    def test_retention_failure_does_not_undo_publication_or_repeat_build(self):
+        from community_memory.retrieval import CatalogReader
+        first = refresh(self.root, self.output)
+        self.put('a', 'Published despite cleanup failure')
+        with patch('community_memory.catalog.prune_generations', side_effect=PermissionError('retention denied')):
+            result = refresh(self.root, self.output)
+        self.assertEqual(result['status'], 'updated')
+        self.assertNotEqual(result['generation'], first['generation'])
+        self.assertEqual(result['errors'], [])
+        self.assertIn('retention denied', result['retention_errors'][0]['error'])
+        self.assertEqual(CatalogReader(self.output).snapshot()[0], result['generation'])
+        with patch('community_memory.catalog_refresh.build_catalog', side_effect=AssertionError('redundant build')):
+            unchanged = refresh(self.root, self.output)
+        self.assertEqual(unchanged['status'], 'unchanged')
+        self.assertEqual(unchanged['retention_errors'], result['retention_errors'])
+        self.put('a', 'Next publication retries retention')
+        self.assertEqual(refresh(self.root, self.output)['retention_errors'], [])
 
     def test_add_edit_delete_and_unchanged(self):
         first=refresh(self.root,self.output)

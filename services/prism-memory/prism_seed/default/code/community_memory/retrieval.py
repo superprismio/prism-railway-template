@@ -1,6 +1,7 @@
 """Read-only, bounded lexical retrieval over immutable shadow catalog generations."""
 from __future__ import annotations
 
+import fcntl
 import json
 import math
 import re
@@ -107,15 +108,17 @@ class CatalogReader:
 
     def snapshot(self, expected: str | None = None) -> tuple[str, list[dict]]:
         try:
-            generation = json.loads((self.root / 'current.json').read_text())['generation']
-            if not isinstance(generation, str) or not HEX.fullmatch(generation):
-                raise ValueError('invalid generation')
-            if expected is not None and generation != expected:
-                raise RetrievalError('Catalog changed; repeat search against the current generation', 409)
-            folder = self.root / 'generations' / generation / 'records'
-            if not folder.is_dir():
-                raise ValueError('missing generation')
-            records = cached_records(folder)
+            with (self.root / '.retention.lock').open('a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_SH)
+                generation = json.loads((self.root / 'current.json').read_text())['generation']
+                if not isinstance(generation, str) or not HEX.fullmatch(generation):
+                    raise ValueError('invalid generation')
+                if expected is not None and generation != expected:
+                    raise RetrievalError('Catalog changed; repeat search against the current generation', 409)
+                folder = self.root / 'generations' / generation / 'records'
+                if not folder.is_dir():
+                    raise ValueError('missing generation')
+                records = cached_records(folder)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             if isinstance(exc, RetrievalError):
                 raise

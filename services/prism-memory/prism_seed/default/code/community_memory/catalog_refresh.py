@@ -57,7 +57,8 @@ def refresh(root: Path, output: Path) -> dict:
                 else:
                     state.update(status='updated', fingerprint=fingerprint, generation=report['generation'],
                                  published_at=now, scanned=report['scanned'], records=report['records'],
-                                 meetings=report['meetings'], errors=[])
+                                 meetings=report['meetings'], errors=[],
+                                 retention_errors=report.get('retention_errors', []))
         except (OSError, ValueError) as exc:
             state['errors'] = [{'error': str(exc)}]
         _write(output / 'refresh-status.json', state)
