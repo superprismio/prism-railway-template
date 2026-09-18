@@ -174,19 +174,21 @@ transactional snapshot of files changed after the final check; the next pass
 reconciles those changes. Scoped readers also revalidate current originals.
 
 Change detection is incremental; changed input currently triggers a full derived
-generation rebuild. Old generations are retained for rollback and are not pruned
-automatically. A hard guard refuses to create another generation once 32 entries
-(including abandoned build directories) exist in `generations/`. Refresh reports
-`status=error` with `catalog_generation_limit`, preserving the last good pointer
-and every existing reader's files; unchanged refreshes still succeed. This bounds
-generation count, not individual source size, so disk monitoring remains needed.
+generation rebuild. After successful publication, retain the current generation and
+the two most recently created other generations. The builder holds its exclusive
+build lock; pruning additionally takes an exclusive retention lock. Readers hold
+a shared retention lock from pointer resolution through loading immutable records,
+so pruning cannot remove a snapshot being loaded. Loaded records remain valid in
+the bounded process cache; each request still checks the current pointer and
+current source authority. Context requests for a replaced generation return 409.
 
-To recover, pause the scheduled task and set the internal interval to `0`, stop
-catalog readers/builders, and archive obsolete generation directories outside the
-catalog volume. Preserve the generation named in `current.json` and any generation
-needed for rollback. Remove abandoned `.build-*` directories only while builders
-are stopped, then restart readers and refresh. Automatic reader-safe pruning is
-still deferred. Unset the catalog root to remove opt-in retrieval routes.
+Successful builds also remove abandoned `.build-*` staging directories. Symlinks
+and unrelated directory names are untouched. Failed builds preserve the current
+pointer and do not prune. Retention bounds generation count, not source size;
+continue monitoring disk capacity. Deploy the reader and builder changes together
+and restart all processes sharing the catalog before enabling this pruning code;
+older readers do not participate in the retention lock. Unset the catalog root to
+remove opt-in retrieval routes.
 No upstream Discord history is fetched by this worker.
 
 Starter FastAPI service for:

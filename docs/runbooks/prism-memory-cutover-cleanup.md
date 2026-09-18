@@ -1,13 +1,13 @@
 # Prism Memory: cleanup and full cutover
 
-Status: **internal reader cutover is live; producer retirement is implemented in #90, pending deployment verification.**
-Last audited: September 18, 2026, after PRs #88 and #89.
+Status: **internal cutover and retained-data reconciliation verified; reader-safe retention implemented, awaiting deployment.**
+Last audited: September 18, 2026, after merged PRs #88–#91.
 This is the authoritative work list. The architecture specification is the target
 contract; notes under `docs/archive/prism-memory-rewrite/` are historical evidence.
 
 ## Producer retirement implemented in PR #90
 
-Pending merge/deployment: normal memory runs no longer instantiate or call state
+Deployed and task-verified: normal memory runs no longer instantiate or call state
 builders. Removed throughline loading, freshness dependencies, narrative and Markdown
 sections. Schema v2 retains an empty `current_throughlines` field for JSON compatibility;
 old-schema daily output rebuilds once without `--force`. Template builder/enrichment
@@ -26,10 +26,9 @@ Validation: 105 Memory tests and Site tests/typecheck. A Railway source-copy che
 rebuilt September 18 using five real digest files, excluded legacy throughlines,
 and skipped an unchanged repeat. It did not rewrite the live recap or source data.
 
-**Deployment gate:** after merging, verify the next normal memory run writes schema
-v2, no throughline section, and no state-builder activity. Old deployed recap code
-can still read the retained throughline file until this branch deploys. The new code
-has NOT yet been verified in a live scheduled run.
+**Deployment verification:** normal task-dispatched execution succeeded after #90;
+live schema v2 contains no throughlines. See the post-merge receipt below. A separate
+observation of an hourly scheduled occurrence remains useful.
 
 ## What complete means
 
@@ -89,7 +88,7 @@ Owner: Memory pipeline and Site integration maintainer.
 - [x] Disable `weekly-state-cleanup-review` after inspecting its workflow and recording
   the prior definition. Its workflow is also disabled. Keep `memory-run`, collectors,
   knowledge sync, and refresh enabled.
-- [ ] Inspect outstanding request/workflow runs for previously queued legacy cleanup;
+- [x] Inspect outstanding request/workflow runs for previously queued legacy cleanup;
   disabling the launcher and workflow is not proof that old requests were canceled.
 - [x] Inspect `weekly-action-items-discord-digest` and other workflows for reads of
   generated state. Move any dependent evidence reads to retained meeting summaries.
@@ -142,7 +141,7 @@ Owner: runtime skills and deployment maintainer.
 
 - [x] Put trusted-reader endpoint preference in the bundled `prism-api-reader` skill;
   stop recommending generated objectives/throughlines as default evidence.
-- [ ] Separate the live custom Buzz-steering behavior into a narrowly named skill,
+- [x] Separate live custom Buzz steering into the existing `buzz-ops` skill,
   update workflows that request it, and retire the same-name reader override only
   after checking skill selection. Never overwrite those steering instructions with
   the generic bundled reader. Confirm runtime loads the intended source after restart.
@@ -174,7 +173,7 @@ Owner: Site authorization and Memory storage maintainers.
 - [ ] Synchronize upstream permission changes/deletions into retained source visibility;
   test revocation across search, counts, detail, context, and citations. The temporary
   copied-source trial proves local checks, not upstream synchronization.
-- [ ] Replace the generation-count stop guard with reader-safe retention and cache
+- [x] Replace the generation-count stop guard (code complete, deployment pending) with reader-safe retention and cache
   invalidation, using a lock/lease design or another tested scheme. Retain the active
   generation and a documented rollback set; clean abandoned builds safely.
 - [ ] Expose freshness/error/guard status in existing operations reporting. On guard
@@ -189,14 +188,15 @@ cleanup. No requirement to build a new interface or visualization.
 
 ### 4. Fill retained-history gaps, then optional enrichment
 
-- [ ] Reconcile raw files/transcripts against processed records; record exclusions and
+- [x] Reconcile raw files/transcripts against processed records; record exclusions and
   unknown gaps. Reuse existing meeting summaries rather than resummarizing by default.
-- [ ] Backfill bounded Discord windows, starting with the proposed last 90 days and
-  configurable Raids-category discovery. Verify history traversal capability first.
+- [ ] Only if missing source history is established, backfill bounded Discord windows and
+  use configurable Raids-category discovery. No retained-source gap was found;
+  broader provider-history acquisition remains optional. Verify traversal first.
   Use source IDs, independent cursors, idempotent import, and coverage receipts.
   Search result counts are not proof of exhaustive coverage. Do not move live collector
   checkpoints or historical `latest` backward; missing audio cannot be recovered.
-- [ ] Refresh the catalog and verify counts/evidence on new imports; keep missing or
+- [x] Refresh the catalog and verify counts/evidence (no imports needed); keep missing or
   inaccessible history explicit. This work does not block the trusted reader already live.
 - [ ] If retaining JEV, turn the bounded pilot into one optional changed-revision task
   with Gateway leases, budgets, cache keys, provenance, abstention, and stale-annotation
@@ -275,3 +275,38 @@ records explicitly, then refresh and verify retrieval. This source acquisition
 is different from `/ops/memory/backfill`, which reprocesses collector inputs and
 cannot by itself enumerate missing Discord history. Do not reset live collector
 checkpoints to emulate a historical replay.
+
+
+## Final cleanup receipt — 2026-09-18
+
+- Open-request inventory returned four requests, none for legacy state cleanup.
+  The latest cleanup request #2529 is closed with a completed workflow and a
+  succeeded agent run; no cancellation was needed.
+- Moved the custom reader's Buzz authentication, channel, and outcome rules into
+  the existing Site `buzz-ops` skill. The Veydrift Agent already selects it; added
+  it explicitly to `veydrift-bounded-autopilot` as well. Preserved all other
+  manifest fields and workflow instructions. No gameplay or delivery was triggered.
+- Removed the Site custom `prism-api-reader` after readback. A fresh runtime skill
+  resolution verified the bundled reader, its legacy-registry warning, absence
+  of Veydrift channel rules, and presence of those rules in `buzz-ops`.
+  Existing processes may retain skill text for the normal five-minute cache TTL.
+  Private backups are on Site in `/data/custom/memory-final-cutover-20260918/`:
+  `reader-before.json`, `buzz-before.json`, and `veydrift-before.json`.
+- Compared all 4,088 raw reports to processed originals: 4,087 match source, type,
+  timestamp (raw timestamps omit subseconds), URL, and content. The sole unmatched
+  file is the March example collector fixture. All 4,089 processed JSON files
+  normalize to catalog entries, including 2,704 in the last 90 calendar days.
+  Catalog: 3,926 logical records, 3,930 revisions, 128 meetings; zero missing
+  records or normalization errors. `.gitkeep` is the only non-JSON input.
+- Refresh task `1ca62971-380c-42d4-a8a8-0ce51d02779b` succeeded unchanged; an API
+  search returned evidence. No imports or Discord searches were needed.
+  Private Memory receipt: `state/backfill-audit-20260918/reconciliation.json`.
+- Retention code replaces the 32-entry stop guard with current plus two recent
+  generations and shared-reader/exclusive-pruner locking. It cleans abandoned
+  build directories only after successful publication under the builder lock.
+  Deploy all catalog readers/builders together before enabling it. No live
+  generations have been deleted by this change yet.
+
+The earlier custom-reader and generation-guard inventory above records historical
+state; this receipt supersedes those entries. JEV scheduling and graph passes
+remain optional follow-up work, not part of this cleanup.
