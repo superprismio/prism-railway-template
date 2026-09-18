@@ -27,6 +27,34 @@ class RetrievalTests(unittest.TestCase):
             'bucket_hint': 'private' if source == 'private' else 'meetings',
             'metadata': {'session_id': session or name}}))
 
+    def test_nonobject_catalog_pointer_is_unavailable(self):
+        for pointer in [None, [], 'bad', 1, {}, {'generation': []}]:
+            (self.output / 'current.json').write_text(json.dumps(pointer))
+            with self.assertRaises(RetrievalError) as caught:
+                self.reader.snapshot()
+            self.assertEqual(caught.exception.status, 503)
+
+    def test_presence_display_name_without_top_level_participants(self):
+        path = self.inbox / 'a.json'
+        record = json.loads(path.read_text())
+        record['participants'] = []
+        record['metadata']['participant_presence'] = [{'id': '123', 'display_name': 'Zoë'}]
+        path.write_text(json.dumps(record))
+        build_catalog(self.root, self.output)
+        for name in ['zoë', 'ZOË', '123']:
+            self.assertEqual(self.reader.meetings(participant=name)['total'], 1)
+        self.assertEqual(self.reader.meetings(participant='Zo')['total'], 0)
+
+    def test_context_must_preserve_entire_cited_passage(self):
+        result = self.reader.search('Alpha', kind='meeting_transcript')
+        hit = result['hits'][0]
+        args = dict(generation=result['generation'], record_id=hit['record_id'],
+                    revision=hit['revision'], passage_id=hit['passage_id'])
+        with self.assertRaises(RetrievalError) as caught:
+            self.reader.context(**args, max_chars=len(hit['text']) - 1)
+        self.assertEqual(caught.exception.status, 400)
+        self.assertEqual(self.reader.context(**args, max_chars=len(hit['text']))['text'], hit['text'])
+
     def test_meetings_group_filter_and_sort(self):
         result = self.reader.meetings()
         self.assertEqual(result['total'], 2)

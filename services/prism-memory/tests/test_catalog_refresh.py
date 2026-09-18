@@ -19,6 +19,22 @@ class RefreshTests(unittest.TestCase):
         (self.inbox/(name+'.json')).write_text(json.dumps({'source':'discord-voice','type':'meeting_summary',
             'ts':'2026-09-18T10:00:00Z','content':content,'metadata':{'session_id':name}}))
 
+    def test_generation_guard_preserves_readers_and_recovers_after_maintenance(self):
+        from community_memory.retrieval import CatalogReader
+        first = refresh(self.root, self.output)
+        generations = self.output / 'generations'
+        for i in range(31):
+            (generations / ('.build-abandoned-' + str(i))).mkdir()
+        self.put('a', 'Changed')
+        failed = refresh(self.root, self.output)
+        self.assertEqual(failed['status'], 'error')
+        self.assertIn('catalog_generation_limit', failed['errors'][0]['error'])
+        self.assertEqual(len(list(generations.iterdir())), 32)
+        self.assertEqual(CatalogReader(self.output).search('Original')['generation'], first['generation'])
+        (generations / '.build-abandoned-0').rmdir()
+        self.assertEqual(refresh(self.root, self.output)['status'], 'updated')
+        self.assertEqual(refresh(self.root, self.output)['status'], 'unchanged')
+
     def test_add_edit_delete_and_unchanged(self):
         first=refresh(self.root,self.output)
         self.assertEqual(first['status'],'updated')

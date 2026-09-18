@@ -70,7 +70,7 @@ class CatalogReader:
             if not folder.is_dir():
                 raise ValueError('missing generation')
             records = [json.loads(p.read_text()) for p in sorted(folder.glob('*.json'))]
-        except (OSError, ValueError, KeyError) as exc:
+        except (OSError, ValueError, KeyError, TypeError) as exc:
             if isinstance(exc, RetrievalError):
                 raise
             raise RetrievalError('Catalog unavailable; build a shadow generation first', 503) from exc
@@ -126,7 +126,8 @@ class CatalogReader:
                 continue
             names = [p.casefold() for p in r.get('participants', []) if isinstance(p, str)]
             presence = r.get('metadata', {}).get('participant_presence') or []
-            names += [str(p.get('id', '')).casefold() for p in presence if isinstance(p, dict)]
+            names += [p[key].casefold() for p in presence if isinstance(p, dict)
+                      for key in ('id', 'display_name') if isinstance(p.get(key), str)]
             if participant is not None and participant.casefold() not in names:
                 continue
             when = event_time(r)
@@ -227,6 +228,8 @@ class CatalogReader:
         p = next((p for p in passages(r) if p['passage_id'] == passage_id), None)
         if p is None:
             raise RetrievalError('Passage not found', 404)
+        if max_chars < p['end'] - p['start']:
+            raise RetrievalError('max_chars must accommodate the entire cited passage')
         start = max(0, p['start'] - max(0, (max_chars - (p['end'] - p['start'])) // 2))
         end = min(len(r['content']), start + max_chars)
         return {'generation': current, **self.reference(r), 'passage_id': passage_id,

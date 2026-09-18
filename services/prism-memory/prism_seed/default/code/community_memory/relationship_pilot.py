@@ -19,6 +19,8 @@ CRITERIA = {
 
 
 def candidate(record, quote, *, owner=None, baseline=None, expected=None):
+    if not isinstance(record.get('meeting_id'), str) or not record['meeting_id'].strip():
+        raise ValueError('Verified meeting identity required')
     start = record['content'].find(quote)
     if start < 0 or not quote.strip():
         raise ValueError('Candidate must have a verbatim nonempty source quote')
@@ -30,13 +32,19 @@ def candidate(record, quote, *, owner=None, baseline=None, expected=None):
 
 
 def candidates(record, limit=6):
+    if not isinstance(record.get('meeting_id'), str) or not record['meeting_id'].strip():
+        return []
     result = []
     actions = record.get('metadata', {}).get('action_items') or []
+    if not isinstance(actions, list):
+        actions = []
     for item in actions:
         if not isinstance(item, dict):
             continue
         # Only pair upstream structured items with matching source text, not fuzzy guesses.
         name = item.get('name')
+        if not isinstance(name, str) or not name.strip():
+            continue
         line = next((line for line in record['content'].splitlines()
                      if name and line.startswith('- ' + name + ':')), None)
         if line:
@@ -84,6 +92,8 @@ def materialize(batch, response, threshold=.90):
     answers = response['answers']
     judgments, edges = [], []
     for i, c in enumerate(batch['candidates']):
+        if not isinstance(c.get('meeting_id'), str) or not c['meeting_id'].strip():
+            raise ValueError('Verified meeting identity required')
         if batch['summary'][c['start']:c['end']] != c['quote']:
             raise ValueError('Evidence offsets no longer match source revision')
         answer = answers[f'kind_{i}']; kind = answer['choice']

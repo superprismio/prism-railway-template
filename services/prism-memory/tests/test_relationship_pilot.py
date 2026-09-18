@@ -12,6 +12,24 @@ class RelationshipPilotTests(unittest.TestCase):
         self.response={'model':'test', 'answers':{'kind_0':{'type':'choice','choice':'action',
           'probabilities':{k:1 if k=='action' else 0 for k in CRITERIA}},'owner_0':{'type':'noul','noul':.95}}}
 
+    def test_malformed_action_items_are_skipped(self):
+        good = self.record['metadata']['action_items'][0]
+        for bad in [None, 12, {}, [], '', '   ']:
+            self.record['metadata']['action_items'] = [{'name': bad}, good]
+            self.assertEqual(len(candidates(self.record)), 1)
+        self.record['metadata']['action_items'] = 12
+        self.assertEqual(candidates(self.record), [])
+
+    def test_unlinked_meetings_cannot_create_edges(self):
+        for missing in [None, '', '  ', 123]:
+            self.record['meeting_id'] = missing
+            self.assertEqual(candidates(self.record), [])
+            with self.assertRaises(ValueError):
+                candidate(self.record, 'Zoë attended.')
+            self.batch['candidates'][0]['meeting_id'] = missing
+            with self.assertRaises(ValueError):
+                materialize(self.batch, self.response)
+
     def test_candidates_reuse_upstream_owner_and_exact_unicode_evidence(self):
         c=self.batch['candidates'][0]
         self.assertEqual(c['owner_candidate'],'Zoë')

@@ -39,7 +39,7 @@ export function effectiveRetrievalAuthorization(
 /** Service-authenticated callers must additionally prove the interface identity. */
 export async function scopedMemoryRetrieval(request: Request, interfaceKey: string, deps: Dependencies): Promise<Response> {
   const auth = deps.authorize({
-    key: interfaceKey,
+    key: interfaceKey.trim().toLowerCase(),
     credential: request.headers.get('x-prism-interface-credential')?.trim() || '',
     origin: request.headers.get('x-prism-interface-origin'),
   });

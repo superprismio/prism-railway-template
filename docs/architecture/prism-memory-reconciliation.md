@@ -27,3 +27,19 @@ was changed. The existing uploaded Memory deployment still runs independently;
 this branch provides a reproducible Git basis for the next release. Production
 retrieval cutover, full-catalog relevance evaluation, passage improvements, and a
 scheduled JEV pass remain separate follow-up slices.
+
+
+## PR review fixes
+
+Interface keys are normalized before credential authorization and canonical binding
+lookups. Binding presence now includes disabled rows so they cannot regain legacy
+access. Regression coverage includes key variants, disabled bindings, malformed
+catalog pointers, presence-only display names, and minimum citation context size.
+
+Relationship extraction skips malformed action names and unlinked meetings;
+materialization rejects candidates without a meeting identity. Catalog publication
+has a 32-entry operational guard rather than deleting files beneath readers.
+Maintenance and recovery steps are documented in the Memory README.
+
+Validation after review fixes: 97 Memory tests, 27 Site pretests, 165 Site tests,
+and Site typechecking passed. Production deployment is unchanged.

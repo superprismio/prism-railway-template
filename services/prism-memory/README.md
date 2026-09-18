@@ -169,9 +169,18 @@ reconciles those changes. Scoped readers also revalidate current originals.
 
 Change detection is incremental; changed input currently triggers a full derived
 generation rebuild. Old generations are retained for rollback and are not pruned
-automatically. Monitor disk consumption before enabling prolonged refresh; a
-reader-safe generation retention policy is still pending. Stop the worker by
-setting the interval to `0`; unset the catalog root to remove preview read routes.
+automatically. A hard guard refuses to create another generation once 32 entries
+(including abandoned build directories) exist in `generations/`. Refresh reports
+`status=error` with `catalog_generation_limit`, preserving the last good pointer
+and every existing reader's files; unchanged refreshes still succeed. This bounds
+generation count, not individual source size, so disk monitoring remains needed.
+
+To recover, pause the scheduled task and set the internal interval to `0`, stop
+catalog readers/builders, and archive obsolete generation directories outside the
+catalog volume. Preserve the generation named in `current.json` and any generation
+needed for rollback. Remove abandoned `.build-*` directories only while builders
+are stopped, then restart readers and refresh. Automatic reader-safe pruning is
+still deferred. Unset the catalog root to remove preview read routes.
 No upstream Discord history is fetched by this worker.
 
 Starter FastAPI service for:

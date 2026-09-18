@@ -207,6 +207,11 @@ def _build_catalog(root: Path, output: Path) -> dict:
     output.mkdir(parents=True, exist_ok=True)
     generations = output / "generations"
     generations.mkdir(exist_ok=True)
+    # Operational guard: do not delete immutable generations underneath readers.
+    # Count abandoned builds too, so interrupted jobs cannot bypass the bound.
+    if not (generations / generation).is_dir() and len(list(generations.iterdir())) >= 32:
+        raise ValueError('catalog_generation_limit: 32 generations retained; pause readers and builders, '
+                         'archive obsolete generations, then retry refresh')
     staging = Path(tempfile.mkdtemp(prefix=".build-", dir=generations))
     try:
         for name, items in (("records", records.values()), ("meetings", meetings.values()), ("relationships", edges)):

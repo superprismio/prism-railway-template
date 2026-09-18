@@ -97,3 +97,21 @@ test('canonical memory.read permission gates every retrieval operation and is re
     }
   }
 });
+
+
+test('interface key variants use the same canonical authorization key', async () => {
+  for (const key of ['HANDBOOK', ' handbook ', ' HandBook ']) {
+    let calls = 0;
+    const response = await scopedMemoryRetrieval(req({ operation: 'search' }), key, {
+      authorize: input => {
+        assert.equal(input.key, 'handbook');
+        return effectiveRetrievalAuthorization({ ok: true, resolved: { profile } }, null,
+          input.key === 'handbook');
+      },
+      baseUrl: 'https://memory.test', serviceKey: 'secret',
+      fetchImpl: (async () => { calls++; return Response.json({}); }) as typeof fetch,
+    });
+    assert.equal(response.status, 403);
+    assert.equal(calls, 0);
+  }
+});
