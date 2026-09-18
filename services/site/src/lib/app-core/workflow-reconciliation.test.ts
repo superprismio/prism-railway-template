@@ -11,7 +11,8 @@ function testDb() {
       request_number INTEGER NOT NULL UNIQUE,
       workflow_key TEXT NOT NULL,
       completed_at TEXT,
-      closed_at TEXT
+      closed_at TEXT,
+      updated_at TEXT NOT NULL
     );
     CREATE TABLE workflows (
       key TEXT PRIMARY KEY,
@@ -67,8 +68,8 @@ function seedDriftedRequest(db: Database.Database, input: {
     }),
   )
   db.prepare(
-    "INSERT INTO change_requests (id, request_number, workflow_key, completed_at, closed_at) VALUES (?, ?, ?, ?, ?)",
-  ).run("request-1", requestNumber, "publish", input.requestCompleted === false ? null : now, input.requestCompleted === false ? null : now)
+    "INSERT INTO change_requests (id, request_number, workflow_key, completed_at, closed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run("request-1", requestNumber, "publish", input.requestCompleted === false ? null : now, input.requestCompleted === false ? null : now, now)
   db.prepare(
     `INSERT INTO workflow_runs (
        id, request_id, workflow_key, current_step_key, status, updated_at, completed_at
@@ -115,15 +116,38 @@ test("terminal projection reconciliation dry-runs, repairs, and is idempotent", 
   db.close()
 })
 
-test("terminal projection reconciliation rejects non-terminal state and active runs", () => {
+test("terminal projection reconciliation closes a request whose workflow run already completed", () => {
   const db = testDb()
   seedDriftedRequest(db, { requestCompleted: false })
+
+  const planned = reconcileTerminalWorkflowProjection({ requestNumber: 4 }, db)
+  assert.equal(planned.outcome, "would_repair")
+  assert.equal(planned.code, "TERMINAL_WORKFLOW_AND_REQUEST_PROJECTION_DRIFT")
+
+  const repaired = reconcileTerminalWorkflowProjection({ requestNumber: 4, dryRun: false }, db)
+  assert.equal(repaired.outcome, "repaired")
+  assert.equal(repaired.code, "TERMINAL_WORKFLOW_AND_REQUEST_PROJECTION_RECONCILED")
+  assert.equal(db.prepare("SELECT current_step_key FROM workflow_runs").pluck().get(), "closed")
+  assert.deepEqual(
+    db.prepare("SELECT completed_at, closed_at FROM change_requests").get(),
+    { completed_at: "2026-07-15T14:00:00.000Z", closed_at: "2026-07-15T14:00:00.000Z" },
+  )
+  const payload = JSON.parse(db.prepare("SELECT payload_json FROM workflow_events").pluck().get() as string)
+  assert.equal(payload.requestProjectionRepaired, true)
+  assert.equal(payload.requestCompletedAtAfter, "2026-07-15T14:00:00.000Z")
+  db.close()
+})
+
+test("terminal projection reconciliation rejects non-terminal runs and active agent runs", () => {
+  const db = testDb()
+  seedDriftedRequest(db, { requestCompleted: false, runStatus: "active" })
   assert.equal(
     reconcileTerminalWorkflowProjection({ requestNumber: 4, dryRun: false }, db).code,
-    "CHANGE_REQUEST_NOT_TERMINAL",
+    "WORKFLOW_RUN_NOT_TERMINAL",
   )
 
   db.prepare("UPDATE change_requests SET completed_at = ?, closed_at = ?").run("2026-07-15T14:00:00.000Z", "2026-07-15T14:00:00.000Z")
+  db.prepare("UPDATE workflow_runs SET status = 'completed'").run()
   db.prepare("INSERT INTO agent_runs (id, request_id, status) VALUES (?, ?, ?)").run("agent-1", "request-1", "running")
   assert.equal(
     reconcileTerminalWorkflowProjection({ requestNumber: 4, dryRun: false }, db).code,

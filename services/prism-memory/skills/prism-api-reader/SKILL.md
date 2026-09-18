@@ -31,6 +31,8 @@ Use a read-scoped key only.
 
 - Latest memory snapshot:
   `GET /memory/latest`
+- Available rolling-memory dates:
+  `GET /memory/dates?limit=180`
 - Memory for a day:
   `GET /memory/date/{yyyy-mm-dd}`
 - Digest for a day:
@@ -86,6 +88,7 @@ Use a read-scoped key only.
   - treat an existing `repo_url + branch` source as the canonical sync target
 - For memory:
   - use `/memory/latest` for compact current state
+  - use `/memory/dates` to enumerate available daily snapshots
   - use `/memory/date/{date}` for a specific day
   - use `/digests/date/{date}` for bucket-level daily detail
 - For participation:

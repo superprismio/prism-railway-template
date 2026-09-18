@@ -40,15 +40,22 @@ Tasks:
 - `GET /agent/tasks`
 - `POST /agent/tasks`
 - `DELETE /agent/tasks/:key`
+- `POST /agent/tasks/:key/trigger`
 - `GET /agent/tasks/runs`
-- `POST /agent/tasks/runs`
-- `PATCH /agent/tasks/runs/:id`
 - `GET /agent/task-scripts`
 - `POST /agent/task-scripts`
 - `GET /agent/task-scripts/:key`
 - `PATCH /agent/task-scripts/:key`
 - `DELETE /agent/task-scripts/:key`
 - `GET /agent/task-scripts/:key/content`
+
+Use `POST /agent/tasks/:key/trigger` to run an existing task immediately. The
+Site proxies this request to task-runner so normal preflight, runtime handoff,
+delivery, and run finalization all occur. `POST /agent/tasks/runs` is a durable
+bookkeeping endpoint for task-runner; creating a run row does not dispatch the
+task. `POST /agent/tasks/runs` and `PATCH /agent/tasks/runs/:id` require both
+service authentication and task-runner control authentication. Ordinary agents
+may list runs but cannot create or finalize them.
 
 Skills:
 
@@ -96,6 +103,7 @@ Requests and artifacts:
 
 - `GET /agent/target-apps`
 - `POST /agent/target-apps`
+- `PATCH /agent/target-apps/:id`
 - `POST /agent/change-board/requests`
 - `GET /agent/change-board/requests/:id`
 - `PATCH /agent/change-board/requests/:id`
@@ -116,13 +124,25 @@ standard writable development environment. `name`, `slug`, and
 the branch default. Repeating the same repository request returns the existing
 target instead of creating a duplicate.
 
-`workflow/reconcile` is a maintenance operation for completed or closed
-requests whose terminal workflow run (completed or canceled) still projects a
-non-terminal current step. It is dry-run by default, refuses active requests
-and agent runs, and does not execute workflow steps. Send `{"dryRun":false}` to
-apply a verified repair.
+`PATCH /agent/target-apps/:id` updates an existing target's agent-safe metadata:
+`name`, `description`, `repoUrl`, `defaultBranch`, and `agentEnabled`. When the
+default branch changes, Prism also updates the default agent environment if it
+is the conventional `<target-slug>-default` environment or still follows the
+target's previous default branch. An explicitly divergent environment branch is
+preserved and `defaultEnvironmentBranchSynced` is returned as `false`.
+
+`workflow/reconcile` is a maintenance operation for terminal workflow runs with
+stale request or step projection. It also closes a request timeline that
+remained open after its workflow run completed. It is dry-run by default,
+refuses active workflow and agent runs, and does not execute workflow steps.
+Send `{"dryRun":false}` to apply a verified repair.
 When a workflow has multiple terminal steps, include the selected
 `terminalStepKey` returned by the dry-run candidates.
+
+The by-number workflow continue route accepts `{"retryCurrentStep":true}` to
+rerun an agent, checkpoint, or loop step without advancing past its attention
+state. A retry uses the latest saved workflow definition and current request
+evidence. Do not combine `retryCurrentStep` with `workflowAction`.
 
 Request creation accepts these `requestType` values:
 
@@ -144,6 +164,12 @@ Request creation accepts these `priority` values:
 If a request creation call sends an invalid type or priority, the `400` response includes `validRequestTypes` or `validPriorities` so agents can retry with a supported value.
 
 Agent-created requests should include `estimatedHumanHours` when there is enough context to infer a coarse whole-request human effort estimate. Include expected human gates, review/approval time, coordination, and likely loopbacks such as review changes that return the workflow to an earlier step. Choose the nearest bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`. The field is optional and must be a finite number from `0` through `999`.
+
+When a request originates in a Site-owned communication session, include
+`sourceSessionId` and, when available, `sourceMessageId`. Site resolves the
+immutable platform, channel/target, interaction profile, and initiator snapshot
+from that trusted session. Callers must not provide display identity fields;
+external subject values are intentionally excluded from request provenance.
 
 Source attachment ingest:
 

@@ -93,6 +93,34 @@ export type BuzzCliConfig = {
 
 export type BuzzCommandRunner = (args: string[], env: NodeJS.ProcessEnv) => Promise<string>;
 
+const BUZZ_REMOTE_COMMANDS = new Set([
+  "agents", "messages", "channels", "canvas", "reactions", "emoji", "dms", "users",
+  "workflows", "feed", "social", "notes", "repos", "patches", "issues", "pr", "media",
+  "upload", "mem", "moderation",
+]);
+
+export function normalizeBuzzCommandArgs(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 64) {
+    throw new Error("Buzz command args must contain between 1 and 64 entries");
+  }
+  const args = value.map((entry) => {
+    if (typeof entry !== "string" || !entry.trim() || entry.length > 8_000 || entry.includes("\0")) {
+      throw new Error("Buzz command args must be non-empty bounded strings");
+    }
+    return entry;
+  });
+  if (!BUZZ_REMOTE_COMMANDS.has(args[0])) {
+    throw new Error(`Unsupported Buzz command: ${args[0]}`);
+  }
+  if (args.some((entry) => ["--private-key", "--relay", "--auth-tag"].includes(entry)
+    || entry.startsWith("--private-key=")
+    || entry.startsWith("--relay=")
+    || entry.startsWith("--auth-tag="))) {
+    throw new Error("Buzz connection and signing arguments are managed by the adapter");
+  }
+  return args;
+}
+
 function hexToBytes(value: string): Uint8Array {
   return Uint8Array.from(value.match(/.{2}/g) ?? [], (byte) => Number.parseInt(byte, 16));
 }
@@ -319,9 +347,12 @@ export function parseBuzzChannelAllowlist(value: string | undefined): string[] {
 export function assertBuzzConfig(config: BuzzCliConfig): void {
   if (!config.relayUrl) throw new Error("BUZZ_RELAY_URL is required when Buzz is enabled");
   if (!config.privateKey) throw new Error("BUZZ_PRIVATE_KEY is required when Buzz is enabled");
-  if (config.channelAllowlist.length === 0) {
-    throw new Error("BUZZ_CHANNEL_ALLOWLIST must contain at least one channel UUID");
-  }
+}
+
+export function buzzCliEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  // Do not forward service credentials, proxy auth, loader hooks or CLI config.
+  const allowed = ["PATH", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "TZ"];
+  return Object.fromEntries(allowed.flatMap((key) => env[key] === undefined ? [] : [[key, env[key]]]));
 }
 
 export class BuzzCliClient {
@@ -342,35 +373,40 @@ export class BuzzCliClient {
 
   private async run(args: string[]): Promise<string> {
     return this.runner(args, {
-      ...process.env,
+      ...buzzCliEnvironment(process.env),
       BUZZ_RELAY_URL: this.config.relayUrl,
       BUZZ_PRIVATE_KEY: this.config.privateKey,
     });
   }
 
+  async executeCommand(value: unknown): Promise<unknown> {
+    const args = normalizeBuzzCommandArgs(value);
+    const output = await this.run(args);
+    try {
+      return JSON.parse(output);
+    } catch {
+      return output.trim();
+    }
+  }
+
   ensureAllowedChannel(channelId: string): string {
     const normalized = channelId.trim().toLowerCase();
-    if (!normalized || !this.config.channelAllowlist.includes(normalized)) {
+    if (!normalized || (this.config.channelAllowlist.length > 0 && !this.config.channelAllowlist.includes(normalized))) {
       throw new Error(`Buzz channel is not allowlisted: ${channelId || "(empty)"}`);
     }
     return normalized;
   }
 
-  async listChannels(): Promise<BuzzChannel[]> {
-    const payload = parseJsonArray(await this.run(["channels", "list"]), "channels list");
-    const allowlist = new Set(this.config.channelAllowlist);
-    const channels = parseBuzzChannels(payload).filter((channel) => allowlist.has(channel.channelId));
-    const visible = new Set(channels.map((channel) => channel.channelId));
-    const missing = this.config.channelAllowlist.filter((channelId) => !visible.has(channelId));
-    if (missing.length > 0) {
-      throw new Error(`Allowlisted Buzz channel(s) are not visible to this identity: ${missing.join(", ")}`);
-    }
-    return channels.sort((left, right) => left.name.localeCompare(right.name));
-  }
-
   async listVisibleChannels(): Promise<BuzzChannel[]> {
     const payload = parseJsonArray(await this.run(["channels", "list"]), "channels list");
     return parseBuzzChannels(payload).sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  async listChannels(): Promise<BuzzChannel[]> {
+    const channels = await this.listVisibleChannels();
+    if (this.config.channelAllowlist.length === 0) return channels;
+    const allowlist = new Set(this.config.channelAllowlist);
+    return channels.filter((channel) => allowlist.has(channel.channelId));
   }
 
   async createChannel(input: BuzzChannelCreateInput): Promise<Record<string, unknown>> {

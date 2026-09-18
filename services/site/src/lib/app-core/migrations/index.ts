@@ -1,4 +1,6 @@
 import { initialMigration } from './001_initial';
+import { prismMaintenanceMigration } from './051_prism_maintenance';
+import { dreamerAgentMigration } from './052_dreamer_agent';
 import { badgeImageUrlMigration } from './002_badge_image_url';
 import { targetAppsAndChangeRequestsMigration } from './003_target_apps_and_change_requests';
 import { changeRequestExecutionsMigration } from './004_change_request_executions';
@@ -35,6 +37,18 @@ import { interactionMemoryInstructionsMigration } from './035_interaction_memory
 import { deterministicRecordingHandoffMigration } from './036_deterministic_recording_handoff';
 import { restoreRecordingSystemDefaultMigration } from './037_restore_recording_system_default';
 import { hookAuthConfigMigration } from './038_hook_auth_config';
+import { requestOriginsMigration } from './039_request_origins';
+import { agentProfilesMigration } from './040_agent_profiles';
+import { agentProfileAvatarMigration } from './041_agent_profile_avatar';
+import { agentProfileAccentColorMigration } from './042_agent_profile_accent_color';
+import { activeAgentExecutorFallbackMigration } from './043_active_agent_executor_fallback';
+import { codeReviewAgentMigration } from './044_code_review_agent';
+import { codeReviewAgentV2Migration } from './045_code_review_agent_v2';
+import { codegenAgentMigration } from './046_codegen_agent';
+import { verificationAgentMigration } from './047_verification_agent';
+import { accountabilityDomainsMigration } from './048_accountability_domains';
+import { agentProfileModelTierMigration } from './049_agent_profile_model_tier';
+import { codeReviewConsoleMigration } from './050_code_review_console';
 
 export interface Migration {
   name: string;
@@ -79,4 +93,18 @@ export const migrations: Migration[] = [
   deterministicRecordingHandoffMigration,
   restoreRecordingSystemDefaultMigration,
   hookAuthConfigMigration,
+  requestOriginsMigration,
+  agentProfilesMigration,
+  agentProfileAvatarMigration,
+  agentProfileAccentColorMigration,
+  activeAgentExecutorFallbackMigration,
+  codeReviewAgentMigration,
+  codeReviewAgentV2Migration,
+  codegenAgentMigration,
+  verificationAgentMigration,
+  accountabilityDomainsMigration,
+  agentProfileModelTierMigration,
+  codeReviewConsoleMigration,
+  prismMaintenanceMigration,
+  dreamerAgentMigration,
 ];

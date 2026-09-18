@@ -58,13 +58,13 @@ test("source adapter delegates runtime selection to Site", async () => {
       prompt: "Summarize this meeting.",
       sessionId: "recording-1",
       credentials: [{ key: "sendgrid" }],
-      skills: ["veydrift-commander", "prism-api-reader"],
+      skills: ["research-reader"],
       timeoutMs: 5_000,
       metadata: { purpose: "voice_meeting_summary" },
     });
     assert.equal(capturedPrompt, "Summarize this meeting.");
     assert.deepEqual(capturedCredentials, [{ key: "sendgrid" }]);
-    assert.deepEqual(capturedSkills, ["veydrift-commander", "prism-api-reader"]);
+    assert.deepEqual(capturedSkills, ["research-reader"]);
     assert.ok(capturedDispatcher, "runtime requests use a dispatcher with an extended headers timeout");
     assert.deepEqual(result, {
       responseText: "summary",

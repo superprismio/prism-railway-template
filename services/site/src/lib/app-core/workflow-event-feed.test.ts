@@ -3,6 +3,45 @@ import test from 'node:test';
 import Database from 'better-sqlite3';
 import { workflowEventSequenceMigration } from './migrations/033_workflow_event_sequence';
 import { listWorkflowEventFeed } from './workflow-event-feed';
+import { workflowAttentionResolved, type WorkflowAttentionRecord, type WorkflowEventRecord } from './repository';
+
+const attention: WorkflowAttentionRecord = {
+  status: 'blocked',
+  summary: 'Render failed',
+  suggestedFix: 'Prepare a new render',
+  blockers: [{ key: 'render-failed' }],
+  agentRunId: 'run-blocked',
+  workflowRunId: 'workflow-run-1',
+  workflowStepKey: 'render-status-check',
+  createdAt: '2026-07-15T12:00:00.000Z',
+};
+
+function workflowEvent(overrides: Partial<WorkflowEventRecord>): WorkflowEventRecord {
+  return {
+    id: 'event-1',
+    workflowRunId: 'workflow-run-1',
+    requestId: 'request-1',
+    stepKey: null,
+    eventType: 'workflow.step_changed',
+    actorType: 'admin',
+    actorId: null,
+    note: null,
+    payload: {},
+    createdAt: '2026-07-15T12:01:00.000Z',
+    ...overrides,
+  };
+}
+
+test('leaving an attention step retires its blocker before a later return', () => {
+  assert.equal(workflowAttentionResolved(attention, [workflowEvent({
+    stepKey: 'remotion-prep',
+    payload: { previousStepKey: 'render-status-check', nextStepKey: 'remotion-prep' },
+  })]), true);
+  assert.equal(workflowAttentionResolved(attention, [workflowEvent({
+    stepKey: 'render-status-check',
+    payload: { previousStepKey: 'video-render', nextStepKey: 'render-status-check' },
+  })]), false);
+});
 
 function testDb() {
   const db = new Database(':memory:');

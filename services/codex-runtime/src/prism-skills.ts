@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import tar from 'tar-stream';
 import { config } from './config.js';
@@ -72,7 +76,14 @@ export function credentialRequirementsFromSkillMarkdown(content: string) {
 
 type SkillCacheEntry = {
   content: string;
+  files: SkillBundleFile[];
   fetchedAt: number;
+};
+
+type SkillBundleFile = {
+  path: string;
+  content: Buffer;
+  mode: number;
 };
 
 let skillIndexCache: { skills: SkillRecord[]; fetchedAt: number } | null = null;
@@ -190,36 +201,90 @@ export async function listPrismSkills() {
   return skills;
 }
 
-function extractSkillMarkdownFromArchive(archive: Uint8Array, skillName: string) {
+export function extractSkillBundleFromArchive(archive: Uint8Array, skillName: string) {
   const extract = tar.extract();
 
-  return new Promise<string>((resolve, reject) => {
-    let resolved = false;
+  return new Promise<{ content: string; files: SkillBundleFile[] }>((resolve, reject) => {
+    const files: SkillBundleFile[] = [];
+    let archiveRoot: string | null = null;
+    let skillMarkdown: string | null = null;
+    let totalBytes = 0;
+    let failed = false;
 
-    extract.on('entry', (header: { name: string }, stream: NodeJS.ReadableStream, next: () => void) => {
+    const fail = (error: Error) => {
+      if (failed) return;
+      failed = true;
+      reject(error);
+    };
+
+    extract.on('entry', (header: { name: string; type?: string; mode?: number }, stream: NodeJS.ReadableStream, next: () => void) => {
+      const normalized = header.name.replaceAll('\\', '/').replace(/^\.\//, '');
+      const segments = normalized.split('/').filter(Boolean);
+      if (!segments.length || normalized.startsWith('/') || segments.includes('..')) {
+        stream.resume();
+        fail(new Error(`PRISM_SKILL_ARCHIVE_UNSAFE:${skillName}`));
+        return;
+      }
+
+      const entryType = header.type || 'file';
+      archiveRoot ??= entryType === 'directory' || segments.length > 1 ? segments[0]! : '';
+      if (archiveRoot && segments[0] !== archiveRoot) {
+        stream.resume();
+        fail(new Error(`PRISM_SKILL_ARCHIVE_INVALID:${skillName}`));
+        return;
+      }
+      const relativeSegments = archiveRoot ? segments.slice(1) : segments;
+      const relativePath = relativeSegments.join('/');
+      if (entryType === 'directory') {
+        stream.on('end', next);
+        stream.resume();
+        return;
+      }
+      if (entryType !== 'file' || !relativePath) {
+        stream.resume();
+        fail(new Error(`PRISM_SKILL_ARCHIVE_UNSAFE:${skillName}`));
+        return;
+      }
+
       const chunks: Buffer[] = [];
       stream.on('data', (chunk: Buffer | Uint8Array | string) => {
-        chunks.push(Buffer.from(chunk));
+        const buffer = Buffer.from(chunk);
+        totalBytes += buffer.length;
+        if (totalBytes > 25 * 1024 * 1024) {
+          fail(new Error(`PRISM_SKILL_ARCHIVE_TOO_LARGE:${skillName}`));
+          return;
+        }
+        chunks.push(buffer);
       });
       stream.on('end', () => {
-        if (!resolved && header.name.endsWith('/SKILL.md')) {
-          resolved = true;
-          resolve(Buffer.concat(chunks).toString('utf8'));
-        }
+        if (failed) return;
+        const content = Buffer.concat(chunks);
+        files.push({
+          path: relativePath,
+          content,
+          mode: (header.mode ?? 0o644) & 0o777,
+        });
+        if (relativePath === 'SKILL.md') skillMarkdown = content.toString('utf8');
         next();
       });
-      stream.on('error', reject);
-      stream.resume();
+      stream.on('error', (error) => fail(error));
     });
 
     extract.on('finish', () => {
-      if (!resolved) {
+      if (failed) return;
+      if (!skillMarkdown) {
         reject(new Error(`PRISM_SKILL_ARCHIVE_INVALID:${skillName}`));
+        return;
       }
+      resolve({ content: skillMarkdown, files });
     });
 
-    extract.on('error', reject);
-    extract.end(Buffer.from(gunzipSync(archive)));
+    extract.on('error', (error) => fail(error));
+    try {
+      extract.end(Buffer.from(gunzipSync(archive)));
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(`PRISM_SKILL_ARCHIVE_INVALID:${skillName}`));
+    }
   });
 }
 
@@ -244,12 +309,91 @@ export async function downloadPrismSkill(skillName: string) {
   }
 
   const archive = new Uint8Array(await response.arrayBuffer());
-  const content = await extractSkillMarkdownFromArchive(archive, skillName);
+  const bundle = await extractSkillBundleFromArchive(archive, skillName);
   skillContentCache.set(skillName, {
-    content,
+    ...bundle,
     fetchedAt: Date.now(),
   });
-  return content;
+  return bundle.content;
+}
+
+function skillDirectoryName(skillName: string) {
+  const slug = skillName.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 72) || 'skill';
+  const suffix = createHash('sha256').update(skillName).digest('hex').slice(0, 10);
+  return `prism-${slug}-${suffix}`;
+}
+
+async function mirrorDirectoryEntries(source: string, destination: string, excludedNames: Set<string>) {
+  const entries = await fs.readdir(source, { withFileTypes: true }).catch(() => []);
+  await fs.mkdir(destination, { recursive: true });
+  for (const entry of entries) {
+    if (excludedNames.has(entry.name)) continue;
+    await fs.symlink(path.join(source, entry.name), path.join(destination, entry.name), entry.isDirectory() ? 'dir' : 'file');
+  }
+}
+
+/**
+ * Build an isolated HOME for one Codex process. Existing user files remain
+ * visible through symlinks, while Site-hosted skills are installed in the
+ * native $HOME/.agents/skills location for progressive disclosure.
+ */
+export async function createNativePrismSkillHome(
+  originalHome: string,
+  prismSkills: Awaited<ReturnType<typeof loadRelevantPrismSkills>>,
+  metadata?: Record<string, unknown>,
+) {
+  const runtimeHome = await fs.mkdtemp(path.join(os.tmpdir(), 'prism-codex-home-'));
+  try {
+    await mirrorDirectoryEntries(originalHome, runtimeHome, new Set(['.agents']));
+
+    const originalAgents = path.join(originalHome, '.agents');
+    const runtimeAgents = path.join(runtimeHome, '.agents');
+    await mirrorDirectoryEntries(originalAgents, runtimeAgents, new Set(['skills']));
+
+    const originalSkills = path.join(originalAgents, 'skills');
+    const runtimeSkills = path.join(runtimeAgents, 'skills');
+    await mirrorDirectoryEntries(originalSkills, runtimeSkills, new Set());
+
+    const exactSelection = metadata?.skillSelectionMode === 'exact';
+    const selectedNames = new Set(prismSkills.selectedSkills.map((skill) => skill.name));
+    const nativeSkills = exactSelection
+      ? prismSkills.availableSkills.filter((skill) => selectedNames.has(skill.name))
+      : prismSkills.availableSkills;
+    let installedSkillCount = 0;
+    const failedSkillNames: string[] = [];
+
+    for (const skill of nativeSkills) {
+      try {
+        await downloadPrismSkill(skill.name);
+        const bundle = skillContentCache.get(skill.name);
+        if (!bundle) continue;
+        const skillRoot = path.join(runtimeSkills, skillDirectoryName(skill.name));
+        await fs.mkdir(skillRoot, { recursive: true });
+        for (const file of bundle.files) {
+          const destination = path.resolve(skillRoot, file.path);
+          if (destination !== skillRoot && !destination.startsWith(`${skillRoot}${path.sep}`)) {
+            throw new Error(`PRISM_SKILL_ARCHIVE_UNSAFE:${skill.name}`);
+          }
+          await fs.mkdir(path.dirname(destination), { recursive: true });
+          await fs.writeFile(destination, file.content, { mode: file.mode });
+        }
+        installedSkillCount += 1;
+      } catch (error) {
+        if (exactSelection) throw error;
+        failedSkillNames.push(skill.name);
+      }
+    }
+
+    return {
+      path: runtimeHome,
+      skillCount: installedSkillCount,
+      failedSkillNames,
+      cleanup: async () => await fs.rm(runtimeHome, { recursive: true, force: true }),
+    };
+  } catch (error) {
+    await fs.rm(runtimeHome, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 export function requestedSkillNames(prompt: string, metadata?: Record<string, unknown>) {

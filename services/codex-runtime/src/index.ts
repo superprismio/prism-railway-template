@@ -5,17 +5,22 @@ import path from 'node:path';
 import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { config } from './config.js';
+import { JobReceipts } from './job-receipts.js';
 import { generateCodexCliReply } from './codex-runtime.js';
 import { listPrismSkills } from './prism-skills.js';
 import { gatewayClient } from './runtime-gateway.js';
+import { modelTier, modelTiers, type ModelTier, type ReasoningEffort } from './model-tier.js';
 
 const startedAt = new Date();
 const app = express();
 const responseJobs = new Map<string, RuntimeResponseJob>();
+const jobReceipts = new JobReceipts(process.env.PRISM_RUNTIME_RECEIPTS_DIR?.trim()
+  || path.join(config.targetWorkspaceRoot, '.runtime-receipts'));
 const responseJobAbortControllers = new Map<string, AbortController>();
 const responseJobIdempotencyKeys = new Map<string, string>();
 const runtimeContractVersion = '2026-07-10' as const;
 const runtimeKey = process.env.PRISM_RUNTIME_KEY?.trim() || 'codex-default';
+type RuntimeAuthorityMode = 'full' | 'read_only_utility';
 
 const standardJsonParser = express.json({ limit: '1mb' });
 app.use(standardJsonParser);
@@ -24,6 +29,7 @@ type RuntimeRequestBody = {
   contractVersion?: unknown;
   prompt?: unknown;
   sessionId?: unknown;
+  authorityMode?: unknown;
   continuationId?: unknown;
   codexThreadId?: unknown;
   recentHistory?: Array<{ role?: unknown; content?: unknown }>;
@@ -31,12 +37,15 @@ type RuntimeRequestBody = {
   credentials?: unknown;
   context?: unknown;
   metadata?: Record<string, unknown>;
+  modelTier?: unknown;
 };
 
 type RuntimeResponsePayload = {
   id: string | null;
   object: 'response';
   model: string | null;
+  modelTier: ModelTier | null;
+  reasoningEffort: ReasoningEffort | null;
   provider: string;
   responseText: string;
   output_text: string;
@@ -56,11 +65,13 @@ type RuntimeResponseJob = {
   input: {
     prompt: string;
     sessionId: string;
+    authorityMode: RuntimeAuthorityMode;
     codexThreadId: string | null;
     recentHistory: Array<{ role: string; content: string }>;
     credentials: string[];
     gatewayContext: Record<string, string>;
     metadata: Record<string, unknown>;
+    modelTier: ModelTier | null;
   };
   response: RuntimeResponsePayload | null;
   error: string | null;
@@ -70,6 +81,30 @@ type RuntimeResponseJob = {
   startedAt: string | null;
   finishedAt: string | null;
 };
+
+function hasInvalidAuthorityMode(body: RuntimeRequestBody) {
+  return body.authorityMode !== undefined
+    && body.authorityMode !== 'full'
+    && body.authorityMode !== 'read_only_utility';
+}
+
+function requestedModelTierValue(body: RuntimeRequestBody) {
+  const metadata = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
+    ? body.metadata
+    : {};
+  return body.modelTier
+    ?? metadata.modelTier
+    ?? metadata.model_tier
+    ?? (metadata.agentConfig && typeof metadata.agentConfig === 'object' && !Array.isArray(metadata.agentConfig)
+      ? (metadata.agentConfig as Record<string, unknown>).modelTier
+        ?? (metadata.agentConfig as Record<string, unknown>).model_tier
+      : null);
+}
+
+function hasInvalidModelTier(body: RuntimeRequestBody) {
+  const value = requestedModelTierValue(body);
+  return value !== undefined && value !== null && value !== '' && !modelTier(value);
+}
 
 async function pathExists(filePath: string) {
   return fs.access(filePath).then(
@@ -93,6 +128,12 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
     return null;
   }
 
+  const requestedAuthorityMode = body.authorityMode === undefined ? 'full' : body.authorityMode;
+  if (requestedAuthorityMode !== 'full' && requestedAuthorityMode !== 'read_only_utility') {
+    return null;
+  }
+  const authorityMode: RuntimeAuthorityMode = requestedAuthorityMode;
+
   const metadata = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
     ? body.metadata
     : {};
@@ -100,14 +141,22 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
   const existingRequestedSkills = Array.isArray(metadata.requestedSkills)
     ? metadata.requestedSkills.filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()))
     : [];
+  const normalizedMetadata = { ...metadata };
+  const requestedModelTier = modelTier(requestedModelTierValue(body));
+  if (authorityMode === 'read_only_utility') {
+    delete normalizedMetadata.requestedSkills;
+  } else if (requestedSkills.length) {
+    normalizedMetadata.requestedSkills = Array.from(new Set([...existingRequestedSkills, ...requestedSkills]));
+  }
 
   return {
     prompt,
     sessionId,
+    authorityMode,
     codexThreadId: typeof body.continuationId === 'string'
-      ? body.continuationId.trim()
+      ? authorityMode === 'read_only_utility' ? null : body.continuationId.trim()
       : typeof body.codexThreadId === 'string'
-        ? body.codexThreadId.trim()
+        ? authorityMode === 'read_only_utility' ? null : body.codexThreadId.trim()
         : null,
     recentHistory: Array.isArray(body.recentHistory)
       ? body.recentHistory
@@ -117,11 +166,10 @@ function normalizeRuntimeRequest(body: RuntimeRequestBody) {
         }))
         .filter((entry) => entry.content.trim())
       : [],
-    credentials: normalizeRuntimeCredentials(body.credentials),
+    credentials: authorityMode === 'read_only_utility' ? [] : normalizeRuntimeCredentials(body.credentials),
     gatewayContext: normalizeGatewayContext(body.context),
-    metadata: requestedSkills.length
-      ? { ...metadata, requestedSkills: Array.from(new Set([...existingRequestedSkills, ...requestedSkills])) }
-      : metadata,
+    metadata: normalizedMetadata,
+    modelTier: requestedModelTier,
   };
 }
 
@@ -183,6 +231,8 @@ function responsePayloadFromResult(
     id: result.codexThreadId,
     object: 'response',
     model: result.model,
+    modelTier: result.modelTier,
+    reasoningEffort: result.reasoningEffort,
     provider: result.provider,
     responseText: result.responseText,
     output_text: result.responseText,
@@ -286,6 +336,8 @@ function normalizedJob(job: RuntimeResponseJob) {
           artifacts: [],
           providerMetadata: {
             model: response.model,
+            modelTier: response.modelTier,
+            reasoningEffort: response.reasoningEffort,
             branchName: response.branchName,
             commitSha: response.commitSha,
             branchUrl: response.branchUrl,
@@ -349,6 +401,14 @@ async function runResponseJob(jobId: string) {
     job.status = 'failed';
   } finally {
     job.finishedAt ??= new Date().toISOString();
+    try {
+      jobReceipts.save(normalizedJob(job));
+    } catch (error) {
+      // Fail closed: do not advertise durable success when the receipt could not be saved.
+      job.status = 'failed';
+      job.error = 'RUNTIME_RESULT_PERSIST_FAILED';
+      console.error('[codex-runtime] terminal receipt persistence failed', error instanceof Error ? error.message : 'unknown');
+    }
     pruneResponseJobs();
   }
 }
@@ -400,6 +460,9 @@ app.get('/v1/runtime/manifest', (_req, res) => {
       traceEvents: true,
       gatewayCredentials: true,
       workspaceAssignment: true,
+      browserAutomation: true,
+      modelTiers,
+      authorityModes: ['full', 'read_only_utility'],
     },
   });
 });
@@ -410,6 +473,7 @@ app.get('/v1/runtime/capabilities', (_req, res) => {
     runtimeKey,
     adapter: 'codex-cli',
     features: [
+      'browser-automation',
       'repository',
       'shell',
       'site-hosted-skills',
@@ -417,8 +481,12 @@ app.get('/v1/runtime/capabilities', (_req, res) => {
       'gateway-credentials',
       'workspace-assignment',
       'trace-events',
+      'progress-aware-timeouts',
+      'durable-terminal-results',
       'cancellation',
       'idempotent-job-creation',
+      'model-tier-routing',
+      'read-only-utility-authority',
     ],
   });
 });
@@ -434,7 +502,16 @@ app.get('/skills', async (_req, res) => {
 });
 
 app.post('/v1/responses', async (req, res) => {
-  const input = normalizeRuntimeRequest(req.body as RuntimeRequestBody);
+  const body = req.body as RuntimeRequestBody;
+  if (hasInvalidAuthorityMode(body)) {
+    res.status(400).json({ ok: false, error: 'RUNTIME_AUTHORITY_MODE_INVALID' });
+    return;
+  }
+  if (hasInvalidModelTier(body)) {
+    res.status(400).json({ ok: false, error: 'MODEL_TIER_INVALID' });
+    return;
+  }
+  const input = normalizeRuntimeRequest(body);
 
   if (!input) {
     res.status(400).json({ ok: false, error: 'prompt and sessionId are required' });
@@ -450,7 +527,16 @@ app.post('/v1/responses', async (req, res) => {
 });
 
 app.post('/v1/responses/jobs', (req, res) => {
-  const input = normalizeRuntimeRequest(req.body as RuntimeRequestBody);
+  const body = req.body as RuntimeRequestBody;
+  if (hasInvalidAuthorityMode(body)) {
+    res.status(400).json({ ok: false, error: 'RUNTIME_AUTHORITY_MODE_INVALID' });
+    return;
+  }
+  if (hasInvalidModelTier(body)) {
+    res.status(400).json({ ok: false, error: 'MODEL_TIER_INVALID' });
+    return;
+  }
+  const input = normalizeRuntimeRequest(body);
   if (!input) {
     res.status(400).json({ ok: false, error: 'prompt and sessionId are required' });
     return;
@@ -492,6 +578,24 @@ app.post('/v1/runtime/jobs', (req, res) => {
         message: `contractVersion must be ${runtimeContractVersion}`,
         retryable: false,
       },
+    });
+    return;
+  }
+  if (hasInvalidAuthorityMode(body)) {
+    res.status(400).json({
+      ok: false,
+      error: {
+        code: 'RUNTIME_AUTHORITY_MODE_INVALID',
+        message: 'authorityMode must be full or read_only_utility',
+        retryable: false,
+      },
+    });
+    return;
+  }
+  if (hasInvalidModelTier(body)) {
+    res.status(400).json({
+      ok: false,
+      error: { code: 'MODEL_TIER_INVALID', message: 'modelTier must be economy, standard, or deep', retryable: false },
     });
     return;
   }
@@ -540,6 +644,11 @@ app.post('/v1/runtime/jobs', (req, res) => {
 app.get('/v1/runtime/jobs/:jobId', (req, res) => {
   const job = responseJobs.get(req.params.jobId);
   if (!job) {
+    const receipt = jobReceipts.read(req.params.jobId);
+    if (receipt) {
+      res.json({ ok: receipt.status !== 'failed', job: receipt });
+      return;
+    }
     res.status(404).json({
       ok: false,
       error: {

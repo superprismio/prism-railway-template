@@ -5,6 +5,11 @@ description: Use this skill when Codex is asked to create, update, or reason abo
 
 Use this skill to author Prism workflows in the style expected by the site service.
 
+Every workflow should have exactly one accountable domain. Include
+`accountabilityDomainKey` alongside `key`, `manifest`, and `files` when posting a
+new custom workflow. The domain owns maintenance and audit follow-through; it
+does not constrain which profiles individual steps may execute.
+
 When this skill is loaded in a deployed Prism instance, do not fall back to browser admin routes or local filesystem probing before using the site service workflow API. Missing local files under `/data/codex/skills`, `/data/workflows`, or `/app` do not mean the workflow is inaccessible. Runtime agents usually cannot write the site service volume directly.
 
 Prism workflows are markdown-first and DB-indexed:
@@ -109,6 +114,29 @@ Send that body to `POST /agent/responses` with `x-service-token` service auth. F
 
 Workflow steps should save durable files through the request artifact API instead of leaving important outputs only in chat text. Use artifacts for drafts, image prompts, generated images, publish packets, JSON plans, or any step output that future steps or humans should inspect.
 
+## Scheduled Workflow Ownership
+
+Every scheduled agent task should be a thin `workflow-runner` launcher. Each
+scheduled occurrence creates and starts a native request; the workflow owns the
+work itself. Keep analysis, durable artifacts, retries, operator recovery,
+external delivery, delivery verification, provenance, and terminal closure in
+workflow steps rather than in task-runner output delivery. Keep ad hoc prompts
+in an Agent Console or an explicitly invoked disabled utility task.
+
+If external delivery is part of the promised outcome:
+
+- save the exact deliverable as a request artifact before sending it
+- send from the workflow step through the authorized adapter or provider skill
+- require a provider-accepted identifier before reporting success
+- attach the external message or publication as a request external ref when the
+  API supports that provider
+- leave a retryable, accurately described workflow failure when delivery fails;
+  never close merely because content generation succeeded
+
+A valid no-op or empty-result report may close when the workflow contract says
+it is a successful outcome. Keep newly authored scheduled tasks disabled until
+the request lifecycle, artifacts, delivery, and closure have been validated.
+
 If a triage or intake step sees a request without `estimatedHumanHours` and the scope is clear, patch the request once with a coarse whole-request human effort estimate. Include expected human gates, review/approval time, coordination, and likely loopbacks such as review changes that return the workflow to an earlier step. Use one bucket from `0.25`, `0.5`, `1`, `2`, `4`, `8`, `16`, `24`, or `40`. Do not add rationale/source fields or per-step estimates.
 
 ```json
@@ -196,6 +224,14 @@ Use it for:
 - shared `agentConfig`
 - deterministic delegation policy in `agentConfig.delegation`
 - context isolation policy in `agentConfig.contextPolicy`
+- an explicit `executorAgent` on a step when it differs from the workflow default
+
+Use `defaultAgent` only when it is a deliberate workflow-wide executor choice.
+Omitting both the step executor and workflow default invokes the visible Admin
+fallback and should be treated as authoring debt, not an implicit design. Review
+the executor-resolution matrix in `GET /agent/accountability/audit` before
+enabling a workflow. Cross-domain execution is allowed when intentional and
+should remain visible in that audit.
 
 When a step uses a skill, put the skill name in `agentConfig.skills`. Generic
 skills remain Gateway-agnostic. Trusted workflow runs inherit active
@@ -249,6 +285,14 @@ profile. Set `agentConfig.runtimeProfileKey` only when the workflow must be
 deliberately pinned to a configured Site runtime profile. Do not add the legacy
 `agentConfig.runtime` field to new workflows, and do not infer the active
 runtime from that field when inspecting an older workflow.
+
+Use provider-neutral `agentConfig.modelTier` values when a workflow or step has
+an intentional cost/quality requirement: `economy`, `standard`, or `deep`.
+Step-local configuration overrides the Agent Profile default; omit it to inherit
+the profile and Site defaults. Do not hardcode provider model names in workflow
+manifests. Reserve `deep` for work whose verification or reasoning needs justify
+the added cost, and validate representative outputs before moving work to
+`economy`.
 
 Do not put long prompts, implementation logic, scripts, or large prose in the manifest. Put those in markdown.
 
@@ -438,3 +482,8 @@ When creating or changing a workflow:
    handoffs and `contextPolicy.continuation: "step"` unless session continuity
    is intentionally required.
 10. Return a concise summary of changed files and expected UI/status behavior.
+11. Assign one `accountabilityDomainKey` and verify that it is active.
+12. Verify every agent step resolves through `step-explicit` or
+    `workflow-default`; disclose any temporary `admin-fallback`.
+13. Review intentional cross-domain executors rather than copying their domain
+    onto the workflow.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { scopedMemoryRetrieval } from './scoped-memory-retrieval';
+import { scopedMemoryRetrieval, effectiveRetrievalAuthorization } from './scoped-memory-retrieval';
 import type { InteractionProfileRecord } from './app-core/external-interactions';
 
 const profile: Pick<InteractionProfileRecord, 'mode' | 'memoryScope'> = { mode: 'readonly', memoryScope: { buckets: ['meetings'], knowledgeSourceIds: [], instructions: 'ignore scope', enforcement: 'instructions-only' } };
@@ -45,4 +45,28 @@ test('empty selectors stay empty and policy changes apply on the next request', 
   current={ ...profile, memoryScope:{ ...profile.memoryScope, buckets:[] } };
   await scopedMemoryRetrieval(req({ operation: 'coverage' }), 'a', deps);
   assert.deepEqual(seen,[{buckets:['meetings'],knowledge_source_ids:[]},{buckets:[],knowledge_source_ids:[]}]);
+});
+
+
+test('canonical Agent Profile selectors replace legacy selectors, including empty scope', () => {
+  const auth = { ok: true as const, resolved: { profile } };
+  for (const memoryScope of [{ buckets: ['public'], knowledgeSourceIds: ['handbook'] }, {}]) {
+    const resolved = effectiveRetrievalAuthorization(auth, { policy: { accessMode: 'readonly' }, profile: { memoryScope } }, true);
+    assert.ok(resolved.ok);
+    assert.deepEqual(resolved.resolved.profile.memoryScope.buckets, memoryScope.buckets ?? []);
+  }
+});
+
+test('disabled or unresolved canonical binding cannot fall back to legacy access', () => {
+  const auth = { ok: true as const, resolved: { profile } };
+  assert.equal(effectiveRetrievalAuthorization(auth, null, true).ok, false);
+  assert.equal(effectiveRetrievalAuthorization(auth, { policy: { accessMode: 'off' }, profile: { memoryScope: {} } }, true).ok, false);
+  assert.equal(effectiveRetrievalAuthorization(auth, null, false), auth);
+});
+
+test('malformed canonical scope and failed credential authorization fail closed', () => {
+  const agent = { policy: { accessMode: 'readonly' }, profile: { memoryScope: { buckets: 'all' } } };
+  assert.equal(effectiveRetrievalAuthorization({ ok: true, resolved: { profile } }, agent, true).ok, false);
+  const denied = { ok: false as const, code: 'BAD_CREDENTIAL' };
+  assert.equal(effectiveRetrievalAuthorization(denied, agent, true), denied);
 });

@@ -6,21 +6,12 @@ import { Copy, KeyRound, Power, RefreshCw, RotateCw, ShieldCheck, ShieldX } from
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-type InteractionProfile = {
+type AgentProfile = {
   key: string;
   name: string;
-  mode: "off" | "readonly" | "run-approved" | "full";
   runtimeProfileKey: string | null;
-  persona: { name: string | null; instructions: string };
-  memoryScope: {
-    knowledgeSourceIds: string[];
-    buckets: string[];
-    instructions: string;
-    enforcement: "instructions-only";
-  };
-  allowedWorkflows: string[];
-  rateLimit: { windowSeconds: number; maxRequests: number };
   version: number;
+  bindings: Array<{ surfaceType: string; surfaceKey: string; configuration: { accessMode?: string } }>;
 };
 
 type ExternalInterface = {
@@ -61,14 +52,16 @@ function interactionSessionUrl(interfaceKey: string) {
 
 export function ExternalInterfaceSettings() {
   const [interfaces, setInterfaces] = useState<ExternalInterface[]>([]);
-  const [profiles, setProfiles] = useState<InteractionProfile[]>([]);
+  const [profiles, setProfiles] = useState<AgentProfile[]>([]);
   const [events, setEvents] = useState<AccessEvent[]>([]);
   const [revealedCredential, setRevealedCredential] = useState<{ key: string; value: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPending, startTransition] = useTransition();
-  const profileByKey = useMemo(() => new Map(profiles.map((profile) => [profile.key, profile])), [profiles]);
+  const profileByInterface = useMemo(() => new Map(profiles.flatMap((profile) => profile.bindings
+    .filter((binding) => binding.surfaceType === "external")
+    .map((binding) => [binding.surfaceKey, { profile, binding }] as const))), [profiles]);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
@@ -76,19 +69,19 @@ export function ExternalInterfaceSettings() {
     try {
       const [interfaceResponse, profileResponse] = await Promise.all([
         fetch("/admin/external-interfaces", { cache: "no-store" }),
-        fetch("/admin/interaction-profiles", { cache: "no-store" }),
+        fetch("/admin/agent-profiles", { cache: "no-store" }),
       ]);
       const interfacePayload = await interfaceResponse.json().catch(() => null) as {
         interfaces?: ExternalInterface[]; recentEvents?: AccessEvent[]; error?: string;
       } | null;
       const profilePayload = await profileResponse.json().catch(() => null) as {
-        profiles?: InteractionProfile[]; error?: string;
+        profiles?: AgentProfile[]; error?: string;
       } | null;
       if (!interfaceResponse.ok || !Array.isArray(interfacePayload?.interfaces)) {
         throw new Error(interfacePayload?.error || "External interfaces could not be loaded.");
       }
       if (!profileResponse.ok || !Array.isArray(profilePayload?.profiles)) {
-        throw new Error(profilePayload?.error || "Interaction profiles could not be loaded.");
+        throw new Error(profilePayload?.error || "Agent Profiles could not be loaded.");
       }
       setInterfaces(interfacePayload.interfaces);
       setEvents(Array.isArray(interfacePayload.recentEvents) ? interfacePayload.recentEvents : []);
@@ -165,7 +158,7 @@ export function ExternalInterfaceSettings() {
             <ShieldCheck className="h-4 w-4" /> External Interfaces
           </h3>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-            Author profiles and interfaces through Prism Console. Use this view to inspect exposure, enable or disable paths, and manage inbound credentials.
+            Agent identity and access come from Agent Profile bindings. This view manages only interface exposure and inbound credentials.
           </p>
         </div>
         <Button type="button" variant="outline" onClick={() => void refresh()} disabled={isLoading || isPending}>
@@ -183,7 +176,8 @@ export function ExternalInterfaceSettings() {
 
       <div className="grid border border-border/70">
         {interfaces.map((externalInterface) => {
-          const profile = profileByKey.get(externalInterface.interactionProfileKey);
+          const resolved = profileByInterface.get(externalInterface.key);
+          const profile = resolved?.profile;
           const revealed = revealedCredential?.key === externalInterface.key ? revealedCredential.value : null;
           return (
             <div key={externalInterface.key} className="grid gap-4 border-b border-border/70 p-4 last:border-b-0">
@@ -192,7 +186,7 @@ export function ExternalInterfaceSettings() {
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium">{externalInterface.name}</p>
                     <Badge variant={externalInterface.enabled ? "secondary" : "muted"}>{externalInterface.enabled ? "Enabled" : "Disabled"}</Badge>
-                    <Badge variant="outline">{profile?.mode ?? "missing profile"}</Badge>
+                    <Badge variant="outline">{resolved?.binding.configuration.accessMode ?? "unbound"}</Badge>
                     <Badge variant={externalInterface.credential.configured ? "secondary" : "muted"}>
                       {externalInterface.credential.configured ? "Credential ready" : "No credential"}
                     </Badge>
@@ -201,17 +195,9 @@ export function ExternalInterfaceSettings() {
                     POST {interactionSessionUrl(externalInterface.key)}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Profile {profile?.name ?? externalInterface.interactionProfileKey} v{profile?.version ?? "?"}
-                    {profile?.persona.name ? ` · ${profile.persona.name}` : ""}
+                    Agent {profile?.name ?? "not migrated"} v{profile?.version ?? "?"}
                     {profile?.runtimeProfileKey ? ` · runtime ${profile.runtimeProfileKey}` : " · default runtime"}
                   </p>
-                  {profile && (profile.memoryScope.knowledgeSourceIds.length > 0 || profile.memoryScope.buckets.length > 0 || profile.memoryScope.instructions) ? (
-                    <p className="mt-1 text-xs text-amber-500">
-                      Advisory Memory scope (instructions only)
-                      {profile.memoryScope.knowledgeSourceIds.length > 0 ? ` · sources ${profile.memoryScope.knowledgeSourceIds.join(", ")}` : ""}
-                      {profile.memoryScope.buckets.length > 0 ? ` · buckets ${profile.memoryScope.buckets.join(", ")}` : ""}
-                    </p>
-                  ) : null}
                   <p className="mt-1 text-xs text-muted-foreground">
                     Last used {formatDate(externalInterface.credential.lastUsedAt)}
                     {externalInterface.credential.prefix ? ` · ${externalInterface.credential.prefix}…` : ""}

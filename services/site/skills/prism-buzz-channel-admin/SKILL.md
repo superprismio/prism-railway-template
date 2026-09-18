@@ -71,7 +71,7 @@ curl -fsSL -X PATCH \
 
 Register an existing channel or change its Prism mode with `PUT
 /buzz/channels/:channelId/access`. Supply matching `mode` and
-`interactionProfileKey`; supported modes are `readonly`, `run-approved`, and
+`agentProfileKey`; supported modes are `readonly`, `run-approved`, and
 `full`.
 
 ## Archive

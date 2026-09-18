@@ -26,6 +26,8 @@ import { buildAdvisoryMemoryInstructions, type AdvisoryMemoryScope } from "./ext
 import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 import { requestSiteRuntime } from "./site-runtime.js";
 import { discordDestinationType } from "./discord-output.js";
+import { discordAgentRoutingStatus, unavailableDiscordAgentMessage, unconfiguredDiscordChannelMessage } from "./discord-agent-routing.js";
+import { AppApiRequestError, isAppApiNotFound } from "./app-api-error.js";
 import {
   DiscordHistoryError,
   fetchDiscordHistoryContext,
@@ -157,6 +159,8 @@ type ResolvedDiscordAccessPolicy = {
   skills: string[];
   rateLimit: DiscordRateLimitConfig;
   matchedRules: string[];
+  agentProfile?: ExternalInteractionAuthorization["profile"];
+  agentResolutionFailed?: boolean;
 };
 
 let bridgeClient: Client | null = null;
@@ -168,7 +172,7 @@ const discordPromptQueues = new Map<string, Promise<void>>();
 const discordRateLimitBuckets = new Map<string, { windowStartMs: number; count: number }>();
 const externalInteractionRateLimiter = new ExternalInteractionRateLimiter();
 let sourceAdapterPolicyCache: { expiresAt: number; platforms: Record<string, DiscordAccessPolicyConfig> } | null = null;
-const buzzInteractionProfileCache = new Map<string, {
+const interactionProfileCache = new Map<string, {
   expiresAt: number;
   profile: ExternalInteractionAuthorization["profile"];
 }>();
@@ -521,6 +525,7 @@ function adapterConfig() {
     buzzRelayUrl: (process.env.BUZZ_RELAY_URL ?? "").trim().replace(/\/+$/, ""),
     buzzPublicKey: (process.env.BUZZ_PUBLIC_KEY ?? "").trim().toLowerCase(),
     buzzChannelAllowlist: parseBuzzChannelAllowlist(process.env.BUZZ_CHANNEL_ALLOWLIST),
+    buzzHistoryChannelAllowlist: parseBuzzChannelAllowlist(process.env.BUZZ_HISTORY_CHANNEL_ALLOWLIST),
     buzzWindowHours: parseIntEnv("BUZZ_SYNC_WINDOW_HOURS", 24, 1, 24 * 30),
     buzzMaxMessagesPerChannel: parseIntEnv("BUZZ_MAX_MESSAGES_PER_CHANNEL", 500, 1, 5000),
     buzzIgnoreOwnMessages: parseBoolEnv("BUZZ_IGNORE_OWN_MESSAGES", true),
@@ -530,7 +535,6 @@ function adapterConfig() {
     buzzInteractionDisplayName: (process.env.BUZZ_INTERACTION_DISPLAY_NAME ?? "Prism").trim() || "Prism",
     buzzInteractionPollSeconds: parseIntEnv("BUZZ_INTERACTION_POLL_SECONDS", 5, 2, 300),
     buzzInteractionLookbackSeconds: parseIntEnv("BUZZ_INTERACTION_LOOKBACK_SECONDS", 3600, 30, 7 * 24 * 3600),
-    buzzHistoryChannelAllowlist: parseBuzzChannelAllowlist(process.env.BUZZ_HISTORY_CHANNEL_ALLOWLIST),
     buzzHistoryMaxLookbackSeconds: parseIntEnv("BUZZ_HISTORY_MAX_LOOKBACK_SECONDS", 7200, 60, 7 * 24 * 3600),
     buzzHistoryMaxMessages: parseIntEnv("BUZZ_HISTORY_MAX_MESSAGES", 100, 1, 1000),
     checkpointOverlapMinutes: checkpointOverlapMinutes(),
@@ -717,12 +721,88 @@ async function loadBuzzAccessPolicyConfig(): Promise<DiscordAccessPolicyConfig> 
   return platforms.buzz ?? defaultBuzzAccessPolicy();
 }
 
+async function resolveAgentProfileSurface(input: {
+  surfaceType: "discord" | "telegram" | "buzz";
+  surfaceKey: string;
+  threadId?: string | null;
+  userId: string;
+  groupIds?: string[];
+}): Promise<ResolvedDiscordAccessPolicy | null> {
+  const query = new URLSearchParams({
+    surfaceType: input.surfaceType,
+    surfaceKey: input.surfaceKey,
+    userId: input.userId,
+  });
+  if (input.threadId) query.set("threadId", input.threadId);
+  for (const groupId of input.groupIds ?? []) query.append("groupId", groupId);
+  const payload = await appApiRequest(`/agent/agent-profiles/resolve?${query.toString()}`);
+  const resolved = parseStringRecord(payload.resolved);
+  if (!Object.keys(resolved).length) return null;
+  const rawProfile = parseStringRecord(resolved.profile);
+  const rawPolicy = parseStringRecord(resolved.policy);
+  const persona = parseStringRecord(rawProfile.persona);
+  const memoryScope = parseStringRecord(rawProfile.memoryScope ?? rawProfile.memory_scope);
+  const mode = parseAccessMode(rawPolicy.accessMode ?? rawPolicy.access_mode, "off");
+  const rateLimit = parseRateLimitConfig(rawPolicy.rateLimit ?? rawPolicy.rate_limit, { windowSeconds: 60, maxRequests: 6 });
+  const profileKey = typeof rawProfile.key === "string" ? rawProfile.key.trim() : "";
+  if (!profileKey) throw new Error("Agent Profile resolution returned no profile key");
+  const profile: ExternalInteractionAuthorization["profile"] = {
+    key: profileKey,
+    name: typeof rawProfile.name === "string" && rawProfile.name.trim() ? rawProfile.name.trim() : profileKey,
+    mode,
+    runtimeProfileKey: typeof rawProfile.runtimeProfileKey === "string" && rawProfile.runtimeProfileKey.trim()
+      ? rawProfile.runtimeProfileKey.trim()
+      : null,
+    persona: {
+      name: typeof persona.name === "string" && persona.name.trim() ? persona.name.trim() : null,
+      instructions: typeof persona.instructions === "string" ? persona.instructions.trim() : "",
+    },
+    skills: Array.isArray(rawProfile.skills)
+      ? rawProfile.skills.filter((value): value is string => typeof value === "string")
+      : [],
+    memoryScope: {
+      knowledgeSourceIds: Array.isArray(memoryScope.knowledgeSourceIds) ? memoryScope.knowledgeSourceIds.filter((value): value is string => typeof value === "string") : [],
+      buckets: Array.isArray(memoryScope.buckets) ? memoryScope.buckets.filter((value): value is string => typeof value === "string") : [],
+      instructions: typeof memoryScope.instructions === "string" ? memoryScope.instructions.trim() : "",
+      enforcement: "instructions-only",
+    },
+    allowedWorkflows: Array.isArray(rawPolicy.allowedWorkflows)
+      ? rawPolicy.allowedWorkflows.filter((value): value is string => typeof value === "string")
+      : [],
+    rateLimit,
+    version: typeof rawProfile.version === "number" && Number.isFinite(rawProfile.version) ? Math.trunc(rawProfile.version) : 1,
+  };
+  return {
+    mode,
+    interactionProfileKey: profile.key,
+    capabilities: Array.isArray(rawPolicy.capabilities)
+      ? rawPolicy.capabilities.filter((value): value is string => typeof value === "string")
+      : capabilitiesForMode(mode),
+    skills: profile.skills,
+    rateLimit,
+    matchedRules: Array.isArray(rawPolicy.matchedRules)
+      ? rawPolicy.matchedRules.filter((value): value is string => typeof value === "string")
+      : ["agent-profile-binding"],
+    agentProfile: profile,
+  };
+}
+
 async function resolveDiscordAccessPolicy(input: {
   channelId: string;
   threadId: string | null;
   authorId: string;
   roleIds: string[];
 }): Promise<ResolvedDiscordAccessPolicy> {
+  let agentResolutionFailed = false;
+  const agentPolicy = await resolveAgentProfileSurface({
+    surfaceType: "discord", surfaceKey: input.channelId, threadId: input.threadId,
+    userId: input.authorId, groupIds: input.roleIds,
+  }).catch((error) => {
+    console.warn(`[source-adapter] Agent Profile binding resolution failed; using legacy compatibility: ${describeError(error)}`);
+    agentResolutionFailed = true;
+    return null;
+  });
+  if (agentPolicy) return agentPolicy;
   const config = await loadDiscordAccessPolicyConfig();
   let resolved: ResolvedDiscordAccessPolicy = {
     mode: config.defaultMode,
@@ -742,13 +822,20 @@ async function resolveDiscordAccessPolicy(input: {
   }
   resolved = mergePolicyRule(resolved, config.users[input.authorId], `user:${input.authorId}`);
 
-  return resolved;
+  return { ...resolved, agentResolutionFailed };
 }
 
 async function resolveTelegramAccessPolicy(input: {
   chatId: string;
   authorId: string;
 }): Promise<ResolvedDiscordAccessPolicy> {
+  const agentPolicy = await resolveAgentProfileSurface({
+    surfaceType: "telegram", surfaceKey: input.chatId, userId: input.authorId,
+  }).catch((error) => {
+    console.warn(`[source-adapter] Agent Profile binding resolution failed; using legacy compatibility: ${describeError(error)}`);
+    return null;
+  });
+  if (agentPolicy) return agentPolicy;
   const config = await loadTelegramAccessPolicyConfig();
   let resolved: ResolvedDiscordAccessPolicy = {
     mode: config.defaultMode,
@@ -769,6 +856,13 @@ async function resolveBuzzAccessPolicy(input: {
   channelId: string;
   authorPubkey: string;
 }): Promise<ResolvedDiscordAccessPolicy> {
+  const agentPolicy = await resolveAgentProfileSurface({
+    surfaceType: "buzz", surfaceKey: input.channelId, userId: input.authorPubkey,
+  }).catch((error) => {
+    console.warn(`[source-adapter] Agent Profile binding resolution failed; using legacy compatibility: ${describeError(error)}`);
+    return null;
+  });
+  if (agentPolicy) return agentPolicy;
   const config = await loadBuzzAccessPolicyConfig();
   let resolved: ResolvedDiscordAccessPolicy = {
     mode: config.defaultMode,
@@ -782,6 +876,19 @@ async function resolveBuzzAccessPolicy(input: {
   resolved = mergePolicyRule(resolved, config.targets[input.channelId], `target:${input.channelId}`);
   resolved = mergePolicyRule(resolved, config.users[input.authorPubkey], `user:${input.authorPubkey}`);
   return resolved;
+}
+
+async function listInteractiveBuzzChannels(client: BuzzCliClient) {
+  const config = adapterConfig();
+  const ceiling = new Set(config.buzzChannelAllowlist);
+  const visible = (await client.listVisibleChannels()).filter((channel) => (
+    ceiling.size === 0 || ceiling.has(channel.channelId)
+  ));
+  const resolved = await Promise.all(visible.map(async (channel) => ({
+    channel,
+    policy: await resolveBuzzAccessPolicy({ channelId: channel.channelId, authorPubkey: "" }),
+  })));
+  return resolved.filter(({ policy }) => policy.mode !== "off").map(({ channel }) => channel);
 }
 
 function checkDiscordRateLimit(key: string, limit: DiscordRateLimitConfig): { ok: true } | { ok: false; retryAfterSeconds: number } {
@@ -1120,7 +1227,7 @@ async function appApiRequest(pathname: string, init: RequestInit = {}): Promise<
     },
   });
   if (!response.ok) {
-    throw new Error(`APP_API_REQUEST_FAILED:${response.status}:${(await response.text()).slice(0, 200)}`);
+    throw new AppApiRequestError(response.status, await response.text());
   }
   return (await response.json()) as JsonObject;
 }
@@ -1131,7 +1238,12 @@ async function lookupDiscordSession(discordChannelId: string | null, discordThre
     threadId: discordThreadId ?? "",
     limit: String(limit),
   });
-  return appApiRequest(`/agent/agent-sessions/discord/lookup?${params.toString()}`);
+  try {
+    return await appApiRequest(`/agent/agent-sessions/discord/lookup?${params.toString()}`);
+  } catch (error) {
+    if (isAppApiNotFound(error)) return null;
+    throw error;
+  }
 }
 
 async function lookupSourceSession(source: string, contextKey: string, limit = 25): Promise<JsonObject | null> {
@@ -1140,7 +1252,12 @@ async function lookupSourceSession(source: string, contextKey: string, limit = 2
     contextKey,
     limit: String(limit),
   });
-  return appApiRequest(`/agent/agent-sessions/source/lookup?${params.toString()}`);
+  try {
+    return await appApiRequest(`/agent/agent-sessions/source/lookup?${params.toString()}`);
+  } catch (error) {
+    if (isAppApiNotFound(error)) return null;
+    throw error;
+  }
 }
 
 async function upsertDiscordSession(input: {
@@ -1248,13 +1365,16 @@ async function runtimeRequest(input: {
   runtimeProfileKey?: string | null;
 }): Promise<{ responseText: string; continuationId: string | null; provider: string | null; runtimeKey: string | null }> {
   const timeoutMs = adapterConfig().codexRuntimeRequestTimeoutSeconds * 1000;
+  const requestedSkills = Array.isArray(input.metadata.requestedSkills)
+    ? input.metadata.requestedSkills.filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+    : [];
   const result = await requestSiteRuntime({
     prompt: input.prompt,
     sessionId: input.sessionId,
     continuationId: input.continuationId,
     recentHistory: input.recentHistory,
     credentials: input.credentials ?? [],
-    skills: input.skills ?? [],
+    skills: [...new Set([...(input.skills ?? []), ...requestedSkills])],
     context: input.gatewayContext ?? {},
     metadata: input.metadata,
     runtimeProfileKey: input.runtimeProfileKey ?? null,
@@ -1281,6 +1401,7 @@ type ExternalInteractionAuthorization = {
     mode: DiscordAccessMode;
     runtimeProfileKey: string | null;
     persona: { name: string | null; instructions: string };
+    skills: string[];
     memoryScope?: AdvisoryMemoryScope;
     allowedWorkflows: string[];
     rateLimit: DiscordRateLimitConfig;
@@ -1381,18 +1502,18 @@ function externalInteractionMemoryScope(authorization: ExternalInteractionAuthor
   };
 }
 
-async function loadBuzzInteractionProfile(
+async function loadInteractionProfile(
   profileKey: string,
   expectedMode: DiscordAccessMode,
 ): Promise<ExternalInteractionAuthorization["profile"]> {
   const normalizedKey = profileKey.trim().toLowerCase();
   if (!/^[a-z0-9][a-z0-9._-]{0,119}$/.test(normalizedKey)) {
-    throw new Error("Buzz source policy must specify a valid interactionProfileKey");
+    throw new Error("Source policy must specify a valid interactionProfileKey");
   }
-  const cached = buzzInteractionProfileCache.get(normalizedKey);
+  const cached = interactionProfileCache.get(normalizedKey);
   if (cached && cached.expiresAt > Date.now()) {
     if (cached.profile.mode !== expectedMode) {
-      throw new Error(`Buzz source policy mode ${expectedMode} does not match profile ${normalizedKey} mode ${cached.profile.mode}`);
+      throw new Error(`Source policy mode ${expectedMode} does not match profile ${normalizedKey} mode ${cached.profile.mode}`);
     }
     return cached.profile;
   }
@@ -1402,10 +1523,10 @@ async function loadBuzzInteractionProfile(
   const raw = parseStringRecord(payload.profile);
   const mode = raw.mode;
   if (mode !== "readonly" && mode !== "run-approved" && mode !== "full") {
-    throw new Error(`Buzz interaction profile has an invalid mode: ${String(mode || "missing")}`);
+    throw new Error(`Interaction profile has an invalid mode: ${String(mode || "missing")}`);
   }
   if (mode !== expectedMode) {
-    throw new Error(`Buzz source policy mode ${expectedMode} does not match profile ${normalizedKey} mode ${mode}`);
+    throw new Error(`Source policy mode ${expectedMode} does not match profile ${normalizedKey} mode ${mode}`);
   }
   const persona = parseStringRecord(raw.persona);
   const memoryScope = parseStringRecord(raw.memoryScope ?? raw.memory_scope);
@@ -1422,6 +1543,9 @@ async function loadBuzzInteractionProfile(
       name: typeof persona.name === "string" && persona.name.trim() ? persona.name.trim() : null,
       instructions: typeof persona.instructions === "string" ? persona.instructions.trim() : "",
     },
+    skills: Array.isArray(raw.skills)
+      ? raw.skills.filter((value): value is string => typeof value === "string")
+      : [],
     memoryScope: {
       knowledgeSourceIds: Array.isArray(memoryScope.knowledgeSourceIds)
         ? memoryScope.knowledgeSourceIds.filter((value): value is string => typeof value === "string")
@@ -1438,8 +1562,26 @@ async function loadBuzzInteractionProfile(
     rateLimit,
     version,
   };
-  buzzInteractionProfileCache.set(normalizedKey, { profile, expiresAt: Date.now() + 30_000 });
+  interactionProfileCache.set(normalizedKey, { profile, expiresAt: Date.now() + 30_000 });
   return profile;
+}
+
+async function referencedInteractionProfile(accessPolicy: ResolvedDiscordAccessPolicy) {
+  if (accessPolicy.agentProfile) return accessPolicy.agentProfile;
+  if (!accessPolicy.interactionProfileKey) return null;
+  return loadInteractionProfile(accessPolicy.interactionProfileKey, accessPolicy.mode);
+}
+
+function communicationProfileInstructions(
+  profile: ExternalInteractionAuthorization["profile"] | null,
+  accessPolicy: ResolvedDiscordAccessPolicy,
+) {
+  if (profile) return externalInteractionPolicyInstructions(buzzInteractionAuthorization(profile, []));
+  return accessPolicy.mode === "readonly"
+    ? "This session is readonly. Do not call writer endpoints, create or mutate tasks/workflows/skills/requests, send adapter messages beyond this reply, or modify repositories. Answer from available context only."
+    : accessPolicy.mode === "run-approved"
+      ? "This session may run existing approved tasks or workflows, but must not author new skills/tasks/workflows or perform broad administrative changes."
+      : "This session is trusted for full agent behavior, subject to normal Prism safeguards.";
 }
 
 function buzzInteractionAuthorization(
@@ -1526,28 +1668,16 @@ async function telegramApiRequest<T extends JsonValue>(
   return (payload?.result ?? payload) as T;
 }
 
-async function configuredBuzzChannelIds(): Promise<string[]> {
-  const config = adapterConfig();
-  const policy = await loadBuzzAccessPolicyConfig();
-  const policyChannels = Object.entries(policy.targets)
-    .filter(([channelId, rule]) =>
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(channelId)
-      && rule.mode !== "off")
-    .map(([channelId]) => channelId);
-  return [...new Set([...config.buzzChannelAllowlist, ...policyChannels])];
-}
-
-async function buzzClient(additionalChannelIds: string[] = []): Promise<BuzzCliClient> {
+function buzzClient(channelAllowlist?: string[]): BuzzCliClient {
   const config = adapterConfig();
   if (!config.buzzEnabled) {
     throw new Error("Buzz adapter is disabled");
   }
-  const configuredChannelIds = await configuredBuzzChannelIds();
   return new BuzzCliClient({
     relayUrl: config.buzzRelayUrl,
     privateKey: (process.env.BUZZ_PRIVATE_KEY ?? "").trim(),
     publicKey: config.buzzPublicKey,
-    channelAllowlist: [...new Set([...configuredChannelIds, ...additionalChannelIds.map((value) => value.trim().toLowerCase())])],
+    channelAllowlist: channelAllowlist ?? config.buzzChannelAllowlist,
     maxMessagesPerChannel: config.buzzMaxMessagesPerChannel,
     ignoreOwnMessages: config.buzzIgnoreOwnMessages,
     command: (process.env.BUZZ_CLI_PATH ?? "buzz").trim() || "buzz",
@@ -1635,40 +1765,23 @@ function buzzChannelAccessMode(value: unknown): Exclude<DiscordAccessMode, "off"
   throw new Error("mode must be readonly, run-approved, or full");
 }
 
-async function registerBuzzChannelPolicy(input: {
+async function registerBuzzChannelBinding(input: {
   channelId: string;
   mode: DiscordAccessMode;
-  interactionProfileKey: string;
+  agentProfileKey: string;
 }): Promise<JsonObject> {
   if (input.mode === "off") throw new Error("managed Buzz channels cannot use off mode");
-  await loadBuzzInteractionProfile(input.interactionProfileKey, input.mode);
-  const payload = await appApiRequest("/agent/source-adapter-policy");
-  const currentPolicy = parseStringRecord(payload.policy) as JsonObject;
-  const currentPlatforms = parseStringRecord(currentPolicy.platforms) as JsonObject;
-  const currentBuzz = parseStringRecord(currentPlatforms.buzz) as JsonObject;
-  const currentTargets = parseStringRecord(currentBuzz.targets) as JsonObject;
-  const policy: JsonObject = {
-    ...currentPolicy,
-    platforms: {
-      ...currentPlatforms,
-      buzz: {
-        ...currentBuzz,
-        targets: {
-          ...currentTargets,
-          [input.channelId]: {
-            mode: input.mode,
-            interactionProfileKey: input.interactionProfileKey,
-          },
-        },
-      },
-    },
-  };
-  const updated = await appApiRequest("/agent/source-adapter-policy", {
-    method: "PATCH",
-    body: JSON.stringify({ policy }),
+  const updated = await appApiRequest(`/agent/agent-profiles/${encodeURIComponent(input.agentProfileKey)}/bindings`, {
+    method: "POST",
+    body: JSON.stringify({
+      surfaceType: "buzz",
+      surfaceKey: input.channelId,
+      label: `Buzz channel ${input.channelId}`,
+      enabled: true,
+      policy: { accessMode: input.mode },
+    }),
   });
-  sourceAdapterPolicyCache = null;
-  return parseStringRecord(updated.policy) as JsonObject;
+  return parseStringRecord(updated.binding) as JsonObject;
 }
 
 function buzzResultEventId(result: Record<string, unknown>): string | null {
@@ -1959,9 +2072,15 @@ async function runBuzzPrompt(input: {
         externalAccessMode: input.profile.mode,
         allowedWorkflows: input.profile.allowedWorkflows,
         memoryScope: externalInteractionMemoryScope(authorization),
-        policyInstructions: externalInteractionPolicyInstructions(authorization),
+        requestOrigin: { sourceSessionId: String(session.id), sourceMessageId: input.event.id },
+        policyInstructions: [
+          externalInteractionPolicyInstructions(authorization),
+          input.profile.mode !== "readonly"
+            ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${String(session.id)} and sourceMessageId ${input.event.id}; do not supply identity display fields.`
+            : "",
+        ].filter(Boolean).join("\n\n"),
         sourceAccessPolicy: input.accessPolicy,
-        requestedSkills: input.accessPolicy.skills,
+        requestedSkills: [...new Set([...input.profile.skills, ...input.accessPolicy.skills])],
         credentialPolicy: input.credentials.length ? "source-policy" : "none",
       },
     });
@@ -2075,7 +2194,7 @@ async function runBuzzInteractionPoll(): Promise<JsonObject> {
   );
   const initialSince = pollStartedTimestamp - config.buzzInteractionLookbackSeconds;
   const sinceTimestamp = Math.max(0, (state.cursorTimestamp || initialSince) - 10);
-  const channels = await client.listChannels();
+  const channels = await listInteractiveBuzzChannels(client);
   const collected: Array<{ channel: BuzzChannel; event: BuzzEvent }> = [];
   for (const channel of channels) {
     const events = await client.getMessages(channel.channelId, new Date(sinceTimestamp * 1000));
@@ -2148,7 +2267,8 @@ async function runBuzzInteractionPoll(): Promise<JsonObject> {
 
     let profile: ExternalInteractionAuthorization["profile"];
     try {
-      const loaded = await loadBuzzInteractionProfile(accessPolicy.interactionProfileKey, accessPolicy.mode);
+      const loaded = await referencedInteractionProfile(accessPolicy);
+      if (!loaded) throw new Error("Buzz Agent Profile is unavailable");
       profile = { ...loaded, rateLimit: accessPolicy.rateLimit };
     } catch (error) {
       console.error("[buzz-adapter] Buzz interaction profile resolution failed", {
@@ -2306,7 +2426,8 @@ async function listTelegramDestinations(): Promise<AdapterDestination[]> {
 async function listBuzzDestinations(): Promise<AdapterDestination[]> {
   const config = adapterConfig();
   if (!config.buzzEnabled) return [];
-  return (await (await buzzClient()).listChannels()).map((channel) => ({
+  const client = buzzClient();
+  return (await listInteractiveBuzzChannels(client)).map((channel) => ({
     adapter: "buzz",
     platform: "buzz",
     id: `buzz:${channel.channelId}`,
@@ -2556,7 +2677,11 @@ async function sendAdapterMessage(adapter: string, destinationId: string, conten
     return sendTelegramMessage(destinationId, content);
   }
   if (adapter === "buzz") {
-    const result = await (await buzzClient()).sendMessage(destinationId, content);
+    const accessPolicy = await resolveBuzzAccessPolicy({ channelId: destinationId.trim(), authorPubkey: "" });
+    if (accessPolicy.mode === "off") {
+      throw new Error(`Buzz channel is not assigned to an enabled Agent Profile: ${destinationId.trim() || "(empty)"}`);
+    }
+    const result = await buzzClient().sendMessage(destinationId, content);
     return {
       adapter: "buzz",
       destinationId: destinationId.trim(),
@@ -2748,6 +2873,14 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
     await sendSanitizedTelegramAssistantMessage(transport, readonlyWriteAccessMessage());
     return;
   }
+  let interactionProfile: ExternalInteractionAuthorization["profile"] | null = null;
+  try {
+    interactionProfile = await referencedInteractionProfile(accessPolicy);
+  } catch (error) {
+    console.error("[source-adapter] Telegram interaction profile resolution failed", describeError(error));
+    await sendSanitizedTelegramAssistantMessage(transport, "Prism's interaction profile is unavailable for this chat. Please try again later.");
+    return;
+  }
 
   const userLimit = checkDiscordRateLimit(
     `telegram:user:${transport.authorId}:${accessPolicy.mode}`,
@@ -2787,6 +2920,8 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       chatType: transport.chatType,
       chatTitle: transport.chatTitle,
       accessPolicy,
+      interactionProfileKey: interactionProfile?.key ?? null,
+      interactionProfileVersion: interactionProfile?.version ?? null,
     },
     lastMessageAt: transport.createdAt,
   });
@@ -2817,6 +2952,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
 
   const existingSession = existing?.session && typeof existing.session === "object" ? (existing.session as JsonObject) : {};
   const sessionMeta = session.meta && typeof session.meta === "object" ? (session.meta as JsonObject) : {};
+  const existingMeta = externalSessionMeta(existingSession);
   const sessionRuntimeKey =
     (typeof existingSession.meta === "object" && existingSession.meta && typeof (existingSession.meta as JsonObject).runtimeKey === "string"
       ? String((existingSession.meta as JsonObject).runtimeKey)
@@ -2831,6 +2967,10 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
     (typeof sessionMeta.runtimeContinuationId === "string"
       ? sessionMeta.runtimeContinuationId
       : typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
+  if (
+    (existingMeta.interactionProfileKey ?? null) !== (interactionProfile?.key ?? null)
+    || (existingMeta.interactionProfileVersion ?? null) !== (interactionProfile?.version ?? null)
+  ) runtimeContinuationId = null;
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
   const gatewayCredentials = await resolveInteractiveGatewayCredentials({
     platform: "telegram",
@@ -2852,6 +2992,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       continuationId: runtimeContinuationId,
       recentHistory,
       credentials: gatewayCredentials,
+      runtimeProfileKey: interactionProfile?.runtimeProfileKey ?? null,
       gatewayContext: {
         delegatedActorId: `telegram:${transport.authorId}`,
       },
@@ -2862,12 +3003,18 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
         telegramChatType: transport.chatType,
         telegramAuthorId: transport.authorId,
         telegramAccessPolicy: accessPolicy,
-        policyInstructions:
-          accessPolicy.mode === "readonly"
-            ? "This Telegram session is readonly. Do not call writer endpoints, create or mutate tasks/workflows/skills/requests, send adapter messages beyond this reply, or modify repositories. Answer from available context only."
-            : accessPolicy.mode === "run-approved"
-              ? "This Telegram session may run existing approved tasks or workflows, but must not author new skills/tasks/workflows or perform broad administrative changes."
-              : "This Telegram session is trusted for full agent behavior, subject to normal Prism safeguards.",
+        interactionProfileKey: interactionProfile?.key ?? null,
+        interactionProfileVersion: interactionProfile?.version ?? null,
+        requestedSkills: interactionProfile?.skills ?? [],
+        allowedWorkflows: interactionProfile?.allowedWorkflows ?? [],
+        memoryScope: interactionProfile?.memoryScope ?? null,
+        requestOrigin: { sourceSessionId: String(session.id), sourceMessageId: transport.userSourceMessageId },
+        policyInstructions: [
+          communicationProfileInstructions(interactionProfile, accessPolicy),
+          accessPolicy.mode !== "readonly" && accessPolicy.capabilities.includes("requests.create")
+            ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${String(session.id)}${transport.userSourceMessageId ? ` and sourceMessageId ${transport.userSourceMessageId}` : ""}; do not supply identity display fields.`
+            : "",
+        ].filter(Boolean).join("\n\n"),
         adapterCapabilities: {
           adapter: "communication",
           capabilities: canSendAdapterMessages ? ["list-destinations", "send-message"] : [],
@@ -2897,6 +3044,9 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
           chatId: transport.chatId,
           chatType: transport.chatType,
           chatTitle: transport.chatTitle,
+          interactionProfileKey: interactionProfile?.key ?? null,
+          interactionProfileVersion: interactionProfile?.version ?? null,
+          requestedSkills: interactionProfile?.skills ?? [],
           runtimeContinuationId,
           runtimeKey: result.runtimeKey,
           runtimeProvider: result.provider,
@@ -3381,7 +3531,10 @@ async function collectBuzzBatch(resetCheckpoint = false): Promise<{
   checkpointState: JsonObject;
 }> {
   const config = adapterConfig();
-  const client = await buzzClient();
+  const historyAllowlist = config.buzzHistoryChannelAllowlist.length > 0
+    ? config.buzzHistoryChannelAllowlist
+    : config.buzzChannelAllowlist;
+  const client = buzzClient(historyAllowlist);
   const { since, until, checkpoint } = await computeSyncWindow(config, resetCheckpoint, config.buzzWindowHours);
   const migratedLegacyCheckpoint = Boolean(
     checkpoint
@@ -3439,7 +3592,7 @@ async function collectBuzzBatch(resetCheckpoint = false): Promise<{
       window: { since: since.toISOString(), until: until.toISOString() },
       checkpoint: { used: Boolean(checkpoint), value: checkpoint, path: checkpointPath() },
       channelCount: channels.length,
-      allowlistedChannelIds: config.buzzChannelAllowlist,
+      allowlistedChannelIds: historyAllowlist,
       messageCount: normalizedMessages.length,
       duplicateEventCount: selected.duplicateCount,
       migratedLegacyCheckpoint,
@@ -3826,7 +3979,16 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
     authorId: transport.authorId,
     roleIds: transport.authorRoleIds,
   });
-  if (accessPolicy.mode === "off") {
+  const routingStatus = discordAgentRoutingStatus(accessPolicy);
+  if (routingStatus === "unavailable") {
+    await sendSanitizedAssistantMessage(transport, unavailableDiscordAgentMessage);
+    return;
+  }
+  if (routingStatus === "unconfigured") {
+    await sendSanitizedAssistantMessage(transport, unconfiguredDiscordChannelMessage(transport.channelId));
+    return;
+  }
+  if (routingStatus === "disabled") {
     await sendSanitizedAssistantMessage(
       transport,
       "Prism is not enabled for this Discord channel.",
@@ -3835,6 +3997,14 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
   }
   if (accessPolicy.mode === "readonly" && promptLikelyRequiresWriteAccess(prompt)) {
     await sendSanitizedAssistantMessage(transport, readonlyWriteAccessMessage());
+    return;
+  }
+  let interactionProfile: ExternalInteractionAuthorization["profile"] | null = null;
+  try {
+    interactionProfile = await referencedInteractionProfile(accessPolicy);
+  } catch (error) {
+    console.error("[discord-adapter] interaction profile resolution failed", describeError(error));
+    await sendSanitizedAssistantMessage(transport, "Prism's interaction profile is unavailable for this channel. Please try again later.");
     return;
   }
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
@@ -3877,6 +4047,8 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
       threadName: transport.threadName,
       discordContext: transport.context,
       accessPolicy,
+      interactionProfileKey: interactionProfile?.key ?? null,
+      interactionProfileVersion: interactionProfile?.version ?? null,
     },
     lastMessageAt: transport.createdAt,
   });
@@ -3909,6 +4081,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
 
   const existingSession = existing?.session && typeof existing.session === "object" ? (existing.session as JsonObject) : {};
   const sessionMeta = session.meta && typeof session.meta === "object" ? (session.meta as JsonObject) : {};
+  const existingMeta = externalSessionMeta(existingSession);
   const sessionRuntimeKey =
     (typeof existingSession.meta === "object" && existingSession.meta && typeof (existingSession.meta as JsonObject).runtimeKey === "string"
       ? String((existingSession.meta as JsonObject).runtimeKey)
@@ -3923,6 +4096,10 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
     (typeof sessionMeta.runtimeContinuationId === "string"
       ? sessionMeta.runtimeContinuationId
       : typeof sessionMeta.codexThreadId === "string" ? sessionMeta.codexThreadId : null);
+  if (
+    (existingMeta.interactionProfileKey ?? null) !== (interactionProfile?.key ?? null)
+    || (existingMeta.interactionProfileVersion ?? null) !== (interactionProfile?.version ?? null)
+  ) runtimeContinuationId = null;
   const gatewayCredentials = await resolveInteractiveGatewayCredentials({
     platform: "discord",
     targetId: transport.channelId,
@@ -3941,6 +4118,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         continuationId: runtimeContinuationId,
         recentHistory,
         credentials: gatewayCredentials,
+        runtimeProfileKey: interactionProfile?.runtimeProfileKey ?? null,
         gatewayContext: {
           delegatedActorId: `discord:${transport.authorId}`,
         },
@@ -3954,12 +4132,18 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
           discordAuthorRoleIds: transport.authorRoleIds,
           discordContext: transport.context,
           discordAccessPolicy: accessPolicy,
-          policyInstructions:
-            accessPolicy.mode === "readonly"
-              ? "This Discord session is readonly. Do not call writer endpoints, create or mutate tasks/workflows/skills/requests, send adapter messages beyond this reply, or modify repositories. Answer from available context only."
-              : accessPolicy.mode === "run-approved"
-                ? "This Discord session may run existing approved tasks or workflows, but must not author new skills/tasks/workflows or perform broad administrative changes. When requests.create is granted, start an existing workflow with POST /agent/change-board/requests; attempt that service-token route before claiming request creation is unavailable."
-                : "This Discord session is trusted for full agent behavior, subject to normal Prism safeguards. When requests.create is granted, start an existing workflow with POST /agent/change-board/requests; attempt that service-token route before claiming request creation is unavailable.",
+          interactionProfileKey: interactionProfile?.key ?? null,
+          interactionProfileVersion: interactionProfile?.version ?? null,
+          requestedSkills: interactionProfile?.skills ?? [],
+          allowedWorkflows: interactionProfile?.allowedWorkflows ?? [],
+          memoryScope: interactionProfile?.memoryScope ?? null,
+          requestOrigin: { sourceSessionId: String(session.id), sourceMessageId: transport.userSourceMessageId },
+          policyInstructions: [
+            communicationProfileInstructions(interactionProfile, accessPolicy),
+            accessPolicy.mode !== "readonly" && accessPolicy.capabilities.includes("requests.create")
+              ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${String(session.id)} and sourceMessageId ${transport.userSourceMessageId ?? "null"}; do not supply identity display fields.`
+              : "",
+          ].filter(Boolean).join("\n\n"),
           adapterCapabilities: {
             adapter: "communication",
             capabilities: canSendAdapterMessages ? ["list-destinations", "send-message"] : [],
@@ -3994,6 +4178,8 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
             transport: "discord",
             channelName: transport.channelName,
             threadName: transport.threadName,
+            interactionProfileKey: interactionProfile?.key ?? null,
+            interactionProfileVersion: interactionProfile?.version ?? null,
             runtimeContinuationId,
             runtimeKey: result.runtimeKey,
             runtimeProvider: result.provider,
@@ -4096,7 +4282,19 @@ async function handleDiscordChatMessage(message: Message): Promise<void> {
     authorId: message.author.id,
     roleIds: roleIdsFromMessage(message),
   });
-  if (sourcePolicy.mode === "off") {
+  const routingStatus = discordAgentRoutingStatus(sourcePolicy);
+  if (routingStatus === "unavailable") {
+    await message.reply({ content: unavailableDiscordAgentMessage, allowedMentions: { repliedUser: false } });
+    return;
+  }
+  if (routingStatus === "unconfigured") {
+    await message.reply({
+      content: unconfiguredDiscordChannelMessage(sourceChannelId),
+      allowedMentions: { repliedUser: false },
+    });
+    return;
+  }
+  if (routingStatus === "disabled") {
     return;
   }
   const targetChannel = (await ensureConversationThread(message)) ?? message.channel;
@@ -5075,6 +5273,7 @@ async function main(): Promise<void> {
           externalSubject: subject,
           interactionProfileKey: authorization.profile.key,
           interactionProfileVersion: authorization.profile.version,
+          requestedSkills: authorization.profile.skills,
           runtimeKey: authorization.profile.runtimeProfileKey,
           accessMode: authorization.profile.mode,
           memoryScope: externalInteractionMemoryScope(authorization),
@@ -5167,6 +5366,7 @@ async function main(): Promise<void> {
           externalSubject: safeExternalHeader(request.header("x-prism-external-subject"), 300) || null,
           interactionProfileKey: authorization.profile.key,
           interactionProfileVersion: authorization.profile.version,
+          requestedSkills: authorization.profile.skills,
         },
         createdAt: now,
       });
@@ -5195,7 +5395,13 @@ async function main(): Promise<void> {
           externalAccessMode: authorization.profile.mode,
           allowedWorkflows: authorization.profile.allowedWorkflows,
           memoryScope: externalInteractionMemoryScope(authorization),
-          policyInstructions: externalInteractionPolicyInstructions(authorization),
+          requestOrigin: { sourceSessionId: sessionId, sourceMessageId },
+          policyInstructions: [
+            externalInteractionPolicyInstructions(authorization),
+            authorization.profile.mode !== "readonly"
+              ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${sessionId}${sourceMessageId ? ` and sourceMessageId ${sourceMessageId}` : ""}; do not supply identity display fields.`
+              : "",
+          ].filter(Boolean).join("\n\n"),
           credentialPolicy: authorization.profile.mode === "full" ? "trusted-source" : "none",
         },
       });
@@ -5455,12 +5661,15 @@ async function main(): Promise<void> {
       const ttlSeconds = ttlValue === undefined || ttlValue === null ? null : Number(ttlValue);
       const shouldRegister = body.registerPrism !== false && body.register_prism !== false;
       const mode = buzzChannelAccessMode(body.mode);
-      const interactionProfileKey = typeof body.interactionProfileKey === "string"
-        ? body.interactionProfileKey.trim().toLowerCase()
-        : typeof body.interaction_profile_key === "string"
-          ? body.interaction_profile_key.trim().toLowerCase()
-          : (process.env.BUZZ_CHANNEL_ADMIN_PROFILE_KEY ?? "buzz-prism-ops").trim().toLowerCase();
-      if (shouldRegister) await loadBuzzInteractionProfile(interactionProfileKey, mode);
+      const agentProfileKey = typeof body.agentProfileKey === "string"
+        ? body.agentProfileKey.trim().toLowerCase()
+        : typeof body.agent_profile_key === "string"
+          ? body.agent_profile_key.trim().toLowerCase()
+          : typeof body.interactionProfileKey === "string"
+            ? body.interactionProfileKey.trim().toLowerCase()
+            : typeof body.interaction_profile_key === "string"
+              ? body.interaction_profile_key.trim().toLowerCase()
+              : (process.env.BUZZ_CHANNEL_ADMIN_PROFILE_KEY ?? "admin-agent").trim().toLowerCase();
       const created = await (await buzzClient()).createChannel({
         name,
         channelType,
@@ -5469,11 +5678,11 @@ async function main(): Promise<void> {
         ttlSeconds,
       });
       const channelId = buzzChannelUuid(created.channel_id ?? created.channelId);
-      let policy: JsonObject | null = null;
+      let binding: JsonObject | null = null;
       if (shouldRegister) {
-        policy = await registerBuzzChannelPolicy({ channelId, mode, interactionProfileKey });
+        binding = await registerBuzzChannelBinding({ channelId, mode, agentProfileKey });
       }
-      response.status(201).json({ ok: true, channelId, created, registered: shouldRegister, policy });
+      response.status(201).json({ ok: true, channelId, created, registered: shouldRegister, binding });
     } catch (error) {
       const message = describeError(error);
       response.status(buzzChannelAdminStatus(message)).json({ ok: false, error: message });
@@ -5520,13 +5729,17 @@ async function main(): Promise<void> {
       const channelId = buzzChannelUuid(request.params.channelId);
       const body = parseStringRecord(request.body);
       const mode = buzzChannelAccessMode(body.mode);
-      const interactionProfileKey = typeof body.interactionProfileKey === "string"
-        ? body.interactionProfileKey.trim().toLowerCase()
-        : typeof body.interaction_profile_key === "string"
-          ? body.interaction_profile_key.trim().toLowerCase()
-          : (process.env.BUZZ_CHANNEL_ADMIN_PROFILE_KEY ?? "buzz-prism-ops").trim().toLowerCase();
-      const policy = await registerBuzzChannelPolicy({ channelId, mode, interactionProfileKey });
-      response.json({ ok: true, channelId, mode, interactionProfileKey, policy });
+      const agentProfileKey = typeof body.agentProfileKey === "string"
+        ? body.agentProfileKey.trim().toLowerCase()
+        : typeof body.agent_profile_key === "string"
+          ? body.agent_profile_key.trim().toLowerCase()
+          : typeof body.interactionProfileKey === "string"
+            ? body.interactionProfileKey.trim().toLowerCase()
+            : typeof body.interaction_profile_key === "string"
+              ? body.interaction_profile_key.trim().toLowerCase()
+              : (process.env.BUZZ_CHANNEL_ADMIN_PROFILE_KEY ?? "admin-agent").trim().toLowerCase();
+      const binding = await registerBuzzChannelBinding({ channelId, mode, agentProfileKey });
+      response.json({ ok: true, channelId, mode, agentProfileKey, binding });
     } catch (error) {
       const message = describeError(error);
       response.status(buzzChannelAdminStatus(message)).json({ ok: false, error: message });
@@ -5698,6 +5911,24 @@ async function main(): Promise<void> {
       const message = describeError(error);
       buzzInteractionStatus.lastError = message;
       response.status(message === "Unauthorized" ? 401 : 500).json({ ok: false, error: message });
+    }
+  });
+
+  app.post("/buzz/commands", async (request: Request, response: Response) => {
+    try {
+      requireAdapterToken(request);
+      const body = request.body && typeof request.body === "object" ? request.body as JsonObject : {};
+      const args = Array.isArray(body.args) ? body.args : [];
+      const result = await buzzClient([]).executeCommand(args);
+      console.log("[buzz-adapter] authenticated command executed", {
+        command: typeof args[0] === "string" ? args[0] : null,
+        operation: typeof args[1] === "string" ? args[1] : null,
+      });
+      response.json({ ok: true, result });
+    } catch (error) {
+      const message = describeError(error);
+      const status = message === "Unauthorized" ? 401 : message.startsWith("Buzz command args") || message.startsWith("Unsupported Buzz command") || message.includes("managed by the adapter") ? 400 : 502;
+      response.status(status).json({ ok: false, error: message });
     }
   });
 

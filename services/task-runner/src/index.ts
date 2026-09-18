@@ -1,4 +1,7 @@
 import express, { type Request, type Response } from "express";
+import { ScriptFailure, redactDiagnostic } from "./script-failure.js";
+import { doctorMergeSkills } from "./prism-doctor-skills.js";
+import { findOpenWorkflowRequests } from './workflow-single-flight.js';
 import { CronExpressionParser } from "cron-parser";
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
@@ -8,6 +11,8 @@ import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { leaseGatewayCredentials } from "./gateway-lease.js";
 import { legacyGatewayWorkflowFindings } from "./prism-doctor-legacy-gateway.js";
+import { doctorRepairWorkflowKey, matchingDoctorRepairRequest } from "./prism-doctor-repair.js";
+import { taskLifecycleFindings } from "./prism-doctor-task-lifecycle.js";
 import { workflowContextFindings } from "./prism-doctor-workflow-context.js";
 import {
   applyScriptAgentHandoff,
@@ -87,6 +92,13 @@ type AppTask = {
   instructionConfig: Record<string, unknown>;
   outputConfig: Record<string, unknown>;
   agentConfig: Record<string, unknown>;
+  executionPolicy?: {
+    executorProfileKey?: string | null;
+    executorProfileVersion?: number | null;
+    resolution?: string | null;
+    runtimeProfileKey?: string | null;
+    modelTier?: string | null;
+  } | null;
 };
 
 type WorkflowRunStepResult = {
@@ -220,6 +232,10 @@ function appApiBaseUrl(): string | null {
 
 function appApiServiceToken(): string {
   return (process.env.APP_API_SERVICE_TOKEN ?? process.env.INTERNAL_SERVICE_TOKEN ?? "").trim();
+}
+
+function taskRunnerControlToken(): string {
+  return (process.env.TASK_RUNNER_TOKEN ?? process.env.INTERNAL_SERVICE_TOKEN ?? "").trim();
 }
 
 function codexRuntimeBaseUrl(): string {
@@ -404,6 +420,10 @@ async function appApiRequest(path: string, init: RequestInit): Promise<Record<st
   if (token) {
     headers.set("X-Service-Token", token);
   }
+  const controlToken = taskRunnerControlToken();
+  if (controlToken) {
+    headers.set("X-Task-Runner-Token", controlToken);
+  }
 
   const url = `${baseUrl}${path}`;
   const response = await fetchWithTimeout(url, {
@@ -412,7 +432,8 @@ async function appApiRequest(path: string, init: RequestInit): Promise<Record<st
   }, httpTimeoutMs());
   const text = await response.text();
   if (!response.ok) {
-    throw new Error(`APP_API_REQUEST_FAILED:${response.status}:${text.slice(0, 500)}`);
+    const detail = redactDiagnostic(`${init.method || "GET"} ${url}: ${text}`, [token, controlToken]);
+    throw new Error(`APP_API_REQUEST_FAILED:${response.status}:${detail.slice(0, 1500)}`);
   }
   return text ? JSON.parse(text) as Record<string, unknown> : {};
 }
@@ -565,6 +586,13 @@ function mergeRequestedSkills(siteTask: AppTask): string[] {
   const instructionSkills = requestedSkillsFromConfig(siteTask.instructionConfig);
   const agentSkills = requestedSkillsFromConfig(siteTask.agentConfig);
   return Array.from(new Set([...instructionSkills, ...agentSkills]));
+}
+
+function modelTierForTask(siteTask: AppTask): string | null {
+  const explicit = siteTask.agentConfig.modelTier ?? siteTask.agentConfig.model_tier
+  if (typeof explicit === "string" && explicit.trim()) return explicit.trim()
+  const inherited = siteTask.executionPolicy?.modelTier
+  return typeof inherited === "string" && inherited.trim() ? inherited.trim() : null
 }
 
 function requestedGatewayKeysFromConfig(
@@ -791,6 +819,7 @@ function buildCodexPromptTask(siteTask: AppTask): RunnableTask | null {
         sessionId: `scheduled-task:${siteTask.key}:${Date.now()}`,
         codexThreadId: null,
         recentHistory: [],
+        modelTier: modelTierForTask(siteTask),
         credentials: requestedGatewayKeysFromConfig(siteTask.agentConfig, [
           "gatewayCredentials",
           "gateway_credentials",
@@ -961,7 +990,8 @@ async function runSiteTaskScript(input: {
         }
       }, killGraceMs);
       cleanupTemp();
-      reject(new Error(`SCRIPT_RUNNER_TIMEOUT:${input.scriptKey}:${timeoutMs}`));
+      reject(new ScriptFailure({ scriptKey: input.scriptKey, exitCode: null, signal: "SIGTERM", timedOut: true,
+        stdout, stderr, secrets: Object.values(leasedEnv) }));
     }, timeoutMs);
 
     child.stdout.on("data", (chunk) => {
@@ -985,14 +1015,15 @@ async function runSiteTaskScript(input: {
       cleanupTemp();
       reject(error);
     });
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       if (settled) return;
       settled = true;
       cleanupTimers();
       cleanupTemp();
       const stderrText = `${stderr.trim()}${stderrTruncated ? "\n[stderr truncated]" : ""}`;
       if (code !== 0) {
-        reject(new Error(`SCRIPT_RUNNER_FAILED:${input.scriptKey}:${code}:${stderrText.slice(0, 500)}`));
+        reject(new ScriptFailure({ scriptKey: input.scriptKey, exitCode: code, signal,
+          stdout, stderr: stderrText, secrets: Object.values(leasedEnv) }));
         return;
       }
 
@@ -1574,8 +1605,6 @@ function doctorStringList(value: unknown) {
     : [];
 }
 
-const doctorRuntimeProvidedSkills = ["imagegen"];
-
 async function doctorRuntimeSkills() {
   const baseUrl = codexRuntimeBaseUrl();
   if (!baseUrl) return [] as Record<string, unknown>[];
@@ -1585,18 +1614,6 @@ async function doctorRuntimeSkills() {
   }
   const payload = await response.json() as Record<string, unknown>;
   return Array.isArray(payload.skills) ? payload.skills.filter(isRecord) : [];
-}
-
-function doctorMergeSkills(...groups: Record<string, unknown>[][]) {
-  const byName = new Map<string, Record<string, unknown>>();
-  for (const skill of groups.flat()) {
-    if (typeof skill.name !== "string" || !skill.name.trim()) continue;
-    byName.set(skill.name.trim(), skill);
-  }
-  for (const name of doctorRuntimeProvidedSkills) {
-    if (!byName.has(name)) byName.set(name, { name, source: "codex-runtime" });
-  }
-  return Array.from(byName.values());
 }
 
 function doctorAgentConfigSkills(value: unknown) {
@@ -1771,10 +1788,6 @@ function doctorRepairRequestTitle() {
   return "Repair Prism Doctor findings";
 }
 
-function doctorRepairWorkflowKey() {
-  return (process.env.PRISM_DOCTOR_REPAIR_WORKFLOW_KEY ?? "change-request-default").trim() || "change-request-default";
-}
-
 function doctorReportArtifactStamp(generatedAt: string) {
   return generatedAt.replace(/[^0-9A-Za-z]+/g, "-").replace(/^-|-$/g, "");
 }
@@ -1940,7 +1953,7 @@ async function ensureDoctorRepairRequest(report: {
   const existingRequests = Array.isArray(existingPayload.changeRequests)
     ? existingPayload.changeRequests.filter(isRecord)
     : [];
-  const existing = existingRequests.find((request) => request.title === doctorRepairRequestTitle()) ?? null;
+  const existing = matchingDoctorRepairRequest(existingRequests, doctorRepairRequestTitle(), doctorRepairWorkflowKey());
   const existingId = typeof existing?.id === "string" ? existing.id : null;
   const request = existingId
     ? doctorRequestRecord((await appApiRequest(`/agent/change-board/requests/${encodeURIComponent(existingId)}`, {
@@ -2046,6 +2059,7 @@ async function runPrismDoctorTask(): Promise<TaskRunResult> {
       skills,
       connections: gatewayConnections,
     }),
+    ...tasks.flatMap(taskLifecycleFindings),
   ];
   const workflowsWithFindings = new Set(initialFindings
     .filter((finding) => finding.subjectType === "workflow")
@@ -2199,6 +2213,7 @@ async function appApiPost(path: string, body: Record<string, unknown>, timeoutMs
   };
 }
 
+const workflowLaunchLocks = new Set<string>();
 function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
   const workflowKey = stringFromConfig(siteTask.inputConfig, "workflowKey");
   const requestConfig = recordFromConfig(siteTask.inputConfig, "request");
@@ -2238,13 +2253,28 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
     enabled: siteTask.enabled,
     cron,
     run: async () => {
+      const singleFlight = boolFromConfig(siteTask.inputConfig, 'singleFlight', false);
+      const singleFlightKeys = Array.from(new Set([workflowKey, ...(
+        Array.isArray(siteTask.inputConfig.singleFlightWorkflowKeys)
+          ? siteTask.inputConfig.singleFlightWorkflowKeys.filter((key): key is string => typeof key === 'string') : []
+      )])).sort();
+      const lockKey = singleFlightKeys.join(',');
+      const skip = (reason: string, requestNumbers: unknown[] = []) => ({ ok: true, status: 200, url: 'workflow-single-flight', body: JSON.stringify({ skipped: true, reason, requestNumbers }) });
+      if (singleFlight && workflowLaunchLocks.has(lockKey)) return skip('launch-in-progress');
+      if (singleFlight) workflowLaunchLocks.add(lockKey);
+      try {
+      if (singleFlight) {
+        const open = await appApiRequest('/agent/change-board/requests?openOnly=true&limit=500', { method: 'GET' });
+        const matches = findOpenWorkflowRequests(open, singleFlightKeys);
+        if (matches.length) return skip('existing-open-workflow', matches.map(row => row.requestNumber));
+      }
       const requestPayload: Record<string, unknown> = {
         title,
         description,
         workflowKey,
         requestType: stringFromConfig(requestConfig, "requestType", "content"),
         priority: stringFromConfig(requestConfig, "priority", "normal"),
-        source: "task-runner",
+        source: `task:${siteTask.key}`,
         autoStart: autoRunEnabled,
         requestedSkills: mergeRequestedSkills(siteTask),
         targetAppId: requestConfig.targetAppId ?? null,
@@ -2319,6 +2349,9 @@ function buildWorkflowRunnerTask(siteTask: AppTask): RunnableTask | null {
           })),
         }),
       };
+      } finally {
+        if (singleFlight) workflowLaunchLocks.delete(lockKey);
+      }
     },
     outputConfig: siteTask.outputConfig,
   };
@@ -2610,6 +2643,7 @@ async function runTask(task: RunnableTask, source: "schedule" | "manual"): Promi
     taskState.nextRunAt = nextCronDate(task.cron);
     await updateTaskRunInSite(appRun, "failed", {
       errorMessage: message,
+      ...(error instanceof ScriptFailure ? { outputSnapshot: { diagnostics: error.diagnostics } } : {}),
     });
     console.error(JSON.stringify({ event: "task.failed", task: task.key, source, error: message, at: nowIso() }));
     throw error;

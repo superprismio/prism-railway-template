@@ -1,4 +1,5 @@
 import "server-only";
+import { leaseReadyGatewayCredentials } from "./gateway-credential-catalog";
 
 export class PrismGatewayError extends Error {
   constructor(
@@ -35,18 +36,14 @@ export async function listEnabledGatewayCredentialsOrEmpty(): Promise<Array<{
   if (!status.enabled || !status.configured) return [];
   try {
     const payload = await prismGatewayRequest<{
-      credentials?: Array<{ key?: unknown; status?: unknown }>;
+      credentials?: Array<{
+        key?: unknown;
+        status?: unknown;
+        secretNames?: unknown;
+        envBindings?: unknown;
+      }>;
     }>("/credential-bundles");
-    return (payload.credentials ?? []).flatMap((credential) => {
-      if (
-        typeof credential.key !== "string"
-        || credential.key.length === 0
-        || credential.status === "revoked"
-      ) return [];
-      return [{
-        key: credential.key,
-      }];
-    });
+    return leaseReadyGatewayCredentials(payload.credentials ?? []);
   } catch (error) {
     console.warn(JSON.stringify({
       event: "prism_gateway.credential_catalog_unavailable",

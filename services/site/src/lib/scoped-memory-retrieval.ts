@@ -10,6 +10,28 @@ type Dependencies = {
   fetchImpl?: typeof fetch;
 };
 
+/** Match the canonical interface authorization route during profile migration. */
+export function effectiveRetrievalAuthorization(
+  auth: Authorization,
+  agent: { policy: { accessMode: string }; profile: { memoryScope: Record<string, unknown> } } | null,
+  hasBinding: boolean,
+): Authorization {
+  if (!auth.ok) return auth;
+  if ((!agent && hasBinding) || agent?.policy.accessMode === 'off') {
+    return { ok: false, code: 'EXTERNAL_INTERFACE_DISABLED' };
+  }
+  if (!agent) return auth;
+  const scope = agent.profile.memoryScope;
+  const strings = (value: unknown): string[] | null => value === undefined ? []
+    : Array.isArray(value) && value.every(v => typeof v === 'string') ? value : null;
+  const buckets = strings(scope.buckets), knowledgeSourceIds = strings(scope.knowledgeSourceIds);
+  if (!buckets || !knowledgeSourceIds) return { ok: false, code: 'MEMORY_SCOPE_INVALID' };
+  return { ok: true, resolved: { profile: {
+    mode: auth.resolved.profile.mode,
+    memoryScope: { buckets, knowledgeSourceIds, instructions: '', enforcement: 'instructions-only' },
+  } } };
+}
+
 /** Service-authenticated callers must additionally prove the interface identity. */
 export async function scopedMemoryRetrieval(request: Request, interfaceKey: string, deps: Dependencies): Promise<Response> {
   const auth = deps.authorize({

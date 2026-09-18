@@ -5,10 +5,19 @@ description: Use this skill when Codex is asked to design or create a scheduled 
 
 Use this skill to turn a user's task idea into a durable Prism task definition.
 
+Every new task should include one active `accountabilityDomainKey`. The domain
+owns maintenance and audit follow-through; it does not grant runtime authority.
+
 Task authoring rules:
 
-1. Prefer `taskType="codex-prompt"` for user-authored scheduled prompt tasks.
-2. Use `taskType="workflow-runner"` when the task should create a durable request and run it through a workflow.
+1. Do not create an enabled recurring `codex-prompt` task. Ad hoc prompts belong
+   in an Agent Console or, when a reusable manual task definition is genuinely
+   useful, an explicitly invoked disabled `codex-prompt` utility.
+2. Use `taskType="workflow-runner"` for every scheduled agent task. Each
+   scheduled occurrence creates a native Operational Inbox request. The task
+   should only create and start that request; the workflow owns analysis,
+   artifacts, external delivery, delivery verification, retries, provenance,
+   failure handling, and terminal closure.
 3. Use `taskType="http-post"` for simple deterministic HTTP POST cron jobs that should avoid LLM calls by default.
 4. Use `taskType="script-runner"` for deterministic watchdogs, pollers, API checks, checkpoint updates, and other jobs that need more logic than one HTTP POST.
 5. Store replayable natural-language instructions in `instructionConfig.prompt` for `codex-prompt` and `workflow-runner` tasks.
@@ -29,44 +38,47 @@ Task authoring rules:
 18. Before removing a legacy integration secret, run Prism Doctor and test every
     enabled task that requests the migrated skill or starts an affected
     workflow.
+19. Set `agentConfig.executorAgent` deliberately for agent-backed tasks. Omitting
+    it invokes the visible Admin fallback and should be disclosed as temporary
+    authoring debt.
+20. Use provider-neutral `agentConfig.modelTier` values (`economy`, `standard`,
+    or `deep`) when a task should override its executor profile default. Omit it
+    to inherit the Agent Profile and Site defaults. Never store a provider model
+    name in a task definition.
+21. After creation, inspect `GET /agent/accountability/audit` for the task's
+    assignment, executor resolution, cross-domain execution, and fallback state.
+22. Do not use `outputConfig.outputDestinations` on a `codex-prompt` task as a
+    shortcut for an operational workflow. If delivery is part of successful
+    completion, perform and verify it inside the request workflow, save the
+    delivered content as an artifact, and attach the accepted external message
+    or publication as an external ref when supported. Deterministic watchdogs
+    may still deliver alerts through `script-runner`; simple service dispatch
+    may use `http-post`.
 
 Workflow-runner request types must use one of: `bug`, `feature`, `issue`, `content`, `design`, `config`, or `ops`. Use `issue` for imported GitHub issues or issue-like support intake when the source item itself is the request.
 
-Recommended task row shape:
+Manual utility task shape:
 
 ```json
 {
-  "key": "daily-memory-brief",
-  "name": "Daily memory brief",
-  "description": "Generate and send a daily Prism Memory brief.",
+  "key": "memory-brief-preview",
+  "name": "Memory brief preview",
+  "description": "Generate an ephemeral Memory brief when explicitly invoked.",
   "enabled": false,
-  "triggerType": "schedule",
-  "scheduleCron": "0 9 * * *",
+  "triggerType": "manual",
+  "scheduleCron": null,
   "timezone": "UTC",
   "taskType": "codex-prompt",
+  "accountabilityDomainKey": "community-operations",
   "inputConfig": {
-    "mode": "scheduled"
+    "mode": "manual"
   },
   "instructionConfig": {
-    "prompt": "Create a concise daily brief from Prism Memory. Return only the brief text and a short source summary.",
+    "prompt": "Create a concise brief from Prism Memory. Return only the brief text and a short source summary.",
     "requestedSkills": ["prism-scheduled-task-runner", "prism-memory-ops"]
   },
   "outputConfig": {
-    "summary": true,
-    "outputDestinations": [
-      {
-        "adapter": "discord",
-        "type": "discord-channel",
-        "id": "discord:1234567890",
-        "label": "#updates"
-      },
-      {
-        "adapter": "telegram",
-        "type": "telegram-chat",
-        "id": "telegram:-1001234567890",
-        "label": "Telegram / RaidGuild Updates"
-      }
-    ]
+    "summary": true
   }
 }
 ```
@@ -233,3 +245,4 @@ Return a concise review summary with:
 - required env/config
 - resolved output destinations, if any
 - what the scheduled prompt, workflow, or script will do
+- accountable domain and resolved executor profile

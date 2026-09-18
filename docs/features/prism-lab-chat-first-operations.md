@@ -2,7 +2,14 @@
 
 ## Status
 
-Future feature specification.
+Future feature specification. Slices 0–5 are implemented on the Lab feature
+branch; later slices remain proposed.
+
+The agent identity, ownership, navigation, and execution direction for the next
+slices has been refined by field testing. See
+[`prism-lab-agent-first-addendum.md`](./prism-lab-agent-first-addendum.md). The
+addendum supersedes this document's profile split and Slices 6–8 where they
+conflict; the implemented Slices 0–5 remain valid foundations.
 
 This document proposes an additive, field-testable replacement for the current
 Prism admin workspace. The new experience lives at `/admin/lab` inside the
@@ -79,6 +86,13 @@ validate /admin/lab
 ```
 
 ### Profiles have distinct meanings
+
+> **Superseded for future slices:** Field testing showed that these concerns
+> need one first-class Agent Profile identity with supporting templates, skills,
+> modes, bindings, ownership, and immutable run snapshots. See the
+> [Agent-First Operations Addendum](./prism-lab-agent-first-addendum.md). The
+> Interaction Profile records implemented for source policy remain valid
+> migration substrate.
 
 Do not use one overloaded "agent profile" object for every concern.
 
@@ -199,6 +213,14 @@ ask questions or provide intervention context such as:
 - Retry the failed step if it is safe.
 - Show the technical timeline.
 
+Every user-authored conversation entry must preserve its actor provenance. New
+entries snapshot the authenticated user ID, display name, and handle at write
+time, and the conversation renders that identity rather than a generic
+"Operator" label. Older Site-authored entries may recover identity from the
+owning authenticated session when no per-message snapshot exists; unknown or
+legacy password-only actors remain explicitly unidentified instead of being
+attributed to a different user.
+
 Artifacts, events, raw logs, external refs, and run traces remain accessible in
 a secondary drawer or expandable technical view.
 
@@ -238,47 +260,28 @@ prepare non-secret changes, but it must not request or return secrets.
 
 ### Operator interruption controls
 
-Lab must distinguish stopping current work from canceling the request. These
-are separate operator intents and must not be hidden behind a gate-only action.
+Lab distinguishes stopping current work from canceling the request. `Stop
+current run` interrupts a queued or running agent run while preserving the
+request on its current workflow step for corrected context and retry. `Cancel
+request` is available from every nonterminal workflow state, cancels active
+runs, records an operator reason, and closes the workflow.
 
-**Stop current run** interrupts the selected queued or running agent run but
-keeps the request and workflow open on the same step. Use this when a run is
-stuck, no longer useful, or needs corrected context before retrying. The action
-must:
+`Move request` changes an inactive, open request to another declared
+nonterminal workflow step. It is intended for explicit operator recovery such
+as sending review findings back to work or advancing a completed checkpoint to
+review. It must not skip active work silently, target an undeclared or terminal
+step, or bypass the normal cancel and reopen operations.
 
-- be available whenever the operator can manage the request and an active run
-  exists, regardless of workflow step type;
-- request cancellation from the selected Runtime job when the adapter supports
-  cancellation;
-- durably mark the Site agent run canceled even if Runtime interruption is
-  delayed or unavailable;
-- record the actor, reason, request, workflow step, agent run, runtime job when
-  known, and cancellation outcome;
-- ignore a late success or failure from the canceled run for workflow mutation;
-- leave the workflow on the same step and offer an explicit retry or continue
-  action when that step permits it.
+Both controls require `canRunAgent`, explicit confirmation, durable audit
+events, idempotent server behavior, and protection against late Runtime results.
+When Runtime exposes a cancellable job, Site persists its non-secret job
+reference and requests process cancellation in addition to making the Site run
+state authoritative.
 
-**Cancel request** ends the current workflow and closes the request. Use this
-when the requested outcome should no longer be pursued. The action must:
-
-- be available from every nonterminal request state, including agent,
-  checkpoint, loop, and gate steps;
-- not require stopping at or moving the workflow to a gate first;
-- require a short operator reason and a destructive-action confirmation;
-- cancel all queued or running agent runs linked to the current workflow run
-  and request Runtime cancellation for their jobs when possible;
-- move the workflow to its configured canceled terminal step, or the explicit
-  terminal fallback defined by the workflow contract;
-- record one idempotent `workflow.canceled` event with previous-step and
-  canceled-run provenance;
-- prevent late run completion from advancing or reopening the workflow;
-- remain reversible only through the explicit audited reopen operation.
-
-The primary request workspace should show `Stop current run` beside active-run
-status. `Cancel request` should remain available in a persistent request
-actions menu or danger zone rather than appearing only at human gates. The UI
-must explain the effect before confirmation; it should not use the ambiguous
-label `Cancel` without naming the target.
+The request conversation may recognize clear retry, move, and cancel commands, but the
+model remains a read-only utility. Site resolves only unambiguous commands
+against the current workflow, shows the same confirmation used by direct UI
+controls, and performs the structured capability-checked mutation itself.
 
 ## Provenance Model
 
@@ -677,19 +680,22 @@ Deliver:
 - Comment/context submission.
 - Normal workflow continue from human gates.
 - Agent-run invocation for the current runnable step.
-- Stop-current-run control that preserves the request at its current workflow
-  step and supports a corrected retry.
+- Stop-current-run control that preserves the current workflow step.
 - Cancel-request control from every nonterminal workflow state, including while
   an agent run is queued or running.
+- Move-request control for explicit movement between declared nonterminal steps
+  when no run is active.
+- Deterministic conversational routing of unambiguous move and cancel commands
+  into the same confirmed Site-owned controls; ordinary questions remain
+  read-only.
 - File upload or existing artifact attachment as additional context.
 - Clear running, queued, failed, blocked, and completed states.
 - Secondary technical drawer for artifacts, events, refs, and raw run detail.
 
-Higher-risk controls such as reopen, blocker override, or direct step mutation
+Higher-risk controls such as reopen or blocker override
 should remain in the legacy UI until their Lab affordances and capability
-checks are reviewed. Stop-current-run and cancel-request are required pilot
-controls and must use the same capability checks and durable state rules as the
-Site-owned workflow engine.
+checks are reviewed. Stop-current-run, cancel-request, and validated
+move-request are required pilot controls.
 
 Acceptance criteria:
 
@@ -699,11 +705,14 @@ Acceptance criteria:
   expected event and agent run exactly once.
 - Adding conversational context is visible in both Lab and legacy request
   history.
-- Stopping an active run leaves the request on the same workflow step, records
-  the reason, and prevents a late completion from advancing the workflow.
-- Canceling from an agent, checkpoint, loop, or gate step closes the request,
-  cancels every active run, and produces exactly one cancellation event across
-  retries.
+- Stopping an active run leaves the request on the same workflow step and a
+  late completion cannot advance it.
+- Canceling from any nonterminal step closes the request and cancels every
+  active run.
+- Moving a request records previous and next steps plus an operator reason,
+  rejects active runs and terminal targets, and appears in durable history.
+- Typing a clear command such as `cancel this request` or `move back to work`
+  opens confirmation rather than returning a read-only-model refusal.
 - A failed mutation is explicit and does not leave optimistic UI state behind.
 
 ### Slice 3: Request-origin provenance and profile segmentation
@@ -743,6 +752,15 @@ Acceptance criteria:
   browser.
 - External subject privacy rules are tested.
 
+Implementation note (2026-08-20): Slice 3 uses an immutable, nullable
+`request_origins` record rather than mutable live channel/profile joins. New
+agent-created requests may provide only a Site-owned source session/message
+reference; platform, target, profile, and actor fields are resolved from that
+trusted state. Historical rows are conservatively backfilled and labeled
+`partial` or `unknown`, and external subject values are deliberately omitted.
+Lab filtering remains server-rendered, so unrendered request records are not
+hydrated into the browser.
+
 ### Slice 4: Unified timeline, workflow exploration, and attention view
 
 **Depends on:** Slices 1-3.
@@ -766,6 +784,18 @@ Acceptance criteria:
 - Timeline ordering remains stable while new events arrive.
 - Raw traces are available without becoming the default reading experience.
 
+Implementation note (2026-08-20): request review now deterministically merges
+messages, workflow events, agent runs, artifacts, and external references by
+timestamp, event kind, and durable identifier. The newest review window is
+shown first with incremental older-event disclosure; message bodies and raw
+run traces remain collapsed by default. Artifacts link to their producing run
+when that relationship is known. The workflow explorer marks current,
+observed, completed, terminal, branch, and backward-loop states from the live
+definition and recorded events. `/admin/lab/activity` provides auto-refreshed
+cross-request Activity and Needs Attention views from the capability-filtered
+canonical request snapshot without adding privileged run payloads to the
+board response.
+
 ### Slice 5: Console, capture, and simplified settings integration
 
 **Depends on:** Slices 1-2.
@@ -788,7 +818,24 @@ Acceptance criteria:
 - Credential entry and rotation remain explicit settings operations.
 - No credential value enters model prompts, request artifacts, or chat.
 
+Implementation note (2026-08-20): `/admin/lab/console` reuses the existing
+durable admin-console job/session contract and exposes browser Capture as a
+clearly labeled console context mode. An operator may promote an unlinked
+console session exactly once into a canonical request. Site validates the
+workflow, target, type, and priority, snapshots the console session as request
+origin provenance, creates a distinct empty request conversation, records an
+audit event, and invokes normal workflow auto-start. `/admin/lab/settings`
+links Gateway, Interfaces, Runtimes, and Source Policies to their existing
+credential-safe settings flows. Its Console assistance links prefill only
+allowlisted non-secret planning prompts. Lab navigation is capability-filtered
+so request viewers, run operators, and settings managers see only their
+available surfaces.
+
 ### Slice 6: Execution-profile registry and run snapshots
+
+> **Replaced:** Use the revised "Agent Identity And Observability Foundation"
+> slice in the
+> [Agent-First Operations Addendum](./prism-lab-agent-first-addendum.md).
 
 **Depends on:** Slice 4 for useful observability.
 
@@ -921,6 +968,7 @@ GET  /agent/change-board/requests/by-number/:number/timeline
 POST /agent/change-board/requests/by-number/:number/workflow/continue
 POST /agent/change-board/requests/by-number/:number/runs/:runId/cancel
 POST /agent/change-board/requests/by-number/:number/workflow/cancel
+POST /agent/change-board/requests/by-number/:number/workflow/step
 POST /agent/responses
 
 GET  /agent/execution-profiles
@@ -936,12 +984,6 @@ POST /agent/pending-actions/:id/resolve
 Browser Lab routes should use admin-session endpoints or server-side handlers
 that preserve current capability checks. The existence of an `/agent/*` route
 does not authorize forwarding a service token to the browser.
-
-Run cancel and workflow cancel must be idempotent and must not share one
-ambiguous endpoint. Run cancel preserves the workflow step; workflow cancel
-terminates the workflow and request. Both accept an operator reason and return
-the authoritative request, workflow-run, and affected agent-run state so the
-browser does not need to guess at an optimistic result.
 
 ## Data Migration Strategy
 
@@ -1017,12 +1059,10 @@ Recommended non-sensitive measures:
 - Site request creation and Lab request operation.
 - Discord, Telegram, Buzz, external interface, task, and hook request origins.
 - Gate continuation creates exactly one next-step run across retries.
-- Run cancellation at an agent step preserves the current step and makes a
-  late Runtime completion non-authoritative.
+- Run cancellation preserves the current workflow step and makes a late Runtime
+  completion non-authoritative.
 - Request cancellation works from agent, checkpoint, loop, and gate steps,
   including with queued or running agent runs.
-- Repeated run-cancel and request-cancel calls are idempotent and do not create
-  duplicate workflow events.
 - Worker-to-verifier handoff contains only declared artifacts and no runtime
   continuation.
 - Judge output routes only through allowed workflow edges.
@@ -1038,9 +1078,6 @@ Recommended non-sensitive measures:
 - Can an operator understand why a judge or orchestrator selected a route?
 - Can an operator repair or escalate a routine blocker without opening raw
   logs?
-- Can an operator stop unproductive active work without closing the request?
-- Can an operator cancel an obsolete request immediately without first waiting
-  for or navigating to a gate?
 - Can an expert still reach the underlying artifacts and traces when needed?
 
 ## Documentation Follow-Ups
@@ -1083,9 +1120,8 @@ The first meaningful milestone is complete after Slices 0-3:
 
 > An operator can open `/admin/lab`, segment live requests by source or
 > interaction profile, select an active request, understand its current state,
-> ask what is blocking it, add context, stop an unproductive active run, cancel
-> an obsolete request from any nonterminal state, and safely continue a normal
-> workflow gate without returning to the legacy request view.
+> ask what is blocking it, add context, and safely continue a normal workflow
+> gate without returning to the legacy request view.
 
 That milestone tests the product thesis before committing to the execution
 profile and orchestration layers. Slices 4-8 then make the same experience more

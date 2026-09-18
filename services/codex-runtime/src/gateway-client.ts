@@ -56,7 +56,9 @@ function gatewayResponseError(body: Record<string, unknown> | null, status: numb
     ? body.error as Record<string, unknown>
     : {};
   return new GatewayClientError(
-    typeof error.code === 'string' ? error.code : `PRISM_GATEWAY_HTTP_${status}`,
+    typeof error.code === 'string' ? error.code
+      : typeof body?.error === 'string' && /^[A-Z][A-Z0-9_]+$/.test(body.error)
+        ? body.error : `PRISM_GATEWAY_HTTP_${status}`,
     status,
     error.retryable === true || status >= 500,
     typeof body?.traceId === 'string' ? body.traceId : null,

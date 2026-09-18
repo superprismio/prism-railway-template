@@ -4,12 +4,17 @@ import {
   resolveRuntimeProfile,
   type RuntimeProfileRecord,
 } from './runtime-profiles';
+import { modelTierFromAgentConfig, normalizeModelTier, type ModelTier } from '../model-tier';
 
 export type RuntimeTraceEntry = { at: string; kind: string; message: string };
+
+export type RuntimeAuthorityMode = 'full' | 'read_only_utility';
 
 export type RuntimeResponse = {
   id: string | null;
   model: string | null;
+  modelTier: ModelTier | null;
+  reasoningEffort: string | null;
   provider: string;
   responseText: string;
   output_text: string;
@@ -26,6 +31,8 @@ export type RuntimeResponse = {
 export type RuntimeRequestInput = {
   prompt: string;
   sessionId: string;
+  /** Runtime-enforced execution authority. Omitted calls retain the full legacy behavior. */
+  authorityMode?: RuntimeAuthorityMode;
   continuationId?: string | null;
   recentHistory?: Array<{ role: string; content: string }>;
   skills?: string[];
@@ -33,10 +40,12 @@ export type RuntimeRequestInput = {
   context?: Record<string, string | undefined>;
   metadata?: Record<string, unknown>;
   runtimeKey?: string | null;
+  modelTier?: ModelTier | null;
   timeoutMs?: number;
   onProgress?: (progress: {
     status: string;
     runtimeJobId: string;
+    runtimeKey: string;
     threadId: string | null;
     trace: RuntimeTraceEntry[];
   }) => void;
@@ -92,7 +101,19 @@ type LegacyJobPayload = {
   trace?: Array<{ at?: string; kind?: string; message?: string }>;
 };
 
+const readOnlyUtilityAuthorityFeature = 'read-only-utility-authority';
+const runtimeCapabilityCache = new Map<string, { supported: boolean; expiresAt: number }>();
+
+type RuntimeCapabilitiesPayload = {
+  contractVersion?: unknown;
+  runtimeKey?: unknown;
+  adapter?: unknown;
+  features?: unknown;
+};
+
 function defaultTimeoutMs() {
+  const maximum = Number.parseInt(process.env.PRISM_RUNTIME_MAX_DURATION_MS ?? '', 10);
+  if (Number.isFinite(maximum) && maximum > 0) return maximum + 60_000;
   const milliseconds = Number.parseInt(process.env.CODEX_RUNTIME_TIMEOUT_MS ?? '', 10);
   if (Number.isFinite(milliseconds) && milliseconds > 0) return milliseconds;
   const seconds = Number.parseInt(process.env.CODEX_RUNTIME_REQUEST_TIMEOUT_SECONDS ?? '', 10);
@@ -129,6 +150,34 @@ function profileKeyFromMetadata(metadata: Record<string, unknown> | undefined) {
   return typeof sessionRuntimeKey === 'string' && sessionRuntimeKey.trim() ? sessionRuntimeKey.trim() : null;
 }
 
+function modelTierFromMetadata(metadata: Record<string, unknown> | undefined) {
+  const direct = normalizeModelTier(metadata?.modelTier ?? metadata?.model_tier);
+  if (direct) return direct;
+  const workflow = metadata?.workflow && typeof metadata.workflow === 'object' && !Array.isArray(metadata.workflow)
+    ? metadata.workflow as Record<string, unknown>
+    : null;
+  const workflowTier = modelTierFromAgentConfig(workflow?.agentConfig ?? workflow?.agent_config);
+  if (workflowTier) return workflowTier;
+  return modelTierFromAgentConfig(metadata?.agentConfig ?? metadata?.agent_config);
+}
+
+function requiredRuntimeFeaturesFromMetadata(metadata: Record<string, unknown> | undefined, modelTier?: ModelTier | null) {
+  const workflow = metadata?.workflow && typeof metadata.workflow === 'object' && !Array.isArray(metadata.workflow)
+    ? metadata.workflow as Record<string, unknown>
+    : null;
+  const agentConfig = workflow?.agentConfig && typeof workflow.agentConfig === 'object' && !Array.isArray(workflow.agentConfig)
+    ? workflow.agentConfig as Record<string, unknown>
+    : null;
+  const value = agentConfig?.requiredRuntimeFeatures ?? metadata?.requiredRuntimeFeatures;
+  const configured = Array.isArray(value) ? value : [];
+  const required = configured
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (modelTier ?? modelTierFromMetadata(metadata)) required.push('model-tier-routing');
+  return Array.from(new Set(required));
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -137,6 +186,44 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function assertReadOnlyUtilityAuthority(profile: RuntimeProfileRecord, timeoutMs: number) {
+  if (
+    profile.contractVersion !== prismRuntimeContractVersion
+    || !profile.features.includes(readOnlyUtilityAuthorityFeature)
+  ) {
+    throw new Error('RUNTIME_AUTHORITY_MODE_UNSUPPORTED:profile');
+  }
+
+  const cacheKey = [profile.key, profile.adapter, profile.baseUrl, profile.contractVersion, profile.updatedAt].join('|');
+  const cached = runtimeCapabilityCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    if (cached.supported) return;
+    throw new Error('RUNTIME_AUTHORITY_MODE_UNSUPPORTED:capabilities');
+  }
+
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      `${profile.baseUrl}/v1/runtime/capabilities`,
+      { cache: 'no-store' },
+      Math.max(1, Math.min(5_000, timeoutMs)),
+    );
+  } catch (error) {
+    throw new Error('RUNTIME_AUTHORITY_CAPABILITIES_UNAVAILABLE', { cause: error });
+  }
+  const payload = await response.json().catch(() => null) as RuntimeCapabilitiesPayload | null;
+  const features = Array.isArray(payload?.features)
+    ? payload.features.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  const supported = response.ok
+    && payload?.contractVersion === prismRuntimeContractVersion
+    && payload?.runtimeKey === profile.key
+    && payload?.adapter === profile.adapter
+    && features.includes(readOnlyUtilityAuthorityFeature);
+  runtimeCapabilityCache.set(cacheKey, { supported, expiresAt: Date.now() + 30_000 });
+  if (!supported) throw new Error('RUNTIME_AUTHORITY_MODE_UNSUPPORTED:capabilities');
 }
 
 function transportError(error: unknown) {
@@ -192,6 +279,8 @@ function normalizedResponse(profile: RuntimeProfileRecord, job: NormalizedJob): 
   return {
     id: continuationId,
     model: typeof metadata.model === 'string' ? metadata.model : null,
+    modelTier: normalizeModelTier(metadata.modelTier ?? metadata.model_tier),
+    reasoningEffort: typeof metadata.reasoningEffort === 'string' ? metadata.reasoningEffort : null,
     provider: profile.adapter,
     responseText,
     output_text: responseText,
@@ -216,6 +305,8 @@ function legacyResponse(profile: RuntimeProfileRecord, payload: LegacyResponse |
   return {
     id: payload?.id ?? payload?.thread_id ?? null,
     model: payload?.model ?? null,
+    modelTier: null,
+    reasoningEffort: null,
     provider: payload?.provider ?? profile.adapter,
     responseText,
     output_text: responseText,
@@ -231,9 +322,21 @@ function legacyResponse(profile: RuntimeProfileRecord, payload: LegacyResponse |
 }
 
 async function cancelNormalizedJob(profile: RuntimeProfileRecord, jobId: string) {
-  await fetch(`${profile.baseUrl}/v1/runtime/jobs/${encodeURIComponent(jobId)}/cancel`, {
+  await fetchWithTimeout(`${profile.baseUrl}/v1/runtime/jobs/${encodeURIComponent(jobId)}/cancel`, {
     method: 'POST',
-  }).catch(() => null);
+  }, 5_000).catch(() => null);
+}
+
+// A timed-out poll is not proof that the remote job failed. Re-read once with
+// an independent, bounded budget before cancellation; never submit a new job.
+async function reconcileNormalizedPollFailure(profile: RuntimeProfileRecord, jobId: string, error: unknown) {
+  try {
+    const response = await fetchWithTimeout(`${profile.baseUrl}/v1/runtime/jobs/${encodeURIComponent(jobId)}`, { cache: 'no-store' }, 10_000);
+    const payload = await response.json() as NormalizedJobPayload;
+    if (response.ok && payload.job?.status === 'succeeded') return normalizedResponse(profile, payload.job);
+  } catch { /* Preserve the original failure if reconciliation is unavailable. */ }
+  await cancelNormalizedJob(profile, jobId);
+  throw error;
 }
 
 async function requestNormalized(
@@ -243,16 +346,23 @@ async function requestNormalized(
 ): Promise<RuntimeResponse | null> {
   const startedAt = Date.now();
   const jobsUrl = `${profile.baseUrl}/v1/runtime/jobs`;
+  const authorityMode = input.authorityMode ?? 'full';
   const body = {
     contractVersion: prismRuntimeContractVersion,
     prompt: input.prompt,
     sessionId: input.sessionId,
+    ...(authorityMode === 'read_only_utility' ? { authorityMode } : {}),
     continuationId: input.continuationId ?? null,
     recentHistory: input.recentHistory ?? [],
-    skills: (input.skills ?? []).map((name) => ({ name })),
-    credentials: (input.credentials ?? []).map((entry) => typeof entry === 'string' ? { key: entry } : entry),
+    skills: authorityMode === 'read_only_utility'
+      ? []
+      : (input.skills ?? []).map((name) => ({ name })),
+    credentials: authorityMode === 'read_only_utility'
+      ? []
+      : (input.credentials ?? []).map((entry) => typeof entry === 'string' ? { key: entry } : entry),
     context: input.context ?? {},
     metadata: input.metadata ?? {},
+    modelTier: input.modelTier ?? modelTierFromMetadata(input.metadata),
   };
   const idempotencyKey = `site-${randomUUID()}`;
   const canRetryCreate = profile.adapter === 'codex-cli'
@@ -276,19 +386,35 @@ async function requestNormalized(
   }
   const jobId = typeof accepted?.jobId === 'string' ? accepted.jobId : '';
   if (!jobId) throw new Error('RUNTIME_JOB_CREATE_INVALID_RESPONSE');
+  input.onProgress?.({
+    status: typeof accepted?.job?.status === 'string' ? accepted.job.status : 'queued',
+    runtimeJobId: jobId,
+    runtimeKey: profile.key,
+    threadId: typeof accepted?.job?.result?.continuationId === 'string'
+      ? accepted.job.result.continuationId
+      : null,
+    trace: traceEntries(accepted?.job?.trace),
+  });
 
   for (;;) {
     if (Date.now() - startedAt >= timeoutMs) {
-      await cancelNormalizedJob(profile, jobId);
-      throw new Error(`RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`);
+      return reconcileNormalizedPollFailure(profile, jobId, new Error(`RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`));
     }
     await new Promise((resolve) => setTimeout(resolve, 2_000));
-    const poll = await fetchWithTransportRetries(
-      `${jobsUrl}/${encodeURIComponent(jobId)}`,
-      { cache: 'no-store' },
-      Math.min(30_000, Math.max(1, timeoutMs - (Date.now() - startedAt))),
-      { attempts: 3, operation: 'poll-job' },
-    );
+    let poll: Response;
+    try {
+      poll = await fetchWithTransportRetries(
+        `${jobsUrl}/${encodeURIComponent(jobId)}`,
+        { cache: 'no-store' },
+        Math.min(30_000, Math.max(1, timeoutMs - (Date.now() - startedAt))),
+        { attempts: 3, operation: 'poll-job' },
+      );
+    } catch (error) {
+      // Keep observing the same job through a temporary network outage. A
+      // failed HTTP poll must not become a failed execution before its budget.
+      if (Date.now() - startedAt < timeoutMs) continue;
+      return reconcileNormalizedPollFailure(profile, jobId, new Error(`RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`, { cause: error }));
+    }
     const payload = await poll.json().catch(() => null) as NormalizedJobPayload | null;
     if (!poll.ok) throw new Error(`RUNTIME_JOB_POLL_FAILED:${poll.status}:${payload?.error?.code || 'unknown'}`);
     const job = payload?.job;
@@ -296,6 +422,7 @@ async function requestNormalized(
     input.onProgress?.({
       status,
       runtimeJobId: jobId,
+      runtimeKey: profile.key,
       threadId: typeof job?.result?.continuationId === 'string' ? job.result.continuationId : null,
       trace: traceEntries(job?.trace),
     });
@@ -310,10 +437,12 @@ async function requestLegacy(profile: RuntimeProfileRecord, input: RuntimeReques
   const body = {
     prompt: input.prompt,
     sessionId: input.sessionId,
+    ...(input.authorityMode === 'read_only_utility' ? { authorityMode: input.authorityMode } : {}),
     codexThreadId: input.continuationId ?? null,
     recentHistory: input.recentHistory ?? [],
     credentials: input.credentials ?? [],
     context: input.context ?? {},
+    modelTier: input.modelTier ?? modelTierFromMetadata(input.metadata),
     metadata: {
       ...(input.metadata ?? {}),
       ...((input.skills ?? []).length ? { requestedSkills: input.skills } : {}),
@@ -330,6 +459,13 @@ async function requestLegacy(profile: RuntimeProfileRecord, input: RuntimeReques
     if (!submit.ok) throw new Error(`RUNTIME_JOB_CREATE_FAILED:${submit.status}:${accepted?.error || 'unknown'}`);
     const jobId = typeof accepted?.jobId === 'string' ? accepted.jobId : '';
     if (!jobId) throw new Error('RUNTIME_JOB_CREATE_INVALID_RESPONSE');
+    input.onProgress?.({
+      status: typeof accepted?.job?.status === 'string' ? accepted.job.status : 'queued',
+      runtimeJobId: jobId,
+      runtimeKey: profile.key,
+      threadId: accepted?.job?.threadId ?? null,
+      trace: traceEntries(accepted?.job?.trace),
+    });
     for (;;) {
       if (Date.now() - startedAt >= timeoutMs) throw new Error(`RUNTIME_REQUEST_TIMEOUT:${timeoutMs}`);
       await new Promise((resolve) => setTimeout(resolve, 2_000));
@@ -343,7 +479,7 @@ async function requestLegacy(profile: RuntimeProfileRecord, input: RuntimeReques
       if (!poll.ok) throw new Error(`RUNTIME_JOB_POLL_FAILED:${poll.status}:${payload?.error || 'unknown'}`);
       const status = payload?.job?.status ?? '';
       const trace = traceEntries(payload?.trace ?? payload?.job?.trace);
-      input.onProgress?.({ status, runtimeJobId: jobId, threadId: payload?.thread_id ?? payload?.job?.threadId ?? null, trace });
+      input.onProgress?.({ status, runtimeJobId: jobId, runtimeKey: profile.key, threadId: payload?.thread_id ?? payload?.job?.threadId ?? null, trace });
       if (status === 'queued' || status === 'running') continue;
       if (status === 'succeeded') return legacyResponse(profile, payload?.response ?? payload?.job?.response);
       throw new Error(`RUNTIME_REQUEST_FAILED:${payload?.error || payload?.job?.error || 'Runtime job failed'}`);
@@ -361,14 +497,35 @@ async function requestLegacy(profile: RuntimeProfileRecord, input: RuntimeReques
 }
 
 export async function requestRuntimeResponse(input: RuntimeRequestInput) {
-  const profile = resolveRuntimeProfile(input.runtimeKey || profileKeyFromMetadata(input.metadata));
+  const modelTier = input.modelTier ?? modelTierFromMetadata(input.metadata);
+  const profile = resolveRuntimeProfile(
+    input.runtimeKey || profileKeyFromMetadata(input.metadata),
+    undefined,
+    requiredRuntimeFeaturesFromMetadata(input.metadata, modelTier),
+  );
   const sessionRuntimeKey = typeof input.metadata?.sessionRuntimeKey === 'string'
     ? input.metadata.sessionRuntimeKey.trim()
     : '';
   return requestRuntimeResponseWithProfile(profile, {
     ...input,
+    modelTier,
     continuationId: sessionRuntimeKey && sessionRuntimeKey !== profile.key ? null : input.continuationId,
   });
+}
+
+export async function cancelRuntimeJob(input: { runtimeKey: string; runtimeJobId: string }) {
+  const runtimeKey = input.runtimeKey.trim();
+  const runtimeJobId = input.runtimeJobId.trim();
+  if (!runtimeKey || !runtimeJobId) throw new Error('RUNTIME_JOB_CANCEL_INPUT_INVALID');
+  const profile = resolveRuntimeProfile(runtimeKey);
+  const response = await fetchWithTimeout(
+    `${profile.baseUrl}/v1/runtime/jobs/${encodeURIComponent(runtimeJobId)}/cancel`,
+    { method: 'POST' },
+    10_000,
+  );
+  if (response.status === 404) return { requested: false, status: response.status };
+  if (!response.ok) throw new Error(`RUNTIME_JOB_CANCEL_FAILED:${response.status}`);
+  return { requested: true, status: response.status };
 }
 
 export async function requestRuntimeResponseWithProfile(
@@ -376,6 +533,15 @@ export async function requestRuntimeResponseWithProfile(
   input: RuntimeRequestInput,
 ) {
   const timeoutMs = input.timeoutMs ?? defaultTimeoutMs();
+  if (input.authorityMode === 'read_only_utility') {
+    await assertReadOnlyUtilityAuthority(profile, timeoutMs);
+  }
   const normalized = await requestNormalized(profile, input, timeoutMs);
-  return normalized ?? requestLegacy(profile, input, timeoutMs);
+  if (normalized) return normalized;
+  // A legacy adapter cannot prove that it enforces the restricted authority
+  // contract. Never silently downgrade a read-only utility invocation.
+  if (input.authorityMode && input.authorityMode !== 'full') {
+    throw new Error('RUNTIME_AUTHORITY_MODE_UNSUPPORTED');
+  }
+  return requestLegacy(profile, input, timeoutMs);
 }

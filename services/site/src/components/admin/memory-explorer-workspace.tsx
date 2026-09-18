@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { ChatMessageTimestamp } from "@/components/chat-message-timestamp";
 import { MemoryDocumentUploadButton } from "@/components/admin/memory-document-upload-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -220,12 +221,15 @@ type MemoryChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  createdAt: string;
 };
 
 type StoredMemoryChatMessage = {
   id: string;
   role: string;
   content: string;
+  createdAt?: string;
+  created_at?: string;
 };
 
 const memoryChatSessionStorageKey = "prism-memory-chat-session-id";
@@ -304,6 +308,7 @@ function MemoryChat({
                 id: message.id,
                 role: message.role as "user" | "assistant",
                 content: displayMemoryChatContent(message.role, message.content),
+                createdAt: message.createdAt ?? message.created_at ?? "",
               }))
           : [];
         setSessionId(storedSessionId);
@@ -334,7 +339,12 @@ function MemoryChat({
     setError(null);
     setMessages((current) => [
       ...current,
-      { id: randomMessageId("user"), role: "user", content: prompt },
+      {
+        id: randomMessageId("user"),
+        role: "user",
+        content: prompt,
+        createdAt: new Date().toISOString(),
+      },
     ]);
     setIsPending(true);
 
@@ -372,6 +382,7 @@ function MemoryChat({
           id: randomMessageId("assistant"),
           role: "assistant",
           content: payload.output_text!,
+          createdAt: new Date().toISOString(),
         },
       ]);
     } catch (submitError) {
@@ -421,6 +432,12 @@ function MemoryChat({
                     <Badge variant={message.role === "assistant" ? "outline" : "secondary"}>
                       {message.role}
                     </Badge>
+                    {message.createdAt ? (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <ChatMessageTimestamp value={message.createdAt} />
+                      </>
+                    ) : null}
                   </div>
                   <p className="whitespace-pre-wrap">{message.content}</p>
                 </div>

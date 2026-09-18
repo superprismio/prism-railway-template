@@ -134,7 +134,8 @@ Buzz-specific envs (deploy as a separate `buzz-adapter` service):
 - `BUZZ_RELAY_URL=https://your-buzz-relay.example`
 - `BUZZ_PRIVATE_KEY=<dedicated service identity; Railway secret>`
 - `BUZZ_PUBLIC_KEY=<64-character public key>`
-- `BUZZ_CHANNEL_ALLOWLIST=<required comma-separated channel UUIDs>`
+- `BUZZ_CHANNEL_ALLOWLIST=<optional comma-separated emergency ceiling for interactive/output channels>`
+- `BUZZ_HISTORY_CHANNEL_ALLOWLIST=<comma-separated channels intentionally collected into Prism Memory>`
 - `BUZZ_SYNC_WINDOW_HOURS=24`
 - `BUZZ_MAX_MESSAGES_PER_CHANNEL=500`
 - `BUZZ_IGNORE_OWN_MESSAGES=true`
@@ -149,28 +150,28 @@ Buzz-specific envs (deploy as a separate `buzz-adapter` service):
 - `BUZZ_HISTORY_MAX_LOOKBACK_SECONDS=7200`
 - `BUZZ_HISTORY_MAX_MESSAGES=100`
 - `BUZZ_CHANNEL_ADMIN_TOKEN=<separate Gateway-leased channel-management secret>`
-- `BUZZ_CHANNEL_ADMIN_PROFILE_KEY=buzz-prism-ops`
+- `BUZZ_CHANNEL_ADMIN_PROFILE_KEY=admin-agent`
 
 Buzz collection and delivery use the checksum-pinned official Buzz `0.5.0`
-CLI installed by this service's Dockerfile. Collection fails closed when the
-allowlist is empty or an allowlisted channel is not visible to the service
-identity. `GET /destinations` exposes only allowlisted Buzz channels, and
-`POST /messages` accepts `buzz:<channel-uuid>` destinations only from that same
-allowlist. Sync uses the shared checkpoint file under
+CLI installed by this service's Dockerfile. Enabled Agent Profile bindings are
+the source of truth for interactive channels and output destinations.
+`BUZZ_CHANNEL_ALLOWLIST` is optional and acts only as an emergency ceiling;
+stale or invisible entries do not abort the listener. History ingestion uses
+`BUZZ_HISTORY_CHANNEL_ALLOWLIST`, falling back to the legacy ceiling only for
+compatibility. Sync uses the shared checkpoint file under
 `SOURCE_ADAPTER_DATA_ROOT`, retains recent Nostr event IDs to make overlap and
 retry idempotent, and posts normalized `buzz` batches to Prism Memory.
 
-When interaction polling is enabled, a Nostr `p` tag for `BUZZ_PUBLIC_KEY` in
-an allowlisted channel starts a conversation. Authorized human replies in that
-Buzz reply chain continue the same conversation without mentioning Prism again.
-Site's source-adapter policy maps each Buzz channel (and optionally an author
-pubkey) to an access mode and `interactionProfileKey`; authorization is checked
-again for every reply. The profile must exist and its mode must match the
-resolved policy or the request fails closed. Unmapped Buzz channels default to
-`off`. `readonly` receives no Gateway credentials, `run-approved` receives no
-Gateway credentials and carries the profile workflow allowlist, and `full`
-receives credentials selected by the shared source policy. Sessions are
-isolated by profile, channel, and the root Buzz event.
+When interaction polling is enabled, the adapter responds only to events in a
+channel with an enabled Agent Profile binding that contain a Nostr `p` tag for
+`BUZZ_PUBLIC_KEY`. The resolved binding supplies agent identity, access mode,
+and policy; legacy source-adapter policy remains a compatibility fallback.
+Authorized human replies in that Buzz reply chain continue the same
+conversation without mentioning Prism again. Unmapped Buzz channels default to
+`off`. `readonly` receives no Gateway credentials,
+`run-approved` receives no Gateway credentials and carries the profile workflow
+allowlist, and `full` receives credentials selected by the shared source policy.
+Sessions are isolated by profile, channel, and the root Buzz event.
 
 Replies and typing indicators are attached to the conversation's original
 channel event. This keeps Buzz conversations to one visible reply level even
@@ -195,13 +196,10 @@ normal `/sync` checkpoint.
 
 When `BUZZ_CHANNEL_ADMIN_TOKEN` is configured, `/capabilities` advertises
 `manage-buzz-channels`. The protected `/buzz/channels` routes create and update
-channels, archive/unarchive them, manage members, and register channel access in
-Site's Buzz source policy. They require `X-Buzz-Admin-Token`; the ordinary
-adapter token is not accepted. Permanent deletion is intentionally not exposed.
-Channel IDs configured in non-`off` Site Buzz target rules augment the static
-environment allowlist, so a newly registered channel becomes available to both
-collection/interaction and outbound destination discovery after the policy
-cache refreshes.
+channels, archive/unarchive them, and manage members. They require
+`X-Buzz-Admin-Token`; the ordinary adapter token is not accepted. Permanent
+deletion is intentionally not exposed. Agent Profile bindings remain the
+canonical way to make a channel interactive and visible to Prism operations.
 
 While Prism processes an accepted interaction, the adapter publishes the same
 thread-scoped, ephemeral kind `20002` typing indicator used by built-in Buzz

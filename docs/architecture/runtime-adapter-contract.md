@@ -113,6 +113,7 @@ GET  /v1/responses/jobs/:jobId
     "workflowRunId": "wf_run_abc",
     "workflowStepKey": "synthesize"
   },
+  "modelTier": "economy",
   "metadata": {}
 }
 ```
@@ -126,6 +127,24 @@ Submission returns HTTP `202` with `PrismRuntimeJobAcceptedResponse`. Poll and
 cancel return the normalized job envelope. A terminal job is immutable except
 for redacted diagnostic trace additions; late harness output must not change a
 `canceled` job to `succeeded`.
+
+### Provider-neutral model selection
+
+`modelTier` is optional and accepts `economy`, `standard`, or `deep`. Site
+resolves it with this precedence:
+
+1. explicit workflow step or task override;
+2. assigned Agent Profile default;
+3. Site/runtime default when no tier is set.
+
+Profiles and execution definitions carry only the tier. Each runtime adapter
+owns the mapping from tiers to provider-specific model identifiers and
+reasoning controls. Adapters must advertise `model-tier-routing` before Site
+sends a tiered job. An adapter should reject an unmapped requested tier instead
+of silently substituting another tier.
+
+Successful results should include the effective tier, selected provider model,
+and reasoning effort in `providerMetadata` for auditability.
 
 Adapters that advertise `idempotent-job-creation` accept an `idempotency-key`
 header on `POST /v1/runtime/jobs`. Repeating the same request with the same key
@@ -198,9 +217,19 @@ shell
 site-hosted-skills
 continuations
 image-input
+browser-automation
+workspace-assignment
 gateway-credentials
 idempotent-job-creation
 ```
+
+Workflow agent steps may declare `agentConfig.requiredRuntimeFeatures`. When a
+runtime profile is not explicitly pinned, Site selects the first enabled
+profile, preferring the configured default, that advertises every required
+feature. An explicit profile pin fails closed when it lacks a requirement.
+Capabilities describe the contract, not the implementation: for example,
+`browser-automation` may be backed by Playwright, Chrome DevTools Protocol, or
+another harness, and `workspace-assignment` does not imply Git worktrees.
 
 The runtime request lists the Gateway credential keys assigned to that job.
 Site resolves those assignments from Console context, source-adapter policy,

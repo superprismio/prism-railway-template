@@ -3,6 +3,7 @@ import test from "node:test";
 import { nip19, verifyEvent, type Event, type EventTemplate, type VerifiedEvent } from "nostr-tools";
 import {
   BuzzCliClient,
+  buzzCliEnvironment,
   buildBuzzTypingEvent,
   buzzInteractionCursorTimestamp,
   buzzConversationRootFromThread,
@@ -16,6 +17,7 @@ import {
   buzzThreadRootId,
   buzzWebSocketUrl,
   normalizeBuzzMessage,
+  normalizeBuzzCommandArgs,
   parseBuzzPrivateKey,
   parseBuzzChannelAllowlist,
   selectUnseenBuzzEvents,
@@ -26,6 +28,24 @@ import {
 } from "./buzz.js";
 
 const channelId = "a419a6ec-07ef-4d55-b071-635bc1b4dd4f";
+
+test("Buzz child environment excludes unrelated secrets and loader hooks", () => {
+  assert.deepEqual(buzzCliEnvironment({
+    PATH: "/usr/bin", LANG: "C.UTF-8", TMPDIR: "/tmp", TZ: "UTC",
+    APP_API_SERVICE_TOKEN: "secret", INTERNAL_SERVICE_TOKEN: "secret",
+    PRISM_API_KEY: "secret", COMMUNICATION_ADAPTER_TOKEN: "secret",
+    NODE_OPTIONS: "--require=untrusted", LD_PRELOAD: "/bad.so",
+    HTTPS_PROXY: "https://user:secret@proxy", BUZZ_PRIVATE_KEY: "wrong-key",
+  }), { PATH: "/usr/bin", TMPDIR: "/tmp", LANG: "C.UTF-8", TZ: "UTC" });
+});
+
+test("Buzz runner receives only operational environment and configured Buzz credentials", async () => {
+  const client = clientWithRunner(async (_args, env) => {
+    assert.deepEqual(env, { ...buzzCliEnvironment(process.env), BUZZ_RELAY_URL: "https://buzz.example.test", BUZZ_PRIVATE_KEY: "1".repeat(64) });
+    return "[]";
+  });
+  await client.executeCommand(["channels", "list"]);
+});
 const ownPubkey = "d".repeat(64);
 const humanPubkey = "5".repeat(64);
 
@@ -48,6 +68,19 @@ test("parseBuzzChannelAllowlist normalizes and deduplicates values", () => {
   );
 });
 
+test("full Buzz command proxy accepts remote commands but owns connection credentials", () => {
+  assert.deepEqual(normalizeBuzzCommandArgs(["messages", "get", "--channel", channelId]), [
+    "messages", "get", "--channel", channelId,
+  ]);
+  assert.throws(() => normalizeBuzzCommandArgs(["pack", "inspect"]), /Unsupported Buzz command/);
+  assert.throws(() => normalizeBuzzCommandArgs(["messages", "get", "--private-key=secret"]), /managed by the adapter/);
+});
+
+test("full Buzz command proxy returns structured CLI output", async () => {
+  const client = clientWithRunner(async (args) => JSON.stringify({ args }));
+  assert.deepEqual(await client.executeCommand(["channels", "list"]), { args: ["channels", "list"] });
+});
+
 test("listChannels returns only allowlisted visible channels", async () => {
   const client = clientWithRunner(async () => JSON.stringify([
     { channel_id: channelId, name: "prism-lab", description: "Pilot" },
@@ -62,9 +95,17 @@ test("listChannels returns only allowlisted visible channels", async () => {
   }]);
 });
 
-test("listChannels fails closed when an allowlisted channel is not visible", async () => {
+test("stale ceiling entries do not hide other visible channels or abort discovery", async () => {
   const client = clientWithRunner(async () => "[]");
-  await assert.rejects(() => client.listChannels(), /not visible/);
+  assert.deepEqual(await client.listChannels(), []);
+});
+
+test("an empty infrastructure ceiling discovers every visible channel", async () => {
+  const client = clientWithRunner(async () => JSON.stringify([
+    { channel_id: channelId, name: "prism-lab" },
+    { channel_id: "open-channel", name: "general" },
+  ]), { channelAllowlist: [] });
+  assert.deepEqual((await client.listChannels()).map((channel) => channel.channelId), ["open-channel", channelId]);
 });
 
 test("listVisibleChannels is not constrained by the message allowlist", async () => {
@@ -169,6 +210,16 @@ test("sendMessage rejects a destination outside the allowlist before invoking Bu
   });
   await assert.rejects(() => client.sendMessage("general", "hello"), /not allowlisted/);
   assert.equal(called, false);
+});
+
+test("an empty infrastructure ceiling permits policy-authorized destinations", async () => {
+  let called = false;
+  const client = clientWithRunner(async () => {
+    called = true;
+    return JSON.stringify({ event_id: "reply" });
+  }, { channelAllowlist: [] });
+  await client.sendMessage("policy-bound-channel", "hello");
+  assert.equal(called, true);
 });
 
 test("sendMessage creates a threaded reply when replyTo is provided", async () => {

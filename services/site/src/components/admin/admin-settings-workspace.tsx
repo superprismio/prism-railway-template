@@ -8,6 +8,7 @@ import {
   useTransition,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   Activity,
   ArrowUpCircle,
@@ -2118,7 +2119,10 @@ export function AdminSettingsWorkspace({
               targetApps={targetApps}
               targetEnvironments={targetEnvironments}
             />
-            <SourceAdapterPolicySettings />
+            <section className="grid gap-3 border-t border-border/60 pt-5">
+              <SettingsSectionHeader icon={<ShieldAlert className="h-4 w-4" />} title="Communication access" description="Channel identity and access are now configured once on Site-owned Agent Profile bindings." />
+              <div className="border border-primary/30 bg-primary/5 p-4 text-sm"><p>Discord, Buzz, and Telegram access is managed under Agents. Existing source-policy records are available only for one-time migration and rollback compatibility.</p><Button asChild variant="outline" size="sm" className="mt-3"><Link href="/admin/lab/agents">Open Agent Profiles</Link></Button></div>
+            </section>
           </div>
         ) : null}
 
