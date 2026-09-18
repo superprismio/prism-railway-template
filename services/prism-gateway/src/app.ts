@@ -228,14 +228,15 @@ export function createGatewayApp(dependencies: AppDependencies) {
 
   app.post("/credential-bundles/lease", requireLeaseCaller, (request, response) => {
     const body = request.body as Record<string, unknown>;
-    const keys = Array.isArray(body.credentials)
-      ? Array.from(new Set(body.credentials.filter(
-        (key): key is string => typeof key === "string" && /^[a-z][a-z0-9.-]{1,119}$/.test(key),
-      )))
-      : [];
-    if (!keys.length || keys.length > 20) {
+    const requestedKeys = body?.credentials;
+    if (!Array.isArray(requestedKeys) || !requestedKeys.length || !requestedKeys.every(
+      (key): key is string => typeof key === "string" && /^[a-z][a-z0-9.-]{1,119}$/.test(key),
+    )) {
       throw new GatewayStoreError("CREDENTIAL_LEASE_KEYS_INVALID", 400);
     }
+    // Trusted jobs may receive the complete instance credential catalog. Bound
+    // input size with the shared JSON body limit, not an arbitrary catalog cap.
+    const keys = Array.from(new Set(requestedKeys as string[]));
     const context = invocationContext(body.context);
     const caller = response.locals.gatewayCaller as GatewayCaller;
     const env: Record<string, string> = {};

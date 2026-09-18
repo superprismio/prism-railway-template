@@ -114,6 +114,42 @@ test("gateway stores, leases, audits, rotates, and revokes trusted credentials",
     assert.equal(events[0]?.authenticatedCallerId, "codex-runtime");
     assert.equal(JSON.stringify(events).includes(plaintext), false);
 
+    // Full-access jobs lease the whole catalog, which can exceed 20 bundles.
+    const catalogKeys: string[] = [];
+    for (let index = 0; index < 25; index += 1) {
+      const key = `catalog-${index}`;
+      catalogKeys.push(key);
+      const added = await jsonRequest(baseUrl, "/connections", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-gateway-token": siteToken },
+        body: JSON.stringify({ key, provider: "generic", label: key, authType: "api-key",
+          credentials: { apiKey: `test-secret-${index}` },
+          envBindings: { [`CATALOG_${index}`]: "apiKey" } }),
+      });
+      assert.equal(added.response.status, 201);
+    }
+    const catalogLease = await jsonRequest(baseUrl, "/credential-bundles/lease", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+      body: JSON.stringify({ credentials: [...catalogKeys, catalogKeys[0]] }),
+    });
+    assert.equal(catalogLease.response.status, 200);
+    assert.equal(Object.keys(catalogLease.body.env as object).length, 25);
+    assert.deepEqual(catalogLease.body.env, Object.fromEntries(
+      catalogKeys.map((_, index) => [`CATALOG_${index}`, `test-secret-${index}`]),
+    ));
+
+    // Malformed entries must not be silently dropped from a mixed request.
+    for (const credentials of [[], null, "sendgrid", ["sendgrid", "INVALID"], ["sendgrid", 42]]) {
+      const invalidLease = await jsonRequest(baseUrl, "/credential-bundles/lease", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-gateway-token": codexToken },
+        body: JSON.stringify({ credentials }),
+      });
+      assert.equal(invalidLease.response.status, 400);
+      assert.equal(invalidLease.text.includes("CREDENTIAL_LEASE_KEYS_INVALID"), true);
+    }
+
     const replacement = "replacement-secret-value";
     await jsonRequest(baseUrl, `/connections/${connectionId}/credentials`, {
       method: "PUT",
