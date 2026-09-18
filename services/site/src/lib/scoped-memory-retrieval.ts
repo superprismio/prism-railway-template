@@ -13,7 +13,7 @@ type Dependencies = {
 /** Match the canonical interface authorization route during profile migration. */
 export function effectiveRetrievalAuthorization(
   auth: Authorization,
-  agent: { policy: { accessMode: string }; profile: { memoryScope: Record<string, unknown> } } | null,
+  agent: { policy: { accessMode: string; capabilities: string[] }; profile: { memoryScope: Record<string, unknown> } } | null,
   hasBinding: boolean,
 ): Authorization {
   if (!auth.ok) return auth;
@@ -21,6 +21,10 @@ export function effectiveRetrievalAuthorization(
     return { ok: false, code: 'EXTERNAL_INTERFACE_DISABLED' };
   }
   if (!agent) return auth;
+  // A binding may remove memory access even while its access mode stays enabled.
+  if (!Array.isArray(agent.policy.capabilities) || !agent.policy.capabilities.includes('memory.read')) {
+    return { ok: false, code: 'MEMORY_READ_FORBIDDEN' };
+  }
   const scope = agent.profile.memoryScope;
   const strings = (value: unknown): string[] | null => value === undefined ? []
     : Array.isArray(value) && value.every(v => typeof v === 'string') ? value : null;

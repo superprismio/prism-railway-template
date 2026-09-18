@@ -51,7 +51,7 @@ test('empty selectors stay empty and policy changes apply on the next request', 
 test('canonical Agent Profile selectors replace legacy selectors, including empty scope', () => {
   const auth = { ok: true as const, resolved: { profile } };
   for (const memoryScope of [{ buckets: ['public'], knowledgeSourceIds: ['handbook'] }, {}]) {
-    const resolved = effectiveRetrievalAuthorization(auth, { policy: { accessMode: 'readonly' }, profile: { memoryScope } }, true);
+    const resolved = effectiveRetrievalAuthorization(auth, { policy: { accessMode: 'readonly', capabilities: ['memory.read'] }, profile: { memoryScope } }, true);
     assert.ok(resolved.ok);
     assert.deepEqual(resolved.resolved.profile.memoryScope.buckets, memoryScope.buckets ?? []);
   }
@@ -60,13 +60,40 @@ test('canonical Agent Profile selectors replace legacy selectors, including empt
 test('disabled or unresolved canonical binding cannot fall back to legacy access', () => {
   const auth = { ok: true as const, resolved: { profile } };
   assert.equal(effectiveRetrievalAuthorization(auth, null, true).ok, false);
-  assert.equal(effectiveRetrievalAuthorization(auth, { policy: { accessMode: 'off' }, profile: { memoryScope: {} } }, true).ok, false);
+  assert.equal(effectiveRetrievalAuthorization(auth, { policy: { accessMode: 'off', capabilities: ['memory.read'] }, profile: { memoryScope: {} } }, true).ok, false);
   assert.equal(effectiveRetrievalAuthorization(auth, null, false), auth);
 });
 
 test('malformed canonical scope and failed credential authorization fail closed', () => {
-  const agent = { policy: { accessMode: 'readonly' }, profile: { memoryScope: { buckets: 'all' } } };
+  const agent = { policy: { accessMode: 'readonly', capabilities: ['memory.read'] }, profile: { memoryScope: { buckets: 'all' } } };
   assert.equal(effectiveRetrievalAuthorization({ ok: true, resolved: { profile } }, agent, true).ok, false);
   const denied = { ok: false as const, code: 'BAD_CREDENTIAL' };
   assert.equal(effectiveRetrievalAuthorization(denied, agent, true), denied);
+});
+
+
+test('canonical memory.read permission gates every retrieval operation and is rechecked after revocation', async () => {
+  const operations = ['search', 'context', 'meeting', 'meetings', 'coverage'];
+  for (const accessMode of ['readonly', 'run-approved', 'full']) {
+    let calls = 0;
+    const agent = { policy: { accessMode, capabilities: ['memory.read'] },
+      profile: { memoryScope: { buckets: ['meetings'] } } };
+    const deps = {
+      authorize: () => effectiveRetrievalAuthorization({ ok: true, resolved: { profile } }, agent, true),
+      baseUrl: 'https://memory.test', serviceKey: 'secret',
+      fetchImpl: (async () => { calls++; return Response.json({ ok: true }); }) as typeof fetch,
+    };
+    for (const operation of operations) {
+      assert.equal((await scopedMemoryRetrieval(req({ operation }), 'demo', deps)).status, 200);
+    }
+    assert.equal(calls, operations.length);
+    for (const capabilities of [[], ['chat.read'], ['memory.read.extra']]) {
+      agent.policy.capabilities = capabilities;
+      for (const operation of operations) {
+        const response = await scopedMemoryRetrieval(req({ operation }), 'demo', deps);
+        assert.equal(response.status, 403, `${accessMode}/${operation}: ${capabilities}`);
+      }
+      assert.equal(calls, operations.length, 'denied requests must not contact Memory');
+    }
+  }
 });
