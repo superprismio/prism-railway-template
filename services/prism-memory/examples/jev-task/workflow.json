@@ -1,0 +1,45 @@
+{
+  "key": "memory-jev-classification",
+  "enabled": false,
+  "accountabilityDomainKey": "platform-operations",
+  "manifest": {
+    "key": "memory-jev-classification",
+    "name": "Memory JEV classification",
+    "version": 1,
+    "description": "Bounded optional classification of retained meeting summaries.",
+    "entrypoint": "classify",
+    "workflowPath": "workflow.md",
+    "defaultAgent": "admin-agent",
+    "agentConfig": {
+      "modelTier": "economy",
+      "skills": [
+        "prism-memory-jev-classifier"
+      ],
+      "contextPolicy": {
+        "continuation": "step",
+        "handoff": "artifacts"
+      },
+      "delegation": {
+        "allowed": false
+      }
+    },
+    "steps": [
+      {
+        "key": "classify",
+        "label": "Classify up to two summaries",
+        "type": "agent",
+        "instructionPath": "steps/classify.md",
+        "next": "closed"
+      },
+      {
+        "key": "closed",
+        "label": "Closed",
+        "type": "terminal"
+      }
+    ]
+  },
+  "files": {
+    "workflow.md": "# Memory JEV classification\nOptional bounded provider work. Source files and search remain authoritative. Use a private request receipt; no external delivery.\n",
+    "steps/classify.md": "Use prism-memory-jev-classifier. Perform exactly one bounded pass, at most two provider calls, and save jev-classification-receipt.json. Honor prior attempted IDs on retries. Never classify text yourself or drain the backlog. Leave provider failures visible; do not change any task or workflow definitions.\n"
+  }
+}
