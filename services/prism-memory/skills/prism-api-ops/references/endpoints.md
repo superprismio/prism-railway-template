@@ -26,6 +26,17 @@ curl -X POST \
   "$PRISM_API_BASE/ops/memory/backfill?days=30&force=true"
 ```
 
+```bash
+curl -X POST \
+  -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
+  "$PRISM_API_BASE/ops/knowledge/run"
+```
+
+## Legacy registry maintenance
+
+Explicit legacy maintenance or rollback only. Builders stay disabled by default.
+These operations do not acquire missing source history or refresh retrieval.
+
 Rebuild generated state for one day:
 
 ```bash
@@ -69,10 +80,4 @@ Hide/delete a generated throughline from operator views:
 curl -X DELETE \
   -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
   "$PRISM_API_BASE/state/throughlines/<throughline-key>"
-```
-
-```bash
-curl -X POST \
-  -H "X-Prism-Api-Key: $PRISM_API_OPS_KEY" \
-  "$PRISM_API_BASE/ops/knowledge/run"
 ```

@@ -63,7 +63,7 @@ Optional:
 - `participant_count`
 - `metadata`
 
-Use `metadata` for source-agnostic state hints such as `source_system`, `source_type`, `source_id`, `source_version`, `objective_keys`, `throughline_keys`, and `external_refs`.
+Use `metadata` for source provenance such as `source_system`, `source_type`, `source_id`, `source_version`, and `external_refs`. Preserve source-supplied legacy keys when present, but do not invent objectives or throughlines or promise registry generation.
 
 Use memory inbox for:
 

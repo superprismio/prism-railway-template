@@ -56,8 +56,9 @@ optional follow-ups, not conditions for calling the core cutover complete.
 - Live project/objective generation and enrichment are now explicitly off;
   prior settings are backed up as noted above.
 - `weekly-state-cleanup-review`: now disabled; prior schedule Mondays 10:00 UTC.
-- `weekly-action-items-discord-digest`: enabled Mondays 11:00 UTC; inspect workflow
-  dependencies before changing it. Do not equate source-backed action items with
+  Its workflow definition is also disabled; instructions/history are preserved.
+- `weekly-action-items-discord-digest`: enabled Mondays 11:00 America/New_York; its workflow
+  reads the separate Action Items API, not the generated Memory registry. Do not equate source-backed action items with
   generated objective-registry maintenance.
 - Site's custom `prism-api-reader` shadows the bundled skill. Cutover instructions
   were added without removing its instance-specific live Buzz steering behavior.
@@ -71,7 +72,7 @@ optional follow-ups, not conditions for calling the core cutover complete.
 
 ## Ordered cleanup work
 
-### 1. Retire generated-state work as one coherent change — next implementation PR
+### 1. Retire generated-state work as one coherent change — implemented in #90
 
 Owner: Memory pipeline and Site integration maintainer.
 
@@ -86,8 +87,10 @@ Owner: Memory pipeline and Site integration maintainer.
   then explicitly turn them off in the live config. Verify runtime seed behavior:
   a template edit is not proof that an existing volume was changed.
 - [x] Disable `weekly-state-cleanup-review` after inspecting its workflow and recording
-  the prior definition. Stop queued legacy maintenance work without canceling unrelated
-  workflows. Keep `memory-run`, collectors, knowledge sync, and refresh enabled.
+  the prior definition. Its workflow is also disabled. Keep `memory-run`, collectors,
+  knowledge sync, and refresh enabled.
+- [ ] Inspect outstanding request/workflow runs for previously queued legacy cleanup;
+  disabling the launcher and workflow is not proof that old requests were canceled.
 - [x] Inspect `weekly-action-items-discord-digest` and other workflows for reads of
   generated state. Move any dependent evidence reads to retained meeting summaries.
   Preserve the authorized delivery behavior; a maintenance run must not send messages.
@@ -102,6 +105,36 @@ Owner: Memory pipeline and Site integration maintainer.
 Done when: a normal scheduled memory run creates a source-backed recap, invokes no
 state builder, produces no objective cleanup queue, and all active consumers avoid
 claiming frozen registries are current. Tests cover recap output and compatibility.
+
+### Skills and live workflow audit — 2026-09-18
+
+Audited 55 live workflow definitions, all 208 referenced step instruction files
+(none missing), and 35 Site custom skills through the agent APIs. The only
+workflow referencing generated Memory registry routes was
+`weekly-state-cleanup-review-workflow`; it is now disabled via the workflow API,
+with unchanged manifest/instructions verified by readback. The separate weekly
+Action Items digest queries its own `/api/v1/items` API and remains unchanged.
+No delivery workflows were triggered by this audit.
+
+Bundled ops/config skills now separate explicit legacy maintenance from ordinary
+Memory/Knowledge operations. Writer guidance preserves upstream meeting metadata
+and provenance without promising objective or throughline generation. These
+bundled changes take effect after deployment of #90.
+
+The live custom reader now explicitly treats generated registries as historical
+compatibility reads and rejects rebuilding them as a retrieval fallback. Its Buzz
+safety, channel steering, and found/none_found/unavailable rules are unchanged,
+verified by exact suffix comparison and API readback. It remains an intentional
+instance override until the separate-skill migration below; do not delete it at
+deploy time. Runtime skill caches may retain the prior text for up to five minutes.
+
+Private rollback snapshots are on Site under
+`/data/custom/memory-retirement-20260918/`: `audit-workflows.json`,
+`audit-skills.json`, `audit-agent-profiles.json`, per-workflow/per-skill audit files,
+`workflow-before-retirement.json`, and `reader-before-workflow-audit.json`.
+Restore through the corresponding agent APIs, preserving the enabled flag and
+existing accountability assignment. These contain instance instructions and must
+not be committed into the public template.
 
 ### 2. Make the reader/configuration reproducible — same release or immediately next
 

@@ -9,8 +9,9 @@
 - `triaged_at` should be ISO-8601 UTC.
 - keep `related_docs` empty rather than inventing weak links.
 - avoid ingesting reusable workflows or templates as `note`.
-- Use `objective_keys` and `throughline_keys` only when the source has an
-  explicit durable work objective or throughline hint.
-- For meeting summaries, preserve structured `action_items` metadata when
-  available. Action items become state signals, but do not become standalone
-  objectives unless an explicit objective key is also present.
+- Preserve source-supplied `objective_keys` and `throughline_keys` as legacy
+  metadata when present; do not infer new registry keys.
+- Preserve structured meeting `action_items`, participants, topics, and dates
+  supplied by upstream synthesis. These are source assertions, not automatically
+  verified assignments or generated objectives. Normal memory processing does
+  not build the retired registry.
