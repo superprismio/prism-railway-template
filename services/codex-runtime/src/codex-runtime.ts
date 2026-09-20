@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import { createJobCleanup, isolateJobProcessGroup } from './process-cleanup.js';
 import { config } from './config.js';
 import { RunBudget, isExecutionProgress, resolveRunBudget } from './run-budget.js';
 import { resolveCodexModelPolicy, type ModelTier, type ReasoningEffort } from './model-tier.js';
@@ -1349,10 +1350,15 @@ async function runCodexProcess(input: CodexRuntimeInput) {
   try {
     return await new Promise<CodexRuntimeResult>((resolve, reject) => {
       const child = spawn(config.codexBinary, args, {
+      detached: isolateJobProcessGroup,
       cwd: executionWorkspaceRoot,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+
+    const cleanupJob = createJobCleanup(child);
+    // exit precedes close: abandoned descendants may still hold stdio open.
+    child.once('exit', cleanupJob);
 
     let stderr = '';
     let stdoutBuffer = '';
@@ -1370,12 +1376,8 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       settled = true;
       clearTimeout(timeout);
       input.signal?.removeEventListener('abort', cancelRun);
-      child.kill('SIGTERM');
+      cleanupJob();
       child.stdin.destroy();
-      const forceKill = setTimeout(() => {
-        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-      }, 5_000);
-      forceKill.unref();
       void fs.unlink(outputFile).catch(() => undefined);
       recordTrace('run.canceled', 'Codex runtime job was canceled');
       const error = new Error('RUNTIME_JOB_CANCELED') as CodexRuntimeError;
@@ -1397,12 +1399,8 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       settled = true;
       clearInterval(timeout);
       input.signal?.removeEventListener('abort', cancelRun);
-      child.kill('SIGTERM');
+      cleanupJob();
       child.stdin.destroy();
-      const forceKill = setTimeout(() => {
-        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-      }, 5_000);
-      forceKill.unref();
       const error = new Error(reason === 'idle' ? 'CODEX_RUNTIME_IDLE_TIMEOUT' : 'CODEX_RUNTIME_BUDGET_EXCEEDED') as CodexRuntimeError;
       error.codexThreadId = threadId;
       error.trace = trace;
@@ -1421,7 +1419,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       settled = true;
       clearTimeout(timeout);
       input.signal?.removeEventListener('abort', cancelRun);
-      child.kill('SIGTERM');
+      cleanupJob();
       recordTrace('prompt.stdin_failed', 'Codex prompt delivery through stdin failed');
       const error = new Error(`RUNTIME_PROMPT_STDIN_FAILED:${stdinError.message}`) as CodexRuntimeError;
       error.codexThreadId = threadId;
