@@ -22,6 +22,9 @@ COPY . .
 RUN npm run build \
   && npm prune --omit=dev
 
+# Direct Node startup does not get npm run's automatic local executable path.
+ENV PATH="/app/node_modules/.bin:${PATH}"
+
 EXPOSE 3030
 
 # Reap orphaned browser/command children instead of leaving zombies under npm.
