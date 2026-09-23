@@ -25,6 +25,7 @@ import { ExternalInteractionRateLimiter } from "./external-interaction-rate-limi
 import { buildAdvisoryMemoryInstructions, type AdvisoryMemoryScope } from "./external-interaction-memory-policy.js";
 import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 import { requestSiteRuntime } from "./site-runtime.js";
+import { recoverDiscordRequestHandoff, sendAndRecordDiscordReply } from "./discord-request-handoff.js";
 import { discordDestinationType } from "./discord-output.js";
 import { discordAgentRoutingStatus, unavailableDiscordAgentMessage, unconfiguredDiscordChannelMessage } from "./discord-agent-routing.js";
 import { AppApiRequestError, isAppApiNotFound } from "./app-api-error.js";
@@ -4141,7 +4142,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
           policyInstructions: [
             communicationProfileInstructions(interactionProfile, accessPolicy),
             accessPolicy.mode !== "readonly" && accessPolicy.capabilities.includes("requests.create")
-              ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${String(session.id)} and sourceMessageId ${transport.userSourceMessageId ?? "null"}; do not supply identity display fields.`
+              ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${String(session.id)} and sourceMessageId ${transport.userSourceMessageId ?? "null"}; do not supply identity display fields. After dispatch, promptly give the user the request number and link and finish this chat reply. The workflow runs independently; do not poll its steps or wait for completion in this chat unless the user explicitly asks you to monitor it.`
               : "",
           ].filter(Boolean).join("\n\n"),
           adapterCapabilities: {
@@ -4188,15 +4189,18 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         });
       }
 
-      const sent = await sendSanitizedAssistantMessage(transport, reply);
-      await appendSessionMessage({
-        sessionId: String(session.id),
-        role: "assistant",
-        source: "discord",
-        sourceMessageId: sent.sourceMessageId,
-        content: sent.text,
-        meta: { inThread: Boolean(transport.threadId), runtimeContinuationId, redactions: sent.redactions, accessPolicy },
-        createdAt: nowUtcIso(),
+      await sendAndRecordDiscordReply({
+        send: () => sendSanitizedAssistantMessage(transport, reply),
+        record: (sent) => appendSessionMessage({
+          sessionId: String(session.id),
+          role: "assistant",
+          source: "discord",
+          sourceMessageId: sent.sourceMessageId,
+          content: sent.text,
+          meta: { inThread: Boolean(transport.threadId), runtimeContinuationId, redactions: sent.redactions, accessPolicy },
+          createdAt: nowUtcIso(),
+        }),
+        onRecordError: (error) => console.error("[discord-adapter] reply delivered but session persistence failed", describeError(error)),
       });
     } catch (error) {
       const errorMessage = describeError(error);
@@ -4208,18 +4212,33 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
         threadId: transport.threadId,
         error: errorMessage,
       });
-      const reply =
+      const handoff = await recoverDiscordRequestHandoff({
+        sourceSessionId: String(session.id),
+        sourceMessageId: transport.userSourceMessageId,
+        channelId: transport.channelId,
+        threadId: transport.threadId,
+        lookup: (query, signal) => appApiRequest(query, { signal }),
+      });
+      const reply = handoff?.text ?? (
         "I hit a chat-engine error. This bridge can keep the Discord thread and session state, but the model-backed reply path is not available right now. " +
-        `Error: ${errorMessage}`;
-      const sent = await sendSanitizedAssistantMessage(transport, reply);
-      await appendSessionMessage({
-        sessionId: String(session.id),
-        role: "assistant",
-        source: "discord",
-        sourceMessageId: sent.sourceMessageId,
-        content: sent.text,
-        meta: { inThread: Boolean(transport.threadId), runtimeContinuationId, failed: true, redactions: sent.redactions, accessPolicy },
-        createdAt: nowUtcIso(),
+        `Error: ${errorMessage}`);
+      await sendAndRecordDiscordReply({
+        send: () => sendSanitizedAssistantMessage(transport, reply),
+        record: (sent) => appendSessionMessage({
+          sessionId: String(session.id),
+          role: "assistant",
+          source: "discord",
+          sourceMessageId: sent.sourceMessageId,
+          content: sent.text,
+          meta: {
+            inThread: Boolean(transport.threadId), runtimeContinuationId, failed: true,
+            handoffRecovered: Boolean(handoff),
+            ...(handoff ? { requestIds: handoff.requestIds, requestNumbers: handoff.requestNumbers } : {}),
+            redactions: sent.redactions, accessPolicy,
+          },
+          createdAt: nowUtcIso(),
+        }),
+        onRecordError: (error) => console.error("[discord-adapter] error reply delivered but session persistence failed", describeError(error)),
       });
     } finally {
       stopTyping();
