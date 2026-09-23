@@ -8,6 +8,8 @@ import {
 } from "@/lib/internal-service"
 import { trackedChangeRequestPriorities, trackedChangeRequestTypes } from "@/lib/local-admin-api"
 import { parseEstimatedHumanHours } from "@/lib/request-estimates"
+import { publicUrlFromRequest } from "@/lib/public-url"
+import { selectedRequestWorkspaceId } from "@/lib/prism-lab/request-links"
 import { autoStartWorkflowRequest } from "@/lib/workflow-autostart"
 import { requireRequestWorkflowKey, workflowSelectionHint } from "@/lib/request-workflow-selection"
 
@@ -43,13 +45,24 @@ export async function GET(request: Request) {
   const originTargetId = parseString(url.searchParams.get("target")) || undefined
   const interactionProfileKey = parseString(url.searchParams.get("profile")) || undefined
   const originActor = parseString(url.searchParams.get("initiator")) || undefined
+  const sourceSessionId = parseString(url.searchParams.get("sourceSessionId")) || undefined
+  const sourceMessageId = parseString(url.searchParams.get("sourceMessageId")) || undefined
+  if (sourceMessageId && !sourceSessionId) {
+    return NextResponse.json({ ok: false, error: "SOURCE_SESSION_REQUIRED" }, { status: 400 })
+  }
   const query = parseString(url.searchParams.get("q")) || undefined
   const openOnly = readBooleanQuery(url.searchParams.get("openOnly") ?? url.searchParams.get("open_only"))
   const limit = Math.min(readPositiveInteger(url.searchParams.get("limit"), 100), 500)
+  const changeRequests = listChangeRequests({ targetAppId, source, platform, originTargetId, interactionProfileKey, originActor, sourceSessionId, sourceMessageId, query, openOnly, limit })
 
   return NextResponse.json({
     ok: true,
-    changeRequests: listChangeRequests({ targetAppId, source, platform, originTargetId, interactionProfileKey, originActor, query, openOnly, limit }),
+    changeRequests: sourceSessionId && sourceMessageId
+      ? changeRequests.map((item) => ({
+        ...item,
+        requestUrl: publicUrlFromRequest(request, `/admin/lab/requests/${item.requestNumber}#${selectedRequestWorkspaceId}`),
+      }))
+      : changeRequests,
   })
 }
 

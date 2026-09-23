@@ -441,6 +441,8 @@ export interface ListChangeRequestsInput {
   originTargetId?: string;
   interactionProfileKey?: string;
   originActor?: string;
+  sourceSessionId?: string;
+  sourceMessageId?: string;
   query?: string;
   openOnly?: boolean;
   limit?: number;
@@ -3735,6 +3737,7 @@ export function getDefaultTargetEnvironmentForApp(targetAppId: string) {
 }
 
 export function listChangeRequests(input: ListChangeRequestsInput = {}) {
+  if (input.sourceMessageId && !input.sourceSessionId) throw new Error('SOURCE_SESSION_REQUIRED');
   const params: Array<string> = [];
   let sql = `SELECT
       cr.id,
@@ -3799,6 +3802,11 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
   if (input.originActor) {
     conditions.push('EXISTS (SELECT 1 FROM request_origins ro WHERE ro.request_id = cr.id AND COALESCE(ro.actor_id, ro.actor_type, \'unknown\') = ?)');
     params.push(input.originActor);
+  }
+  if (input.sourceSessionId) {
+    conditions.push(`EXISTS (SELECT 1 FROM request_origins ro WHERE ro.request_id = cr.id AND ro.source_session_id = ?${input.sourceMessageId ? ' AND ro.source_message_id = ?' : ''})`);
+    params.push(input.sourceSessionId);
+    if (input.sourceMessageId) params.push(input.sourceMessageId);
   }
   if (input.query) {
     conditions.push(`(
