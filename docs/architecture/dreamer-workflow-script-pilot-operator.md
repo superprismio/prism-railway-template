@@ -40,14 +40,31 @@ conservative: absent same-attempt receipts are unknown, not proof a command
 failed. Lease audit currently reports `not_available` unless non-secret audit
 references are added later; credential diagnoses stay unknown.
 
-The normal route is inspection → full report → close. Incomplete evidence or
-contract failure routes through Dreamer's read-only assessment before reporting.
+The normal route for a finding is inspection → Dreamer's evidence assessment →
+full report → close. The assessment checks the original request review and
+named artifact APIs, and records confirmed, disproven, and unresolved checks.
+An unlinked artifact is unresolved until its run provenance is verified; a
+disproven missing-artifact finding is retracted in the report. Incomplete
+evidence or contract failure uses the same assessment step.
 An unchanged/clean result closes without Discord. The report step must attach
 or link the full `workflow-health-report.md`, reconcile uncertain delivery,
 and record a delivery receipt only after the provider accepts it. The Site
 delivery fingerprint is updated through `/agent/workflow-health/deliveries`
 after provider acceptance, never before. No second notification stream or
 recurring task is created by this implementation.
+
+After deploying a change to the inspector source, register a new immutable
+script revision with the new checksum and update the instance-owned workflow
+manifest to that revision. Also update the instance-owned assessment and report
+step instructions from the generated payload. Code deployment alone does not
+replace the live revision or workflow files. Keep canary #3263 as historical
+evidence; run a new canary after updating the instance.
+
+The inspector's raw observation fingerprint is the delivery deduplication key
+through assessment and reporting. Dreamer corrects the human-readable findings
+after checking original evidence, but copies that fingerprint unchanged into
+the assessment and delivery record. This keeps an identical observation quiet
+on the next run.
 
 Validate a clean/no-op request, a changed finding, incomplete evidence,
 interruption and retry, fallback, stop, and restored agent-path manifest in a

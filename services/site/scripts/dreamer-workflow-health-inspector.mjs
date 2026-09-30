@@ -45,12 +45,17 @@ for (const target of snapshot.targets ?? []) {
 
   const names = new Set((target.artifacts ?? []).map((artifact) => artifact.name));
   for (const name of target.requiredArtifacts ?? []) {
-    const found = names.has(name);
+    const evidence = (target.artifactEvidence ?? []).find((item) => item.name === name);
+    const found = evidence?.status === 'present' || (!evidence && names.has(name));
+    const ambiguous = evidence?.status === 'ambiguous';
     const terminal = run?.status === 'completed';
-    add(target, `required-artifact:${name}`, found ? 'pass' : terminal ? 'finding' : 'unknown',
-      found ? `Required artifact ${name} is present` : terminal ? `Completed run lacks required artifact ${name}` :
-        `Artifact ${name} is not present while the run may still be active`,
-      found ? (target.artifacts ?? []).filter((artifact) => artifact.name === name).map((artifact) => ({ kind: 'artifact', id: artifact.id })) : []);
+    add(target, `required-artifact:${name}`, found ? 'pass' : ambiguous || !terminal ? 'unknown' : 'finding',
+      found ? `Required artifact ${name} is linked to this run` :
+        ambiguous ? `Artifact ${name} exists on the request but its run provenance is unresolved` :
+        terminal ? `Completed run has no identified required artifact ${name}` :
+          `Artifact ${name} is not present while the run may still be active`,
+      found ? (target.artifacts ?? []).filter((artifact) => artifact.name === name).map((artifact) => ({ kind: 'artifact', id: artifact.id })) :
+        ambiguous && evidence?.candidateArtifactId ? [{ kind: 'artifact-candidate', id: evidence.candidateArtifactId }] : []);
   }
   if ((target.requiredArtifacts ?? []).length === 0) add(target, 'required-artifacts', 'not_applicable', 'No artifact rules configured');
 

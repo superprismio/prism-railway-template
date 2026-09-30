@@ -101,6 +101,78 @@ test('health snapshot finds old required artifact in the same run without copyin
   assert.ok(Buffer.byteLength(serialized) < 120_000);
 });
 
+test('health snapshot distinguishes agent-linked artifacts, ambiguous legacy artifacts, and other runs', () => {
+  const f = fixture('artifact-provenance');
+  const other = fixture('artifact-other-workflow');
+  const now = new Date().toISOString();
+  getDb().prepare(`INSERT INTO agent_runs
+    (id,kind,status,source,input_json,result_json,trace_json,created_at,updated_at,request_id,workflow_run_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run('agent-provenance', 'workflow_step', 'succeeded', 'site', '{}', '{}', '[]', now, now,
+      f.request.id, f.workflowRun.id);
+  getDb().prepare(`INSERT INTO agent_runs
+    (id,kind,status,source,input_json,result_json,trace_json,created_at,updated_at,request_id,workflow_run_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run('agent-other-request', 'workflow_step', 'succeeded', 'site', '{}', '{}', '[]', now, now,
+      other.request.id, other.workflowRun.id);
+  getDb().prepare(`INSERT INTO agent_runs
+    (id,kind,status,source,input_json,result_json,trace_json,created_at,updated_at,request_id,workflow_run_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run('agent-unlinked-run', 'workflow_step', 'succeeded', 'site', '{}', '{}', '[]', now, now,
+      f.request.id, null);
+  const linked = createRequestArtifact({ requestId: f.request.id, agentRunId: 'agent-provenance',
+    kind: 'json', name: 'linked.json', mimeType: 'application/json', storagePath: '/tmp/linked.json', sizeBytes: 1 });
+  getDb().prepare('UPDATE request_artifacts SET created_at=? WHERE id=?').run('2020-01-01T00:00:00.000Z', linked.id);
+  const ambiguous = createRequestArtifact({ requestId: f.request.id, kind: 'json', name: 'ambiguous.json',
+    mimeType: 'application/json', storagePath: '/tmp/ambiguous.json', sizeBytes: 1 });
+  const agentUnlinked = createRequestArtifact({ requestId: f.request.id, agentRunId: 'agent-unlinked-run',
+    kind: 'json', name: 'agent-unlinked.json', mimeType: 'application/json', storagePath: '/tmp/agent-unlinked.json', sizeBytes: 1 });
+  const dangling = createRequestArtifact({ requestId: f.request.id, kind: 'json', name: 'dangling.json',
+    mimeType: 'application/json', storagePath: '/tmp/dangling.json', sizeBytes: 1 });
+  getDb().pragma('foreign_keys = OFF');
+  try {
+    getDb().prepare('UPDATE request_artifacts SET agent_run_id=? WHERE id=?').run('deleted-agent-run', dangling.id);
+  } finally {
+    getDb().pragma('foreign_keys = ON');
+  }
+  createRequestArtifact({ requestId: f.request.id, workflowRunId: other.workflowRun.id, kind: 'json',
+    name: 'other-run.json', mimeType: 'application/json', storagePath: '/tmp/other-run.json', sizeBytes: 1 });
+  createRequestArtifact({ requestId: f.request.id, agentRunId: 'agent-other-request', kind: 'json',
+    name: 'other-agent.json', mimeType: 'application/json', storagePath: '/tmp/other-agent.json', sizeBytes: 1 });
+  const directMisassociated = createRequestArtifact({ requestId: f.request.id, workflowRunId: f.workflowRun.id,
+    agentRunId: 'agent-other-request', kind: 'json', name: 'direct-misassociated.json',
+    mimeType: 'application/json', storagePath: '/tmp/direct-misassociated.json', sizeBytes: 1 });
+  const directDangling = createRequestArtifact({ requestId: f.request.id, workflowRunId: f.workflowRun.id,
+    kind: 'json', name: 'direct-dangling.json', mimeType: 'application/json',
+    storagePath: '/tmp/direct-dangling.json', sizeBytes: 1 });
+  getDb().pragma('foreign_keys = OFF');
+  try {
+    getDb().prepare('UPDATE request_artifacts SET agent_run_id=? WHERE id=?').run('deleted-direct-agent', directDangling.id);
+  } finally {
+    getDb().pragma('foreign_keys = ON');
+  }
+  // A newer unlinked match cannot override older proven provenance.
+  createRequestArtifact({ requestId: f.request.id, kind: 'json', name: 'linked.json',
+    mimeType: 'application/json', storagePath: '/tmp/newer-unlinked.json', sizeBytes: 1 });
+  const inspection = createChangeRequest({ title: 'Inspect provenance', description: 'Inspect provenance',
+    workflowKey: f.request.workflowKey, requestType: 'ops',
+    constraints: { workflowHealth: { requestNumbers: [f.request.requestNumber] } } });
+  assert.ok(inspection);
+  const result = workflowScriptSnapshot({ request: inspection, binding: 'workflow-health-snapshot-v1',
+    config: { eligibleWorkflowKeys: [f.request.workflowKey],
+      requiredArtifacts: { [f.request.workflowKey]: ['linked.json', 'ambiguous.json', 'agent-unlinked.json',
+        'dangling.json', 'other-run.json', 'other-agent.json', 'direct-misassociated.json', 'direct-dangling.json'] },
+      reportScopeKey: 'provenance-scope' } });
+  assert.ok(result.targets);
+  const evidence = 'artifactEvidence' in result.targets[0] ? result.targets[0].artifactEvidence : [];
+  assert.deepEqual(evidence.map((item) => item.status), ['present', 'ambiguous', 'ambiguous', 'ambiguous',
+    'absent', 'absent', 'present', 'present']);
+  assert.equal(evidence[0].artifactId, linked.id);
+  assert.equal(evidence[1].candidateArtifactId, ambiguous.id);
+  assert.equal(evidence[2].candidateArtifactId, agentUnlinked.id);
+  assert.equal(evidence[3].candidateArtifactId, dangling.id);
+  assert.equal(evidence[6].artifactId, directMisassociated.id);
+  assert.equal(evidence[7].artifactId, directDangling.id);
+  assert.equal(JSON.stringify(result).includes('/tmp/linked.json'), false);
+});
+
 test('oversize target becomes partial unknown coverage rather than a false clean scan', () => {
   const f = fixture('snapshot-bound');
   const insert = getDb().prepare(`INSERT INTO agent_runs

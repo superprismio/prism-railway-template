@@ -44,6 +44,34 @@ test('active or queued work does not falsely classify an absent artifact as fail
   assert.equal(result.outcome, 'escalate');
 });
 
+test('ambiguous request artifact stays unknown with its candidate reference', () => {
+  const input = snapshot([target({ requiredArtifacts: ['report.md'],
+    artifactEvidence: [{ name: 'report.md', status: 'ambiguous', candidateArtifactId: 'legacy-artifact' }],
+  })]);
+  const result = inspectWorkflowHealth(input);
+  const artifactCheck = check(result, 'required-artifact:report.md');
+  assert.equal(artifactCheck.status, 'unknown');
+  assert.deepEqual(artifactCheck.evidence, [{ kind: 'artifact-candidate', id: 'legacy-artifact' }]);
+  assert.equal(result.outcome, 'escalate');
+  const repeated = inspectWorkflowHealth({ ...input, previousDeliveredFingerprint: result.result.fingerprint });
+  assert.equal(repeated.outcome, 'no_op');
+  assert.equal(repeated.result.fingerprint, result.result.fingerprint);
+});
+
+test('proven artifact passes and completed truly absent artifact remains a finding', () => {
+  const proven = inspectWorkflowHealth(snapshot([target({ requiredArtifacts: ['report.md'],
+    artifactEvidence: [{ name: 'report.md', status: 'present', artifactId: 'linked-artifact' }],
+    artifacts: [{ id: 'linked-artifact', name: 'report.md' }],
+  })]));
+  assert.equal(check(proven, 'required-artifact:report.md').status, 'pass');
+  assert.equal(proven.outcome, 'no_op');
+  const absent = inspectWorkflowHealth(snapshot([target({ requiredArtifacts: ['report.md'],
+    artifactEvidence: [{ name: 'report.md', status: 'absent' }],
+  })]));
+  assert.equal(check(absent, 'required-artifact:report.md').status, 'finding');
+  assert.equal(absent.outcome, 'completed');
+});
+
 test('expired ownership is a finding, but credential and wrong-attempt receipts remain unknown', () => {
   const input = snapshot([target({
     agentRuns: [{ id: 'agent-1', status: 'running', leaseExpiresAt: '2026-09-29T11:00:00.000Z', errorCode: 'WALLET_KEY_UNAVAILABLE' }],
