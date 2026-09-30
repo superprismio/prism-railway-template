@@ -36,14 +36,30 @@ export function workflowScriptSnapshot(input: { request: ChangeRequestRecord; bi
     if (!eligible.has(request.workflowKey)) return { number, coverage: 'ineligible_workflow', workflowKey: request.workflowKey };
     const workflowRun = getWorkflowRunForRequest(request.id);
     const requiredNames = strings(required[request.workflowKey]);
-    // Required artifacts are lifetime-scoped to this workflow run, not the observation window.
-    const artifacts = requiredNames.flatMap((name) => {
-      if (!workflowRun) return [];
-      const row = getDb().prepare(`SELECT id,name,created_at FROM request_artifacts
-        WHERE request_id=? AND workflow_run_id=? AND name=? ORDER BY created_at DESC LIMIT 1`)
-        .get(request.id, workflowRun.id, name) as { id: string; name: string; created_at: string } | undefined;
-      return row ? [{ id: row.id, name: row.name, createdAt: row.created_at }] : [];
+    // A direct run link or an agent link into this run proves provenance. Legacy
+    // request-only artifacts are candidates, never proof of this run's output.
+    // Do not window this lookup: a completed run's artifact remains valid later.
+    const artifactEvidence = requiredNames.map((name) => {
+      const proven = workflowRun ? getDb().prepare(`SELECT a.id,a.created_at FROM request_artifacts a
+        WHERE a.request_id=? AND a.name=?
+          AND (a.workflow_run_id=? OR (a.workflow_run_id IS NULL AND a.agent_run_id IS NOT NULL
+            AND EXISTS (SELECT 1 FROM agent_runs r WHERE r.id=a.agent_run_id
+              AND r.request_id=a.request_id AND r.workflow_run_id=?)))
+        ORDER BY a.created_at DESC,a.rowid DESC LIMIT 1`)
+        .get(request.id, name, workflowRun.id, workflowRun.id) as { id: string; created_at: string } | undefined : undefined;
+      if (proven) return { name, status: 'present', artifactId: proven.id, createdAt: proven.created_at };
+      const candidate = getDb().prepare(`SELECT a.id,a.created_at FROM request_artifacts a
+        LEFT JOIN agent_runs r ON r.id=a.agent_run_id
+        WHERE a.request_id=? AND a.name=? AND a.workflow_run_id IS NULL
+          AND (a.agent_run_id IS NULL OR r.id IS NULL OR
+            (r.request_id=a.request_id AND r.workflow_run_id IS NULL))
+        ORDER BY a.created_at DESC,a.rowid DESC LIMIT 1`)
+        .get(request.id, name) as { id: string; created_at: string } | undefined;
+      return candidate ? { name, status: 'ambiguous', candidateArtifactId: candidate.id, createdAt: candidate.created_at }
+        : { name, status: 'absent' };
     });
+    const artifacts = artifactEvidence.filter((item) => item.status === 'present')
+      .map((item) => ({ id: item.artifactId!, name: item.name, createdAt: item.createdAt! }));
     const receiptRows = workflowRun ? getDb().prepare(`SELECT id,
       json_extract(metadata_json,'$.agentRunId') AS run_id,
       json_extract(metadata_json,'$.status') AS status,
@@ -67,6 +83,7 @@ export function workflowScriptSnapshot(input: { request: ChangeRequestRecord; bi
         completedAt: workflowRun.completedAt, updatedAt: workflowRun.updatedAt } : null,
       requiredArtifacts: requiredNames,
       artifacts,
+      artifactEvidence,
       historyTruncated: agentHistory.length > agentRuns.length || scriptHistory.length > scriptRuns.length ||
         eventHistory.length > events.length || receiptRows.length === 50,
       agentRuns: agentRuns.map((run) => ({ id: run.id, stepKey: run.workflowStepKey, status: run.status,
