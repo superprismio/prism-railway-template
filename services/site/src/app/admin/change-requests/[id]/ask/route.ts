@@ -8,6 +8,7 @@ import {
   getSessionSummary,
   getWorkflowByKey,
   getWorkflowRunForRequest,
+  loadConfig,
   listAgentMessages,
   listAgentRuns,
   listRequestArtifacts,
@@ -23,6 +24,7 @@ import {
   PrismLabRequestAskError,
   runPrismLabRequestAsk,
 } from "@/lib/prism-lab-routes/request-ask-service"
+import { loadWorkflowInstructionEvidence } from "@/lib/prism-lab-routes/workflow-ask-evidence"
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -71,6 +73,7 @@ export async function POST(request: Request, context: RouteContext) {
         getRequest: getChangeRequest,
         getWorkflowRun: getWorkflowRunForRequest,
         getWorkflow: getWorkflowByKey,
+        loadWorkflowInstruction: (instructionPath) => loadWorkflowInstructionEvidence(instructionPath, loadConfig()),
         listAgentRuns,
         listWorkflowEvents: listWorkflowEventsForRequest,
         listArtifacts: listRequestArtifacts,
