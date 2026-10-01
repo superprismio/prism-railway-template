@@ -46,12 +46,27 @@ named artifact APIs, and records confirmed, disproven, and unresolved checks.
 An unlinked artifact is unresolved until its run provenance is verified; a
 disproven missing-artifact finding is retracted in the report. Incomplete
 evidence or contract failure uses the same assessment step.
-An unchanged/clean result closes without Discord. The report step must attach
-or link the full `workflow-health-report.md`, reconcile uncertain delivery,
-and record a delivery receipt only after the provider accepts it. The Site
+Discord is human-action-only: successful recoveries, clean scans, unknown-only
+evidence and retractions stay in the full request report without a notification.
+An alert requires a verified unresolved failure, exhausted applicable authorized
+recovery (or a concrete reason it cannot proceed), and an exact human action.
+The read-only pilot's lack of repair authority is not itself an escalation reason.
+Eligible alerts briefly explain what failed, what was tried and what the person
+must do, with a request link. Do not push full reports, UUIDs or fingerprints to
+Discord. Save a notification decision for silent outcomes; do not mark them delivered.
+Reconcile uncertain delivery and record a receipt only after provider acceptance. The Site
 delivery fingerprint is updated through `/agent/workflow-health/deliveries`
 after provider acceptance, never before. No second notification stream or
 recurring task is created by this implementation.
+
+When adopting this policy on an existing instance, replace conflicting notification
+instructions in Dreamer's profile, recovery workflow and maintenance verification
+step as well as this pilot. Do not merely prepend another policy to instructions
+that still require success recaps or full-report Discord delivery. Preserve all
+existing repair authority, destinations, retry limits and schedules. Suppression
+must be based on the human-action decision first; for eligible alerts compare the
+prior accepted alert's stable identity, recovery result and human ask, even when
+the raw sweep fingerprint changes. Store those fields in decision/receipt artifacts.
 
 After deploying a change to the inspector source, register a new immutable
 script revision with the new checksum and update the instance-owned workflow
@@ -65,6 +80,11 @@ through assessment and reporting. Dreamer corrects the human-readable findings
 after checking original evidence, but copies that fingerprint unchanged into
 the assessment and delivery record. This keeps an identical observation quiet
 on the next run.
+
+Legacy artifact metadata links (`agent_run_id` / `agentRunId`) are accepted only
+after a same-request agent-to-workflow join, and never override canonical links.
+Serialize JSON artifacts with `JSON.stringify`, parse before upload and verify
+the saved content parses; literal trailing backslash-n characters are invalid JSON.
 
 Validate a clean/no-op request, a changed finding, incomplete evidence,
 interruption and retry, fallback, stop, and restored agent-path manifest in a
