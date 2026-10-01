@@ -173,6 +173,49 @@ test('health snapshot distinguishes agent-linked artifacts, ambiguous legacy art
   assert.equal(JSON.stringify(result).includes('/tmp/linked.json'), false);
 });
 
+test('legacy artifact metadata proves provenance only through unambiguous same-request run ownership', () => {
+  const f = fixture('legacy-metadata');
+  const other = fixture('legacy-other');
+  const now = new Date().toISOString();
+  const insert = getDb().prepare(`INSERT INTO agent_runs
+    (id,kind,status,source,input_json,result_json,trace_json,created_at,updated_at,request_id,workflow_run_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+  for (const [id, requestId, runId] of [
+    ['legacy-agent', f.request.id, f.workflowRun.id],
+    ['legacy-other-agent', other.request.id, other.workflowRun.id],
+    ['legacy-wrong-run', f.request.id, other.workflowRun.id],
+  ]) insert.run(id, 'workflow_step', 'succeeded', 'site', '{}', '{}', '[]', now, now, requestId, runId);
+  const cases = [
+    { name: 'snake', metadata: { agent_run_id: 'legacy-agent' }, status: 'present' },
+    { name: 'camel', metadata: { agentRunId: 'legacy-agent', secret: 'never-copy-this' }, status: 'present' },
+    { name: 'agree', metadata: { agentRunId: 'legacy-agent', agent_run_id: 'legacy-agent' }, status: 'present' },
+    { name: 'conflict', metadata: { agentRunId: 'legacy-agent', agent_run_id: 'legacy-other-agent' }, status: 'ambiguous' },
+    { name: 'wrong-type', metadata: { agentRunId: 12, agent_run_id: 'legacy-agent' }, status: 'ambiguous' },
+    { name: 'missing', metadata: { agent_run_id: 'nonexistent' }, status: 'ambiguous' },
+    { name: 'wrong-request', metadata: { agent_run_id: 'legacy-other-agent' }, status: 'absent' },
+    { name: 'wrong-run', metadata: { agent_run_id: 'legacy-wrong-run' }, status: 'absent' },
+    { name: 'canonical-agent', agentRunId: 'legacy-other-agent', metadata: { agent_run_id: 'legacy-agent' }, status: 'absent' },
+    { name: 'canonical-run', workflowRunId: other.workflowRun.id, metadata: { agent_run_id: 'legacy-agent' }, status: 'absent' },
+    { name: 'invalid-json', metadata: {}, status: 'ambiguous' },
+  ];
+  for (const c of cases) {
+    const a = createRequestArtifact({ requestId: f.request.id, ...c,
+      kind: 'json', mimeType: 'application/json', storagePath: '/tmp/unused', sizeBytes: 1 });
+    if (c.name === 'invalid-json') getDb().prepare('UPDATE request_artifacts SET metadata_json=? WHERE id=?').run('{bad', a.id);
+  }
+  const inspection = createChangeRequest({ title: 'Legacy check', description: 'Legacy check',
+    workflowKey: f.request.workflowKey, requestType: 'ops',
+    constraints: { workflowHealth: { requestNumbers: [f.request.requestNumber] } } });
+  assert.ok(inspection);
+  const result = workflowScriptSnapshot({ request: inspection, binding: 'workflow-health-snapshot-v1',
+    config: { eligibleWorkflowKeys: [f.request.workflowKey], reportScopeKey: 'legacy-check',
+      requiredArtifacts: { [f.request.workflowKey]: cases.map(c => c.name) } } });
+  assert.ok(result.targets);
+  const evidence = 'artifactEvidence' in result.targets[0] ? result.targets[0].artifactEvidence : [];
+  assert.deepEqual(evidence.map(e => e.status), cases.map(c => c.status));
+  assert.equal(JSON.stringify(result).includes('never-copy-this'), false);
+});
+
 test('oversize target becomes partial unknown coverage rather than a false clean scan', () => {
   const f = fixture('snapshot-bound');
   const insert = getDb().prepare(`INSERT INTO agent_runs

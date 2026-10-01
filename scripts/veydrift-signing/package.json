@@ -1,0 +1,9 @@
+{
+  "name": "veydrift-signing-dependency",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned, reusable EVM signing dependency for the Veydrift workflow",
+  "dependencies": {
+    "ethers": "6.17.0"
+  }
+}

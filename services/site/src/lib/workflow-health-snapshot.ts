@@ -9,6 +9,18 @@ const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): 
 const numbers = (value: unknown) => Array.isArray(value) ? value.filter((item): item is number => Number.isSafeInteger(item) && item > 0) : [];
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
+// Canonical linkage wins. Legacy metadata is usable only when the aliases are
+// strings and agree; the query below still verifies request and workflow ownership.
+const artifactAgentId = `CASE WHEN a.agent_run_id IS NOT NULL THEN a.agent_run_id
+  WHEN json_valid(a.metadata_json) THEN CASE
+    WHEN (json_type(a.metadata_json,'$.agent_run_id') IS NULL OR json_type(a.metadata_json,'$.agent_run_id')='text')
+      AND (json_type(a.metadata_json,'$.agentRunId') IS NULL OR json_type(a.metadata_json,'$.agentRunId')='text')
+      AND (json_extract(a.metadata_json,'$.agent_run_id') IS NULL
+        OR json_extract(a.metadata_json,'$.agentRunId') IS NULL
+        OR json_extract(a.metadata_json,'$.agent_run_id')=json_extract(a.metadata_json,'$.agentRunId'))
+    THEN COALESCE(json_extract(a.metadata_json,'$.agent_run_id'),json_extract(a.metadata_json,'$.agentRunId'))
+    END END`;
+
 export function workflowScriptSnapshot(input: { request: ChangeRequestRecord; binding: string; config: Config }) {
   const observedAt = new Date().toISOString();
   if (input.binding === 'request-snapshot-v1') {
@@ -42,16 +54,16 @@ export function workflowScriptSnapshot(input: { request: ChangeRequestRecord; bi
     const artifactEvidence = requiredNames.map((name) => {
       const proven = workflowRun ? getDb().prepare(`SELECT a.id,a.created_at FROM request_artifacts a
         WHERE a.request_id=? AND a.name=?
-          AND (a.workflow_run_id=? OR (a.workflow_run_id IS NULL AND a.agent_run_id IS NOT NULL
-            AND EXISTS (SELECT 1 FROM agent_runs r WHERE r.id=a.agent_run_id
+          AND (a.workflow_run_id=? OR (a.workflow_run_id IS NULL
+            AND EXISTS (SELECT 1 FROM agent_runs r WHERE r.id=(${artifactAgentId})
               AND r.request_id=a.request_id AND r.workflow_run_id=?)))
         ORDER BY a.created_at DESC,a.rowid DESC LIMIT 1`)
         .get(request.id, name, workflowRun.id, workflowRun.id) as { id: string; created_at: string } | undefined : undefined;
       if (proven) return { name, status: 'present', artifactId: proven.id, createdAt: proven.created_at };
       const candidate = getDb().prepare(`SELECT a.id,a.created_at FROM request_artifacts a
-        LEFT JOIN agent_runs r ON r.id=a.agent_run_id
+        LEFT JOIN agent_runs r ON r.id=(${artifactAgentId})
         WHERE a.request_id=? AND a.name=? AND a.workflow_run_id IS NULL
-          AND (a.agent_run_id IS NULL OR r.id IS NULL OR
+          AND (r.id IS NULL OR
             (r.request_id=a.request_id AND r.workflow_run_id IS NULL))
         ORDER BY a.created_at DESC,a.rowid DESC LIMIT 1`)
         .get(request.id, name) as { id: string; created_at: string } | undefined;

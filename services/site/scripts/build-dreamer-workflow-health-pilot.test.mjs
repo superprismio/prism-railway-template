@@ -21,4 +21,14 @@ test('pilot routes findings through verification under Dreamer before reporting'
   assert.match(payload.files['steps/report-results.md'], /corrected dispositions/);
   assert.match(payload.files['steps/assess-findings.md'], /Copy the inspector's raw fingerprint verbatim/);
   assert.match(payload.files['steps/report-results.md'], /Use this same raw fingerprint in the delivery record/);
+  const reporting = payload.files['steps/report-results.md'];
+  assert.ok(reporting.indexOf('Check eligibility BEFORE delivery deduplication') < reporting.indexOf('GET /agent/workflow-health/deliveries'));
+  assert.match(reporting, /exact human action is necessary/);
+  assert.match(reporting, /suppressed_no_human_action/);
+  assert.match(reporting, /lack of repair authority is NOT a reason to alert/);
+  assert.match(reporting, /Parse the exact body before upload and read back and parse/);
+  assert.doesNotMatch(reporting, /a short recap alone is insufficient|For meaningful change,|Send an introduction and the entire/);
+  assert.match(reporting, /must not be recorded as delivered/);
+  assert.match(reporting, /alertIdentity, recoveryResult and exactHumanAction/);
+  assert.match(reporting, /response's requestId to fetch GET \/agent\/change-board\/requests\/:id\/artifacts/);
 });
