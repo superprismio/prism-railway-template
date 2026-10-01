@@ -47,7 +47,8 @@ test("Ask Prism accepts only a bounded question without workflow authority field
 
 test("Ask Prism persists an isolated admin conversation without changing workflow events or runs", async () => {
   const workflowEvents = [{ id: "event-1", eventType: "gate.waiting", stepKey: "review" }]
-  const agentRuns = [{ id: "run-1", kind: "workflow_step", status: "succeeded", workflowStepKey: "draft" }]
+  const agentRuns = [{ id: "run-1", kind: "workflow_step", status: "succeeded", workflowStepKey: "draft",
+    accountabilitySnapshot: { definition: { version: 1 } } }]
   const eventsBefore = structuredClone(workflowEvents)
   const runsBefore = structuredClone(agentRuns)
   const messages: Array<{
@@ -82,7 +83,10 @@ test("Ask Prism persists an isolated admin conversation without changing workflo
       priority: "high",
     }),
     getWorkflowRun: () => ({ id: "workflow-run-1", status: "active", currentStepKey: "review" }),
-    getWorkflow: () => ({ definition: { steps: [{ key: "review", type: "gate" }] } }),
+    getWorkflow: () => ({ key: "release", version: 2, updatedAt: "2026-09-11T00:00:00.000Z", definition: { agentConfig: { contextPolicy: { continuation: "step", handoff: "artifacts" } }, steps: [
+      { key: "review", type: "agent", instructionPath: "/data/workflows/review.md", agentConfig: { skills: ["change-request-ops"], gatewayCredentials: ["evm-wallet"] } },
+    ] } }),
+    loadWorkflowInstruction: () => ({ status: "available", content: "Review the provenance source." }),
     listAgentRuns: () => agentRuns,
     listWorkflowEvents: () => workflowEvents,
     listArtifacts: () => [{ id: "artifact-1", name: "verification.md", kind: "report" }],
@@ -122,6 +126,15 @@ test("Ask Prism persists an isolated admin conversation without changing workflo
       assert.match(input.prompt, /does not execute workflow mutations/)
       assert.match(input.prompt, /authenticated, audited confirmation controls/)
       assert.match(input.prompt, /Human review required/)
+      assert.match(input.prompt, /Review the provenance source/)
+      assert.match(input.prompt, /change-request-ops/)
+      assert.match(input.prompt, /evm-wallet/)
+      assert.match(input.prompt, /artifacts/)
+      assert.match(input.prompt, /current_workflow_definition/)
+      assert.match(input.prompt, /2026-09-11T00:00:00.000Z/)
+      assert.match(input.prompt, /workflowDefinitionVersionAtRun\\?":1/)
+      assert.match(input.prompt, /definitionMatchesCurrent\\?":false/)
+      assert.match(input.prompt, /historical instructions may have differed/)
       assert.match(input.prompt, /Operator question JSON: "What is blocking this request\?"/)
       return {
         responseText: "Request #43 is waiting at the review gate for human approval.",
