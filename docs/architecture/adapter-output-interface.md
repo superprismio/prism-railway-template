@@ -30,16 +30,31 @@ Returns adapter capabilities and supported destination types.
   "ok": true,
   "adapter": "communication",
   "adapters": ["discord", "telegram"],
-  "capabilities": ["list-destinations", "send-message", "fetch-attachment"],
+  "capabilities": ["list-destinations", "send-message", "fetch-attachment", "manage-discord-events"],
   "destinationTypes": ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"],
   "routes": {
     "attachmentsFetch": "/attachments/fetch",
     "attachmentsResolve": "/attachments/resolve",
     "destinations": "/destinations",
-    "messages": "/messages"
+    "messages": "/messages",
+    "discordEvents": "/discord/events",
+    "discordEvent": "/discord/events/:eventId",
+    "discordEventCancel": "/discord/events/:eventId/cancel"
   }
 }
 ```
+
+### Discord scheduled events
+
+These routes use the adapter token and are scoped to `DISCORD_GUILD_ID`. The Discord bot token remains inside the adapter. Full interactive source policies include `adapter.manage_discord_events`; the `prism-discord-events` hosted skill describes the agent workflow.
+
+- `GET /discord/events` lists guild events.
+- `GET /discord/events/:eventId` inspects one event.
+- `POST /discord/events` creates an event. An exact existing match returns `created: false` and the existing event.
+- `PATCH /discord/events/:eventId` updates supported fields.
+- `POST /discord/events/:eventId/cancel` cancels an event.
+
+External create body: `name`, `startTime`, `endTime`, `location`, and optional `description`. For voice or stage events, use `entityType` and `channelId` in place of `location`; `endTime` is optional. Times must be ISO 8601 with a timezone. Responses include the native Discord event URL. Creation validates future times and fields before calling Discord.
 
 ### `POST /attachments/fetch`
 
