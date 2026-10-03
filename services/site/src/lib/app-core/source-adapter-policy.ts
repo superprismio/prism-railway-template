@@ -92,6 +92,7 @@ export function sourceAdapterCapabilitiesForMode(mode: SourceAdapterAccessMode):
         'workflows.run_existing',
         'requests.create',
         'adapter.send_message',
+        'adapter.manage_discord_events',
         'memory.write',
         'knowledge.write',
         'memory.promote_doc',

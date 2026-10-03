@@ -27,6 +27,7 @@ import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 import { requestSiteRuntime } from "./site-runtime.js";
 import { recoverDiscordRequestHandoff, sendAndRecordDiscordReply } from "./discord-request-handoff.js";
 import { discordDestinationType } from "./discord-output.js";
+import { authorizeDiscordEventsToken, discordEventService, discordEventUpstreamError, DiscordEventError } from "./discord-events.js";
 import { discordAgentRoutingStatus, unavailableDiscordAgentMessage, unconfiguredDiscordChannelMessage } from "./discord-agent-routing.js";
 import { AppApiRequestError, isAppApiNotFound } from "./app-api-error.js";
 import {
@@ -568,6 +569,7 @@ function capabilitiesForMode(mode: DiscordAccessMode): string[] {
         "workflows.run_existing",
         "requests.create",
         "adapter.send_message",
+        "adapter.manage_discord_events",
         "memory.write",
         "knowledge.write",
         PROMOTE_DOC_CAPABILITY,
@@ -2973,6 +2975,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
     || (existingMeta.interactionProfileVersion ?? null) !== (interactionProfile?.version ?? null)
   ) runtimeContinuationId = null;
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
+  const canManageDiscordEvents = accessPolicy.capabilities.includes("adapter.manage_discord_events");
   const gatewayCredentials = await resolveInteractiveGatewayCredentials({
     platform: "telegram",
     targetId: transport.chatId,
@@ -3018,7 +3021,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
         ].filter(Boolean).join("\n\n"),
         adapterCapabilities: {
           adapter: "communication",
-          capabilities: canSendAdapterMessages ? ["list-destinations", "send-message"] : [],
+          capabilities: [...(canSendAdapterMessages ? ["list-destinations", "send-message"] : []), ...(canManageDiscordEvents ? ["manage-discord-events"] : [])],
           destinationTypes: canSendAdapterMessages ? ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"] : [],
         },
         availableOutputDestinations: canSendAdapterMessages
@@ -4009,6 +4012,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
     return;
   }
   const canSendAdapterMessages = accessPolicy.capabilities.includes("adapter.send_message");
+  const canManageDiscordEvents = accessPolicy.capabilities.includes("adapter.manage_discord_events");
 
   const userLimit = checkDiscordRateLimit(
     `discord:user:${transport.authorId}:${accessPolicy.mode}`,
@@ -4147,11 +4151,12 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
           ].filter(Boolean).join("\n\n"),
           adapterCapabilities: {
             adapter: "communication",
-            capabilities: canSendAdapterMessages ? ["list-destinations", "send-message"] : [],
+            capabilities: [...(canSendAdapterMessages ? ["list-destinations", "send-message"] : []), ...(canManageDiscordEvents ? ["manage-discord-events"] : [])],
             destinationTypes: canSendAdapterMessages ? ["discord-channel", "discord-forum", "telegram-chat", "telegram-channel"] : [],
-            instructions: canSendAdapterMessages
-              ? "Resolve the destination first. For a Discord forum, POST /messages with type=discord-forum and a title; the adapter also infers forum type when omitted."
-              : null,
+            instructions: [
+              canSendAdapterMessages ? "Resolve the destination first. For a Discord forum, POST /messages with type=discord-forum and a title; the adapter also infers forum type when omitted." : "",
+              canManageDiscordEvents ? "For native Discord scheduled events, use the prism-discord-events skill and the adapter /discord/events routes. Check existing events before creating or changing one." : "",
+            ].filter(Boolean).join(" ") || null,
           },
           sourceAttachmentInstructions: discordSourceAttachmentInstructions(),
           availableOutputDestinations: canSendAdapterMessages
@@ -5223,6 +5228,7 @@ async function main(): Promise<void> {
       capabilities: [
         "list-destinations",
         "send-message",
+        ...((process.env.DISCORD_BOT_TOKEN ?? "").trim() && (process.env.SOURCE_ADAPTER_TOKEN ?? "").trim() && adapterConfig().discordGuildId ? ["manage-discord-events"] : []),
         "fetch-attachment",
         "external-interactions",
         ...((process.env.DISCORD_BOT_TOKEN ?? "").trim() && adapterConfig().discordGuildId
@@ -5244,6 +5250,11 @@ async function main(): Promise<void> {
         destinations: "/destinations",
         guildChannels: "/guild/channels",
         messages: "/messages",
+        ...((process.env.DISCORD_BOT_TOKEN ?? "").trim() && (process.env.SOURCE_ADAPTER_TOKEN ?? "").trim() && adapterConfig().discordGuildId ? {
+          discordEvents: "/discord/events",
+          discordEvent: "/discord/events/:eventId",
+          discordEventCancel: "/discord/events/:eventId/cancel",
+        } : {}),
         ...((process.env.DISCORD_BOT_TOKEN ?? "").trim() && adapterConfig().discordGuildId ? {
           discordHistorySearch: "/history/discord/search",
           discordHistoryContext: "/history/discord/context",
@@ -5565,6 +5576,32 @@ async function main(): Promise<void> {
       response.status(message === "Unauthorized" ? 401 : 500).json({ ok: false, error: message });
     }
   });
+
+  const eventService = () => discordEventService(adapterConfig().discordGuildId, <T>(pathname: string, init?: RequestInit) => discordApiRequest<JsonValue>(pathname, undefined, init) as Promise<T>);
+  const eventResponse = async (request: Request, response: Response, operation: () => Promise<unknown>) => {
+    try {
+      authorizeDiscordEventsToken(process.env.SOURCE_ADAPTER_TOKEN, request.header("X-Adapter-Token"));
+      if (!(process.env.DISCORD_BOT_TOKEN ?? "").trim()) throw new DiscordEventError(503, "DISCORD_EVENTS_NOT_CONFIGURED", "Discord bot is not configured");
+      response.json({ ok: true, result: await operation() });
+    } catch (error) {
+      if (error instanceof DiscordEventError) {
+        response.status(error.status).json({ ok: false, code: error.code, error: error.message });
+        return;
+      }
+      const message = describeError(error);
+      if (message === "Unauthorized") {
+        response.status(401).json({ ok: false, code: "UNAUTHORIZED", error: "Unauthorized" });
+        return;
+      }
+      const upstream = discordEventUpstreamError(error);
+      response.status(upstream.status).json({ ok: false, code: upstream.code, error: "Discord event operation failed" });
+    }
+  };
+  app.get("/discord/events", (request: Request, response: Response) => eventResponse(request, response, () => eventService().list()));
+  app.get("/discord/events/:eventId", (request: Request, response: Response) => eventResponse(request, response, () => eventService().get(request.params.eventId)));
+  app.post("/discord/events", (request: Request, response: Response) => eventResponse(request, response, () => eventService().create(request.body)));
+  app.patch("/discord/events/:eventId", (request: Request, response: Response) => eventResponse(request, response, () => eventService().update(request.params.eventId, request.body)));
+  app.post("/discord/events/:eventId/cancel", (request: Request, response: Response) => eventResponse(request, response, () => eventService().cancel(request.params.eventId)));
 
   app.get("/buzz/channels", async (request: Request, response: Response) => {
     try {
