@@ -27,7 +27,7 @@ import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 import { requestSiteRuntime } from "./site-runtime.js";
 import { recoverDiscordRequestHandoff, sendAndRecordDiscordReply } from "./discord-request-handoff.js";
 import { discordDestinationType } from "./discord-output.js";
-import { discordEventService, DiscordEventError } from "./discord-events.js";
+import { authorizeDiscordEventsToken, discordEventService, discordEventUpstreamError, DiscordEventError } from "./discord-events.js";
 import { discordAgentRoutingStatus, unavailableDiscordAgentMessage, unconfiguredDiscordChannelMessage } from "./discord-agent-routing.js";
 import { AppApiRequestError, isAppApiNotFound } from "./app-api-error.js";
 import {
@@ -5228,7 +5228,7 @@ async function main(): Promise<void> {
       capabilities: [
         "list-destinations",
         "send-message",
-        ...((process.env.DISCORD_BOT_TOKEN ?? "").trim() && adapterConfig().discordGuildId ? ["manage-discord-events"] : []),
+        ...((process.env.DISCORD_BOT_TOKEN ?? "").trim() && (process.env.SOURCE_ADAPTER_TOKEN ?? "").trim() && adapterConfig().discordGuildId ? ["manage-discord-events"] : []),
         "fetch-attachment",
         "external-interactions",
         ...((process.env.DISCORD_BOT_TOKEN ?? "").trim() && adapterConfig().discordGuildId
@@ -5250,7 +5250,7 @@ async function main(): Promise<void> {
         destinations: "/destinations",
         guildChannels: "/guild/channels",
         messages: "/messages",
-        ...((process.env.DISCORD_BOT_TOKEN ?? "").trim() && adapterConfig().discordGuildId ? {
+        ...((process.env.DISCORD_BOT_TOKEN ?? "").trim() && (process.env.SOURCE_ADAPTER_TOKEN ?? "").trim() && adapterConfig().discordGuildId ? {
           discordEvents: "/discord/events",
           discordEvent: "/discord/events/:eventId",
           discordEventCancel: "/discord/events/:eventId/cancel",
@@ -5580,7 +5580,7 @@ async function main(): Promise<void> {
   const eventService = () => discordEventService(adapterConfig().discordGuildId, <T>(pathname: string, init?: RequestInit) => discordApiRequest<JsonValue>(pathname, undefined, init) as Promise<T>);
   const eventResponse = async (request: Request, response: Response, operation: () => Promise<unknown>) => {
     try {
-      requireAdapterToken(request);
+      authorizeDiscordEventsToken(process.env.SOURCE_ADAPTER_TOKEN, request.header("X-Adapter-Token"));
       if (!(process.env.DISCORD_BOT_TOKEN ?? "").trim()) throw new DiscordEventError(503, "DISCORD_EVENTS_NOT_CONFIGURED", "Discord bot is not configured");
       response.json({ ok: true, result: await operation() });
     } catch (error) {
@@ -5593,9 +5593,8 @@ async function main(): Promise<void> {
         response.status(401).json({ ok: false, code: "UNAUTHORIZED", error: "Unauthorized" });
         return;
       }
-      const discordStatus = /^Discord API failed: (\d+)/.exec(message)?.[1];
-      const status = discordStatus === "403" ? 403 : discordStatus === "404" ? 404 : discordStatus === "429" ? 429 : 502;
-      response.status(status).json({ ok: false, code: status === 403 ? "DISCORD_EVENTS_FORBIDDEN" : status === 404 ? "DISCORD_EVENT_NOT_FOUND" : status === 429 ? "DISCORD_RATE_LIMITED" : "DISCORD_EVENTS_UPSTREAM_ERROR", error: "Discord event operation failed" });
+      const upstream = discordEventUpstreamError(error);
+      response.status(upstream.status).json({ ok: false, code: upstream.code, error: "Discord event operation failed" });
     }
   };
   app.get("/discord/events", (request: Request, response: Response) => eventResponse(request, response, () => eventService().list()));

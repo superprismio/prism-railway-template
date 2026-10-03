@@ -11,6 +11,7 @@ Use the communication adapter. Its bot credential stays inside the adapter; neve
 - `COMMUNICATION_ADAPTER_TOKEN`
 
 If the variables or capability are absent, report the missing configuration. All calls use `X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN`.
+The capability in runtime metadata guides the agent; it is not a separate API authorization check. The adapter token is a trusted service credential shared with other adapter operations. Use these event routes only for an authorized operator request in a full-access context, and do not pass the token to users or lower-trust agents.
 
 First list current events to identify an existing event and avoid duplicates:
 
@@ -31,5 +32,6 @@ curl -fsSL -X POST -H "content-type: application/json" \
 ```
 
 The create response has `created: false` and the existing event if an event with the same name, time, type, and location or channel already exists. Report the returned event URL. Do not create another event merely because the first call timed out; list and compare first.
+The adapter serializes identical creates within one process and reconciles an uncertain Discord response by listing events. This does not coordinate multiple adapter replicas. If it returns `DISCORD_EVENT_CREATE_UNCERTAIN`, inspect the Discord event list before attempting another create.
 
 To change fields, `PATCH /discord/events/:eventId` with the same field names. To cancel, `POST /discord/events/:eventId/cancel` with no body. Inspect the existing event and confirm its identity before update or cancellation. Do not cancel unrelated events.

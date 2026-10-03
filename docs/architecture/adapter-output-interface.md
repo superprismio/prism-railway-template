@@ -47,6 +47,7 @@ Returns adapter capabilities and supported destination types.
 ### Discord scheduled events
 
 These routes use the adapter token and are scoped to `DISCORD_GUILD_ID`. The Discord bot token remains inside the adapter. Full interactive source policies include `adapter.manage_discord_events`; the `prism-discord-events` hosted skill describes the agent workflow.
+The capability is runtime guidance, not an adapter route authorization boundary. Anyone holding the shared adapter token can call these routes. Keep that token within trusted services and full-access agents. Unlike legacy adapter routes, event routes return `503` when `SOURCE_ADAPTER_TOKEN` is unset. Existing adapter route behavior is unchanged.
 
 - `GET /discord/events` lists guild events.
 - `GET /discord/events/:eventId` inspects one event.
@@ -55,6 +56,7 @@ These routes use the adapter token and are scoped to `DISCORD_GUILD_ID`. The Dis
 - `POST /discord/events/:eventId/cancel` cancels an event.
 
 External create body: `name`, `startTime`, `endTime`, `location`, and optional `description`. For voice or stage events, use `entityType` and `channelId` in place of `location`; `endTime` is optional. Times must be ISO 8601 with a timezone. Responses include the native Discord event URL. Creation validates future times and fields before calling Discord.
+Voice and stage channel IDs are checked against the configured guild before a write. Updates compare the proposed start/end values with the existing event. Identical creates are serialized within one adapter process; multiple replicas are not coordinated. If Discord does not confirm a create, the adapter lists events to reconcile before returning. `DISCORD_EVENT_CREATE_UNCERTAIN` means the caller must inspect the event list before another attempt.
 
 ### `POST /attachments/fetch`
 
