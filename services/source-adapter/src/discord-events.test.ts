@@ -87,6 +87,7 @@ test("validates voice channel membership and type before create or update", asyn
   await assert.rejects(service.create({ name: "Voice meeting", entityType: "voice", channelId: "13", startTime: future }), DiscordEventError);
   await assert.rejects(service.update("2", { channelId: "99" }), DiscordEventError);
   await assert.rejects(service.update("2", { startTime: new Date(Date.parse(end) + 1000).toISOString() }), DiscordEventError);
+  await assert.rejects(service.update("2", { startTime: new Date(Date.now() - 60_000).toISOString() }), DiscordEventError);
   assert.equal(writes, 0);
 });
 

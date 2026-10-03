@@ -188,6 +188,7 @@ export function discordEventService(guildId: string, request: DiscordEventReques
       if (type !== 3 && changes.entity_metadata !== undefined) throw new DiscordEventError(400, "INVALID_DISCORD_EVENT", "Voice and stage events cannot set location");
       if (type !== 3) await validateChannel(channelId, type);
       const start = Date.parse(String(changes.scheduled_start_time ?? current.scheduled_start_time));
+      if (changes.scheduled_start_time && start <= Date.now()) throw new DiscordEventError(400, "INVALID_DISCORD_EVENT", "startTime must be in the future");
       const endValue = changes.scheduled_end_time ?? current.scheduled_end_time;
       if (endValue && Date.parse(String(endValue)) <= start) throw new DiscordEventError(400, "INVALID_DISCORD_EVENT", "endTime must be after startTime");
       if (type === 3 && !endValue) throw new DiscordEventError(400, "INVALID_DISCORD_EVENT", "External events require endTime");
