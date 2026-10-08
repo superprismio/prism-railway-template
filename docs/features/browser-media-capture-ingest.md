@@ -681,3 +681,15 @@ uploaded files, Telegram voice notes, and future Portal session recordings.
 - How should rolling summaries be compacted for long meetings: full transcript
   in context, chunk summaries with a rolling global summary, or a hierarchical
   summary tree?
+# Portal transcript handoff
+
+The recording adapter retains `transcript.md` on its recording volume and exposes
+`GET /recordings/:sessionId/transcript.md` only to callers with `X-Adapter-Token`.
+The deterministic recording processor copies `authenticatedDownloadPath` into
+`transcript-reference.json` and `workflow-handoff.json` for the instance-specific
+publisher. The publisher should fetch the transcript over this authenticated
+path and send its Markdown and source session ID to Portal's authenticated
+`POST /api/events/artifacts/ingest` route. Portal stores the transcript on the
+matched Event and serves it according to Event visibility. A private Portal
+handoff does not require `rawTranscriptSharingAllowed`; that flag continues to
+govern promotion of the transcript to public Prism Memory.

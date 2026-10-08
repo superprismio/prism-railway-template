@@ -205,6 +205,8 @@ export async function processBuiltInRecordingHook(input: {
     sharingAllowed: transcript.sharingAllowed === true || record(payload.policy).rawTranscriptSharingAllowed === true,
     storagePath: text(transcript.storagePath),
     jsonStoragePath: text(transcript.jsonStoragePath),
+    authenticatedDownloadPath: text(transcript.authenticatedDownloadPath)
+      ?? (source.sessionId ? `/recordings/${source.sessionId}/transcript.md` : null),
     artifactUrl: normalizePublicMemoryArtifactUrl(text(transcript.artifactUrl)),
     rawTranscriptIngestSkipped: true,
     source: {
@@ -346,6 +348,7 @@ export async function processBuiltInRecordingHook(input: {
         childRequestNumber: childRequest.requestNumber,
         downstreamWorkflowKey: config.downstreamWorkflowKey,
         sourceId: source.sessionId,
+        authenticatedTranscriptDownloadPath: transcriptReference.authenticatedDownloadPath,
       };
       await saveArtifact(request.id, jsonArtifact("workflow-handoff", "workflow-handoff.json", "Parent-to-child recording workflow handoff.", handoff));
       if (childCreated) {

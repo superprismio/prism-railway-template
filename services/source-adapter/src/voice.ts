@@ -2704,6 +2704,9 @@ export class DiscordVoiceManager {
         textOmitted: !includeTranscriptBody,
         storagePath: metadata.artifacts?.transcriptMarkdownPath ?? null,
         jsonStoragePath: metadata.artifacts?.transcriptJsonPath ?? null,
+        authenticatedDownloadPath: metadata.artifacts?.transcriptMarkdownPath
+          ? `/recordings/${metadata.sessionId}/transcript.md`
+          : null,
         sharingAllowed: Boolean(transcriptArtifact?.url),
         artifactUrl: transcriptArtifact?.url ?? null,
       },
@@ -2802,12 +2805,20 @@ export class DiscordVoiceManager {
   }
 
   async resolveRecordingDownload(sessionId: string, fileName: string): Promise<{ filePath: string; contentType: string } | null> {
-    const safeName = path.basename(fileName);
-    const filePath = path.join(this.recordingsRoot, sessionId, "flac", safeName);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) {
+      return null;
+    }
+    const transcript = fileName === "transcript.md";
+    if (!transcript && (!/^[a-zA-Z0-9_-]+\.flac$/.test(fileName) || fileName !== path.basename(fileName))) {
+      return null;
+    }
+    const filePath = transcript
+      ? path.join(this.recordingsRoot, sessionId, "transcript", "transcript.md")
+      : path.join(this.recordingsRoot, sessionId, "flac", fileName);
     const stat = await fs.stat(filePath).catch(() => null);
     if (!stat || !stat.isFile()) {
       return null;
     }
-    return { filePath, contentType: "audio/flac" };
+    return { filePath, contentType: transcript ? "text/markdown; charset=utf-8" : "audio/flac" };
   }
 }
