@@ -21,6 +21,7 @@ import path from "node:path";
 import process from "node:process";
 import { setTimeout as sleep } from "node:timers/promises";
 import { DiscordVoiceManager } from "./voice.js";
+import { registerRecordingDownloadRoute } from "./recording-download-route.js";
 import { ExternalInteractionRateLimiter } from "./external-interaction-rate-limit.js";
 import { buildAdvisoryMemoryInstructions, type AdvisoryMemoryScope } from "./external-interaction-memory-policy.js";
 import { sanitizePublicOutput } from "./public-output-sanitizer.js";
@@ -5988,27 +5989,7 @@ async function main(): Promise<void> {
     }
   });
 
-  app.get("/recordings/:sessionId/:fileName", async (request: Request, response: Response) => {
-    try {
-      requireAdapterToken(request);
-      if (!voiceManager) {
-        response.status(503).json({ ok: false, error: "VOICE_MANAGER_UNAVAILABLE" });
-        return;
-      }
-      const sessionId = Array.isArray(request.params.sessionId) ? request.params.sessionId[0] : request.params.sessionId;
-      const fileName = Array.isArray(request.params.fileName) ? request.params.fileName[0] : request.params.fileName;
-      const resolved = await voiceManager.resolveRecordingDownload(sessionId, fileName);
-      if (!resolved) {
-        response.status(404).json({ ok: false, error: "RECORDING_NOT_FOUND" });
-        return;
-      }
-      response.type(resolved.contentType);
-      response.sendFile(resolved.filePath);
-    } catch (error) {
-      const message = describeError(error);
-      response.status(message === "Unauthorized" ? 401 : 500).json({ ok: false, error: message });
-    }
-  });
+  registerRecordingDownloadRoute(app, () => voiceManager);
 
   app.post("/recordings/:sessionId/recover", async (request: Request, response: Response) => {
     try {

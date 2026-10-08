@@ -594,7 +594,7 @@ Current voice command status:
 - direct summary promotion to Prism Memory can be disabled with `DISCORD_RECORDING_SUMMARY_MEMORY_INGEST_ENABLED=false`
 - Discord should only receive a short completion notice; durable transcript/summary artifacts live in Prism workflow/request artifacts or the local recording volume
 - if `N8N_WEBHOOK_URL` is set, the adapter POSTs meeting metadata to `n8n` after stop
-- FLAC chunks can be fetched from `GET /recordings/:sessionId/:fileName` with `X-Adapter-Token`
+- FLAC chunks and `transcript.md` can be fetched from `GET /recordings/:sessionId/:fileName` with `X-Adapter-Token`. Recording downloads return 503 when `SOURCE_ADAPTER_TOKEN` is unset and 401 when the caller omits or supplies the wrong token. The transcript is served from the recording volume through this authenticated endpoint, not through public Prism Memory.
 
 ## Local voice development
 

@@ -146,6 +146,7 @@ test("built-in recording hook prepares artifacts and creates one idempotent down
         status: "completed",
         textOmitted: true,
         sharingAllowed: false,
+        authenticatedDownloadPath: "/recordings/session-123/transcript.md",
       },
       summary: {
         markdown: "# Test meeting\n\nA deterministic summary.",
@@ -208,6 +209,15 @@ test("built-in recording hook prepares artifacts and creates one idempotent down
     const memoryResult = JSON.parse((await readRequestArtifactFile(memoryArtifact)).toString("utf8")) as Record<string, unknown>;
     assert.equal(memoryResult.reused, true);
     assert.equal(memoryResult.memoryArtifactUrl, "https://memory.example.test/artifacts/test-summary");
+    const transcriptArtifact = childArtifacts.find((artifact) => artifact.name === "transcript-reference.json");
+    assert.ok(transcriptArtifact);
+    const transcriptReference = JSON.parse((await readRequestArtifactFile(transcriptArtifact)).toString("utf8")) as Record<string, unknown>;
+    assert.equal(transcriptReference.authenticatedDownloadPath, "/recordings/session-123/transcript.md");
+    assert.equal(transcriptReference.sharingAllowed, false);
+    const handoffArtifact = childArtifacts.find((artifact) => artifact.name === "workflow-handoff.json");
+    assert.ok(handoffArtifact);
+    const handoff = JSON.parse((await readRequestArtifactFile(handoffArtifact)).toString("utf8")) as Record<string, unknown>;
+    assert.equal(handoff.authenticatedTranscriptDownloadPath, "/recordings/session-123/transcript.md");
 
     const parentArtifacts = appCore.listRequestArtifacts(firstParent.id, 100);
     assert.ok(parentArtifacts.some((artifact) => artifact.name === "workflow-handoff.json"));
