@@ -31,6 +31,10 @@ import { discordDestinationType } from "./discord-output.js";
 import { authorizeDiscordEventsToken, discordEventService, discordEventUpstreamError, DiscordEventError } from "./discord-events.js";
 import { discordAgentRoutingStatus, unavailableDiscordAgentMessage, unconfiguredDiscordChannelMessage } from "./discord-agent-routing.js";
 import { AppApiRequestError, isAppApiNotFound } from "./app-api-error.js";
+import { createPromptQueue } from "./prompt-queue.js";
+import { sendTelegramWithReplyFallback } from "./telegram-delivery.js";
+import { processTelegramUpdateBatch } from "./telegram-update-processing.js";
+import { journalTelegramUpdate, recoverPendingTelegramUpdates } from "./telegram-update-journal.js";
 import {
   DiscordHistoryError,
   fetchDiscordHistoryContext,
@@ -171,7 +175,7 @@ let voiceManager: DiscordVoiceManager | null = null;
 let discordReady = false;
 let discordUserTag: string | null = null;
 let telegramBotUsername: string | null = null;
-const discordPromptQueues = new Map<string, Promise<void>>();
+const enqueueDiscordPrompt = createPromptQueue();
 const discordRateLimitBuckets = new Map<string, { windowStartMs: number; count: number }>();
 const externalInteractionRateLimiter = new ExternalInteractionRateLimiter();
 let sourceAdapterPolicyCache: { expiresAt: number; platforms: Record<string, DiscordAccessPolicyConfig> } | null = null;
@@ -429,7 +433,19 @@ async function readTelegramOffset(): Promise<number | null> {
 
 async function saveTelegramOffset(offset: number): Promise<void> {
   await fs.mkdir(dataRoot(), { recursive: true });
-  await fs.writeFile(telegramOffsetPath(), `${JSON.stringify({ offset }, null, 2)}\n`, "utf8");
+  const temporaryPath = `${telegramOffsetPath()}.${randomUUID()}.tmp`;
+  try {
+    const file = await fs.open(temporaryPath, "w", 0o600);
+    try {
+      await file.writeFile(`${JSON.stringify({ offset }, null, 2)}\n`, "utf8");
+      await file.sync();
+    } finally {
+      await file.close();
+    }
+    await fs.rename(temporaryPath, telegramOffsetPath());
+  } finally {
+    await fs.rm(temporaryPath, { force: true });
+  }
 }
 
 type BuzzInteractionState = {
@@ -2642,7 +2658,7 @@ function splitTelegramMessage(content: string): string[] {
 async function sendTelegramMessage(
   destinationId: string,
   content: string,
-  options: { replyToMessageId?: string | null } = {},
+  options: { replyToMessageId?: string | null; messageThreadId?: number | null } = {},
 ): Promise<JsonObject> {
   const normalizedDestinationId = destinationId.trim();
   const normalizedContent = content.trim();
@@ -2654,12 +2670,17 @@ async function sendTelegramMessage(
   }
   const sent: JsonObject[] = [];
   for (const part of splitTelegramMessage(normalizedContent)) {
-    const message = await telegramApiRequest<JsonObject>("sendMessage", {
-      chat_id: normalizedDestinationId,
-      text: part,
-      disable_web_page_preview: false,
-      ...(options.replyToMessageId ? { reply_to_message_id: Number(options.replyToMessageId) } : {}),
-    });
+    const replyId = sent.length === 0 && options.replyToMessageId ? Number(options.replyToMessageId) : null;
+    const message = await sendTelegramWithReplyFallback(
+      (replyToMessageId) => telegramApiRequest<JsonObject>("sendMessage", {
+        chat_id: normalizedDestinationId,
+        text: part,
+        disable_web_page_preview: false,
+        ...(options.messageThreadId ? { message_thread_id: options.messageThreadId } : {}),
+        ...(replyToMessageId !== null ? { reply_to_message_id: replyToMessageId } : {}),
+      }),
+      replyId,
+    );
     sent.push({
       id: typeof message.message_id === "number" ? String(message.message_id) : null,
       chatId: normalizedDestinationId,
@@ -2991,7 +3012,9 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       })
     : async () => undefined;
   try {
-    const result = await runtimeRequest({
+    let result: Awaited<ReturnType<typeof runtimeRequest>>;
+    try {
+      result = await runtimeRequest({
       prompt,
       sessionId: String(session.id),
       continuationId: runtimeContinuationId,
@@ -3032,7 +3055,21 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
             })
           : [],
       },
-    });
+      });
+    } catch (error) {
+      const errorMessage = describeError(error);
+      const reply =
+        "I hit a chat-engine error. This bridge can keep the Telegram chat and session state, but the model-backed reply path is not available right now. " +
+        `Error: ${errorMessage}`;
+      const sent = await sendSanitizedTelegramAssistantMessage(transport, reply);
+      await appendSessionMessage({
+        sessionId: String(session.id), role: "assistant", source: "telegram",
+        sourceMessageId: sent.sourceMessageId, content: sent.text,
+        meta: { runtimeContinuationId, failed: true, redactions: sent.redactions, accessPolicy },
+        createdAt: nowUtcIso(),
+      });
+      return;
+    }
     runtimeContinuationId = result.continuationId ?? runtimeContinuationId;
 
     if (
@@ -3071,20 +3108,8 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
       createdAt: nowUtcIso(),
     });
   } catch (error) {
-    const errorMessage = describeError(error);
-    const reply =
-      "I hit a chat-engine error. This bridge can keep the Telegram chat and session state, but the model-backed reply path is not available right now. " +
-      `Error: ${errorMessage}`;
-    const sent = await sendSanitizedTelegramAssistantMessage(transport, reply);
-    await appendSessionMessage({
-      sessionId: String(session.id),
-      role: "assistant",
-      source: "telegram",
-      sourceMessageId: sent.sourceMessageId,
-      content: sent.text,
-      meta: { runtimeContinuationId, failed: true, redactions: sent.redactions, accessPolicy },
-      createdAt: nowUtcIso(),
-    });
+    console.error("[source-adapter] Telegram reply delivery or persistence failed", error instanceof Error ? error.name : typeof error);
+    throw error;
   } finally {
     await clearThinking().catch((error) => {
       console.warn("[source-adapter] Telegram thinking indicator cleanup failed", describeError(error));
@@ -3134,6 +3159,7 @@ async function handleTelegramChatUpdate(update: JsonObject): Promise<boolean> {
   }
 
   const messageId = typeof message.message_id === "number" ? String(message.message_id) : null;
+  const messageThreadId = typeof message.message_thread_id === "number" ? message.message_thread_id : null;
   const dateSeconds = typeof message.date === "number" ? message.date : null;
   const createdAt = dateSeconds ? new Date(dateSeconds * 1000).toISOString() : nowUtcIso();
   await enqueueDiscordPrompt(`telegram:${chatId}`, async () => {
@@ -3152,11 +3178,15 @@ async function handleTelegramChatUpdate(update: JsonObject): Promise<boolean> {
         });
       },
       sendThinkingMessage: async () => {
-        const sent = await telegramApiRequest<JsonObject>("sendMessage", {
-          chat_id: chatId,
-          text: "🧠 Thinking...",
-          ...(messageId ? { reply_to_message_id: Number(messageId) } : {}),
-        });
+        const sent = await sendTelegramWithReplyFallback(
+          (replyToMessageId) => telegramApiRequest<JsonObject>("sendMessage", {
+            chat_id: chatId,
+            text: "🧠 Thinking...",
+            ...(messageThreadId ? { message_thread_id: messageThreadId } : {}),
+            ...(replyToMessageId !== null ? { reply_to_message_id: replyToMessageId } : {}),
+          }),
+          messageId ? Number(messageId) : null,
+        );
         const sentMessageId = typeof sent.message_id === "number" ? sent.message_id : null;
         return async () => {
           if (sentMessageId === null) {
@@ -3169,7 +3199,7 @@ async function handleTelegramChatUpdate(update: JsonObject): Promise<boolean> {
         };
       },
       sendAssistantMessage: async (content) => {
-        const sent = await sendTelegramMessage(chatId, content, { replyToMessageId: messageId });
+        const sent = await sendTelegramMessage(chatId, content, { replyToMessageId: messageId, messageThreadId });
         const messages = Array.isArray(sent.messages) ? sent.messages : [];
         const first = messages[0];
         const firstMessageId = first && typeof first === "object" && !Array.isArray(first) && typeof first.id === "string"
@@ -3183,7 +3213,12 @@ async function handleTelegramChatUpdate(update: JsonObject): Promise<boolean> {
 }
 
 async function pollTelegramDiscoveryOnce(): Promise<number> {
-  const offset = await readTelegramOffset();
+  const offset = await recoverPendingTelegramUpdates(
+    dataRoot(),
+    await readTelegramOffset(),
+    saveTelegramOffset,
+    (updateId) => console.warn(`[source-adapter] Telegram update ${updateId} was pending after restart; quarantined without replay`),
+  );
   const result = await telegramApiRequest<JsonValue[]>("getUpdates", {
     ...(offset !== null ? { offset } : {}),
     timeout: 0,
@@ -3192,27 +3227,23 @@ async function pollTelegramDiscoveryOnce(): Promise<number> {
   if (!Array.isArray(result)) {
     return 0;
   }
-  let nextOffset = offset;
-  let seenChats = 0;
-  for (const update of result) {
-    if (!update || typeof update !== "object" || Array.isArray(update)) {
-      continue;
-    }
-    const record = update as JsonObject;
-    const updateId = typeof record.update_id === "number" ? record.update_id : null;
-    if (updateId !== null) {
-      nextOffset = Math.max(nextOffset ?? 0, updateId + 1);
-    }
-    const chat = telegramChatFromUpdate(record);
-    if (chat && await rememberTelegramChat(chat)) {
-      seenChats += 1;
-    }
-    await handleTelegramChatUpdate(record);
-  }
-  if (nextOffset !== null && nextOffset !== offset) {
-    await saveTelegramOffset(nextOffset);
-  }
-  return seenChats;
+  return processTelegramUpdateBatch(result, offset, {
+    journal: (entry) => journalTelegramUpdate(dataRoot(), entry as { updateId: number; status: "pending" | "completed" | "failed" }),
+    checkpoint: saveTelegramOffset,
+    process: async (update) => {
+      const record = update as JsonObject;
+      const chat = telegramChatFromUpdate(record);
+      const discovered = chat ? await rememberTelegramChat(chat) : false;
+      await handleTelegramChatUpdate(record);
+      return discovered;
+    },
+    onFailure: (updateId, error) => console.error(
+      `[source-adapter] Telegram update ${updateId} quarantined (${error instanceof Error ? error.name : typeof error}); inspect telegram-updates/failed`,
+    ),
+    onRecovered: (updateId) => console.warn(
+      `[source-adapter] Telegram update ${updateId} had a pending record after restart; checkpointed and quarantined without replay`,
+    ),
+  });
 }
 
 function startTelegramDiscoveryPolling(): (() => void) | null {
@@ -4268,20 +4299,6 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
   }
 
   await runAndSendRuntimeReply();
-}
-
-async function enqueueDiscordPrompt(queueKey: string, run: () => Promise<void>): Promise<void> {
-  const previous = discordPromptQueues.get(queueKey) ?? Promise.resolve();
-  const next = previous.catch(() => undefined).then(run);
-  discordPromptQueues.set(
-    queueKey,
-    next.finally(() => {
-      if (discordPromptQueues.get(queueKey) === next) {
-        discordPromptQueues.delete(queueKey);
-      }
-    }),
-  );
-  return next;
 }
 
 async function handleDiscordChatMessage(message: Message): Promise<void> {
