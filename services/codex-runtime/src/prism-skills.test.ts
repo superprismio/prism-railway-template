@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { gzipSync } from "node:zlib";
 import tar from "tar-stream";
-import { credentialRequirementsFromSkillMarkdown, extractSkillBundleFromArchive, requestedSkillNames } from "./prism-skills.js";
+import { config } from "./config.js";
+import { createNativePrismSkillHome, credentialRequirementsFromSkillMarkdown, extractSkillBundleFromArchive, requestedSkillNames } from "./prism-skills.js";
 
 async function skillArchive(entries: Array<{ name: string; content?: string; type?: "file" | "directory" }>) {
   const pack = tar.pack();
@@ -80,6 +84,48 @@ test("hosted skill archives preserve scripts and references for native Codex dis
     "scripts/publish.sh",
     "references/routes.md",
   ]);
+});
+
+test("native skill home reports only confirmed installed selected SKILL.md paths", async () => {
+  const archive = await skillArchive([
+    { name: "portal-ops/SKILL.md", content: "---\nname: portal-ops\ndescription: Operate Portal.\n---\n" },
+  ]);
+  const originalHome = await fs.mkdtemp(path.join(os.tmpdir(), "prism-skill-test-"));
+  const originalFetch = globalThis.fetch;
+  const originalBase = config.appApiBaseUrl;
+  const originalToken = config.appServiceToken;
+  config.appApiBaseUrl = "https://skills.example";
+  config.appServiceToken = "test-token";
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith("/agent/skills")) {
+      return Response.json({ skills: [{ name: "portal-ops", downloadPath: "/agent/skills/portal-ops/download" }] });
+    }
+    if (String(url).endsWith("/agent/skills/portal-ops/download")) {
+      return new Response(new Uint8Array(archive));
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  try {
+    const home = await createNativePrismSkillHome(originalHome, {
+      availableSkills: [{ name: "portal-ops", path: "", description: "", requiredCredentials: [], source: "app-api" }],
+      selectedSkills: [{ name: "portal-ops", content: "selected", requiredCredentials: [] }],
+    }, { skillSelectionMode: "exact" });
+    try {
+      const skillPath = home.selectedSkillPaths.get("portal-ops");
+      if (!skillPath) throw new Error("Selected skill was not installed");
+      assert.ok(skillPath.startsWith(home.path));
+      assert.match(await fs.readFile(skillPath, "utf8"), /Operate Portal/);
+      assert.equal(home.skillCount, 1);
+      assert.equal(home.selectedSkillPaths.size, 1);
+    } finally {
+      await home.cleanup();
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    config.appApiBaseUrl = originalBase;
+    config.appServiceToken = originalToken;
+    await fs.rm(originalHome, { recursive: true, force: true });
+  }
 });
 
 test("hosted skill archives reject path traversal", async () => {

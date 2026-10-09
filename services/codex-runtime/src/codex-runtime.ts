@@ -7,7 +7,7 @@ import { createJobCleanup, isolateJobProcessGroup } from './process-cleanup.js';
 import { config } from './config.js';
 import { RunBudget, isExecutionProgress, resolveRunBudget } from './run-budget.js';
 import { resolveCodexModelPolicy, type ModelTier, type ReasoningEffort } from './model-tier.js';
-import { createNativePrismSkillHome, loadRelevantPrismSkills } from './prism-skills.js';
+import { createNativePrismSkillHome, loadRelevantPrismSkills, nativePrismSkillPromptPath, type NativePrismSkillManifest } from './prism-skills.js';
 import { gatewayClient } from './runtime-gateway.js';
 import { processInvocationSizeMetrics } from './process-size.js';
 import { browserToolEnvironment, browserToolInstructions } from './browser-tools.js';
@@ -896,6 +896,8 @@ export function buildPrompt(
   input: CodexRuntimeInput,
   isResume: boolean,
   prismSkills: LoadedPrismSkills,
+  nativeSkillManifest?: NativePrismSkillManifest,
+  adapterLookupAvailable = false,
 ) {
   const isReadOnlyUtility = input.authorityMode === 'read_only_utility';
   const isReviewer = isReviewerExecution(input);
@@ -910,6 +912,19 @@ export function buildPrompt(
   const sessionMetadata = Object.fromEntries(
     Object.entries(input.metadata ?? {}).filter(([key]) => key !== 'policyInstructions'),
   );
+  const metadataBeforeProjection = JSON.stringify(sessionMetadata);
+  const destinations = sessionMetadata.availableOutputDestinations;
+  const adapterCapabilities = recordValue(input.metadata?.adapterCapabilities);
+  const canListDestinations = Array.isArray(adapterCapabilities?.capabilities)
+    && adapterCapabilities.capabilities.includes('list-destinations');
+  const projectDestinations = !isReadOnlyUtility && canListDestinations && adapterLookupAvailable && Array.isArray(destinations);
+  if (projectDestinations) {
+    sessionMetadata.availableOutputDestinations = {
+      count: destinations.length,
+      retrieval: 'Use authenticated GET $COMMUNICATION_ADAPTER_BASE_URL/destinations with X-Adapter-Token: $COMMUNICATION_ADAPTER_TOKEN to resolve current destination IDs and labels before sending.',
+    };
+  }
+  const metadataAfterProjection = JSON.stringify(sessionMetadata);
 
   const fixedSections = [
     'You are Codex replying through a transport adapter.',
@@ -948,42 +963,76 @@ export function buildPrompt(
     `Runtime mode: ${isResume ? 'resume' : 'start'}`,
   ];
   const sections = [...fixedSections];
-  if (!isReadOnlyUtility) sections.push('', browserToolInstructions);
+  const bytes = (value: string | null | undefined) => Buffer.byteLength(value ?? '', 'utf8');
+  const sectionBytes = {
+    fixed: bytes(fixedSections.join('\n')),
+    metadata: 0,
+    skillCatalog: 0,
+    selectedSkills: 0,
+    history: 0,
+    latestMessage: 0,
+  };
+  const appendSection = (bucket: keyof typeof sectionBytes, ...fragments: string[]) => {
+    const contribution = `${sections.length ? '\n' : ''}${fragments.join('\n')}`;
+    sections.push(...fragments);
+    const size = bytes(contribution);
+    sectionBytes[bucket] += size;
+    return size;
+  };
+  let inlineSkillBodyBytes = 0;
+  if (!isReadOnlyUtility) appendSection('fixed', '', browserToolInstructions);
 
+  let policySectionBytes = 0;
   if (policyInstructions) {
-    sections.push('', 'Trusted transport policy instructions:', policyInstructions);
+    policySectionBytes = appendSection('metadata', '', 'Trusted transport policy instructions:', policyInstructions);
   }
 
   if (Object.keys(sessionMetadata).length) {
-    sections.push(`Session metadata: ${JSON.stringify(sessionMetadata)}`);
+    appendSection('metadata', `Session metadata: ${metadataAfterProjection}`);
   }
 
+  let selectedSkillReferenceCount = 0;
   if (prismSkills.selectedSkills.length) {
     for (const skill of prismSkills.selectedSkills) {
-      sections.push('', `Prism skill loaded: ${skill.name}`, skill.content.trim());
+      const nativePath = nativeSkillManifest?.get(skill.name);
+      const promptPath = nativePath ? nativePrismSkillPromptPath(skill.name, nativePath) : null;
+      if (promptPath) {
+        appendSection('skillCatalog', '', `Prism skill available through native discovery: ${skill.name}`, `Read and follow ${promptPath} when this skill applies.`);
+        selectedSkillReferenceCount += 1;
+      } else {
+        const body = skill.content.trim();
+        appendSection('selectedSkills', '', `Prism skill loaded: ${skill.name}`, body);
+        inlineSkillBodyBytes += bytes(body);
+      }
     }
   }
 
   if (history) {
-    sections.push('', 'Recent source conversation snapshot:', history);
+    appendSection('history', '', 'Recent source conversation snapshot:', history);
   }
 
-  sections.push('', `Latest user message: ${input.prompt}`);
+  appendSection('latestMessage', '', `Latest user message: ${input.prompt}`);
   const prompt = sections.join('\n');
-  const bytes = (value: string | null | undefined) => Buffer.byteLength(value ?? '', 'utf8');
+  const metadataBytesBeforeProjection = Object.keys(sessionMetadata).length
+    ? policySectionBytes + bytes(`\nSession metadata: ${metadataBeforeProjection}`)
+    : policySectionBytes;
   return {
     prompt,
     metrics: {
       totalBytes: bytes(prompt),
-      sectionBytes: {
-        fixed: bytes(fixedSections.join('\n')),
-        metadata: bytes(JSON.stringify(sessionMetadata)) + bytes(policyInstructions),
-        skillCatalog: 0,
-        selectedSkills: prismSkills.selectedSkills.reduce((total, skill) => total + bytes(skill.content), 0),
-        history: bytes(history),
-        latestMessage: bytes(input.prompt),
-      },
+      sectionBytes,
+      sourceSelectedSkillBodyBytes: prismSkills.selectedSkills.reduce((total, skill) => total + bytes(skill.content), 0),
+      inlineSelectedSkillBodyBytes: inlineSkillBodyBytes,
+      metadataBytesBeforeProjection,
+      metadataBytesAfterProjection: sectionBytes.metadata,
       selectedSkillCount: prismSkills.selectedSkills.length,
+      selectedSkillReferenceCount,
+      selectedSkillInlineCount: prismSkills.selectedSkills.length - selectedSkillReferenceCount,
+      destinationInventoryCount: Array.isArray(destinations) ? destinations.length : 0,
+      destinationInventoryProjected: projectDestinations,
+      destinationInventoryBytesOmitted: projectDestinations
+        ? Math.max(0, metadataBytesBeforeProjection - sectionBytes.metadata)
+        : 0,
       historyMessageCount: input.recentHistory.slice(-20).length,
       transport: 'stdin',
     },
@@ -1279,7 +1328,15 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     : await prepareExecutionWorkspace(input, trace, githubToken);
   input.onTrace?.([...trace]);
   const executionWorkspaceRoot = preparedWorkspace.workspacePath;
-  const composedPrompt = buildPrompt(input, isResume, prismSkills);
+  const nativeSkillHome = authorityMode === 'read_only_utility'
+    ? null
+    : await createNativePrismSkillHome(process.env.HOME || os.homedir(), prismSkills, input.metadata);
+  try {
+  const adapterLookupAvailable = Boolean(
+    (leasedEnv.COMMUNICATION_ADAPTER_BASE_URL || process.env.COMMUNICATION_ADAPTER_BASE_URL)
+    && (leasedEnv.COMMUNICATION_ADAPTER_TOKEN || process.env.COMMUNICATION_ADAPTER_TOKEN),
+  );
+  const composedPrompt = buildPrompt(input, isResume, prismSkills, nativeSkillHome?.selectedSkillPaths, adapterLookupAvailable);
   const prompt = composedPrompt.prompt;
   const args = buildCodexArgs(input, outputFile, executionWorkspaceRoot);
   const modelPolicy = resolveCodexModelPolicy({
@@ -1322,9 +1379,6 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     throw error;
   }
 
-  const nativeSkillHome = authorityMode === 'read_only_utility'
-    ? null
-    : await createNativePrismSkillHome(process.env.HOME || os.homedir(), prismSkills, input.metadata);
   const env = buildCodexChildEnvironment(authorityMode, process.env, leasedEnv, githubToken, nativeSkillHome?.path);
   const invocationMetrics = processInvocationSizeMetrics(env, args);
   console.log(
@@ -1347,7 +1401,6 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     }
   }
 
-  try {
     return await new Promise<CodexRuntimeResult>((resolve, reject) => {
       const child = spawn(config.codexBinary, args, {
       detached: isolateJobProcessGroup,
