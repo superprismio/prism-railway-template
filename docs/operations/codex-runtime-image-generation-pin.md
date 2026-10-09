@@ -2,13 +2,14 @@
 
 ## Summary
 
-`services/codex-runtime` pins `@openai/codex` to `0.144.6`.
+`services/codex-runtime` pins `@openai/codex` to `0.162.1` in both its
+manifest and lockfile. The root workspace lockfile carries the same version.
 
 The runtime previously stayed on `0.139.0` because Codex CLI `0.140.0` and
 `0.141.0` had a regression in the built-in `image_gen` path when run through
 `codex exec`. OpenAI fixed that persistence bug in `openai/codex#28656`; the
 issue reporter verified the fix in `0.142.0`, and Prism reproduced the fixed
-headless behavior on `0.144.6` before upgrading.
+headless behavior on `0.144.6` before upgrading from `0.139.0`.
 
 The runtime still enables image generation with:
 
@@ -61,6 +62,14 @@ $CODEX_HOME/generated_images/<thread-id>/<call-id>.png
 ```
 
 Official Codex imagegen skill guidance still expects built-in image generation outputs to be available under `$CODEX_HOME/generated_images/...` so agents can copy project-bound assets into the workspace.
+
+On October 9, 2026, Prism validated `0.162.1` with a fresh isolated
+`CODEX_HOME` and workspace on Linux using Node 22, matching the runtime image's
+Node major version. The headless command below invoked built-in `image_gen` and
+saved a valid 1,052,066-byte PNG in the workspace. The same generated image was
+also persisted under `$CODEX_HOME/generated_images/<thread-id>/<call-id>.png`.
+Fresh, resumed, and read-only utility `codex exec` invocations also completed
+using the flags assembled by `codex-runtime`; all 44 runtime tests passed.
 
 ## Why Deployment Uses npm ci
 
