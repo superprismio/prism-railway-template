@@ -127,6 +127,21 @@ Telegram-specific envs:
 - `TELEGRAM_DM_ENABLED=false`
 - `TELEGRAM_POLL_INTERVAL_SECONDS=10`
 
+Telegram discovery writes each update to `telegram-updates/pending/<id>.json`
+on the adapter's private data volume, then advances `telegram-offset.json`
+before running prompts or sending replies. Completed updates remove their
+pending file; failed updates move to `telegram-updates/failed/<id>.json`.
+Pending files left after a restart may have partially completed. Before each
+poll, the adapter scans pending files, advances the offset when needed, and
+moves them to `failed` without running their prompts again. If Telegram
+redelivers one before its offset was saved, it is quarantined the same way.
+To reconcile, inspect the matching session and Telegram chat first, then use
+the saved update only when a retry is safe. Never
+lower the offset blindly: that can repeat model and delivery side effects.
+Pending and failed records contain the original chat payload and must remain
+private. Review failed records after reconciliation and remove them when no
+longer needed; completed updates retain no payload in this journal.
+
 Buzz-specific envs (deploy as a separate `buzz-adapter` service):
 
 - `SOURCE_KIND=buzz`
