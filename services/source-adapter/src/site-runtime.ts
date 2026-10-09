@@ -9,6 +9,36 @@ export type SiteRuntimeResponse = {
   runtimeKey: string | null;
 };
 
+export class SiteRuntimeRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: "context_length_exceeded" | null,
+    detail: string,
+  ) {
+    super(`SITE_RUNTIME_REQUEST_FAILED:${status}:${detail}`);
+    this.name = "SiteRuntimeRequestError";
+  }
+}
+
+export function isSiteRuntimeContextLengthExceeded(error: unknown): boolean {
+  return error instanceof SiteRuntimeRequestError && error.code === "context_length_exceeded";
+}
+
+function hasContextLengthCode(value: unknown): boolean {
+  if (typeof value === "string") {
+    // Site can wrap the runtime's JSON error in several string error prefixes.
+    // Inspect the full value before shortening it for display.
+    return /["']code["']\s*:\s*["']context_length_exceeded["']/.test(value)
+      || /^RUNTIME_REQUEST_FAILED:context_length_exceeded(?::|$)/.test(value);
+  }
+  if (Array.isArray(value)) return value.some(hasContextLengthCode);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return record.code === "context_length_exceeded" || Object.values(record).some(hasContextLengthCode);
+  }
+  return false;
+}
+
 function siteBaseUrl() {
   const value = (
     process.env.PRISM_AGENT_API_BASE_URL ??
@@ -88,7 +118,8 @@ export async function requestSiteRuntime(input: {
       };
     } | null;
     if (!response.ok) {
-      throw new Error(`SITE_RUNTIME_REQUEST_FAILED:${response.status}:${String(payload?.error ?? "unknown").slice(0, 300)}`);
+      const code = hasContextLengthCode(payload?.error) ? "context_length_exceeded" : null;
+      throw new SiteRuntimeRequestError(response.status, code, String(payload?.error ?? "unknown").slice(0, 300));
     }
     const runtimeResponse = payload?.response;
     const responseText = typeof runtimeResponse?.responseText === "string"

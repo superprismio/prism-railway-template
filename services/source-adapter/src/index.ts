@@ -26,6 +26,7 @@ import { ExternalInteractionRateLimiter } from "./external-interaction-rate-limi
 import { buildAdvisoryMemoryInstructions, type AdvisoryMemoryScope } from "./external-interaction-memory-policy.js";
 import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 import { requestSiteRuntime } from "./site-runtime.js";
+import { boundedTelegramHistory, invokeTelegramWithContextRecovery } from "./telegram-context-recovery.js";
 import { recoverDiscordRequestHandoff, sendAndRecordDiscordReply } from "./discord-request-handoff.js";
 import { discordDestinationType } from "./discord-output.js";
 import { authorizeDiscordEventsToken, discordEventService, discordEventUpstreamError, DiscordEventError } from "./discord-events.js";
@@ -2966,14 +2967,14 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
   });
 
   const existingMessages = Array.isArray(existing?.messages) ? existing.messages : [];
-  const recentHistory = existingMessages
+  const recentHistory = boundedTelegramHistory(existingMessages
     .slice(-12)
     .filter((entry): entry is JsonObject => !!entry && typeof entry === "object" && !Array.isArray(entry))
     .map((entry) => ({
       role: typeof entry.role === "string" ? entry.role : "user",
       content: typeof entry.content === "string" ? entry.content : "",
     }))
-    .filter((entry) => entry.content);
+    .filter((entry) => entry.content));
 
   const existingSession = existing?.session && typeof existing.session === "object" ? (existing.session as JsonObject) : {};
   const sessionMeta = session.meta && typeof session.meta === "object" ? (session.meta as JsonObject) : {};
@@ -3013,11 +3014,31 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
     : async () => undefined;
   try {
     let result: Awaited<ReturnType<typeof runtimeRequest>>;
+    let didResetRuntimeContinuation = false;
     try {
-      result = await runtimeRequest({
+      const invocation = await invokeTelegramWithContextRecovery({
+        continuationId: runtimeContinuationId,
+        resetContinuation: async () => {
+          // The Site upsert merges metadata. Explicit nulls clear both legacy
+          // and current thread identifiers before a fresh runtime invocation.
+          await upsertSourceSession({
+            source: "telegram",
+            contextKey,
+            title: String(session.title ?? `Telegram chat: ${transport.chatTitle}`),
+            meta: {
+              ...existingMeta,
+              ...sessionMeta,
+              runtimeContinuationId: null,
+              codexThreadId: null,
+            },
+            lastMessageAt: nowUtcIso(),
+          });
+          runtimeContinuationId = null;
+        },
+        invoke: async (continuationId) => runtimeRequest({
       prompt,
       sessionId: String(session.id),
-      continuationId: runtimeContinuationId,
+      continuationId,
       recentHistory,
       credentials: gatewayCredentials,
       runtimeProfileKey: interactionProfile?.runtimeProfileKey ?? null,
@@ -3055,12 +3076,13 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
             })
           : [],
       },
+        }),
       });
+      result = invocation.result;
+      didResetRuntimeContinuation = invocation.reset;
     } catch (error) {
-      const errorMessage = describeError(error);
       const reply =
-        "I hit a chat-engine error. This bridge can keep the Telegram chat and session state, but the model-backed reply path is not available right now. " +
-        `Error: ${errorMessage}`;
+        "I couldn't complete that reply. Please try again in a new message. If it keeps happening, ask an administrator to check the runtime logs.";
       const sent = await sendSanitizedTelegramAssistantMessage(transport, reply);
       await appendSessionMessage({
         sessionId: String(session.id), role: "assistant", source: "telegram",
@@ -3073,6 +3095,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
     runtimeContinuationId = result.continuationId ?? runtimeContinuationId;
 
     if (
+      didResetRuntimeContinuation ||
       (runtimeContinuationId && runtimeContinuationId !== sessionMeta.runtimeContinuationId) ||
       (result.runtimeKey && result.runtimeKey !== sessionMeta.runtimeKey)
     ) {
@@ -3081,6 +3104,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
         contextKey,
         title: String(session.title ?? `Telegram chat: ${transport.chatTitle}`),
         meta: {
+          ...existingMeta,
           ...sessionMeta,
           transport: "telegram",
           chatId: transport.chatId,
@@ -3090,6 +3114,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
           interactionProfileVersion: interactionProfile?.version ?? null,
           requestedSkills: interactionProfile?.skills ?? [],
           runtimeContinuationId,
+          codexThreadId: null,
           runtimeKey: result.runtimeKey,
           runtimeProvider: result.provider,
         },

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { requestSiteRuntime } from "./site-runtime.js";
+import { isSiteRuntimeContextLengthExceeded, requestSiteRuntime, SiteRuntimeRequestError } from "./site-runtime.js";
 
 const siteEnvironmentNames = [
   "PRISM_AGENT_API_BASE_URL",
@@ -120,6 +120,72 @@ test("source adapter configuration errors list supported Site token fallbacks", 
       /PRISM_AGENT_SERVICE_TOKEN, APP_API_SERVICE_TOKEN, PRISM_HOOK_SERVICE_TOKEN, INTERNAL_SERVICE_TOKEN, or SERVICE_SHARED_TOKEN is required/,
     );
   } finally {
+    restore();
+  }
+});
+
+test("Site runtime identifies nested context overflow before shortening the error detail", async () => {
+  const restore = preserveSiteEnvironment();
+  const previousFetch = globalThis.fetch;
+  process.env.PRISM_AGENT_API_BASE_URL = "http://site.internal";
+  process.env.PRISM_AGENT_SERVICE_TOKEN = "test-service-token";
+  globalThis.fetch = async () => Response.json({
+    error: `RUNTIME_REQUEST_FAILED:${"x".repeat(350)}:{"error":{"code":"context_length_exceeded"}}`,
+  }, { status: 502 });
+  try {
+    await assert.rejects(requestSiteRuntime({ prompt: "test", sessionId: "test", timeoutMs: 100 }), (error) => {
+      assert.ok(error instanceof SiteRuntimeRequestError);
+      assert.equal(error.status, 502);
+      assert.equal(isSiteRuntimeContextLengthExceeded(error), true);
+      assert.ok(!error.message.includes("context_length_exceeded"));
+      return true;
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+    restore();
+  }
+});
+
+test("Site runtime identifies its plain delimited context overflow code", async () => {
+  const restore = preserveSiteEnvironment();
+  const previousFetch = globalThis.fetch;
+  process.env.PRISM_AGENT_API_BASE_URL = "http://site.internal";
+  process.env.PRISM_AGENT_SERVICE_TOKEN = "test-service-token";
+  globalThis.fetch = async () => Response.json({
+    error: "RUNTIME_REQUEST_FAILED:context_length_exceeded:Your input exceeds the context window",
+  }, { status: 502 });
+  try {
+    await assert.rejects(requestSiteRuntime({ prompt: "test", sessionId: "test", timeoutMs: 100 }), (error) => {
+      assert.ok(error instanceof SiteRuntimeRequestError);
+      assert.equal(error.status, 502);
+      assert.equal(isSiteRuntimeContextLengthExceeded(error), true);
+      return true;
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+    restore();
+  }
+});
+
+test("Site runtime does not classify unrelated delimited errors as context overflow", async () => {
+  const restore = preserveSiteEnvironment();
+  const previousFetch = globalThis.fetch;
+  process.env.PRISM_AGENT_API_BASE_URL = "http://site.internal";
+  process.env.PRISM_AGENT_SERVICE_TOKEN = "test-service-token";
+  try {
+    for (const siteError of [
+      "OTHER_ERROR:context_length_exceeded:unrelated provider failure",
+      "RUNTIME_REQUEST_FAILED:not_context_length_exceeded:unrelated runtime failure",
+    ]) {
+      globalThis.fetch = async () => Response.json({ error: siteError }, { status: 502 });
+      await assert.rejects(requestSiteRuntime({ prompt: "test", sessionId: "test", timeoutMs: 100 }), (error) => {
+        assert.ok(error instanceof SiteRuntimeRequestError);
+        assert.equal(isSiteRuntimeContextLengthExceeded(error), false);
+        return true;
+      });
+    }
+  } finally {
+    globalThis.fetch = previousFetch;
     restore();
   }
 });
