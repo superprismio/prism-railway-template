@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 
 import {
   buildCodexArgs,
@@ -54,6 +55,84 @@ test('read-only utility prompt does not advertise Site mutation routes or skills
   assert.doesNotMatch(composed.prompt, /\/agent\/\*/);
   assert.doesNotMatch(composed.prompt, /service-token auth/);
   assert.doesNotMatch(composed.prompt, /PRISM_API_KEY/);
+});
+
+test('read-only utility prompt byte metrics include trusted policy and metadata exactly once', () => {
+  const composed = buildPrompt({
+    prompt: 'Explain this.',
+    recentHistory: [],
+    sessionId: 'utility-policy-session',
+    authorityMode: 'read_only_utility',
+    metadata: { policyInstructions: 'Use the supplied evidence.', requestId: 42 },
+  }, false, { availableSkills: [], selectedSkills: [] });
+  assert.match(composed.prompt, /Trusted transport policy instructions:/);
+  assert.match(composed.prompt, /Use the supplied evidence/);
+  assert.equal(Object.values(composed.metrics.sectionBytes).reduce((sum, value) => sum + value, 0), composed.metrics.totalBytes);
+  assert.equal(composed.metrics.metadataBytesBeforeProjection, composed.metrics.metadataBytesAfterProjection);
+});
+
+test('native selected skills are referenced without repeating their contents', () => {
+  const skillBody = 'PRIVATE_SKILL_BODY_' + 'x'.repeat(10_000);
+  const skills = {
+    availableSkills: [],
+    selectedSkills: [
+      { name: 'prism-task-author', content: skillBody, requiredCredentials: [] },
+      { name: 'fallback-skill', content: 'FALLBACK_SKILL_BODY', requiredCredentials: [] },
+    ],
+  };
+  const input = { prompt: 'Create a task', recentHistory: [], sessionId: 'skill-session', metadata: {} };
+  const directory = `prism-prism-task-author-${createHash('sha256').update('prism-task-author').digest('hex').slice(0, 10)}`;
+  const native = buildPrompt(input, true, skills, new Map([['prism-task-author', `/tmp/native/.agents/skills/${directory}/SKILL.md`]]));
+  assert.match(native.prompt, new RegExp(`Read and follow \\$HOME/\\.agents/skills/${directory}/SKILL\\.md`));
+  assert.doesNotMatch(native.prompt, /\/tmp\/native/);
+  assert.doesNotMatch(native.prompt, /PRIVATE_SKILL_BODY_/);
+  assert.match(native.prompt, /FALLBACK_SKILL_BODY/);
+  assert.equal(native.metrics.selectedSkillReferenceCount, 1);
+  assert.equal(native.metrics.selectedSkillInlineCount, 1);
+  assert.equal(native.metrics.sourceSelectedSkillBodyBytes, Buffer.byteLength(skillBody + 'FALLBACK_SKILL_BODY'));
+  assert.equal(native.metrics.inlineSelectedSkillBodyBytes, Buffer.byteLength('FALLBACK_SKILL_BODY'));
+  assert.ok(native.metrics.sectionBytes.skillCatalog > 0);
+  assert.ok(native.metrics.sectionBytes.selectedSkills > native.metrics.inlineSelectedSkillBodyBytes);
+  assert.equal(Object.values(native.metrics.sectionBytes).reduce((sum, value) => sum + value, 0), native.metrics.totalBytes);
+  const legacy = buildPrompt(input, true, skills);
+  assert.match(legacy.prompt, /PRIVATE_SKILL_BODY_/);
+  assert.ok(native.metrics.totalBytes < legacy.metrics.totalBytes - 9_000);
+  const untrustedPath = buildPrompt(input, true, skills, new Map([['prism-task-author', '/tmp/wrong/SKILL.md']]));
+  assert.match(untrustedPath.prompt, /PRIVATE_SKILL_BODY_/);
+  assert.equal(untrustedPath.metrics.selectedSkillReferenceCount, 0);
+});
+
+test('authorized destination inventory is retrieved on demand only when adapter access exists', () => {
+  const destinations = Array.from({ length: 100 }, (_, index) => ({ id: `channel-${index}`, label: `Secret Destination ${index}` }));
+  const metadata = {
+    availableOutputDestinations: destinations,
+    adapterCapabilities: { adapter: 'communication', capabilities: ['list-destinations', 'send-message'] },
+    customContext: 'preserve-me',
+  };
+  const input = { prompt: 'Send an update', recentHistory: [], sessionId: 'destination-session', metadata };
+  const skills = { availableSkills: [], selectedSkills: [] };
+  const projected = buildPrompt(input, false, skills, undefined, true);
+  assert.match(projected.prompt, /"count":100/);
+  assert.match(projected.prompt, /COMMUNICATION_ADAPTER_BASE_URL\/destinations/);
+  assert.match(projected.prompt, /X-Adapter-Token: \$COMMUNICATION_ADAPTER_TOKEN/);
+  assert.match(projected.prompt, /preserve-me/);
+  assert.doesNotMatch(projected.prompt, /Secret Destination 99/);
+  assert.equal(projected.metrics.destinationInventoryProjected, true);
+  assert.ok(projected.metrics.destinationInventoryBytesOmitted > 1_000);
+  assert.equal(projected.metrics.destinationInventoryBytesOmitted,
+    projected.metrics.metadataBytesBeforeProjection - projected.metrics.metadataBytesAfterProjection);
+  assert.equal(projected.metrics.sectionBytes.metadata, projected.metrics.metadataBytesAfterProjection);
+  assert.equal(Object.values(projected.metrics.sectionBytes).reduce((sum, value) => sum + value, 0), projected.metrics.totalBytes);
+  assert.deepEqual(metadata.availableOutputDestinations, destinations);
+
+  const noCredentials = buildPrompt(input, false, skills, undefined, false);
+  assert.match(noCredentials.prompt, /Secret Destination 99/);
+  assert.equal(noCredentials.metrics.destinationInventoryProjected, false);
+  const readOnly = buildPrompt({ ...input, authorityMode: 'read_only_utility' }, false, skills, undefined, true);
+  assert.match(readOnly.prompt, /Secret Destination 99/);
+  assert.equal(readOnly.metrics.destinationInventoryProjected, false);
+  const noCapability = buildPrompt({ ...input, metadata: { ...metadata, adapterCapabilities: { capabilities: [] } } }, false, skills, undefined, true);
+  assert.match(noCapability.prompt, /Secret Destination 99/);
 });
 
 test('read-only utility child receives provider auth but no mutation credentials', () => {

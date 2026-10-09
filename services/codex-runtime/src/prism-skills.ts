@@ -86,6 +86,8 @@ type SkillBundleFile = {
   mode: number;
 };
 
+export type NativePrismSkillManifest = ReadonlyMap<string, string>;
+
 let skillIndexCache: { skills: SkillRecord[]; fetchedAt: number } | null = null;
 const skillContentCache = new Map<string, SkillCacheEntry>();
 
@@ -323,6 +325,20 @@ function skillDirectoryName(skillName: string) {
   return `prism-${slug}-${suffix}`;
 }
 
+/** A path in the child's HOME, stable across per-invocation native skill homes. */
+export function nativePrismSkillPromptPath(skillName: string, installedSkillMarkdownPath: string) {
+  if (!path.isAbsolute(installedSkillMarkdownPath)) return null;
+  const skillRoot = path.dirname(installedSkillMarkdownPath);
+  const skillDirectory = skillDirectoryName(skillName);
+  if (
+    path.basename(installedSkillMarkdownPath) !== 'SKILL.md'
+    || path.basename(skillRoot) !== skillDirectory
+    || path.basename(path.dirname(skillRoot)) !== 'skills'
+    || path.basename(path.dirname(path.dirname(skillRoot))) !== '.agents'
+  ) return null;
+  return `$HOME/.agents/skills/${skillDirectory}/SKILL.md`;
+}
+
 async function mirrorDirectoryEntries(source: string, destination: string, excludedNames: Set<string>) {
   const entries = await fs.readdir(source, { withFileTypes: true }).catch(() => []);
   await fs.mkdir(destination, { recursive: true });
@@ -361,6 +377,7 @@ export async function createNativePrismSkillHome(
       : prismSkills.availableSkills;
     let installedSkillCount = 0;
     const failedSkillNames: string[] = [];
+    const selectedSkillPaths = new Map<string, string>();
 
     for (const skill of nativeSkills) {
       try {
@@ -377,7 +394,10 @@ export async function createNativePrismSkillHome(
           await fs.mkdir(path.dirname(destination), { recursive: true });
           await fs.writeFile(destination, file.content, { mode: file.mode });
         }
+        const skillMarkdownPath = path.join(skillRoot, 'SKILL.md');
+        await fs.access(skillMarkdownPath);
         installedSkillCount += 1;
+        if (selectedNames.has(skill.name)) selectedSkillPaths.set(skill.name, skillMarkdownPath);
       } catch (error) {
         if (exactSelection) throw error;
         failedSkillNames.push(skill.name);
@@ -387,6 +407,7 @@ export async function createNativePrismSkillHome(
     return {
       path: runtimeHome,
       skillCount: installedSkillCount,
+      selectedSkillPaths,
       failedSkillNames,
       cleanup: async () => await fs.rm(runtimeHome, { recursive: true, force: true }),
     };
