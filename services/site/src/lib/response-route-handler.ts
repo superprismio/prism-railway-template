@@ -104,6 +104,8 @@ type ResponseInputMessage = {
 type RuntimeResponsePayload = RuntimeResponse
 
 type RuntimeError = Error & {
+  code?: string
+  retryable?: boolean
   codexThreadId?: string | null
   branchName?: string | null
   commitSha?: string | null
@@ -492,6 +494,8 @@ function failedWorkflowAgentRunResult(input: {
     workflowStepKey: input.workflowStepKey,
     sessionId: input.sessionId,
     codexThreadId: input.runtimeError.codexThreadId ?? null,
+    runtimeErrorCode: input.runtimeError.code ?? null,
+    runtimeRetryable: input.runtimeError.retryable === true,
     branchName:
       typeof input.runtimeError.branchName === "string"
         ? input.runtimeError.branchName
@@ -1933,6 +1937,17 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       },
     })
 
-    return NextResponse.json({ ok: false, error: message }, { status: 502 })
+    return NextResponse.json({
+      ok: false,
+      error: message,
+      code: runtimeError.code ?? null,
+      retryable: runtimeError.retryable === true,
+      agentRunId: activeAgentRunId ?? null,
+      runtimeTrace: failureTrace.slice(-10).map((entry) => ({
+        at: entry.at,
+        kind: entry.kind,
+        message: typeof entry.message === "string" ? entry.message.slice(0, 500) : "",
+      })),
+    }, { status: 502 })
   }
 }

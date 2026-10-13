@@ -13,6 +13,13 @@ concurrent edits, or changes outside existing authority block that item.
 Assumptions alone must not prevent advancement to Repair.
 
 Accept either Doctor findings or an authorized scheduled request-recovery sweep.
+For requests failed by `CODEX_MODEL_CAPACITY`, inspect the terminal runtime job,
+trace, current workflow step, and external receipts. The runtime makes up to
+three safe same-job attempts before reporting this error. Treat exhausted
+capacity as a transient, retryable failure when no operation started; do not
+diagnose it as configuration drift or change model tier solely to avoid it.
+If any tool, delegation, file change, or unknown operation started, require
+side-effect reconciliation before a workflow retry.
 Read existing maintenance requests and receipts first; do not duplicate repairs
 owned by another active run. For sweeps, inspect active/stuck requests and failed
 runs within the requested window (default 48 hours), excluding this request.

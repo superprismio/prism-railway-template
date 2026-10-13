@@ -4,6 +4,34 @@ import test from 'node:test';
 import { requestRuntimeResponseWithProfile } from './runtime-client';
 import type { RuntimeProfileRecord } from './runtime-profiles';
 
+test('terminal model capacity retains retryable code and runtime trace', async (t) => {
+  const server = createServer((request, response) => {
+    request.resume();
+    response.setHeader('content-type', 'application/json');
+    if (request.method === 'POST') response.end(JSON.stringify({ jobId: 'capacity-job', job: { status: 'queued' } }));
+    else response.end(JSON.stringify({ job: {
+      status: 'failed', threadId: 'codex-capacity-thread', error: { code: 'CODEX_MODEL_CAPACITY', message: 'Selected model is at capacity', retryable: true },
+      trace: [{ at: '2026-10-13T00:00:00Z', kind: 'model.capacity', message: 'selected model unavailable' }],
+    } }));
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const profile: RuntimeProfileRecord = { key: 'capacity', name: 'Capacity', adapter: 'codex-cli', baseUrl: `http://127.0.0.1:${address.port}`, enabled: true, isDefault: true, contractVersion: '2026-07-10', features: [], createdAt: '', updatedAt: '' };
+  await assert.rejects(
+    requestRuntimeResponseWithProfile(profile, { prompt: 'test', sessionId: 'capacity', timeoutMs: 10_000 }),
+    (error: unknown) => {
+      const failure = error as Error & { code?: string; retryable?: boolean; trace?: unknown[]; codexThreadId?: string | null };
+      assert.equal(failure.code, 'CODEX_MODEL_CAPACITY');
+      assert.equal(failure.retryable, true);
+      assert.equal(failure.trace?.length, 1);
+      assert.equal(failure.codexThreadId, 'codex-capacity-thread');
+      return true;
+    },
+  );
+});
+
 for (const completes of [true, false]) {
   test(`deadline poll reconciliation ${completes ? 'accepts late success' : 'cancels unfinished job'}`, async (t) => {
     let posts = 0, polls = 0, cancels = 0;

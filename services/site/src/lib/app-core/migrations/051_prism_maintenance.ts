@@ -8,7 +8,7 @@ export const prismMaintenanceWorkflow = {
   agentConfig: { contextPolicy: { continuation: 'step', handoff: 'artifacts' }, delegation: { allowed: false, maxAgents: 0 } },
   steps: [
     { key: 'assess', label: 'Assess maintenance findings', type: 'agent', next: 'repair', instructionPath: 'workflows/prism-maintenance/steps/assess.md', agentConfig: { skills: ['prism-doctor'], modelTier: 'standard' } },
-    { key: 'repair', label: 'Repair instance configuration', type: 'agent', next: 'verify', instructionPath: 'workflows/prism-maintenance/steps/repair.md', agentConfig: { skills: ['prism-workflow-author', 'prism-skill-author', 'prism-gateway-author'], modelTier: 'standard' } },
+    { key: 'repair', label: 'Repair instance configuration', type: 'agent', next: 'verify', instructionPath: 'workflows/prism-maintenance/steps/repair.md', agentConfig: { skills: ['prism-workflow-author', 'prism-skill-author', 'prism-gateway-author', 'change-request-ops'], modelTier: 'standard' } },
     { key: 'verify', label: 'Verify maintenance results', type: 'agent', next: 'closed', instructionPath: 'workflows/prism-maintenance/steps/verify.md', agentConfig: { skills: ['prism-doctor'], modelTier: 'standard' } },
     { key: 'closed', label: 'Closed', type: 'terminal' },
   ],

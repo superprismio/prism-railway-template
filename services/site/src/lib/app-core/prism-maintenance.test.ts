@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { prismMaintenanceMigration, prismMaintenanceWorkflow } from './migrations/051_prism_maintenance';
+import { maintenanceRequestRecoverySkillMigration } from './migrations/054_maintenance_request_recovery_skill';
 import { migrations } from './migrations';
 
 test('full migration chain assigns seeded maintenance to Dreamer', () => {
@@ -28,11 +29,31 @@ test('maintenance workflow is targetless, explicitly owned and has valid transit
   const w = prismMaintenanceWorkflow;
   assert.equal(w.target.required, false);
   assert.equal(w.defaultAgent, 'admin-agent');
+  assert.ok(w.steps[1].agentConfig?.skills?.includes('change-request-ops'));
   const keys = new Set(w.steps.map(step => step.key));
   for (const step of w.steps) {
     assert.notEqual(step.type, 'gate');
     if (step.type !== 'terminal') assert.ok(keys.has(step.next!));
   }
+});
+
+test('existing seeded maintenance gains request recovery skill without overwriting custom skills', () => {
+  const db = new Database(':memory:');
+  try {
+    db.exec(`CREATE TABLE workflows(id TEXT PRIMARY KEY,key TEXT UNIQUE,name TEXT,description TEXT,version INTEGER,definition_json TEXT,system_default INTEGER,enabled INTEGER,created_at TEXT,updated_at TEXT);`);
+    const old = structuredClone(prismMaintenanceWorkflow);
+    old.steps[1].agentConfig!.skills = ['prism-workflow-author', 'prism-skill-author', 'prism-gateway-author'];
+    db.prepare('INSERT INTO workflows VALUES (?,?,?,?,?,?,?,?,?,?)').run('id', old.key, old.name, old.description, 1, JSON.stringify(old), 1, 1, '', '');
+    db.exec(maintenanceRequestRecoverySkillMigration.sql);
+    const current = JSON.parse((db.prepare('SELECT definition_json FROM workflows').get() as { definition_json: string }).definition_json);
+    assert.ok(current.steps[1].agentConfig.skills.includes('change-request-ops'));
+    const custom = ['custom-request-skill'];
+    current.steps[1].agentConfig.skills = custom;
+    db.prepare('UPDATE workflows SET definition_json=?').run(JSON.stringify(current));
+    db.exec(maintenanceRequestRecoverySkillMigration.sql);
+    const preserved = JSON.parse((db.prepare('SELECT definition_json FROM workflows').get() as { definition_json: string }).definition_json);
+    assert.deepEqual(preserved.steps[1].agentConfig.skills, custom);
+  } finally { db.close(); }
 });
 
 test('maintenance seed is idempotent and preserves an existing custom definition', () => {

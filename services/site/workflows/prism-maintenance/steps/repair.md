@@ -6,6 +6,13 @@ an ambiguous external side effect. Use terminal reconciliation dry-run/apply
 only for a verified terminal workflow projection. Retry a failed step at most
 once per batch only when evidence establishes no side effect occurred, or the
 operation is demonstrably idempotent and retains its original authorization.
+An exhausted `CODEX_MODEL_CAPACITY` runtime job is eligible for that one retry
+only after confirming the failed attempt's trace has no started tool,
+delegation, file change, or unknown operation. Use `change-request-ops` to read
+the request, runs and artifacts and invoke the supported retry workflow;
+record the original and replacement run IDs. If capacity recurs, leave it
+retryable for a later sweep and report it rather than looping or lowering the
+model tier.
 Do not override human gates, close active work by assumption, or manually patch
 request workflow state. Persist before/after run IDs and readback. If recovery
 is still queued/running, report pending, not successful; verification must check.
