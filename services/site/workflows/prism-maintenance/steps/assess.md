@@ -23,6 +23,12 @@ side-effect reconciliation before a workflow retry.
 Read existing maintenance requests and receipts first; do not duplicate repairs
 owned by another active run. For sweeps, inspect active/stuck requests and failed
 runs within the requested window (default 48 hours), excluding this request.
+Also scan the bounded open scheduled-task backlog outside the window for
+older blocked requests that a later completed run may have superseded. A
+later success is a candidate, not proof: compare exact task source, workflow,
+target, selected item IDs/backlog, and external effect receipts. Exclude
+unique dated deliverables. Record candidate and successor request numbers,
+receipt artifact IDs, uncovered work, and uncertainty in the plan.
 Save maintenance-scan.json with request/run IDs and evidence. Obtain a fresh
 Doctor report through the existing deterministic task when baseline is missing
 or stale. The scanner and Doctor supply findings; the shared plan owns repairs.

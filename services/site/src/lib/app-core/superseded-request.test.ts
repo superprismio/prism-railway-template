@@ -1,0 +1,64 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { closeDb, getDb, runMigrations } from './db';
+import { cancelSupersededRequest, type SupersededRequestInput } from './superseded-request';
+
+test('guarded supersession dry-runs, cancels once, and rejects active work', () => {
+  const root = mkdtempSync(join(tmpdir(), 'prism-supersession-'));
+  process.env.PRISM_AGENT_DATA_ROOT = root;
+  const db = getDb();
+  try {
+    runMigrations(db);
+    const now = '2026-10-13T00:00:00.000Z';
+    const later = '2026-10-14T00:00:00.000Z';
+    const definition = JSON.stringify({ key: 'test-task-workflow', version: 1, entrypoint: 'work', steps: [{ key: 'work', type: 'agent', next: 'closed' }, { key: 'closed', type: 'terminal' }] });
+    db.prepare(`INSERT INTO workflows (id,key,name,description,version,definition_json,system_default,enabled,created_at,updated_at) VALUES ('test-workflow','test-task-workflow','Test task','',1,?,0,1,?,?)`).run(definition, now, now);
+    const request = db.prepare(`INSERT INTO change_requests (id,request_number,workflow_key,title,description,request_type,priority,source,created_at,updated_at,completed_at,closed_at) VALUES (?,?,?,'task','', 'ops','normal','task:memory-jev-classification',?,?,?,?)`);
+    request.run('target', 10, 'test-task-workflow', now, now, null, null);
+    request.run('successor', 11, 'test-task-workflow', later, later, later, later);
+    request.run('maintenance', 12, 'prism-maintenance', later, later, null, null);
+    const run = db.prepare(`INSERT INTO workflow_runs (id,request_id,workflow_key,current_step_key,status,meta_json,created_at,updated_at,completed_at) VALUES (?,?,?,?,?,'{}',?,?,?)`);
+    run.run('target-run', 'target', 'test-task-workflow', 'work', 'active', now, now, null);
+    run.run('successor-run', 'successor', 'test-task-workflow', 'closed', 'completed', later, later, later);
+    run.run('maintenance-run', 'maintenance', 'prism-maintenance', 'repair', 'active', later, later, null);
+    db.prepare(`INSERT INTO agent_runs (id,kind,status,request_id,workflow_run_id,workflow_step_key,agent_profile_id,source,input_json,result_json,trace_json,created_at,updated_at) VALUES ('maintenance-agent','workflow_step','running','maintenance','maintenance-run','repair','agent-profile-dreamer','site','{}','{}','[]',?,?)`).run(later, later);
+    const artifact = db.prepare(`INSERT INTO request_artifacts (id,request_id,kind,name,mime_type,storage_path,size_bytes,metadata_json,created_by,created_at,updated_at) VALUES (?,?,'file','receipt.json','application/json','/tmp/receipt',1,'{}','agent',?,?)`);
+    artifact.run('target-receipt', 'target', now, now);
+    artifact.run('successor-receipt', 'successor', later, later);
+    const input: SupersededRequestInput = { targetRequestId: 'target', successorRequestNumbers: [11], evidenceArtifactIds: ['target-receipt', 'successor-receipt'], expectedWorkflowRunId: 'target-run', expectedStepKey: 'work', expectedWorkflowVersion: 1, maintenanceRequestId: 'maintenance', maintenanceAgentRunId: 'maintenance-agent', comment: 'No selected items remain; successor covered the same backlog.', dryRun: true };
+    assert.equal(cancelSupersededRequest(input).ok, true);
+    assert.equal(db.prepare(`SELECT status FROM workflow_runs WHERE id='target-run'`).pluck().get(), 'active');
+    const maintenanceBlocker = () => (cancelSupersededRequest(input) as { blockers: string[] }).blockers.includes('INVALID_MAINTENANCE_AGENT_RUN');
+    db.prepare(`UPDATE agent_runs SET workflow_run_id='target-run' WHERE id='maintenance-agent'`).run();
+    assert.equal(maintenanceBlocker(), true);
+    db.prepare(`UPDATE agent_runs SET workflow_run_id='maintenance-run', agent_profile_id='agent-profile-admin' WHERE id='maintenance-agent'`).run();
+    assert.equal(maintenanceBlocker(), true);
+    db.prepare(`UPDATE agent_runs SET agent_profile_id='agent-profile-dreamer', workflow_step_key='verify' WHERE id='maintenance-agent'`).run();
+    assert.equal(maintenanceBlocker(), true);
+    db.prepare(`UPDATE agent_runs SET workflow_step_key='repair' WHERE id='maintenance-agent'`).run();
+    db.prepare(`UPDATE workflow_runs SET current_step_key='verify' WHERE id='maintenance-run'`).run();
+    assert.equal(maintenanceBlocker(), true);
+    db.prepare(`UPDATE workflow_runs SET current_step_key='repair' WHERE id='maintenance-run'`).run();
+    db.prepare(`INSERT INTO agent_runs (id,kind,status,request_id,workflow_run_id,source,input_json,result_json,trace_json,created_at,updated_at) VALUES ('active-target','workflow_step','running','target','target-run','site','{}','{}','[]',?,?)`).run(now, now);
+    assert.deepEqual((cancelSupersededRequest({ ...input, dryRun: false }) as { blockers: string[] }).blockers, ['ACTIVE_WORK']);
+    db.prepare(`UPDATE agent_runs SET status='succeeded' WHERE id='active-target'`).run();
+    assert.ok((cancelSupersededRequest({ ...input, successorRequestNumbers: [12], dryRun: false }) as { blockers: string[] }).blockers.includes('SUCCESSOR_NOT_EQUIVALENT_AND_COMPLETED'));
+    assert.equal(db.prepare(`SELECT status FROM workflow_runs WHERE id='target-run'`).pluck().get(), 'active');
+    assert.equal(cancelSupersededRequest({ ...input, dryRun: false }).ok, true);
+    assert.equal(db.prepare(`SELECT status FROM workflow_runs WHERE id='target-run'`).pluck().get(), 'canceled');
+    assert.ok(db.prepare(`SELECT closed_at FROM change_requests WHERE id='target'`).pluck().get());
+    assert.equal(cancelSupersededRequest({ ...input, evidenceArtifactIds: [...input.evidenceArtifactIds].reverse(), dryRun: false }).duplicate, true);
+    assert.equal((cancelSupersededRequest({ ...input, evidenceArtifactIds: ['target-receipt'], dryRun: false }) as { error: string }).error, 'ALREADY_CANCELED_WITH_OTHER_PROOF');
+    assert.equal(db.prepare(`SELECT count(*) FROM workflow_events WHERE event_type='workflow.canceled_superseded'`).pluck().get(), 1);
+    const event = db.prepare(`SELECT payload_json FROM workflow_events WHERE event_type='workflow.canceled_superseded'`).get() as { payload_json: string };
+    assert.deepEqual(JSON.parse(event.payload_json).successorRequestNumbers, [11]);
+    assert.deepEqual(JSON.parse(event.payload_json).evidenceArtifactIds, ['target-receipt', 'successor-receipt']);
+  } finally {
+    closeDb();
+    delete process.env.PRISM_AGENT_DATA_ROOT;
+    rmSync(root, { recursive: true, force: true });
+  }
+});

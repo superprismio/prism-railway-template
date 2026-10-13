@@ -43,6 +43,7 @@ Core endpoints:
 - `POST /agent/change-board/requests/:id/external-refs`
 - `GET /agent/change-board/requests/:id/artifacts`
 - `POST /agent/change-board/requests/:id/artifacts`
+- `POST /agent/change-board/requests/:id/workflow/cancel-superseded`
 - `GET /agent/change-board/requests/:id/artifacts/:artifactId/content`
 - `POST /agent/source-attachments/ingest`
 - `POST /agent/source-attachments/resolve-and-ingest`
@@ -54,6 +55,22 @@ To rerun the current agent, checkpoint, or loop step without advancing an
 attention state, call the by-number workflow continue route with
 `{"retryCurrentStep":true,"comment":"..."}`. Do not combine a current-step
 retry with `workflowAction`.
+
+For scheduled requests demonstrably superseded by later completed work, use
+`POST /agent/change-board/requests/:id/workflow/cancel-superseded`. This is a
+guarded service operation, separate from the admin force-cancel route. It
+defaults to a dry run. Supply `reason: "superseded"`, a nonempty `comment`,
+`successorRequestNumbers`, `evidenceArtifactIds`, `expectedWorkflowRunId`,
+`expectedStepKey`, `expectedWorkflowVersion`, `maintenanceRequestId`, and
+`maintenanceAgentRunId`. Apply only after a successful dry run by sending the
+same evidence with `dryRun: false`. The service rejects active work, human
+gates, changed state, and successors that are not later completed requests
+from the same task source, workflow, and target. Read back the canceled
+workflow and closed request. A later success alone does not prove a prior
+request is safe to cancel: inspect the failed run receipt and verify that no
+selected items remain unfinished, no external side effect is uncertain, and
+the successor covers the same backlog. Do not use this for unique dated
+deliverables or merely similar requests.
 
 Queue reads:
 
