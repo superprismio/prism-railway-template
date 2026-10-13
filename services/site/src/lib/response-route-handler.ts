@@ -4,6 +4,7 @@ import path from "node:path"
 import { workflowContinuationPolicy } from "@/lib/workflow-context-policy"
 import { continuationWorkflowRunSkills, initialWorkflowRunSkills } from "@/lib/workflow-skill-scope"
 import { interactiveContinuationPolicy } from "@/lib/interactive-continuation-policy"
+import { requestApiInstructions } from "@/lib/request-api-instructions"
 import { NextResponse } from "next/server"
 import {
   buildTargetEnvironmentDeployPlan,
@@ -1406,7 +1407,11 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                 ? `Workflow step instructions:\n${workflowStepInstruction}`
                 : "This response is linked to a tracked request workflow step.",
               runnableStepKey ? `Current workflow step: ${runnableStepKey}.` : null,
-              activeAgentRunId ? `Current agent run id: ${activeAgentRunId}. When creating request artifacts for this step, include this as agent_run_id.` : null,
+              linkedChangeRequest ? requestApiInstructions({
+                requestId: linkedChangeRequest.id,
+                requestNumber: linkedChangeRequest.requestNumber,
+                agentRunId: activeAgentRunId,
+              }) : null,
               workflowOutcomeInstruction(),
               isCheckpointWorkflowStep(runnableWorkflowStep)
                 ? [
@@ -1415,9 +1420,6 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                     nextStepKeyAfterRun ? `If the workflow is ready to continue, say that ${nextStepKeyAfterRun} should run next and why.` : null,
                   ].filter(Boolean).join(" ")
                 : nextStepKeyAfterRun ? `When this step is complete, advance the workflow run to ${nextStepKeyAfterRun}.` : null,
-              linkedChangeRequest
-                ? `To read prior workflow artifact bodies, call GET /agent/change-board/requests/by-number/${linkedChangeRequest.requestNumber}/artifacts with x-service-token. Filter by name or kind when useful.`
-                : null,
             ].filter(Boolean).join("\n\n")
           : null,
       },
@@ -1673,10 +1675,13 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
                   ? `Workflow step instructions:\n${continuationInstruction}`
                   : "This response is linked to a tracked request workflow step.",
                 `Current workflow step: ${continuationStepKey}.`,
-                continuationAgentRunId ? `Current agent run id: ${continuationAgentRunId}. When creating request artifacts for this step, include this as agent_run_id.` : null,
+                requestApiInstructions({
+                  requestId: latestRequest.id,
+                  requestNumber: latestRequest.requestNumber,
+                  agentRunId: continuationAgentRunId,
+                }),
                 workflowOutcomeInstruction(),
                 continuationNextStepKey ? `When this step is complete, advance the workflow run to ${continuationNextStepKey}.` : null,
-                `To read prior workflow artifact bodies, call GET /agent/change-board/requests/by-number/${latestRequest.requestNumber}/artifacts with x-service-token. Filter by name or kind when useful.`,
                 "Auto-continue is enabled; the site will run the next agent step until the workflow reaches a gate, checkpoint, or terminal step.",
               ].filter(Boolean).join("\n\n"),
             },

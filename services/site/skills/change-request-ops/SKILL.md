@@ -13,6 +13,15 @@ Required environment:
 
 Always send `x-service-token: $PRISM_AGENT_SERVICE_TOKEN`.
 
+The request number shown in the UI (for example `#3623`) and the request ID
+are different values. Use the number only with `/by-number/:requestNumber`
+read and workflow-continue routes. Use the request ID returned as
+`changeRequest.id` by the review route for `/requests/:id` writes, including
+artifact creation, request patches, and external refs. Do not POST artifacts
+to a `/by-number/` URL. For a linked workflow run, the trusted runtime prompt
+also supplies both values. Include its current run ID as top-level
+`agent_run_id` in artifact POST bodies when present.
+
 In deployed Prism instances, Codex Runtime usually receives `APP_API_BASE_URL` and `APP_API_SERVICE_TOKEN`, then exposes them to Codex as `PRISM_AGENT_API_BASE_URL` and `PRISM_AGENT_SERVICE_TOKEN`. If the `PRISM_*` names are missing, check the `APP_*` names before concluding the API is unavailable.
 
 Do not use browser admin routes such as `/admin/board` from Codex Runtime. Runtime agents should use the `/agent/...` routes below with service-token auth. A `401` from a browser admin route usually means "wrong surface", not that the operation is impossible.
@@ -69,6 +78,11 @@ curl -fsSL \
 ```
 
 Use this endpoint when a user asks what happened to request `#10`, why a workflow got stuck, or what should improve next time. It returns the request, workflow definition, workflow run, agent runs, legacy executions, workflow events, artifacts, external refs, latest linked agent session, and agent messages. Review the agent runs and workflow events before recommending changes. Treat `legacyExecutions` as historical compatibility data only.
+
+For Discord evidence verification, load `prism-source-history-reader` on the
+verifying workflow step and read the source message or channel history before
+claiming delivery or attendance. A request review does not replace source
+history verification.
 
 Inspect request artifacts by request number:
 
