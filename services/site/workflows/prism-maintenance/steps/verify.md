@@ -64,6 +64,11 @@ Read the maintenance plan and receipts. Trigger the existing prism-doctor task t
 
 Save maintenance-verification.md with before/after finding counts and per-item outcomes. Also save maintenance-unresolved.json with stable finding IDs, affected targets, evidence, attempted actions, why each remains unresolved, exact questions or required actions, and conditions for retry. Count findings and distinct workflows separately from these records. This completion contract explicitly authorizes deferral of unresolved items to the delivered report. Do not return needs_attention solely because Doctor still has failures, credentials are missing, or a human answer is pending. After durable report delivery, return a successful step outcome stating "Maintenance batch completed with unresolved findings reported" and allow normal routing to Closed. Closed describes the batch, not resolution of every finding. Never mark missing checks or deferred findings as passed. A failed report delivery remains a retryable technical failure; do not close until the delivery is confirmed. Do not execute repository code review or unrelated publishing merely to close this maintenance ticket.
 
+For each superseded cancellation, read back the target request and workflow:
+the run must be canceled, the request closed at a terminal step, and its audit
+event must cite successor requests, evidence artifacts, and the maintenance
+run. Treat a dry-run-only candidate as unresolved, never as canceled.
+
 Verify each installed delta by readback and targeted checks as well as the fresh
 Doctor report. Report partial progress clearly: repaired, already resolved,
 blocked, failed verification, and proposed optimization. Never describe a

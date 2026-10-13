@@ -1,8 +1,17 @@
 # Repair
 
 For request recovery, re-read current step, active runs, artifacts and external
-receipts immediately before mutation. Never interrupt an active job or replay
-an ambiguous external side effect. Use terminal reconciliation dry-run/apply
+receipts immediately before mutation.
+For a planned superseded scheduled request, use the guarded
+`cancel-superseded` service route with a dry run first. Apply only when receipt
+evidence proves zero unfinished selected items, no uncertain side effects,
+and the same backlog was covered by later completed request(s). Include the
+target's expected workflow run, step and definition version, evidence artifact
+IDs, successor numbers, and this maintenance request and agent run IDs.
+Record the dry-run result and applied readback; leave unclear candidates open.
+
+Never interrupt an active job or replay an ambiguous external side effect.
+Use terminal reconciliation dry-run/apply
 only for a verified terminal workflow projection. Retry a failed step at most
 once per batch only when evidence establishes no side effect occurred, or the
 operation is demonstrably idempotent and retains its original authorization.

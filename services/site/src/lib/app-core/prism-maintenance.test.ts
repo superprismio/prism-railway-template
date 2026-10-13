@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { prismMaintenanceMigration, prismMaintenanceWorkflow } from './migrations/051_prism_maintenance';
 import { maintenanceRequestRecoverySkillMigration } from './migrations/054_maintenance_request_recovery_skill';
+import { maintenanceSupersessionSkillMigration } from './migrations/055_maintenance_supersession_skill';
 import { migrations } from './migrations';
 
 test('full migration chain assigns seeded maintenance to Dreamer', () => {
@@ -53,6 +54,26 @@ test('existing seeded maintenance gains request recovery skill without overwriti
     db.exec(maintenanceRequestRecoverySkillMigration.sql);
     const preserved = JSON.parse((db.prepare('SELECT definition_json FROM workflows').get() as { definition_json: string }).definition_json);
     assert.deepEqual(preserved.steps[1].agentConfig.skills, custom);
+  } finally { db.close(); }
+});
+
+test('supersession migration adds request operations to seeded assessment and verification only', () => {
+  const db = new Database(':memory:');
+  try {
+    db.exec(`CREATE TABLE workflows(id TEXT PRIMARY KEY,key TEXT UNIQUE,name TEXT,description TEXT,version INTEGER,definition_json TEXT,system_default INTEGER,enabled INTEGER,created_at TEXT,updated_at TEXT);`);
+    const old = structuredClone(prismMaintenanceWorkflow);
+    old.steps[0].agentConfig!.skills = ['prism-doctor'];
+    old.steps[2].agentConfig!.skills = ['prism-doctor'];
+    db.prepare('INSERT INTO workflows VALUES (?,?,?,?,?,?,?,?,?,?)').run('id', old.key, old.name, old.description, 1, JSON.stringify(old), 1, 1, '', '');
+    db.exec(maintenanceSupersessionSkillMigration.sql);
+    const updated = db.prepare('SELECT version,definition_json FROM workflows').get() as { version: number; definition_json: string };
+    const definition = JSON.parse(updated.definition_json);
+    assert.equal(updated.version, 2);
+    assert.equal(definition.version, 2);
+    assert.deepEqual(definition.steps[0].agentConfig.skills, ['prism-doctor', 'change-request-ops']);
+    assert.deepEqual(definition.steps[2].agentConfig.skills, ['prism-doctor', 'change-request-ops']);
+    db.exec(maintenanceSupersessionSkillMigration.sql);
+    assert.equal((db.prepare('SELECT version FROM workflows').pluck().get()), 2);
   } finally { db.close(); }
 });
 
