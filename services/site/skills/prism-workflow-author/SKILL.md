@@ -153,6 +153,9 @@ If a triage or intake step sees a request without `estimatedHumanHours` and the 
 ```
 
 Send that body to `POST /agent/change-board/requests/<request-id>/artifacts` with internal service auth. Use `encoding: "base64"` for image or other binary content. When the workflow prompt provides a current agent run id, include it as `agent_run_id` so the artifact links back to the run that produced it. Artifacts are owned by the site service, stored under `/data/workflow-artifacts`, listed on the request Artifacts tab, and recorded as `artifact.created` workflow events.
+The displayed `#<request-number>` is for `/by-number/` reads; artifact POSTs
+require the request UUID. Put `agent_run_id` at the top level of the POST body,
+beside `kind` and `content`, not inside `metadata`.
 
 If a workflow expects a user-supplied Discord attachment, instruct the agent to use the attachment handoff route instead of pasting or trusting a Discord CDN URL:
 
@@ -239,6 +242,11 @@ credentials. A deterministic task or instance-owned skill may declare specific
 keys with `agentConfig.gatewayCredentials` or `metadata.gateway-credentials`.
 Use the provider's normal SDK, CLI, HTTP API, OpenAPI client, or MCP client
 through the leased environment and configuration variables.
+Include `change-request-ops` on each step that writes request state, artifacts,
+or external refs, or continues a workflow through the request API. Include
+`prism-source-history-reader` on each step that verifies Discord messages or
+events against source history. Describe the exact evidence to check in the
+step instructions; a skill name alone is not a verification result.
 Before enabling a workflow, verify its referenced skills and Gateway
 requirements exist and run Prism Doctor.
 
