@@ -54,6 +54,7 @@ export type RuntimeRequestInput = {
 type NormalizedJob = {
   id?: string;
   status?: string;
+  threadId?: string | null;
   result?: {
     responseText?: string;
     continuationId?: string | null;
@@ -423,12 +424,21 @@ async function requestNormalized(
       status,
       runtimeJobId: jobId,
       runtimeKey: profile.key,
-      threadId: typeof job?.result?.continuationId === 'string' ? job.result.continuationId : null,
+      threadId: typeof job?.result?.continuationId === 'string' ? job.result.continuationId
+        : typeof job?.threadId === 'string' ? job.threadId : null,
       trace: traceEntries(job?.trace),
     });
     if (status === 'queued' || status === 'running') continue;
     if (status === 'succeeded' && job) return normalizedResponse(profile, job);
-    throw new Error(`RUNTIME_REQUEST_FAILED:${job?.error?.code || 'RUNTIME_JOB_FAILED'}:${job?.error?.message || 'Runtime job failed'}`);
+    const failure = new Error(`RUNTIME_REQUEST_FAILED:${job?.error?.code || 'RUNTIME_JOB_FAILED'}:${job?.error?.message || 'Runtime job failed'}`) as Error & {
+      code: string; retryable: boolean; trace: RuntimeTraceEntry[]; codexThreadId: string | null;
+    };
+    failure.code = job?.error?.code || 'RUNTIME_JOB_FAILED';
+    failure.retryable = job?.error?.retryable === true;
+    failure.trace = traceEntries(job?.trace);
+    failure.codexThreadId = typeof job?.result?.continuationId === 'string' ? job.result.continuationId
+      : typeof job?.threadId === 'string' ? job.threadId : null;
+    throw failure;
   }
 }
 

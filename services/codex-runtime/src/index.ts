@@ -315,7 +315,7 @@ function normalizedError(message: string | null, status: RuntimeResponseJob['sta
   return {
     code,
     message: safeMessage,
-    retryable: code === 'CODEX_RUNTIME_TIMEOUT' || code === 'CODEX_RUNTIME_FETCH_FAILED',
+    retryable: code === 'CODEX_RUNTIME_TIMEOUT' || code === 'CODEX_RUNTIME_FETCH_FAILED' || code === 'CODEX_MODEL_CAPACITY',
   };
 }
 
@@ -326,6 +326,8 @@ function normalizedJob(job: RuntimeResponseJob) {
     runtimeKey,
     adapter: 'codex-cli',
     status: job.status,
+    // Keep the continuation even when a failed job has no result object.
+    threadId: job.threadId,
     createdAt: job.createdAt,
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,

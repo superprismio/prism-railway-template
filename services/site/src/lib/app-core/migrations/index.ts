@@ -2,6 +2,7 @@ import { initialMigration } from './001_initial';
 import { prismMaintenanceMigration } from './051_prism_maintenance';
 import { dreamerAgentMigration } from './052_dreamer_agent';
 import { workflowScriptRunsMigration } from './053_workflow_script_runs';
+import { maintenanceRequestRecoverySkillMigration } from './054_maintenance_request_recovery_skill';
 import { badgeImageUrlMigration } from './002_badge_image_url';
 import { targetAppsAndChangeRequestsMigration } from './003_target_apps_and_change_requests';
 import { changeRequestExecutionsMigration } from './004_change_request_executions';
@@ -109,4 +110,5 @@ export const migrations: Migration[] = [
   prismMaintenanceMigration,
   dreamerAgentMigration,
   workflowScriptRunsMigration,
+  maintenanceRequestRecoverySkillMigration,
 ];

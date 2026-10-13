@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { createJobCleanup, isolateJobProcessGroup } from './process-cleanup.js';
 import { config } from './config.js';
 import { RunBudget, isExecutionProgress, resolveRunBudget } from './run-budget.js';
+import { CapacityAttempt, consumeJsonLines, isExplicitModelCapacity, setupStopCode, terminalModelCapacity, waitForCapacityRetry } from './model-capacity.js';
 import { resolveCodexModelPolicy, type ModelTier, type ReasoningEffort } from './model-tier.js';
 import { createNativePrismSkillHome, loadRelevantPrismSkills, nativePrismSkillPromptPath, type NativePrismSkillManifest } from './prism-skills.js';
 import { gatewayClient } from './runtime-gateway.js';
@@ -129,6 +130,7 @@ type CodexJsonEvent = {
 
 type CodexRuntimeError = Error & {
   codexThreadId?: string | null;
+  safeCapacityReplay?: boolean;
   trace?: Array<{
     at: string;
     kind: string;
@@ -1294,14 +1296,24 @@ function emptyResponseFallback(input: CodexRuntimeInput) {
     : 'Codex completed without returning assistant text.';
 }
 
-async function runCodexProcess(input: CodexRuntimeInput) {
+async function runCodexProcess(input: CodexRuntimeInput, budget: RunBudget, trace: CodexRuntimeResult['trace'], attemptNumber: number) {
+  const assertReady = (stage: string) => {
+    const message = setupStopCode(budget, Date.now(), input.signal);
+    if (!message) return;
+    appendTrace(trace, input.signal?.aborted ? 'run.canceled' : 'run.timeout', `${message} during ${stage}`, input.onTrace);
+    const error = new Error(message) as CodexRuntimeError;
+    error.codexThreadId = input.codexThreadId ?? null;
+    error.trace = trace;
+    throw error;
+  };
+  assertReady('setup');
   const outputFile = path.join(os.tmpdir(), `codex-runtime-${randomUUID()}.txt`);
   const isResume = Boolean(input.codexThreadId);
-  const trace: CodexRuntimeResult['trace'] = [];
   const authorityMode = input.authorityMode ?? 'full';
   const prismSkills: LoadedPrismSkills = authorityMode === 'read_only_utility'
     ? { availableSkills: [], selectedSkills: [] }
     : await loadRelevantPrismSkills(input.prompt, input.metadata);
+  assertReady('skill loading');
   // Site supplies the authorized credential set after applying profile policy.
   // Prompt-selected skills describe dependencies, never authority to lease more.
   const effectiveCredentials = Array.from(new Set(input.credentials ?? []));
@@ -1312,6 +1324,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         context: input.gatewayContext || {},
       })
     : { env: {} };
+  assertReady('credential lease');
   const leasedEnv = lease.env;
   const githubToken = authorityMode === 'read_only_utility'
     ? null
@@ -1326,12 +1339,14 @@ async function runCodexProcess(input: CodexRuntimeInput) {
         baseCommitSha: null,
       }
     : await prepareExecutionWorkspace(input, trace, githubToken);
+  assertReady('workspace preparation');
   input.onTrace?.([...trace]);
   const executionWorkspaceRoot = preparedWorkspace.workspacePath;
   const nativeSkillHome = authorityMode === 'read_only_utility'
     ? null
     : await createNativePrismSkillHome(process.env.HOME || os.homedir(), prismSkills, input.metadata);
   try {
+  assertReady('native skill preparation');
   const adapterLookupAvailable = Boolean(
     (leasedEnv.COMMUNICATION_ADAPTER_BASE_URL || process.env.COMMUNICATION_ADAPTER_BASE_URL)
     && (leasedEnv.COMMUNICATION_ADAPTER_TOKEN || process.env.COMMUNICATION_ADAPTER_TOKEN),
@@ -1401,6 +1416,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     }
   }
 
+    assertReady('process spawn');
     return await new Promise<CodexRuntimeResult>((resolve, reject) => {
       const child = spawn(config.codexBinary, args, {
       detached: isolateJobProcessGroup,
@@ -1419,10 +1435,11 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     let lastAgentText = '';
     let runtimeErrorMessage = '';
     let settled = false;
+    const capacityAttempt = new CapacityAttempt();
 
     const recordTrace = (kind: string, message: string) => appendTrace(trace, kind, message, input.onTrace);
 
-    recordTrace('run.started', isResume ? 'Resuming Codex thread' : 'Starting Codex thread');
+    recordTrace('run.started', `${isResume ? 'Resuming' : 'Starting'} Codex thread (attempt ${attemptNumber}/3)`);
 
     const cancelRun = () => {
       if (settled) return;
@@ -1439,11 +1456,6 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       reject(error);
     };
 
-    const workflowConfig = recordValue(recordValue(input.metadata?.workflow)?.agentConfig);
-    const limits = resolveRunBudget(workflowConfig?.executionBudget, {
-      idleMs: config.codexRuntimeIdleTimeoutMs, maxMs: config.codexRuntimeMaxDurationMs,
-    });
-    const budget = new RunBudget(Date.now(), limits.idleMs, limits.maxMs);
     recordTrace('run.budget', `Idle timeout ${budget.idleMs}ms; maximum duration ${budget.maxMs}ms`);
     const timeout = setInterval(() => {
       if (settled) return;
@@ -1481,14 +1493,10 @@ async function runCodexProcess(input: CodexRuntimeInput) {
     });
     child.stdin.end(prompt, 'utf8');
 
-    child.stdout.on('data', (chunk) => {
-      stdoutBuffer += String(chunk);
-      const lines = stdoutBuffer.split('\n');
-      stdoutBuffer = lines.pop() ?? '';
-
-      for (const line of lines) {
+    const processStdoutLine = (line: string) => {
         const event = parseJsonEvent(line.trim());
-        if (!event) continue;
+        if (!event) return;
+        capacityAttempt.observe(event);
         if (isExecutionProgress(event)) budget.progress(Date.now());
         const subagentTrace = codexSubagentTraceEvent(event);
         if (subagentTrace) {
@@ -1519,7 +1527,11 @@ async function runCodexProcess(input: CodexRuntimeInput) {
           const message = eventErrorMessage || 'Codex emitted an error event';
           recordTrace('runtime.error', message);
         }
-      }
+        if (event.type === 'turn.completed') runtimeErrorMessage = '';
+    };
+
+    child.stdout.on('data', (chunk) => {
+      stdoutBuffer = consumeJsonLines(stdoutBuffer, String(chunk), processStdoutLine);
     });
 
     child.stderr.on('data', (chunk) => {
@@ -1561,6 +1573,7 @@ async function runCodexProcess(input: CodexRuntimeInput) {
       input.signal?.removeEventListener('abort', cancelRun);
 
       try {
+        consumeJsonLines(stdoutBuffer, '', processStdoutLine, true);
         const outputText = await fs.readFile(outputFile, 'utf8').catch(() => '');
         await fs.unlink(outputFile).catch(() => undefined);
         const responseText = outputText.trim() || lastAgentText.trim();
@@ -1569,10 +1582,17 @@ async function runCodexProcess(input: CodexRuntimeInput) {
           await recordRolloutSubagentProvenance(threadId, env, trace, input.onTrace).catch(() => undefined);
         }
 
-        if (code !== 0) {
+        if (code !== 0 || terminalModelCapacity(code, runtimeErrorMessage)) {
           recordTrace('run.failed', `Codex exited with code ${code}`);
           const failureDetails = runtimeErrorMessage || meaningfulStderr(stderr) || `Codex exited with code ${code}`;
-          const error = new Error(`CODEX_RUNTIME_FAILED:${code}:${failureDetails.slice(0, 500)}`) as CodexRuntimeError;
+          const capacityFailure = isExplicitModelCapacity(failureDetails);
+          const error = new Error(capacityFailure
+            ? `CODEX_MODEL_CAPACITY:${failureDetails.slice(0, 500)}`
+            : `CODEX_RUNTIME_FAILED:${code}:${failureDetails.slice(0, 500)}`) as CodexRuntimeError;
+          if (capacityFailure) {
+            error.safeCapacityReplay = capacityAttempt.safeToReplay;
+            recordTrace('model.capacity', `Selected model unavailable; replay ${capacityAttempt.safeToReplay ? 'safe' : 'unsafe after operation started'}`);
+          }
           error.codexThreadId = threadId;
           error.trace = trace;
           reject(error);
@@ -1628,5 +1648,26 @@ export async function generateCodexCliReply(input: CodexRuntimeInput) {
     throw new Error('CODEX_RUNTIME_DISABLED');
   }
 
-  return await runCodexProcess(input);
+  const workflowConfig = recordValue(recordValue(input.metadata?.workflow)?.agentConfig);
+  const limits = resolveRunBudget(workflowConfig?.executionBudget, {
+    idleMs: config.codexRuntimeIdleTimeoutMs, maxMs: config.codexRuntimeMaxDurationMs,
+  });
+  const budget = new RunBudget(Date.now(), limits.idleMs, limits.maxMs);
+  const trace: CodexRuntimeResult['trace'] = [];
+  let retryInput = input;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await runCodexProcess(retryInput, budget, trace, attempt);
+    } catch (caught) {
+      const error = caught as CodexRuntimeError;
+      if (!error.message.startsWith('CODEX_MODEL_CAPACITY:') || !error.safeCapacityReplay || attempt === 3) throw error;
+      const delayMs = attempt * 1_000;
+      if (budget.expired(Date.now() + delayMs)) throw error;
+      appendTrace(trace, 'model.capacity_retry', `Retrying selected model after ${delayMs}ms (attempt ${attempt + 1}/3)`, input.onTrace);
+      await waitForCapacityRetry(delayMs, input.signal);
+      if (budget.expired(Date.now())) throw error;
+      retryInput = { ...input, codexThreadId: error.codexThreadId ?? input.codexThreadId };
+    }
+  }
+  throw new Error('CODEX_MODEL_CAPACITY:retry attempts exhausted');
 }
