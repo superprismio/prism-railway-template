@@ -71,6 +71,10 @@ also persisted under `$CODEX_HOME/generated_images/<thread-id>/<call-id>.png`.
 Fresh, resumed, and read-only utility `codex exec` invocations also completed
 using the flags assembled by `codex-runtime`; all 44 runtime tests passed.
 
+On October 14, 2026, a further headless `image_gen` smoke test on the live
+`prism-stack` runtime used `gpt-6.1-sol` and CLI `0.162.1`. It exited
+successfully and saved a valid 1,002,719-byte PNG in a temporary workspace.
+
 ## Why Deployment Uses npm ci
 
 The codex-runtime Dockerfile must install from `package-lock.json`.

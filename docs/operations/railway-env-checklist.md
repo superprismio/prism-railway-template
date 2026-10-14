@@ -84,6 +84,7 @@ Recommended:
 - `APP_API_SERVICE_TOKEN=${{site.INTERNAL_SERVICE_TOKEN}}`
 - `COMMUNICATION_ADAPTER_BASE_URL=http://${{discord-adapter.RAILWAY_PRIVATE_DOMAIN}}:${{discord-adapter.PORT}}`
 - `COMMUNICATION_ADAPTER_TOKEN=${{discord-adapter.SOURCE_ADAPTER_TOKEN}}`
+- `CODEX_MODEL`, `CODEX_MODEL_ECONOMY`, `CODEX_MODEL_STANDARD`, and `CODEX_MODEL_DEEP` according to the [Codex Runtime model tier migration](codex-runtime-model-tier-migration.md)
 
 Notes:
 

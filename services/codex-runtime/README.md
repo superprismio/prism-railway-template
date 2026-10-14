@@ -91,3 +91,6 @@ An omitted tier preserves the existing `CODEX_MODEL` behavior. `standard` may
 also use that default. `economy` and `deep` fail closed with
 `MODEL_TIER_UNAVAILABLE` until their mappings are configured, preventing a
 silent fallback to a model with different cost or capability characteristics.
+
+For the tested GPT-6 tier mapping and deployment checks, see
+[Codex Runtime model tier migration](../../docs/operations/codex-runtime-model-tier-migration.md).
