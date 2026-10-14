@@ -5,7 +5,8 @@ Prism agent profiles select the provider-neutral `economy`, `standard`, and
 the profiles do not need model IDs or a migration. The runtime image pins Codex
 CLI `0.162.1` in its package manifest and lockfiles.
 
-For the RaidGuild `prism-stack` instance, the proposed GPT-6 mapping is:
+For the RaidGuild `prism-stack` instance, the GPT-6 mapping deployed on
+October 14, 2026 is:
 
 | Railway variable | Value |
 | --- | --- |
@@ -22,7 +23,7 @@ explicit standard mapping so that its behavior does not depend on the CLI
 default. Other Prism instances should verify their own account access and
 model availability before adopting these values.
 
-On October 14, 2026, each proposed model and effort pair returned the exact
+On October 14, 2026, each model and effort pair returned the exact
 response `CANARY_OK` through `codex exec` on the live `prism-stack`
 `codex-runtime` service, using CLI `0.162.1`, a read-only sandbox, a temporary
 workspace, and a prompt that forbade tool calls. Run these commands from a
