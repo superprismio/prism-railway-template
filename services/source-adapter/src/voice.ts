@@ -26,6 +26,7 @@ import { pipeline } from "node:stream/promises";
 import prism from "prism-media";
 import { requestSiteRuntime } from "./site-runtime.js";
 import { meetingMemoryMetadata } from "./meeting-memory-metadata.js";
+import { transcribeVoiceChunk } from "./voice-transcription.js";
 
 const voiceDaveEncryptionRaw = process.env.VOICE_DAVE_ENCRYPTION?.trim().toLowerCase();
 const voiceDaveEncryptionExplicit = Boolean(voiceDaveEncryptionRaw);
@@ -2317,33 +2318,15 @@ export class DiscordVoiceManager {
   }
 
   private async transcribeChunk(filePath: string): Promise<VoiceTranscriptionResponse> {
-    const model = (process.env.VOICE_TRANSCRIPTION_MODEL ?? "").trim();
-    const responseFormat = (process.env.VOICE_TRANSCRIPTION_RESPONSE_FORMAT ?? "").trim() || "json";
-    const timestamps = (process.env.VOICE_TRANSCRIPTION_TIMESTAMPS ?? "true").trim() || "true";
-    const form = new FormData();
-    const fileBuffer = await fs.readFile(filePath);
-    form.append("file", new Blob([fileBuffer], { type: "audio/flac" }), path.basename(filePath));
-    if (model) {
-      form.append("model", model);
-    }
-    form.append("response_format", responseFormat);
-    form.append("timestamps", timestamps);
-    const language = (process.env.VOICE_TRANSCRIPTION_LANGUAGE ?? "").trim();
-    if (language) {
-      form.append("language", language);
-    }
-
-    const response = await fetch(this.voiceTranscriptionApiUrl(), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.voiceTranscriptionApiKey()}`,
-      },
-      body: form,
+    return transcribeVoiceChunk({
+      filePath,
+      url: this.voiceTranscriptionApiUrl(),
+      apiKey: this.voiceTranscriptionApiKey(),
+      model: (process.env.VOICE_TRANSCRIPTION_MODEL ?? "").trim(),
+      responseFormat: (process.env.VOICE_TRANSCRIPTION_RESPONSE_FORMAT ?? "").trim() || "json",
+      timestamps: (process.env.VOICE_TRANSCRIPTION_TIMESTAMPS ?? "true").trim() || "true",
+      language: (process.env.VOICE_TRANSCRIPTION_LANGUAGE ?? "").trim(),
     });
-    if (!response.ok) {
-      throw new Error(`Voice transcription failed: ${response.status} ${(await response.text()).slice(0, 300)}`);
-    }
-    return (await response.json()) as VoiceTranscriptionResponse;
   }
 
   private isSkippableTranscriptionError(error: unknown): boolean {
