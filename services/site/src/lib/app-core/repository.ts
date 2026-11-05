@@ -1978,7 +1978,12 @@ function normalizeWorkflowAttentionStatus(value: unknown): 'blocked' | 'needs_at
   return normalized === 'blocked' || normalized === 'needs_attention' ? normalized : null;
 }
 
-function workflowOutcomeStatusFromRun(run: AgentRunRecord) {
+type WorkflowAttentionAgentRun = Pick<
+  AgentRunRecord,
+  'id' | 'status' | 'workflowRunId' | 'workflowStepKey' | 'result' | 'finishedAt' | 'updatedAt'
+>;
+
+function workflowOutcomeStatusFromRun(run: WorkflowAttentionAgentRun) {
   const rawOutcome = run.result.workflowOutcome;
   if (!rawOutcome || typeof rawOutcome !== 'object' || Array.isArray(rawOutcome)) {
     return null;
@@ -1986,7 +1991,7 @@ function workflowOutcomeStatusFromRun(run: AgentRunRecord) {
   return normalizeWorkflowOutcomeStatus((rawOutcome as Record<string, unknown>).status);
 }
 
-function workflowAttentionFromRun(run: AgentRunRecord): WorkflowAttentionRecord | null {
+function workflowAttentionFromRun(run: WorkflowAttentionAgentRun): WorkflowAttentionRecord | null {
   const rawOutcome = run.result.workflowOutcome;
   if (!rawOutcome || typeof rawOutcome !== 'object' || Array.isArray(rawOutcome)) {
     return null;
@@ -2050,7 +2055,7 @@ export function workflowAttentionResolved(attention: WorkflowAttentionRecord, ev
 }
 
 function workflowAttentionForRequestData(input: {
-  agentRuns: AgentRunRecord[];
+  agentRuns: WorkflowAttentionAgentRun[];
   events: WorkflowEventRecord[];
   currentStepKey: string | null;
 }) {
@@ -2101,14 +2106,16 @@ function listWorkflowAttentionForRequests(requests: ChangeRequestRecord[]) {
     .prepare(
       `SELECT *
        FROM (
-         SELECT ar.*, ROW_NUMBER() OVER (PARTITION BY ar.request_id ORDER BY ar.created_at DESC) AS row_number
+         SELECT ar.id, ar.request_id, ar.status, ar.workflow_run_id, ar.workflow_step_key,
+                ar.result_json, ar.finished_at, ar.updated_at, ar.created_at,
+                ROW_NUMBER() OVER (PARTITION BY ar.request_id ORDER BY ar.created_at DESC) AS row_number
          FROM agent_runs ar
          WHERE ar.request_id IN (${placeholders})
        )
        WHERE row_number <= 100
        ORDER BY request_id ASC, created_at DESC`,
     )
-    .all(...requestIds) as AgentRunRow[];
+    .all(...requestIds) as Array<Pick<AgentRunRow, 'id' | 'request_id' | 'status' | 'workflow_run_id' | 'workflow_step_key' | 'result_json' | 'finished_at' | 'updated_at' | 'created_at'>>;
   const eventRows = getDb()
     .prepare(
       `SELECT *
@@ -2122,11 +2129,19 @@ function listWorkflowAttentionForRequests(requests: ChangeRequestRecord[]) {
     )
     .all(...requestIds) as WorkflowEventRow[];
 
-  const agentRunsByRequestId = new Map<string, AgentRunRecord[]>();
+  const agentRunsByRequestId = new Map<string, WorkflowAttentionAgentRun[]>();
   for (const row of agentRunRows) {
     if (!row.request_id) continue;
     const runs = agentRunsByRequestId.get(row.request_id) ?? [];
-    runs.push(mapAgentRunRow(row, { queuePosition: null, computeQueuePosition: false }));
+    runs.push({
+      id: row.id,
+      status: row.status,
+      workflowRunId: row.workflow_run_id,
+      workflowStepKey: row.workflow_step_key,
+      result: parseJsonValue<Record<string, unknown>>(row.result_json, {}),
+      finishedAt: row.finished_at,
+      updatedAt: row.updated_at,
+    });
     agentRunsByRequestId.set(row.request_id, runs);
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -57,6 +57,7 @@ import {
 } from "./change-request-utils";
 
 const codexConsoleSessionControlsId = "codex-console-session-controls";
+const boardRefreshIntervalMs = 30_000;
 
 const workspaceTabs = [
   "requests",
@@ -102,6 +103,47 @@ export function ChangeBoard({
   );
   const [isSaving, startSaving] = useTransition();
   const [modalError, setModalError] = useState<string | null>(null);
+  const boardRefreshInFlight = useRef<Promise<void> | null>(null);
+
+  const refreshOnce = useCallback(async (afterMutation = false) => {
+    // A mutation must observe a request started after it completed. An older
+    // scheduled refresh may still contain the pre-mutation board.
+    if (afterMutation && boardRefreshInFlight.current) {
+      try {
+        await boardRefreshInFlight.current;
+      } catch {
+        // Still fetch a fresh board after the mutation.
+      }
+    }
+    if (boardRefreshInFlight.current) return boardRefreshInFlight.current;
+
+    const refresh = (async () => {
+      const response = await fetch("/admin/board", { cache: "no-store" });
+      if (!response.ok) throw new Error("Board refresh failed");
+
+      const payload = (await response.json()) as {
+        ok: true;
+        data: AdminBoardData;
+      };
+      if (!payload.ok) throw new Error("Board refresh failed");
+
+      setData((current) => ({
+        ...payload.data,
+        setup: current.setup,
+        updateStatus: current.updateStatus,
+        branding: current.branding,
+        session: current.session,
+      }));
+    })();
+    boardRefreshInFlight.current = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (boardRefreshInFlight.current === refresh) {
+        boardRefreshInFlight.current = null;
+      }
+    }
+  }, []);
 
   function updateAdminUrl(next: {
     tab?: string;
@@ -121,41 +163,38 @@ export function ChangeBoard({
   }
 
   useEffect(() => {
+    if (activeTab !== "requests") return;
     let cancelled = false;
+    let timer: number | undefined;
 
     async function refreshBoard() {
+      if (cancelled || document.visibilityState !== "visible") return;
       try {
-        const response = await fetch("/admin/board", { cache: "no-store" });
-        if (!response.ok) {
-          return;
-        }
-
-        const payload = (await response.json()) as {
-          ok: true;
-          data: AdminBoardData;
-        };
-        if (!cancelled && payload.ok) {
-          setData((current) => ({
-            ...payload.data,
-            setup: current.setup,
-            updateStatus: current.updateStatus,
-            branding: current.branding,
-            session: current.session,
-          }));
-        }
+        await refreshOnce();
       } catch {
-        // Leave the current board state in place and try again on the next interval.
+        // Keep the current board and try again after the refresh interval.
+      } finally {
+        if (!cancelled && document.visibilityState === "visible") {
+          window.clearTimeout(timer);
+          timer = window.setTimeout(refreshBoard, boardRefreshIntervalMs);
+        }
       }
     }
 
-    refreshBoard();
-    const intervalId = window.setInterval(refreshBoard, 2500);
+    function onVisibilityChange() {
+      window.clearTimeout(timer);
+      if (document.visibilityState === "visible") void refreshBoard();
+    }
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    void refreshBoard();
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, []);
+  }, [activeTab, refreshOnce]);
 
   const workflowByKey = useMemo(
     () =>
@@ -276,29 +315,6 @@ export function ChangeBoard({
     }
   }, [activeTab, data.changeRequests, searchParams, selectedRequestId]);
 
-  async function refreshOnce() {
-    const response = await fetch("/admin/board", { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error("Board refresh failed");
-    }
-
-    const payload = (await response.json()) as {
-      ok: true;
-      data: AdminBoardData;
-    };
-    if (!payload.ok) {
-      throw new Error("Board refresh failed");
-    }
-
-    setData((current) => ({
-      ...payload.data,
-      setup: current.setup,
-      updateStatus: current.updateStatus,
-      branding: current.branding,
-      session: current.session,
-    }));
-  }
-
   function handleSaveTriage(payload: {
     currentWorkflowStepKey?: string | null;
     triageSummary: string;
@@ -339,7 +355,7 @@ export function ChangeBoard({
             ),
           }));
         }
-        await refreshOnce();
+        await refreshOnce(true);
       } catch (error) {
         setModalError(
           error instanceof Error ? error.message : "Could not save triage",
