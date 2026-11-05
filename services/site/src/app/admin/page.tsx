@@ -1,6 +1,7 @@
 import { ChangeBoard } from "@/components/admin/change-board"
 import { LoginCard } from "@/components/admin/login-card"
 import { getAdminWorkspaceData } from "@/lib/admin"
+import { requireAdminSession } from "@/lib/admin-auth"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { shouldRedirectAdminToLab } from "@/lib/prism-lab/admin-entry"
@@ -19,6 +20,14 @@ export default async function AdminPage({
     ? resolvedSearchParams.tab[0]
     : resolvedSearchParams.tab
 
+  // The bare entry leads to Lab. Check the session before redirecting so an
+  // unauthenticated visitor still gets this page's login form, without loading
+  // the expensive legacy board for an authenticated visitor.
+  if (shouldRedirectAdminToLab(resolvedSearchParams, process.env.PRISM_LAB_ENABLED)) {
+    const session = await requireAdminSession()
+    if (session.ok) redirect("/admin/lab")
+  }
+
   const board = await getAdminWorkspaceData()
 
   if (!board.ok) {
@@ -32,10 +41,6 @@ export default async function AdminPage({
             : undefined
 
     return <LoginCard error={error} />
-  }
-
-  if (shouldRedirectAdminToLab(resolvedSearchParams, process.env.PRISM_LAB_ENABLED)) {
-    redirect("/admin/lab")
   }
 
   return <>
