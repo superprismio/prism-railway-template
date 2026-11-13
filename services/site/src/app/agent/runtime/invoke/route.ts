@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requestRuntimeResponse } from "@/lib/app-core/runtime-client";
-import { requireServiceAccess } from "@/lib/internal-service";
+import { getInternalServiceToken, requireServiceAccess } from "@/lib/internal-service";
 import { normalizeModelTier } from "@/lib/model-tier";
+import { authorizeRuntimeCreatorMint } from "@/lib/source-adapter-runtime-auth";
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -65,6 +66,16 @@ export async function POST(request: Request) {
     ? body.credentials.filter((entry) => typeof entry === "string" || (entry && typeof entry === "object" && !Array.isArray(entry))) as Array<string | { key: string }>
     : [];
   const metadata = recordValue(body?.metadata);
+  const creatorAccess = authorizeRuntimeCreatorMint({
+    presented: request.headers.get("x-source-adapter-runtime-token"),
+    expected: process.env.SOURCE_ADAPTER_RUNTIME_TOKEN,
+    serviceToken: getInternalServiceToken(),
+    adapterToken: process.env.COMMUNICATION_ADAPTER_TOKEN,
+    requestOrigin: metadata.requestOrigin,
+  });
+  if (creatorAccess.error) {
+    return NextResponse.json({ ok: false, error: creatorAccess.error }, { status: 403 });
+  }
   const skills = stringArray(body?.skills).length > 0
     ? stringArray(body?.skills)
     : stringArray(metadata.requestedSkills);
@@ -78,6 +89,7 @@ export async function POST(request: Request) {
 
   try {
     const response = await requestRuntimeResponse({
+      allowRequestCreationContext: creatorAccess.allowed,
       prompt,
       sessionId,
       continuationId: stringValue(body?.continuationId) || null,

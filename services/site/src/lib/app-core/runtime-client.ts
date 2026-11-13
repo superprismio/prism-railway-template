@@ -40,6 +40,8 @@ export type RuntimeRequestInput = {
   credentials?: Array<string | { key: string }>;
   context?: Record<string, string | undefined>;
   metadata?: Record<string, unknown>;
+  /** Only Site-owned dispatch or separately authenticated source adapter may set this. */
+  allowRequestCreationContext?: boolean;
   runtimeKey?: string | null;
   modelTier?: ModelTier | null;
   timeoutMs?: number;
@@ -517,12 +519,14 @@ export async function requestRuntimeResponse(input: RuntimeRequestInput) {
   const sessionRuntimeKey = typeof input.metadata?.sessionRuntimeKey === 'string'
     ? input.metadata.sessionRuntimeKey.trim()
     : '';
-  const creationContext = input.authorityMode === 'read_only_utility'
+  const creationContext = input.authorityMode === 'read_only_utility' || !input.allowRequestCreationContext
     ? null : mintRequestCreationContext({ sessionId: input.sessionId, metadata: input.metadata });
+  // Never forward a caller-supplied token, even if it is valid for another job.
+  const { requestCreationContext: _untrustedCreationContext, ...safeMetadata } = input.metadata ?? {};
   return requestRuntimeResponseWithProfile(profile, {
     ...input,
     metadata: {
-      ...input.metadata,
+      ...safeMetadata,
       ...(creationContext ? { requestCreationContext: creationContext } : {}),
     },
     modelTier,

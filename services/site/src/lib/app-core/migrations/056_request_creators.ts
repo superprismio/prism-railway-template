@@ -16,7 +16,11 @@ export const requestCreatorsMigration: Migration = {
     UPDATE request_origins
     SET creator_type = 'user',
         creator_id = (SELECT requested_by_user_id FROM change_requests WHERE id = request_origins.request_id),
-        creator_display_name = actor_display_name,
+        creator_display_name = (
+          SELECT p.display_name
+          FROM change_requests cr LEFT JOIN profiles p ON p.user_id = cr.requested_by_user_id
+          WHERE cr.id = request_origins.request_id
+        ),
         creator_basis = 'recorded-requester-id'
     WHERE EXISTS (
       SELECT 1 FROM change_requests cr

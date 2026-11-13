@@ -11,10 +11,12 @@ const siteEnvironmentNames = [
   "PRISM_HOOK_SERVICE_TOKEN",
   "INTERNAL_SERVICE_TOKEN",
   "SERVICE_SHARED_TOKEN",
+  "SOURCE_ADAPTER_RUNTIME_TOKEN",
 ] as const;
 
 function preserveSiteEnvironment() {
   const previous = new Map(siteEnvironmentNames.map((name) => [name, process.env[name]]));
+  process.env.SOURCE_ADAPTER_RUNTIME_TOKEN = "test-runtime-token";
   return () => {
     for (const [name, value] of previous) {
       if (value === undefined) delete process.env[name];
@@ -26,9 +28,11 @@ function preserveSiteEnvironment() {
 test("source adapter delegates runtime selection to Site", async () => {
   const previousBaseUrl = process.env.PRISM_AGENT_API_BASE_URL;
   const previousToken = process.env.PRISM_AGENT_SERVICE_TOKEN;
+  const previousRuntimeToken = process.env.SOURCE_ADAPTER_RUNTIME_TOKEN;
   const previousFetch = globalThis.fetch;
   process.env.PRISM_AGENT_API_BASE_URL = "http://site.internal";
   process.env.PRISM_AGENT_SERVICE_TOKEN = "test-service-token";
+  process.env.SOURCE_ADAPTER_RUNTIME_TOKEN = "test-runtime-token";
 
   let capturedPrompt = "";
   let capturedCredentials: unknown = null;
@@ -37,6 +41,7 @@ test("source adapter delegates runtime selection to Site", async () => {
   globalThis.fetch = async (input, init) => {
     assert.equal(String(input), "http://site.internal/agent/runtime/invoke");
     assert.equal(new Headers(init?.headers).get("x-service-token"), "test-service-token");
+    assert.equal(new Headers(init?.headers).get("x-source-adapter-runtime-token"), "test-runtime-token");
     const requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
     capturedPrompt = String(requestBody.prompt ?? "");
     capturedCredentials = requestBody.credentials;
@@ -78,7 +83,20 @@ test("source adapter delegates runtime selection to Site", async () => {
     else process.env.PRISM_AGENT_API_BASE_URL = previousBaseUrl;
     if (previousToken === undefined) delete process.env.PRISM_AGENT_SERVICE_TOKEN;
     else process.env.PRISM_AGENT_SERVICE_TOKEN = previousToken;
+    if (previousRuntimeToken === undefined) delete process.env.SOURCE_ADAPTER_RUNTIME_TOKEN;
+    else process.env.SOURCE_ADAPTER_RUNTIME_TOKEN = previousRuntimeToken;
   }
+});
+
+test("source adapter refuses runtime dispatch without its dedicated credential", async () => {
+  const restore = preserveSiteEnvironment();
+  try {
+    process.env.PRISM_AGENT_API_BASE_URL = "http://site.internal";
+    process.env.PRISM_AGENT_SERVICE_TOKEN = "test-service-token";
+    delete process.env.SOURCE_ADAPTER_RUNTIME_TOKEN;
+    await assert.rejects(requestSiteRuntime({ prompt: "test", sessionId: "session-1", timeoutMs: 100 }),
+      /SOURCE_ADAPTER_RUNTIME_TOKEN_REQUIRED/);
+  } finally { restore(); }
 });
 
 test("source adapter configuration errors list supported Site URL fallbacks", async () => {

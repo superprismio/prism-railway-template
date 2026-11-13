@@ -85,6 +85,8 @@ export async function requestSiteRuntime(input: {
 }): Promise<SiteRuntimeResponse> {
   const baseUrl = siteBaseUrl();
   const serviceToken = siteServiceToken();
+  const runtimeToken = process.env.SOURCE_ADAPTER_RUNTIME_TOKEN?.trim();
+  if (!runtimeToken) throw new SiteRuntimeRequestError(503, null, 'SOURCE_ADAPTER_RUNTIME_TOKEN_REQUIRED');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), input.timeoutMs + 5_000);
   // Node's default fetch dispatcher stops waiting for response headers after
@@ -101,6 +103,7 @@ export async function requestSiteRuntime(input: {
       headers: {
         "content-type": "application/json",
         "x-service-token": serviceToken,
+        "x-source-adapter-runtime-token": runtimeToken,
       },
       body: JSON.stringify(input),
       signal: controller.signal,

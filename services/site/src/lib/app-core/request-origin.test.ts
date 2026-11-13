@@ -6,7 +6,7 @@ import { requestOriginsMigration } from './migrations/039_request_origins';
 import { requestCreatorsMigration } from './migrations/056_request_creators';
 import { getRequestOrigin, insertRequestOrigin, resolveRequestOriginSnapshot } from './request-origin';
 
-function testDb() {
+function testDb(includeCreatorMigration = true) {
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
   db.exec(`
@@ -22,9 +22,23 @@ function testDb() {
     );
   `);
   db.exec(requestOriginsMigration.sql);
-  db.exec(requestCreatorsMigration.sql);
+  if (includeCreatorMigration) db.exec(requestCreatorsMigration.sql);
   return db;
 }
+
+test('creator backfill uses the recorded requester profile, never an unrelated origin actor name', () => {
+  const db = testDb(false);
+  db.prepare('INSERT INTO profiles (user_id, display_name) VALUES (?, ?)').run('requester-1', 'Actual Requester');
+  db.prepare('INSERT INTO change_requests VALUES (?, ?, ?, ?)').run('request-1', 'requester-1', 'manual', '2026-01-01T00:00:00Z');
+  db.prepare(`INSERT INTO request_origins (request_id, platform, actor_type, actor_id, actor_display_name, backfill_status, captured_at)
+    VALUES (?, 'site', 'user', ?, ?, 'partial', ?)`).run('request-1', 'other-user', 'Later Commenter', '2026-01-01T00:00:00Z');
+  db.exec(requestCreatorsMigration.sql);
+  assert.deepEqual(getRequestOrigin('request-1', db)?.creator, {
+    type: 'user', id: 'requester-1', displayName: 'Actual Requester', basis: 'recorded-requester-id',
+    agentRunId: null, parentRequestId: null, sourceMessageRecordId: null,
+  });
+  db.close();
+});
 
 test('trusted Discord session resolves an immutable request origin', () => {
   const db = testDb();

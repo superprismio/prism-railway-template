@@ -413,6 +413,7 @@ async function requestPrismRuntimeResponse(input: {
     ? input.metadata.requestedSkills.filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim()))
     : []
   return requestRuntimeResponse({
+    allowRequestCreationContext: true,
     prompt: input.prompt,
     sessionId: input.sessionId,
     continuationId: input.continuationId ?? null,
