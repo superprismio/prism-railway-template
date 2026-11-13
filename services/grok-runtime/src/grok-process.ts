@@ -48,6 +48,9 @@ async function buildPrompt(input: PrismRuntimeJobRequest) {
     'Use this active runtime identity when reporting execution details. Ignore legacy workflow agentConfig.runtime labels.',
     `External session id: ${input.sessionId}`,
   ];
+  if (typeof input.metadata?.requestCreationContext === 'string') {
+    sections.push('Request creation for this job requires the signed context in the PRISM_REQUEST_CREATION_CONTEXT environment variable. On POST /agent/change-board/requests, send x-prism-request-creation-context with that environment value (for example, curl -H "x-prism-request-creation-context: $PRISM_REQUEST_CREATION_CONTEXT", or a Node request header from process.env.PRISM_REQUEST_CREATION_CONTEXT). sourceSessionId and sourceMessageId do not replace this header. Never print, log, save, or include the context value in a reply or artifact.');
+  }
   if (input.context && Object.keys(input.context).length) {
     sections.push(`Delegation context: ${JSON.stringify(input.context)}`);
   }

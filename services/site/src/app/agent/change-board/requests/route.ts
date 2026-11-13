@@ -105,7 +105,11 @@ export async function POST(request: Request) {
       creator = { type: "automation", id: "prism-doctor", displayName: "Prism Doctor", basis: "authenticated-task-runner" }
     }
   } else {
-    if (!creationContext) return NextResponse.json({ ok: false, error: "REQUEST_CREATOR_REQUIRED" }, { status: 400 })
+    if (!creationContext) return NextResponse.json({
+      ok: false,
+      error: "REQUEST_CREATOR_REQUIRED",
+      hint: "Send x-prism-request-creation-context using PRISM_REQUEST_CREATION_CONTEXT from the current Runtime job; sourceSessionId/sourceMessageId alone are insufficient.",
+    }, { status: 400 })
     const sourceSessionId = parseNullableString(body.sourceSessionId ?? body.source_session_id)
     const sourceMessageId = parseNullableString(body.sourceMessageId ?? body.source_message_id)
     if ((sourceSessionId && sourceSessionId !== creationContext.sourceSessionId)

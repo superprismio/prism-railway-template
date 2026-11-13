@@ -55,6 +55,18 @@ test('Grok process maps JSON output to the normalized runtime result', async () 
   assert.match(args, /Active Prism runtime profile: grok-test \(adapter: grok-build\)\./);
 });
 
+test('resumed Grok prompt explains the creation header without exposing its value', async () => {
+  await runGrok({
+    contractVersion: '2026-07-10', prompt: 'Create a request', sessionId: 'site-session',
+    continuationId: 'existing-grok-session', recentHistory: [], skills: [], context: {},
+    metadata: { requestCreationContext: 'private-signed-context' },
+  });
+  const args = await fs.readFile(path.join(fixtureRoot, 'last-args'), 'utf8');
+  assert.match(args, /x-prism-request-creation-context/);
+  assert.match(args, /PRISM_REQUEST_CREATION_CONTEXT/);
+  assert.doesNotMatch(args, /private-signed-context/);
+});
+
 test('Grok process terminates when the runtime job is canceled', async () => {
   const controller = new AbortController();
   const running = runGrok({

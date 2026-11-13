@@ -521,6 +521,10 @@ export async function requestRuntimeResponse(input: RuntimeRequestInput) {
     : '';
   const creationContext = input.authorityMode === 'read_only_utility' || !input.allowRequestCreationContext
     ? null : mintRequestCreationContext({ sessionId: input.sessionId, metadata: input.metadata });
+  if (input.authorityMode !== 'read_only_utility' && input.allowRequestCreationContext
+    && input.metadata?.requestOrigin && !creationContext) {
+    throw new Error('REQUEST_CREATION_CONTEXT_UNAVAILABLE');
+  }
   // Never forward a caller-supplied token, even if it is valid for another job.
   const { requestCreationContext: _untrustedCreationContext, ...safeMetadata } = input.metadata ?? {};
   return requestRuntimeResponseWithProfile(profile, {
