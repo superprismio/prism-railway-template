@@ -17,6 +17,15 @@ export const requestOriginPlatforms = [
 export type RequestOriginPlatform = (typeof requestOriginPlatforms)[number];
 export type RequestOriginActorType = 'user' | 'external-subject' | 'task' | 'hook' | 'system' | null;
 export type RequestOriginBackfillStatus = 'complete' | 'partial' | 'unknown';
+export type RequestCreator = {
+  type: 'user' | 'agent' | 'automation';
+  id: string;
+  displayName: string | null;
+  basis: string;
+  agentRunId?: string | null;
+  parentRequestId?: string | null;
+  sourceMessageRecordId?: string | null;
+};
 
 export type RequestOriginSnapshot = {
   sourceSessionId: string | null;
@@ -34,6 +43,7 @@ export type RequestOriginSnapshot = {
   rawSource: string | null;
   backfillStatus: RequestOriginBackfillStatus;
   capturedAt: string;
+  creator?: RequestCreator | null;
 };
 
 type RequestOriginRow = {
@@ -53,6 +63,13 @@ type RequestOriginRow = {
   raw_source: string | null;
   backfill_status: string;
   captured_at: string;
+  creator_type: string | null;
+  creator_id: string | null;
+  creator_display_name: string | null;
+  creator_basis: string | null;
+  creator_agent_run_id: string | null;
+  creator_parent_request_id: string | null;
+  source_message_record_id: string | null;
 };
 
 function text(value: unknown, maxLength = 500) {
@@ -126,6 +143,12 @@ function parseRow(row: RequestOriginRow): RequestOriginSnapshot {
       ? row.backfill_status as RequestOriginBackfillStatus
       : 'unknown',
     capturedAt: row.captured_at,
+    creator: row.creator_id && ['user', 'agent', 'automation'].includes(row.creator_type ?? '')
+      ? { type: row.creator_type as RequestCreator['type'], id: row.creator_id,
+          displayName: row.creator_display_name, basis: row.creator_basis ?? 'legacy',
+          agentRunId: row.creator_agent_run_id, parentRequestId: row.creator_parent_request_id,
+          sourceMessageRecordId: row.source_message_record_id }
+      : null,
   };
 }
 
@@ -146,9 +169,11 @@ export function listRequestOrigins(requestIds: readonly string[], db: Database.D
 export function resolveRequestOriginSnapshot(input: {
   sourceSessionId?: string | null;
   sourceMessageId?: string | null;
+  sourceMessageRecordId?: string | null;
   rawSource?: string | null;
   requestedByUserId?: string | null;
   capturedAt: string;
+  creator?: RequestCreator | null;
 }, db: Database.Database = getDb()): RequestOriginSnapshot {
   const sourceSessionId = text(input.sourceSessionId, 200);
   const rawSource = text(input.rawSource, 200);
@@ -172,21 +197,25 @@ export function resolveRequestOriginSnapshot(input: {
   const accessPolicy = record(sessionMeta.accessPolicy);
   const platform = normalizeRequestOriginPlatform(session?.source ?? rawSource);
   const requestedMessageId = text(input.sourceMessageId, 200);
+  const requestedMessageRecordId = text(input.sourceMessageRecordId, 200);
   if (requestedMessageId && !sourceSessionId) throw new Error('SOURCE_SESSION_REQUIRED');
-  const message = session
+  if (requestedMessageRecordId && !sourceSessionId) throw new Error('SOURCE_SESSION_REQUIRED');
+  const message = session && (requestedMessageId || requestedMessageRecordId)
     ? db.prepare(`
-        SELECT source_message_id, meta_json
+        SELECT id, source_message_id, meta_json
         FROM agent_messages
         WHERE session_id = ? AND role = 'user'
           AND (? IS NULL OR source_message_id = ?)
+          AND (? IS NULL OR id = ?)
         ORDER BY created_at DESC, id DESC
         LIMIT 1
-      `).get(session.id, requestedMessageId, requestedMessageId) as {
+      `).get(session.id, requestedMessageId, requestedMessageId, requestedMessageRecordId, requestedMessageRecordId) as {
+        id: string;
         source_message_id: string | null;
         meta_json: string;
       } | undefined
     : undefined;
-  if (requestedMessageId && !message) throw new Error('SOURCE_MESSAGE_NOT_FOUND');
+  if ((requestedMessageId || requestedMessageRecordId) && !message) throw new Error('SOURCE_MESSAGE_NOT_FOUND');
   const messageMeta = message ? jsonRecord(message.meta_json) : {};
 
   const targetId = platform === 'discord'
@@ -260,6 +289,7 @@ export function resolveRequestOriginSnapshot(input: {
     rawSource,
     backfillStatus,
     capturedAt: input.capturedAt,
+    creator: input.creator ? { ...input.creator, sourceMessageRecordId: message?.id ?? input.creator.sourceMessageRecordId ?? null } : null,
   };
 }
 
@@ -273,8 +303,9 @@ export function insertRequestOrigin(
       request_id, source_session_id, platform, target_id, target_name, thread_id,
       interface_key, interaction_profile_key, interaction_profile_version,
       actor_type, actor_id, actor_display_name, source_message_id, raw_source,
-      backfill_status, captured_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      backfill_status, captured_at, creator_type, creator_id, creator_display_name,
+      creator_basis, creator_agent_run_id, creator_parent_request_id, source_message_record_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     requestId,
     origin.sourceSessionId,
@@ -292,6 +323,13 @@ export function insertRequestOrigin(
     origin.rawSource,
     origin.backfillStatus,
     origin.capturedAt,
+    origin.creator?.type ?? null,
+    origin.creator?.id ?? null,
+    origin.creator?.displayName ?? null,
+    origin.creator?.basis ?? null,
+    origin.creator?.agentRunId ?? null,
+    origin.creator?.parentRequestId ?? null,
+    origin.creator?.sourceMessageRecordId ?? null,
   );
   return getRequestOrigin(requestId, db);
 }

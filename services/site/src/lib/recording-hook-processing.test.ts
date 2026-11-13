@@ -170,6 +170,7 @@ test("built-in recording hook prepares artifacts and creates one idempotent down
         workflowKey: builtInHook.workflowKey,
         requestType: "content",
         source: `hook:${builtInHook.key}`,
+        creator: { type: "automation", id: `hook:${builtInHook.key}`, displayName: builtInHook.name, basis: "test-hook" },
         constraints: {
           recordingWorkflow: {
             downstreamWorkflowKey: "test-recording-publish",
@@ -232,6 +233,7 @@ test("built-in recording hook prepares artifacts and creates one idempotent down
       workflowKey: builtInHook.workflowKey,
       requestType: "content",
       source: `hook:${builtInHook.key}`,
+      creator: { type: "automation", id: `hook:${builtInHook.key}`, displayName: builtInHook.name, basis: "test-hook" },
       constraints: {
         recordingWorkflow: {
           downstreamWorkflowKey: "test-recording-publish",

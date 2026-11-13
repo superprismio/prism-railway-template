@@ -43,6 +43,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { describeFetchError, readApiError } from "@/lib/client-api-errors";
+import { requestCreatorLabel, requestInitiatorLabel } from "@/lib/prism-lab/request-attribution";
 import type {
   AgentRunRecord,
   ChangeRequestExecutionRecord,
@@ -1956,6 +1957,10 @@ export function RequestDetailsPanel({
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div><span className="text-xs text-muted-foreground">Created by</span><p className="font-medium">{requestCreatorLabel(request.origin)}</p></div>
+                <div><span className="text-xs text-muted-foreground">Requested by</span><p className="font-medium">{requestInitiatorLabel(request.origin, request.requestedByDisplayName)}</p></div>
+              </div>
               <div className="rounded-none border border-border/70 bg-background/70 p-4 leading-7">
                 {request.description}
               </div>

@@ -2235,6 +2235,8 @@ async function appApiPost(path: string, body: Record<string, unknown>, timeoutMs
   if (token) {
     headers["X-Service-Token"] = token;
   }
+  const controlToken = taskRunnerControlToken();
+  if (controlToken) headers["X-Task-Runner-Token"] = controlToken;
   const result = await postJson(baseUrl, path, headers, body, timeoutMs);
   const payload = result.body ? JSON.parse(result.body) as Record<string, unknown> : {};
   return {

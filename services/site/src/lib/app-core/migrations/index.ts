@@ -41,6 +41,7 @@ import { deterministicRecordingHandoffMigration } from './036_deterministic_reco
 import { restoreRecordingSystemDefaultMigration } from './037_restore_recording_system_default';
 import { hookAuthConfigMigration } from './038_hook_auth_config';
 import { requestOriginsMigration } from './039_request_origins';
+import { requestCreatorsMigration } from './056_request_creators';
 import { agentProfilesMigration } from './040_agent_profiles';
 import { agentProfileAvatarMigration } from './041_agent_profile_avatar';
 import { agentProfileAccentColorMigration } from './042_agent_profile_accent_color';
@@ -113,4 +114,5 @@ export const migrations: Migration[] = [
   workflowScriptRunsMigration,
   maintenanceRequestRecoverySkillMigration,
   maintenanceSupersessionSkillMigration,
+  requestCreatorsMigration,
 ];

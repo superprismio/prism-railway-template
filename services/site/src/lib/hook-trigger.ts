@@ -121,7 +121,7 @@ async function writeHookPayloadArtifact(hook: HookRecord, requestId: string, pay
 export async function triggerHook(
   hookKey: string,
   payload: Record<string, unknown>,
-  options: { baseUrl?: string | null; source?: string; waitForAutoStart?: boolean } = {},
+  options: { baseUrl?: string | null; source?: string; waitForAutoStart?: boolean; requestedByUserId?: string | null } = {},
 ): Promise<HookTriggerResult> {
   const source = options.source ?? `hook:${hookKey}`
   let hookRunId: string | null = null
@@ -226,7 +226,8 @@ export async function triggerHook(
     requestType: stringValue(requestTemplate.requestType ?? payload.requestType, "content"),
     priority: stringValue(requestTemplate.priority ?? payload.priority, "normal"),
     source,
-    requestedByUserId: null,
+    requestedByUserId: options.requestedByUserId ?? null,
+    creator: { type: "automation", id: `hook:${hook.key}`, displayName: `Hook ${hook.name}`, basis: "configured-hook" },
     targetAppId: targetAppId || null,
     targetEnvironmentId: targetEnvironmentId || null,
     triageSummary: null,

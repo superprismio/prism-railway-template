@@ -52,6 +52,7 @@ import { RequestTimeline } from "@/components/prism-lab/request-timeline"
 import { WorkflowExplorer } from "@/components/prism-lab/workflow-explorer"
 import { cn } from "@/lib/utils"
 import type { LabRequestListItem } from "@/lib/prism-lab/contracts"
+import { requestCreatorLabel, requestInitiatorLabel } from "@/lib/prism-lab/request-attribution"
 import { decideConversationViewportUpdate } from "@/lib/prism-lab/conversation-viewport"
 import { buildRequestTimeline } from "@/lib/prism-lab/request-timeline"
 import {
@@ -847,7 +848,8 @@ export function RequestWorkspace({
         <h2 className="mt-3 text-2xl font-semibold tracking-tight">{request.title}</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{request.description || "No request description was provided."}</p>
         <dl className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-          <div><dt className="font-medium text-foreground">Initiator</dt><dd>{request.requestedByDisplayName || "Unknown initiator"}</dd></div>
+          <div><dt className="font-medium text-foreground">Created by</dt><dd>{requestCreatorLabel(request.origin)}</dd></div>
+          <div><dt className="font-medium text-foreground">Requested by</dt><dd>{requestInitiatorLabel(request.origin, request.requestedByDisplayName)}</dd></div>
           <div><dt className="font-medium text-foreground">Origin snapshot</dt><dd>{request.origin ? `${request.origin.platform} · ${request.origin.backfillStatus}` : "Unavailable · historical origin unknown"}</dd></div>
         </dl>
       </header>

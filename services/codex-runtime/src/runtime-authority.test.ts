@@ -71,6 +71,14 @@ test('read-only utility prompt byte metrics include trusted policy and metadata 
   assert.equal(composed.metrics.metadataBytesBeforeProjection, composed.metrics.metadataBytesAfterProjection);
 });
 
+test('request creation context stays out of the model prompt', () => {
+  const composed = buildPrompt({ prompt: 'Create a request', recentHistory: [], sessionId: 'creator-session',
+    metadata: { requestCreationContext: 'private-signed-context', agentProfile: { key: 'dreamer' } } },
+  false, { availableSkills: [], selectedSkills: [] });
+  assert.doesNotMatch(composed.prompt, /private-signed-context/);
+  assert.match(composed.prompt, /dreamer/);
+});
+
 test('native selected skills are referenced without repeating their contents', () => {
   const skillBody = 'PRIVATE_SKILL_BODY_' + 'x'.repeat(10_000);
   const skills = {
@@ -141,6 +149,7 @@ test('read-only utility child receives provider auth but no mutation credentials
     HOME: '/runtime-home',
     OPENAI_API_KEY: 'provider-secret',
     PRISM_AGENT_SERVICE_TOKEN: 'site-secret',
+    PRISM_REQUEST_CREATION_CONTEXT: 'private-signed-context',
     APP_API_SERVICE_TOKEN: 'app-secret',
     INTERNAL_SERVICE_TOKEN: 'internal-secret',
     PRISM_ADMIN_PASSWORD: 'admin-secret',
@@ -158,6 +167,7 @@ test('read-only utility child receives provider auth but no mutation credentials
   assert.equal(env.PATH, '/bin');
   for (const key of [
     'PRISM_AGENT_SERVICE_TOKEN', 'APP_API_SERVICE_TOKEN', 'INTERNAL_SERVICE_TOKEN',
+    'PRISM_REQUEST_CREATION_CONTEXT',
     'PRISM_ADMIN_PASSWORD', 'PRISM_INTERFACE_KEY', 'COMMUNICATION_ADAPTER_TOKEN',
     'PRISM_GATEWAY_TOKEN', 'TARGET_REPO_GITHUB_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN',
     'CRM_WRITE_TOKEN',

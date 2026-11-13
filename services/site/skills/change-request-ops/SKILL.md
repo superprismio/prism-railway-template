@@ -12,6 +12,12 @@ Required environment:
 - optional `PRISM_TARGET_APP_ID`
 
 Always send `x-service-token: $PRISM_AGENT_SERVICE_TOKEN`.
+When creating a request, also send `x-prism-request-creation-context:
+$PRISM_REQUEST_CREATION_CONTEXT`. The Site mints this short-lived context for
+your specific Agent Profile and run or session. Do not copy it into request
+bodies, artifacts, logs, or chat. If it is absent, report
+`REQUEST_CREATOR_REQUIRED`; do not invent a creator name or borrow another
+agent's context. Task Runner uses its separate mutation credential.
 
 The request number shown in the UI (for example `#3623`) and the request ID
 are different values. Use the number only with `/by-number/:requestNumber`

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { mintRequestCreationContext } from '../request-creation-context';
 import {
   prismRuntimeContractVersion,
   resolveRuntimeProfile,
@@ -516,8 +517,14 @@ export async function requestRuntimeResponse(input: RuntimeRequestInput) {
   const sessionRuntimeKey = typeof input.metadata?.sessionRuntimeKey === 'string'
     ? input.metadata.sessionRuntimeKey.trim()
     : '';
+  const creationContext = input.authorityMode === 'read_only_utility'
+    ? null : mintRequestCreationContext({ sessionId: input.sessionId, metadata: input.metadata });
   return requestRuntimeResponseWithProfile(profile, {
     ...input,
+    metadata: {
+      ...input.metadata,
+      ...(creationContext ? { requestCreationContext: creationContext } : {}),
+    },
     modelTier,
     continuationId: sessionRuntimeKey && sessionRuntimeKey !== profile.key ? null : input.continuationId,
   });

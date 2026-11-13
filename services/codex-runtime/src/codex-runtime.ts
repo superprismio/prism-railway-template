@@ -912,7 +912,7 @@ export function buildPrompt(
     ? input.metadata.policyInstructions.trim().slice(0, 40_000)
     : '';
   const sessionMetadata = Object.fromEntries(
-    Object.entries(input.metadata ?? {}).filter(([key]) => key !== 'policyInstructions'),
+    Object.entries(input.metadata ?? {}).filter(([key]) => key !== 'policyInstructions' && key !== 'requestCreationContext'),
   );
   const metadataBeforeProjection = JSON.stringify(sessionMetadata);
   const destinations = sessionMetadata.availableOutputDestinations;
@@ -1395,6 +1395,9 @@ async function runCodexProcess(input: CodexRuntimeInput, budget: RunBudget, trac
   }
 
   const env = buildCodexChildEnvironment(authorityMode, process.env, leasedEnv, githubToken, nativeSkillHome?.path);
+  if (authorityMode === 'full' && typeof input.metadata?.requestCreationContext === 'string') {
+    env.PRISM_REQUEST_CREATION_CONTEXT = input.metadata.requestCreationContext;
+  }
   const invocationMetrics = processInvocationSizeMetrics(env, args);
   console.log(
     `[codex-runtime] spawn resume=${isResume ? 'yes' : 'no'} session=${input.sessionId} workspace=${executionWorkspaceRoot}`,

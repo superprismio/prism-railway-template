@@ -5,7 +5,9 @@ import {
   parseNullableString,
   parseString,
   requireServiceAccess,
+  requireTaskRunnerMutationAccess,
 } from "@/lib/internal-service"
+import { verifyRequestCreationContext } from "@/lib/request-creation-context"
 import { trackedChangeRequestPriorities, trackedChangeRequestTypes } from "@/lib/local-admin-api"
 import { parseEstimatedHumanHours } from "@/lib/request-estimates"
 import { publicUrlFromRequest } from "@/lib/public-url"
@@ -45,6 +47,7 @@ export async function GET(request: Request) {
   const originTargetId = parseString(url.searchParams.get("target")) || undefined
   const interactionProfileKey = parseString(url.searchParams.get("profile")) || undefined
   const originActor = parseString(url.searchParams.get("initiator")) || undefined
+  const creatorId = parseString(url.searchParams.get("creator")) || undefined
   const sourceSessionId = parseString(url.searchParams.get("sourceSessionId")) || undefined
   const sourceMessageId = parseString(url.searchParams.get("sourceMessageId")) || undefined
   if (sourceMessageId && !sourceSessionId) {
@@ -53,7 +56,7 @@ export async function GET(request: Request) {
   const query = parseString(url.searchParams.get("q")) || undefined
   const openOnly = readBooleanQuery(url.searchParams.get("openOnly") ?? url.searchParams.get("open_only"))
   const limit = Math.min(readPositiveInteger(url.searchParams.get("limit"), 100), 500)
-  const changeRequests = listChangeRequests({ targetAppId, source, platform, originTargetId, interactionProfileKey, originActor, sourceSessionId, sourceMessageId, query, openOnly, limit })
+  const changeRequests = listChangeRequests({ targetAppId, source, platform, originTargetId, interactionProfileKey, originActor, creatorId, sourceSessionId, sourceMessageId, query, openOnly, limit })
 
   return NextResponse.json({
     ok: true,
@@ -80,6 +83,37 @@ export async function POST(request: Request) {
   }
 
   const body = payload && typeof payload === "object" ? payload as Record<string, unknown> : {}
+  const source = parseString(body.source) || "chat"
+  const isTask = source.startsWith("task:")
+  const taskKey = isTask ? source.slice(5) : null
+  const isDoctor = source === "prism-doctor"
+  const creationContext = verifyRequestCreationContext(request.headers.get("x-prism-request-creation-context"))
+  let creator: { type: "user" | "agent" | "automation"; id: string; displayName: string | null; basis: string; agentRunId?: string | null; parentRequestId?: string | null; sourceMessageRecordId?: string | null }
+  if (isTask || isDoctor) {
+    const taskAccess = await requireTaskRunnerMutationAccess()
+    if (!taskAccess.ok) return NextResponse.json({ ok: false, error: taskAccess.error }, { status: taskAccess.status })
+    if (creationContext) return NextResponse.json({ ok: false, error: "REQUEST_CREATOR_CONFLICT" }, { status: 400 })
+    if (isTask) {
+      if (!taskKey) return NextResponse.json({ ok: false, error: "REQUEST_TASK_NOT_FOUND" }, { status: 400 })
+      // The key must name a configured task; the shared service credential alone
+      // is insufficient to assert which automation created this request.
+      const { getDb } = await import("@/lib/app-core/db")
+      const task = getDb().prepare("SELECT key, name FROM tasks WHERE key = ?").get(taskKey) as { key: string; name: string } | undefined
+      if (!task) return NextResponse.json({ ok: false, error: "REQUEST_TASK_NOT_FOUND" }, { status: 400 })
+      creator = { type: "automation", id: `task:${task.key}`, displayName: task.name, basis: "authenticated-task-runner" }
+    } else {
+      creator = { type: "automation", id: "prism-doctor", displayName: "Prism Doctor", basis: "authenticated-task-runner" }
+    }
+  } else {
+    if (!creationContext) return NextResponse.json({ ok: false, error: "REQUEST_CREATOR_REQUIRED" }, { status: 400 })
+    const sourceSessionId = parseNullableString(body.sourceSessionId ?? body.source_session_id)
+    const sourceMessageId = parseNullableString(body.sourceMessageId ?? body.source_message_id)
+    if ((sourceSessionId && sourceSessionId !== creationContext.sourceSessionId)
+      || (sourceMessageId && sourceMessageId !== creationContext.sourceMessageId)) {
+      return NextResponse.json({ ok: false, error: "REQUEST_CREATOR_CONFLICT" }, { status: 400 })
+    }
+    creator = creationContext.creator
+  }
   const origin = new URL(request.url).origin
   const title = parseString(body.title)
   const description = parseString(body.description)
@@ -143,10 +177,11 @@ export async function POST(request: Request) {
     workflowKey,
     requestType,
     priority,
-    source: parseString(body.source) || "chat",
+    source,
     requestedByUserId: null,
-    sourceSessionId: parseNullableString(body.sourceSessionId ?? body.source_session_id) ?? null,
-    sourceMessageId: parseNullableString(body.sourceMessageId ?? body.source_message_id) ?? null,
+    creator,
+    sourceSessionId: creationContext?.sourceSessionId ?? null,
+    sourceMessageId: creationContext?.sourceMessageId ?? null,
     targetAppId: targetAppId || null,
     targetEnvironmentId:
       targetAppId

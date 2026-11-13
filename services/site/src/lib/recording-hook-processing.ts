@@ -317,6 +317,7 @@ export async function processBuiltInRecordingHook(input: {
           requestType: request.requestType,
           priority: request.priority,
           source: childSource,
+          creator: { type: "automation", id: `recording-handoff:${hook.key}`, displayName: "Recording handoff", basis: "parent-request-handoff", parentRequestId: request.id },
           targetAppId: request.targetAppId,
           targetEnvironmentId: request.targetEnvironmentId,
           acceptanceCriteria: [],

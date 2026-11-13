@@ -52,7 +52,8 @@ async function buildPrompt(input: PrismRuntimeJobRequest) {
     sections.push(`Delegation context: ${JSON.stringify(input.context)}`);
   }
   if (input.metadata && Object.keys(input.metadata).length) {
-    sections.push(`Session metadata: ${JSON.stringify(input.metadata)}`);
+    const { requestCreationContext: _privateCreationContext, ...publicMetadata } = input.metadata;
+    sections.push(`Session metadata: ${JSON.stringify(publicMetadata)}`);
   }
   if (input.credentials?.length) {
     sections.push(
@@ -118,6 +119,8 @@ export async function runGrok(
         GROK_HOME: config.grokHome,
         ...(config.appApiBaseUrl ? { PRISM_AGENT_API_BASE_URL: config.appApiBaseUrl } : {}),
         ...(config.appServiceToken ? { PRISM_AGENT_SERVICE_TOKEN: config.appServiceToken } : {}),
+        ...(typeof input.metadata?.requestCreationContext === 'string'
+          ? { PRISM_REQUEST_CREATION_CONTEXT: input.metadata.requestCreationContext } : {}),
       },
       detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -11,6 +11,7 @@ import {
   listRequestOrigins,
   resolveRequestOriginSnapshot,
   type RequestOriginSnapshot,
+  type RequestCreator,
 } from './request-origin';
 
 interface UserRow {
@@ -441,6 +442,7 @@ export interface ListChangeRequestsInput {
   originTargetId?: string;
   interactionProfileKey?: string;
   originActor?: string;
+  creatorId?: string;
   sourceSessionId?: string;
   sourceMessageId?: string;
   query?: string;
@@ -456,6 +458,8 @@ export interface CreateChangeRequestInput {
   priority?: string;
   source?: string;
   requestedByUserId?: string | null;
+  /** Site-resolved creator. Never populate from an unverified public request body. */
+  creator?: RequestCreator;
   /** Trusted Site-owned source session used to resolve immutable provenance. */
   sourceSessionId?: string | null;
   /** Optional source message within sourceSessionId; display identity is never accepted here. */
@@ -3818,6 +3822,10 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
     conditions.push('EXISTS (SELECT 1 FROM request_origins ro WHERE ro.request_id = cr.id AND COALESCE(ro.actor_id, ro.actor_type, \'unknown\') = ?)');
     params.push(input.originActor);
   }
+  if (input.creatorId) {
+    conditions.push('EXISTS (SELECT 1 FROM request_origins ro WHERE ro.request_id = cr.id AND ro.creator_id = ?)');
+    params.push(input.creatorId);
+  }
   if (input.sourceSessionId) {
     conditions.push(`EXISTS (SELECT 1 FROM request_origins ro WHERE ro.request_id = cr.id AND ro.source_session_id = ?${input.sourceMessageId ? ' AND ro.source_message_id = ?' : ''})`);
     params.push(input.sourceSessionId);
@@ -3830,7 +3838,8 @@ export function listChangeRequests(input: ListChangeRequestsInput = {}) {
         SELECT 1 FROM request_origins ro WHERE ro.request_id = cr.id AND lower(
           COALESCE(ro.target_name, '') || ' ' || COALESCE(ro.target_id, '') || ' '
           || COALESCE(ro.interaction_profile_key, '') || ' ' || COALESCE(ro.actor_display_name, '') || ' '
-          || COALESCE(ro.actor_id, '') || ' ' || COALESCE(ro.raw_source, '')
+          || COALESCE(ro.actor_id, '') || ' ' || COALESCE(ro.raw_source, '') || ' '
+          || COALESCE(ro.creator_display_name, '') || ' ' || COALESCE(ro.creator_id, '')
         ) LIKE ?
       )
     )`);
@@ -4204,12 +4213,23 @@ export function createChangeRequest(input: CreateChangeRequestInput) {
     }
   }
   const db = getDb();
+  const creator = input.creator ?? (input.requestedByUserId
+    ? { type: 'user' as const, id: input.requestedByUserId, displayName: null, basis: 'authenticated-admin' }
+    : null);
+  if (!creator?.id || !creator.basis) throw new Error('REQUEST_CREATOR_REQUIRED');
+  if (creator.type === 'user' && !creator.displayName) {
+    const profile = db.prepare('SELECT display_name FROM profiles WHERE user_id = ?')
+      .get(creator.id) as { display_name: string | null } | undefined;
+    creator.displayName = profile?.display_name ?? null;
+  }
   const origin = resolveRequestOriginSnapshot({
     sourceSessionId: input.sourceSessionId,
     sourceMessageId: input.sourceMessageId,
+    sourceMessageRecordId: creator.sourceMessageRecordId,
     rawSource: input.source ?? 'manual',
     requestedByUserId: input.requestedByUserId,
     capturedAt: now,
+    creator,
   }, db);
   db.transaction(() => {
     db

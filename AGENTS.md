@@ -28,6 +28,12 @@ Send service auth as:
 -H "x-service-token: $PRISM_AGENT_SERVICE_TOKEN"
 ```
 
+For `POST /agent/change-board/requests`, also send
+`-H "x-prism-request-creation-context: $PRISM_REQUEST_CREATION_CONTEXT"`.
+Site mints this context for the assigned Agent Profile and the current run or
+session. If absent, report `REQUEST_CREATOR_REQUIRED` and do not invent a
+creator. Never copy the context into a request body, artifact, or response.
+
 ## Common Agent Routes
 
 - `GET /agent/tasks`

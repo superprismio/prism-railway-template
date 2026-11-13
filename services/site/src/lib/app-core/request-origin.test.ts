@@ -3,6 +3,7 @@ import test from 'node:test';
 import Database from 'better-sqlite3';
 
 import { requestOriginsMigration } from './migrations/039_request_origins';
+import { requestCreatorsMigration } from './migrations/056_request_creators';
 import { getRequestOrigin, insertRequestOrigin, resolveRequestOriginSnapshot } from './request-origin';
 
 function testDb() {
@@ -21,6 +22,7 @@ function testDb() {
     );
   `);
   db.exec(requestOriginsMigration.sql);
+  db.exec(requestCreatorsMigration.sql);
   return db;
 }
 
