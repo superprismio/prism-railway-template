@@ -33,7 +33,7 @@ function fixture(label: string) {
       { key: 'inspect', type: 'script', next: 'closed', scriptConfig: config },
       { key: 'fallback', type: 'agent', next: 'closed' }, { key: 'closed', type: 'terminal' },
     ] } });
-  const request = createChangeRequest({ title: label, description: label, workflowKey, requestType: 'ops' });
+  const request = createChangeRequest({ creator: { type: 'automation', id: 'test-fixture', displayName: 'Test fixture', basis: 'test' },  title: label, description: label, workflowKey, requestType: 'ops' });
   assert.ok(request);
   const workflowRun = ensureWorkflowRunForRequest({ requestId: request.id, workflowKey });
   const enqueue = () => enqueueWorkflowScriptAttempt({ requestId: request.id, workflowRunId: workflowRun.id,
@@ -89,7 +89,7 @@ test('health snapshot finds old required artifact in the same run without copyin
   // A same-named artifact for another workflow run is not used as proof.
   createRequestArtifact({ requestId: other.request.id, workflowRunId: other.workflowRun.id,
     kind: 'json', name: 'report.json', mimeType: 'application/json', storagePath: '/tmp/other-report.json', sizeBytes: 1 });
-  const inspection = createChangeRequest({ title: 'Inspect', description: 'Inspect', workflowKey: f.request.workflowKey,
+  const inspection = createChangeRequest({ creator: { type: 'automation', id: 'test-fixture', displayName: 'Test fixture', basis: 'test' },  title: 'Inspect', description: 'Inspect', workflowKey: f.request.workflowKey,
     requestType: 'ops', constraints: { workflowHealth: { requestNumbers: [f.request.requestNumber] } } });
   assert.ok(inspection);
   const snapshot = workflowScriptSnapshot({ request: inspection, binding: 'workflow-health-snapshot-v1',
@@ -151,7 +151,7 @@ test('health snapshot distinguishes agent-linked artifacts, ambiguous legacy art
   // A newer unlinked match cannot override older proven provenance.
   createRequestArtifact({ requestId: f.request.id, kind: 'json', name: 'linked.json',
     mimeType: 'application/json', storagePath: '/tmp/newer-unlinked.json', sizeBytes: 1 });
-  const inspection = createChangeRequest({ title: 'Inspect provenance', description: 'Inspect provenance',
+  const inspection = createChangeRequest({ creator: { type: 'automation', id: 'test-fixture', displayName: 'Test fixture', basis: 'test' },  title: 'Inspect provenance', description: 'Inspect provenance',
     workflowKey: f.request.workflowKey, requestType: 'ops',
     constraints: { workflowHealth: { requestNumbers: [f.request.requestNumber] } } });
   assert.ok(inspection);
@@ -203,7 +203,7 @@ test('legacy artifact metadata proves provenance only through unambiguous same-r
       kind: 'json', mimeType: 'application/json', storagePath: '/tmp/unused', sizeBytes: 1 });
     if (c.name === 'invalid-json') getDb().prepare('UPDATE request_artifacts SET metadata_json=? WHERE id=?').run('{bad', a.id);
   }
-  const inspection = createChangeRequest({ title: 'Legacy check', description: 'Legacy check',
+  const inspection = createChangeRequest({ creator: { type: 'automation', id: 'test-fixture', displayName: 'Test fixture', basis: 'test' },  title: 'Legacy check', description: 'Legacy check',
     workflowKey: f.request.workflowKey, requestType: 'ops',
     constraints: { workflowHealth: { requestNumbers: [f.request.requestNumber] } } });
   assert.ok(inspection);
@@ -226,7 +226,7 @@ test('oversize target becomes partial unknown coverage rather than a false clean
     insert.run(`large-${index}`, 'workflow_step', 'succeeded', 'site', '{}', '{}', '[]', now, now,
       f.request.id, f.workflowRun.id, 'x'.repeat(1_000));
   }
-  const inspection = createChangeRequest({ title: 'Inspect', description: 'Inspect', workflowKey: f.request.workflowKey,
+  const inspection = createChangeRequest({ creator: { type: 'automation', id: 'test-fixture', displayName: 'Test fixture', basis: 'test' },  title: 'Inspect', description: 'Inspect', workflowKey: f.request.workflowKey,
     requestType: 'ops', constraints: { workflowHealth: { requestNumbers: [f.request.requestNumber] } } });
   assert.ok(inspection);
   const snapshot = workflowScriptSnapshot({ request: inspection, binding: 'workflow-health-snapshot-v1',
@@ -246,7 +246,7 @@ test('more than 30 recent attempts marks otherwise observed target as partial', 
     insert.run(`short-${index}`, 'workflow_step', 'succeeded', 'site', '{}', '{}', '[]', now, now,
       f.request.id, f.workflowRun.id, 'inspect');
   }
-  const inspection = createChangeRequest({ title: 'Inspect', description: 'Inspect', workflowKey: f.request.workflowKey,
+  const inspection = createChangeRequest({ creator: { type: 'automation', id: 'test-fixture', displayName: 'Test fixture', basis: 'test' },  title: 'Inspect', description: 'Inspect', workflowKey: f.request.workflowKey,
     requestType: 'ops', constraints: { workflowHealth: { requestNumbers: [f.request.requestNumber] } } });
   assert.ok(inspection);
   const snapshot = workflowScriptSnapshot({ request: inspection, binding: 'workflow-health-snapshot-v1',

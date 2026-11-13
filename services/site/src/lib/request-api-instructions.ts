@@ -10,6 +10,7 @@ export function requestApiInstructions(input: {
   return [
     `Request #${input.requestNumber} is the displayed number; its request ID is ${input.requestId}. Use the number only on /by-number/ routes and the ID on /requests/:id routes.`,
     `Use x-service-token: $PRISM_AGENT_SERVICE_TOKEN with $PRISM_AGENT_API_BASE_URL. Read request, workflow run, events, and prior agent runs with GET ${byNumber}/review; read prior artifact bodies with GET ${byNumber}/artifacts (filter by name or kind if useful).`,
+    "When creating a new request, send x-prism-request-creation-context: $PRISM_REQUEST_CREATION_CONTEXT. Site uses it to record your assigned Agent Profile as creator. Do not put this value in a body, artifact, or reply.",
     `For a durable output, POST ${byId}/artifacts with JSON fields kind, name, mimeType, encoding (utf8 for text or base64 for binary), and content. This write route requires the request ID, not the displayed number.`,
     `Confirm each required artifact POST returned HTTP 201 with ok: true and an artifact.id. Then read it back with GET ${byId}/artifacts/<artifact.id>/content?format=json (or GET ${byNumber}/artifacts filtered by name for text). If a required artifact is missing or unreadable, do not report completion: emit a blocked workflow-outcome with the failure so the workflow stays on this step.`,
     input.agentRunId

@@ -81,6 +81,9 @@ test("Ask Prism persists an isolated admin conversation without changing workflo
       workflowAttention: { status: "needs_attention", summary: "Human review required" },
       targetEnvironmentId: "environment-1",
       priority: "high",
+      origin: { platform: "site", actorType: "user", actorId: "user-1", actorDisplayName: "Ada",
+        sourceSessionId: "session-1", sourceMessageId: null,
+        creator: { type: "agent", id: "admin-agent", displayName: "Admin Agent", basis: "recorded-agent-run", agentRunId: "run-1" } },
     }),
     getWorkflowRun: () => ({ id: "workflow-run-1", status: "active", currentStepKey: "review" }),
     getWorkflow: () => ({ key: "release", version: 2, updatedAt: "2026-09-11T00:00:00.000Z", definition: { agentConfig: { contextPolicy: { continuation: "step", handoff: "artifacts" } }, steps: [
@@ -126,6 +129,9 @@ test("Ask Prism persists an isolated admin conversation without changing workflo
       assert.match(input.prompt, /does not execute workflow mutations/)
       assert.match(input.prompt, /authenticated, audited confirmation controls/)
       assert.match(input.prompt, /Human review required/)
+      assert.match(input.prompt, /Admin Agent/)
+      assert.match(input.prompt, /recorded-agent-run/)
+      assert.match(input.prompt, /Distinguish the creator from the initiating person/)
       assert.match(input.prompt, /Review the provenance source/)
       assert.match(input.prompt, /change-request-ops/)
       assert.match(input.prompt, /evm-wallet/)

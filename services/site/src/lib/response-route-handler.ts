@@ -413,6 +413,7 @@ async function requestPrismRuntimeResponse(input: {
     ? input.metadata.requestedSkills.filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim()))
     : []
   return requestRuntimeResponse({
+    allowRequestCreationContext: true,
     prompt: input.prompt,
     sessionId: input.sessionId,
     continuationId: input.continuationId ?? null,
@@ -1163,7 +1164,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
     ...requestedCredentialsFromAgentConfig(workflowAgentConfig),
   ])
 
-  createAgentMessage({
+  const sourceUserMessage = createAgentMessage({
     sessionId: session.id,
     role: "user",
     source: "site",
@@ -1365,6 +1366,8 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
       },
       metadata: {
         transport: "site",
+        agentRunId: activeAgentRunId,
+        sourceMessageRecordId: sourceUserMessage?.id ?? null,
         policyInstructions: agentRuntimeScope.policyInstructions,
         agentProfile: agentRuntimeScope.metadata,
         runtimeProfileKey: requestedRuntimeProfileKey,
@@ -1642,6 +1645,7 @@ export async function handleResponsePost(request: Request, requireAccess: RouteA
             },
             metadata: {
               transport: "site",
+              agentRunId: continuationAgentRunId,
               policyInstructions: continuationScope.policyInstructions,
               agentProfile: continuationScope.metadata,
               runtimeProfileKey: continuationScope.runtimeProfileKey,

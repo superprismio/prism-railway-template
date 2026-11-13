@@ -170,6 +170,22 @@ When a request originates in a Site-owned communication session, include
 immutable platform, channel/target, interaction profile, and initiator snapshot
 from that trusted session. Callers must not provide display identity fields;
 external subject values are intentionally excluded from request provenance.
+For agent creation, also send `x-prism-request-creation-context` from
+`PRISM_REQUEST_CREATION_CONTEXT`. Site verifies this Site-minted context and
+records the assigned Agent Profile as creator, separately from the initiating
+person. A missing, expired, or conflicting context returns a 400 error. Task
+Runner uses `x-task-runner-token` and a configured `task:<key>` source; Hook and
+recording handoff requests are attributed to their configured automation.
+
+Before deploying this change, set the same new random
+`SOURCE_ADAPTER_RUNTIME_TOKEN` on Railway **Site** and **communication-adapter**.
+Keep it out of Codex Runtime, Task Runner, Gateway, and agent credentials; do
+not reuse `INTERNAL_SERVICE_TOKEN` or `COMMUNICATION_ADAPTER_TOKEN`. The
+communication adapter refuses runtime dispatch without it. The generic
+service-token `/agent/runtime/invoke` path cannot mint creator context, even
+when a caller supplies another session or Agent Profile in metadata. Site's
+own workflow handler mints context from its recorded run, while the separately
+authenticated communication adapter can mint it for its recorded session.
 
 Source attachment ingest:
 

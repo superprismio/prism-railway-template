@@ -146,6 +146,15 @@ export type LabRequestOriginSnapshot = {
   rawSource: string | null;
   backfillStatus: "complete" | "partial" | "unknown";
   capturedAt: string;
+  creator?: {
+    type: "user" | "agent" | "automation";
+    id: string;
+    displayName: string | null;
+    basis: string;
+    agentRunId?: string | null;
+    parentRequestId?: string | null;
+    sourceMessageRecordId?: string | null;
+  } | null;
 };
 
 export type LabActivityItem = {

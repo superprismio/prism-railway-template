@@ -24,6 +24,7 @@ import type {
   LabRequestFilterState,
   LabRequestListItem,
 } from "@/lib/prism-lab/contracts"
+import { requestCreatorLabel, requestInitiatorLabel } from "@/lib/prism-lab/request-attribution"
 import {
   labRequestFilterOptions,
   labRequestFiltersToSearchParams,
@@ -172,9 +173,12 @@ function RequestRow({
           ) : null}
           <div className="flex min-w-0 items-center gap-2">
             <UserRound className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <dt className="sr-only">Initiator</dt>
-            <dd className="truncate">{request.requestedByDisplayName || "Unknown initiator"}</dd>
+            <dt className="sr-only">Creator</dt>
+            <dd className="truncate">{requestCreatorLabel(request.origin)}</dd>
           </div>
+          {request.origin?.actorId || request.origin?.actorDisplayName || request.requestedByDisplayName ? (
+            <div className="min-w-0 truncate text-xs text-muted-foreground">Requested by {requestInitiatorLabel(request.origin, request.requestedByDisplayName)}</div>
+          ) : null}
           {request.origin?.interactionProfileKey ? (
             <div className="flex min-w-0 items-center gap-2">
               <Bot className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
