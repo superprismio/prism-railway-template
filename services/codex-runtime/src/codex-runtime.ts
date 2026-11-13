@@ -942,6 +942,11 @@ export function buildPrompt(
       : [
           'If Prism memory is useful, query it from the shell with curl against $PRISM_API_BASE and send X-Prism-Api-Key using $PRISM_API_READ_KEY or $PRISM_API_KEY.',
         ]),
+    ...(!isReadOnlyUtility && typeof input.metadata?.requestCreationContext === 'string'
+      ? [
+          'Request creation for this job requires the signed context in the PRISM_REQUEST_CREATION_CONTEXT environment variable. On POST /agent/change-board/requests, send x-prism-request-creation-context with that environment value (for example, curl -H "x-prism-request-creation-context: $PRISM_REQUEST_CREATION_CONTEXT", or a Node request header from process.env.PRISM_REQUEST_CREATION_CONTEXT). sourceSessionId and sourceMessageId do not replace this header. Never print, log, save, or include the context value in a reply or artifact.',
+        ]
+      : []),
     ...(isReviewer
       ? [
           'This is a reviewer execution. Do not modify tracked repository files.',

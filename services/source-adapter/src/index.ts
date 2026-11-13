@@ -26,6 +26,7 @@ import { ExternalInteractionRateLimiter } from "./external-interaction-rate-limi
 import { buildAdvisoryMemoryInstructions, type AdvisoryMemoryScope } from "./external-interaction-memory-policy.js";
 import { sanitizePublicOutput } from "./public-output-sanitizer.js";
 import { requestSiteRuntime } from "./site-runtime.js";
+import { requestCreationInstructions } from "./request-creation-instructions.js";
 import { boundedTelegramHistory, invokeTelegramWithContextRecovery } from "./telegram-context-recovery.js";
 import { recoverDiscordRequestHandoff, sendAndRecordDiscordReply } from "./discord-request-handoff.js";
 import { discordDestinationType } from "./discord-output.js";
@@ -2097,7 +2098,7 @@ async function runBuzzPrompt(input: {
         policyInstructions: [
           externalInteractionPolicyInstructions(authorization),
           input.profile.mode !== "readonly"
-            ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${String(session.id)} and sourceMessageId ${input.event.id}; do not supply identity display fields.`
+            ? requestCreationInstructions(String(session.id), input.event.id)
             : "",
         ].filter(Boolean).join("\n\n"),
         sourceAccessPolicy: input.accessPolicy,
@@ -3061,7 +3062,7 @@ async function runTelegramPrompt(prompt: string, transport: TelegramPromptTransp
         policyInstructions: [
           communicationProfileInstructions(interactionProfile, accessPolicy),
           accessPolicy.mode !== "readonly" && accessPolicy.capabilities.includes("requests.create")
-            ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${String(session.id)}${transport.userSourceMessageId ? ` and sourceMessageId ${transport.userSourceMessageId}` : ""}; do not supply identity display fields.`
+            ? requestCreationInstructions(String(session.id), transport.userSourceMessageId)
             : "",
         ].filter(Boolean).join("\n\n"),
         adapterCapabilities: {
@@ -4203,7 +4204,7 @@ async function runDiscordPrompt(prompt: string, transport: DiscordPromptTranspor
           policyInstructions: [
             communicationProfileInstructions(interactionProfile, accessPolicy),
             accessPolicy.mode !== "readonly" && accessPolicy.capabilities.includes("requests.create")
-              ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${String(session.id)} and sourceMessageId ${transport.userSourceMessageId ?? "null"}; do not supply identity display fields. After dispatch, promptly give the user the request number and link and finish this chat reply. The workflow runs independently; do not poll its steps or wait for completion in this chat unless the user explicitly asks you to monitor it.`
+              ? `${requestCreationInstructions(String(session.id), transport.userSourceMessageId)} After dispatch, promptly give the user the request number and link and finish this chat reply. The workflow runs independently; do not poll its steps or wait for completion in this chat unless the user explicitly asks you to monitor it.`
               : "",
           ].filter(Boolean).join("\n\n"),
           adapterCapabilities: {
@@ -5472,7 +5473,7 @@ async function main(): Promise<void> {
           policyInstructions: [
             externalInteractionPolicyInstructions(authorization),
             authorization.profile.mode !== "readonly"
-              ? `When creating a request with POST /agent/change-board/requests, include sourceSessionId ${sessionId}${sourceMessageId ? ` and sourceMessageId ${sourceMessageId}` : ""}; do not supply identity display fields.`
+              ? requestCreationInstructions(sessionId, sourceMessageId)
               : "",
           ].filter(Boolean).join("\n\n"),
           credentialPolicy: authorization.profile.mode === "full" ? "trusted-source" : "none",

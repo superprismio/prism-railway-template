@@ -71,12 +71,21 @@ test('read-only utility prompt byte metrics include trusted policy and metadata 
   assert.equal(composed.metrics.metadataBytesBeforeProjection, composed.metrics.metadataBytesAfterProjection);
 });
 
-test('request creation context stays out of the model prompt', () => {
-  const composed = buildPrompt({ prompt: 'Create a request', recentHistory: [], sessionId: 'creator-session',
-    metadata: { requestCreationContext: 'private-signed-context', agentProfile: { key: 'dreamer' } } },
-  false, { availableSkills: [], selectedSkills: [] });
-  assert.doesNotMatch(composed.prompt, /private-signed-context/);
-  assert.match(composed.prompt, /dreamer/);
+test('new and resumed Codex turns instruct use of private creation context without exposing it', () => {
+  for (const isResume of [false, true]) {
+    const composed = buildPrompt({ prompt: 'Create a request', recentHistory: [], sessionId: 'creator-session',
+      metadata: { requestCreationContext: 'private-signed-context', agentProfile: { key: 'dreamer' } } },
+    isResume, { availableSkills: [], selectedSkills: [] });
+    assert.doesNotMatch(composed.prompt, /private-signed-context/);
+    assert.match(composed.prompt, /dreamer/);
+    assert.match(composed.prompt, /x-prism-request-creation-context/);
+    assert.match(composed.prompt, /PRISM_REQUEST_CREATION_CONTEXT/);
+    assert.match(composed.prompt, /sourceSessionId and sourceMessageId do not replace this header/);
+  }
+  const readOnly = buildPrompt({ prompt: 'Explain a request', recentHistory: [], sessionId: 'utility-session',
+    authorityMode: 'read_only_utility', metadata: { requestCreationContext: 'private-signed-context' } },
+  true, { availableSkills: [], selectedSkills: [] });
+  assert.doesNotMatch(readOnly.prompt, /private-signed-context|x-prism-request-creation-context|PRISM_REQUEST_CREATION_CONTEXT/);
 });
 
 test('native selected skills are referenced without repeating their contents', () => {
